@@ -471,7 +471,8 @@ const saveCountCaveat = "The count ignores the other rules, so an earlier rule c
 // [rolls.Rating] of each game mode, and the output gains the roll ratings
 // block. Ratings is nil for every other item. For an item with perks,
 // tested holds the [clarity.State] of the call, which [writePerks] reads.
-// The output of a weapon ends with the block of [writeMeasures].
+// The output of a weapon ends with the block of [writeMeasures] and then
+// the block of [writeFigures].
 func renderItem(
 	s *inventory.Snapshot,
 	item *inventory.Item,
@@ -519,6 +520,7 @@ func renderItem(
 
 	if item.Kind == inventory.KindWeapon {
 		writeMeasures(&b, item)
+		writeFigures(&b, item)
 	}
 
 	return strings.TrimRight(b.String(), "\n")

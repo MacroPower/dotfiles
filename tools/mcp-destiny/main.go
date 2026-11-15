@@ -20,6 +20,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/clarity"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/damage"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
@@ -437,7 +438,32 @@ func newServer(h *handler) *mcp.Server {
 			"The Weapons stat of a character, armor mods, and perks with a timed bonus change them in the game. " +
 			"Perks that scale a time or a distance without a stat bonus, such as Snapshot Sights, change them as well. " +
 			"A value that the measurements do not give reads 'unknown' with the reason, " +
-			"such as a frame without curves or a game update that changed the value after the last measurement.",
+			"such as a frame without curves or a game update that changed the value after the last measurement. " +
+			"A weapon also shows its time to kill a Guardian and its damage per second. " +
+			"The numbers come from community measurements, " +
+			"as D2Foundry's Oracle Engine and the Clarity database collect them, " +
+			"and from the damage values that Bungie's patch notes state. " +
+			"The Bungie API publishes none of them. " +
+			"They match Update " + damage.Patch() + " of the game, the last update that changed one of them. " +
+			"The time to kill runs from the first hit to the last one against a Guardian with 230 health. " +
+			"One time counts precision hits and names the hits that can be body shots, " +
+			"and one time counts body shots alone. " +
+			"The damage per second is the damage of one magazine divided by the time of the magazine and one reload, " +
+			"with precision hits and with body shots. " +
+			"Every round hits, and the target stands closer than the damage falloff. " +
+			"The numbers leave out the Weapons stat of a character, and they hold against a Guardian. " +
+			"A combatant takes other damage, which the server does not model. " +
+			"The first lines give the base numbers, without a timed perk. " +
+			"The next lines give the numbers while one active perk is as strong as its line says, " +
+			"such as 'With Rampage at 3 stacks', for each perk whose effect the server has. " +
+			"A last line names each active perk whose effect the numbers leave out, " +
+			"so a number never ignores a perk without that line. " +
+			"The server has the damage of most legendary frames of auto rifles, hand cannons, pulse rifles, " +
+			"scout rifles, sidearms, and submachine guns. " +
+			"It does not have the damage of the Support Frame of auto rifles, the Spread Shot frame of hand cannons, " +
+			"the Aggressive Burst frame of submachine guns, the Balanced Heat Weapon and Dynamic Heat Weapon frames, " +
+			"or the Micro-Missile Frame of pulse rifles and sidearms. " +
+			"For a weapon without these numbers, the block is one line that reads 'unknown' with the reason.",
 		Annotations: readOnly,
 	}, h.handleGetItem)
 

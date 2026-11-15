@@ -118,6 +118,9 @@ const (
 	noReloadStat   = "This copy has no Reload Speed stat."
 	noHandlingStat = "This copy has no Handling stat."
 	noRangeStat    = "This copy has no Range stat."
+
+	noRateStat   = "This copy has no Rounds Per Minute stat."
+	noTypeDamage = "The community data has no damage for this weapon type."
 )
 
 // TestGetItemMeasures pins the block of times and falloff distances that
@@ -141,9 +144,12 @@ func TestGetItemMeasures(t *testing.T) {
 		edit func(*inventory.Snapshot)
 		id   string
 		// head holds the lines before the roll ratings, and tail holds
-		// the lines after them.
-		head []string
-		tail []string
+		// the lines after them. Figures is the reason of the line of
+		// [writeFigures], which ends the output. No copy of the fakes
+		// has the stats that the line reads.
+		head    []string
+		tail    []string
+		figures string
 	}{
 		"every measure of a submachine gun": {
 			id: "3001",
@@ -174,6 +180,7 @@ func TestGetItemMeasures(t *testing.T) {
 				"- Falloff start from the hip: 13.42 m",
 				"- Falloff start aiming down sights: 19.46 m",
 			},
+			figures: noRateStat,
 		},
 		"frame of a crafted copy": {
 			id: "3002",
@@ -204,6 +211,7 @@ func TestGetItemMeasures(t *testing.T) {
 				"- Falloff start from the hip: 14.07 m",
 				"- Falloff start aiming down sights: 20.40 m",
 			},
+			figures: noRateStat,
 		},
 		"each unknown measure of a glaive gives its reason": {
 			id: "3003",
@@ -234,6 +242,7 @@ func TestGetItemMeasures(t *testing.T) {
 				"- Falloff start from the hip: 17.18 m",
 				"- Falloff start aiming down sights: unknown. " + glaiveScale,
 			},
+			figures: noTypeDamage,
 		},
 		// Instance 3005 is a copy of instance 3001 for which the profile
 		// lists no stats. Every measure is unknown, but the reasons differ,
@@ -269,6 +278,7 @@ func TestGetItemMeasures(t *testing.T) {
 				"- Falloff start from the hip: unknown. " + noRangeStat,
 				"- Falloff start aiming down sights: unknown. " + noRangeStat,
 			},
+			figures: noRateStat,
 		},
 		"weapon type without curves gives one line": {
 			id: "3004",
@@ -288,6 +298,7 @@ func TestGetItemMeasures(t *testing.T) {
 			tail: []string{
 				"Times and falloff: unknown. " + noTypeCurves,
 			},
+			figures: noTypeDamage,
 		},
 	}
 
@@ -306,7 +317,9 @@ func TestGetItemMeasures(t *testing.T) {
 			got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: tc.id})
 			assert.False(t, isError)
 
-			assert.Equal(t, strings.Join(slices.Concat(tc.head, ratings, tc.tail), "\n"), got)
+			figures := []string{"", allFiguresUnknown + " " + tc.figures}
+
+			assert.Equal(t, strings.Join(slices.Concat(tc.head, ratings, tc.tail, figures), "\n"), got)
 		})
 	}
 }

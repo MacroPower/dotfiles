@@ -462,6 +462,81 @@
 //   - A game update changed the value after the last measurement, or
 //     its patch notes do not say whether a change reaches the weapon.
 //
+// # Time to Kill and Damage
+//
+// The get_item tool ends a weapon with its time to kill a Guardian and
+// its damage per second. The Bungie API publishes neither number, and it
+// does not publish the damage of a shot. The damage package computes the
+// numbers from community measurements and from patch notes. D2Foundry's
+// Oracle Engine and the Clarity database collect the measurements, and
+// the patch notes of Bungie state some damage values. The numbers match
+// Update 9.7.0 of the game, and the header of the block names the
+// update.
+//
+// Every number holds against a Guardian with 230 health, without an
+// overshield and without damage resistance. Every round hits, and the
+// target stands closer than the distance at which the damage falls off.
+// The numbers leave out the Weapons stat of a character. The stat
+// shortens the reload in the game, and a stat of more than 100 raises the
+// damage against players. A combatant takes other damage, which depends
+// on its rank and on the activity, and the server does not model it.
+//
+// The time to kill runs from the first hit to the last one. The block
+// gives it with precision hits and with body shots alone. The time with
+// precision hits names the hits that can be body shots, such as "2
+// precision hits and 1 body shot". The damage per second is the damage of
+// one magazine divided by the time of the magazine and of one reload. It
+// reads the Magazine stat and the reload time of the copy, so two rolls
+// of one weapon can differ in it.
+//
+// The block gives the base numbers first. No timed perk is active in
+// them. One entry then follows for each state of each active perk whose
+// effect the server has, such as "With Rampage at 3 stacks". Its numbers
+// hold while that perk alone is that strong. A perk that raises the
+// Reload Speed stat while it is active, such as Frenzy, shortens the
+// reload in the damage per second of its entry.
+//
+// The last line names each active perk whose effect the numbers leave
+// out. The damage data gives some perks an effect, and it lists others
+// as perks without an effect on the numbers. Every other perk is on the
+// last line, so no number ignores a perk without the line.
+//
+// The server has the damage of most legendary frames of auto rifles, hand
+// cannons, pulse rifles, scout rifles, sidearms, and submachine guns. It
+// does not have the damage of these legendary frames:
+//
+//   - The Support Frame of auto rifles.
+//   - The Spread Shot frame of hand cannons.
+//   - The Aggressive Burst frame of submachine guns.
+//   - The Balanced Heat Weapon and Dynamic Heat Weapon frames.
+//   - The Micro-Missile Frame of pulse rifles and sidearms.
+//
+// A weapon without numbers shows one line that reads "unknown" with the
+// reason. The reason is one of these:
+//
+//   - The damage data lacks the weapon type, as it lacks swords.
+//   - The damage data lacks the frame. It lacks the frames of exotic
+//     weapons, the Support Frame of auto rifles, the Spread Shot frame of
+//     hand cannons, and the Aggressive Burst frame of submachine guns. It
+//     also lacks the Balanced Heat Weapon and Dynamic Heat Weapon frames
+//     and the Micro-Missile Frame of pulse rifles and sidearms.
+//   - The profile lists no perks for the copy, or no frame among them.
+//   - The copy lacks the Rounds Per Minute stat or the Magazine stat.
+//   - The Rounds Per Minute stat of the copy differs from the rate of fire
+//     that the damage data gives the frame. The data then describes
+//     another frame, or the game changed the frame after the measurement.
+//
+// One value of a weapon with numbers can also be unknown, and its line
+// gives the reason. A damage per second is unknown when the reload time
+// of the copy is unknown. The numbers with precision hits are unknown for
+// High-Impact auto rifles. Update 9.7.0 lowered their base damage and did
+// not state their precision damage.
+//
+// Oracle Engine describes the game at Update 8.2.6. The damage package
+// takes each value that the patch notes of Bungie state from that update
+// to Update 9.7.0.6. It records the source of each value and the last
+// update of its check.
+//
 // # Autotag Preview
 //
 // The preview_autotag_rule tool lists the owned items that an autotag

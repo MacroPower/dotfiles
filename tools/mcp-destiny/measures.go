@@ -50,25 +50,33 @@ func (m measure) text() string {
 	return fmt.Sprintf("%.2f %s", m.Value, m.unit)
 }
 
-// measuresOf returns the measures of a weapon copy in the order of
-// [measureKinds]. The curves read the type, the item hash, the plug of
-// each perk socket, and the stats of the copy.
-func measuresOf(item *inventory.Item) []measure {
-	weapon := curves.Weapon{
-		Type:  item.TypeName,
-		Hash:  item.Hash,
-		Stats: make(map[uint32]int, len(item.Stats)),
+// statsOf maps the hash of each stat of an item to its value.
+func statsOf(item *inventory.Item) map[uint32]int {
+	stats := make(map[uint32]int, len(item.Stats))
+	for _, stat := range item.Stats {
+		stats[stat.Hash] = stat.Value
 	}
+
+	return stats
+}
+
+// curvesWeaponOf returns a weapon copy in the form that the curves read.
+// The curves read the type, the item hash, the plug of each perk socket,
+// and the stats of the copy.
+func curvesWeaponOf(item *inventory.Item) curves.Weapon {
+	weapon := curves.Weapon{Type: item.TypeName, Hash: item.Hash, Stats: statsOf(item)}
 
 	for _, perk := range item.Perks {
 		weapon.Plugs = append(weapon.Plugs, perk.Hash)
 	}
 
-	for _, stat := range item.Stats {
-		weapon.Stats[stat.Hash] = stat.Value
-	}
+	return weapon
+}
 
-	m := curves.Of(weapon)
+// measuresOf returns the measures of a weapon copy in the order of
+// [measureKinds].
+func measuresOf(item *inventory.Item) []measure {
+	m := curves.Of(curvesWeaponOf(item))
 	values := [len(measureKinds)]curves.Measure{m.Reload, m.Ready, m.Stow, m.Aim, m.HipFalloff, m.AimFalloff}
 	measures := make([]measure, 0, len(values))
 

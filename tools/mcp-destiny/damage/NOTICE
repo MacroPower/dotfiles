@@ -1,0 +1,48 @@
+The file damage.json derives in part from D2Foundry's Oracle Engine at
+commit dcd0c7d302b056ffbb532edcb711d724a17ca8c1 of
+https://github.com/d2foundry/oracle_engine. Each value that derives from
+Oracle Engine names the source "oracle" in damage.json. The health of a
+Guardian comes from src/weapons/ttk_calc.rs. The reload scale of the
+Rapid-Fire Frame comes from src/perks/other_perks.rs, and the ramp of
+Target Lock comes from src/perks/year_5_perks.rs. The file damage.go
+ports the math of src/weapons/ttk_calc.rs and the magazine loop of
+src/weapons/dps_calc.rs to Go.
+
+Each frame in damage.json names one source for its damage and one for
+its firing times. The damage and the firing times with the source
+"oracle" come from build_resources/weapon_formulas.json. That file
+stores the precision damage of a frame as a scale. The precision damage
+is the body damage times the sum of crit_mult / 51 and 1.5, and
+damage.json holds the product, rounded to a thousandth. The other
+damage and firing times of the frames are the values that Bungie's
+patch notes state, and their source names the update of those notes.
+
+The authors of Oracle Engine license it under the MIT license or the
+Unlicense. This module takes it under the MIT license, whose text follows.
+
+MIT License
+
+Copyright (c) 2023 Bowan T. Foryt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The perk values with the source "clarity" are numbers that the Clarity
+database (https://github.com/Database-Clarity/Live-Clarity-Database)
+gives. The file damage.json names the entry of each value, and it copies
+no text of the database.

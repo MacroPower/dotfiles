@@ -28,6 +28,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/clarity"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/damage"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
@@ -146,6 +147,24 @@ func TestServerListsTools(t *testing.T) {
 				"The values are therefore community measurements and not numbers from Bungie.",
 			)
 			assert.Contains(t, tool.Description, "without a stat bonus, such as Snapshot Sights, change them as well.")
+			assert.Contains(
+				t,
+				tool.Description,
+				"A weapon also shows its time to kill a Guardian and its damage per second.",
+			)
+			assert.Contains(t, tool.Description, "The numbers come from community measurements, "+
+				"as D2Foundry's Oracle Engine and the Clarity database collect them, "+
+				"and from the damage values that Bungie's patch notes state. The Bungie API publishes none of them.")
+			assert.Contains(t, tool.Description, "They match Update "+damage.Patch()+" of the game")
+			assert.Contains(t, tool.Description, "It does not have the damage of the Support Frame of auto rifles, "+
+				"the Spread Shot frame of hand cannons, the Aggressive Burst frame of submachine guns, "+
+				"the Balanced Heat Weapon and Dynamic Heat Weapon frames, "+
+				"or the Micro-Missile Frame of pulse rifles and sidearms.")
+			assert.Contains(
+				t,
+				tool.Description,
+				"A last line names each active perk whose effect the numbers leave out",
+			)
 
 		case toolCompareDuplicates:
 			assert.Contains(t, tool.Description, "so two rolls compare in seconds and meters")
@@ -1370,12 +1389,18 @@ func TestGetItem(t *testing.T) {
 	t.Parallel()
 
 	// The lines that end the output of a fixture weapon. No fixture
-	// weapon holds a frame. A copy with perks ends with noFrame, and a
-	// copy for which the profile lists no perks ends with noPerks.
+	// weapon holds a frame. A hand cannon with perks ends with noFrame,
+	// and a hand cannon for which the profile lists no perks ends with
+	// noPerks. The damage data has no rocket launchers, so a rocket
+	// launcher without perks ends with noPerksRocket.
 	const (
-		noFrame = "Times and falloff: unknown. The community data has no curves for the frame of this weapon."
-		noPerks = "Times and falloff: unknown. " +
-			"The profile lists no perks for this copy, so the server cannot tell its frame."
+		noPlugs = "The profile lists no perks for this copy, so the server cannot tell its frame."
+		noFrame = "Times and falloff: unknown. The community data has no curves for the frame of this weapon.\n\n" +
+			"Time to kill and damage per second: unknown. The profile lists no frame among the perks of this copy."
+		noPerks = "Times and falloff: unknown. " + noPlugs + "\n\n" +
+			"Time to kill and damage per second: unknown. " + noPlugs
+		noPerksRocket = "Times and falloff: unknown. " + noPlugs + "\n\n" +
+			"Time to kill and damage per second: unknown. The community data has no damage for this weapon type."
 	)
 
 	// fatebringer returns the output for instance 1001 with the given
@@ -1815,7 +1840,7 @@ func TestGetItem(t *testing.T) {
 				"- PvE: B on the Aegis sheet (in Exotic Weapons), which judges no perk columns",
 				"- PvP: not on the PvP sheet",
 				"",
-				noPerks,
+				noPerksRocket,
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,

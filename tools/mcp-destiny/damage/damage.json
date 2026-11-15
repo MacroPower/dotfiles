@@ -1,0 +1,1134 @@
+{
+  "license": "Each value with the source oracle derives from D2Foundry's Oracle Engine, which its authors license under the MIT license or the Unlicense. The health of a Guardian and some damage values, firing times, and perk effects have that source. See the NOTICE file.",
+  "patch": "9.7.0",
+  "health": {
+    "value": 230,
+    "source": "oracle",
+    "checked": "9.7.0.6",
+    "note": "Update 9.0.0.1 gives every Guardian the effects of 100 Resilience, at which Oracle Engine gives a Guardian 230 health."
+  },
+  "sources": {
+    "oracle": {
+      "title": "D2Foundry's Oracle Engine: build_resources/weapon_formulas.json, src/weapons/ttk_calc.rs, src/weapons/dps_calc.rs, and src/perks",
+      "url": "https://github.com/d2foundry/oracle_engine/tree/dcd0c7d302b056ffbb532edcb711d724a17ca8c1",
+      "date": "2025-05-06",
+      "patch": "8.2.6"
+    },
+    "8.2.6": {
+      "title": "Destiny 2 Update 8.2.6",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_8_2_6",
+      "date": "2025-05-06",
+      "patch": "8.2.6"
+    },
+    "9.0.0.1": {
+      "title": "Destiny 2 Update 9.0.0.1",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_0_0_1",
+      "date": "2025-07-15",
+      "patch": "9.0.0.1"
+    },
+    "9.1.5": {
+      "title": "Destiny 2 Update 9.1.5",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_1_5",
+      "date": "2025-10-07",
+      "patch": "9.1.5"
+    },
+    "9.5.0": {
+      "title": "Destiny 2 Update 9.5.0",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_5_0",
+      "date": "2025-12-02",
+      "patch": "9.5.0"
+    },
+    "9.7.0": {
+      "title": "Destiny 2 Update 9.7.0",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_7_0",
+      "date": "2026-06-09",
+      "patch": "9.7.0"
+    },
+    "clarity": {
+      "title": "Clarity database: descriptions/clarity.json, read on the date of this source. A perk names its entry and the upload date of the entry.",
+      "url": "https://github.com/Database-Clarity/Live-Clarity-Database",
+      "date": "2026-11-14",
+      "patch": "9.7.0.6"
+    },
+    "manifest": {
+      "title": "Bungie manifest 245114.26.10.13.2000-1-bnet.66137: the description of each plug. The description of an enhanced trait says what the enhanced trait improves.",
+      "url": "https://www.bungie.net/Platform/Destiny2/Manifest/",
+      "date": "2026-10-13",
+      "patch": "9.7.0.5"
+    }
+  },
+  "types": [
+    {
+      "name": "Auto Rifle",
+      "frames": [
+        {
+          "names": ["Rapid-Fire Frame", "Lightweight Frame"],
+          "body": 13.597,
+          "precision": 23.062,
+          "burstSize": 1,
+          "burstDelay": 2.5,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Adaptive Frame"],
+          "body": 15.5,
+          "precision": 27.1,
+          "burstSize": 1,
+          "burstDelay": 3,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "9.7.0",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["High-Impact Frame"],
+          "body": 22,
+          "precisionOmitted": "Update 9.7.0 lowered the base damage of High-Impact auto rifles and does not state their precision damage, and no measurement is newer.",
+          "burstSize": 1,
+          "burstDelay": 4.5,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "9.7.0",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "9.7.0",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Precision Frame"],
+          "body": 20,
+          "precision": 34,
+          "burstSize": 1,
+          "burstDelay": 4,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "8.2.6",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hand Cannon",
+      "frames": [
+        {
+          "names": ["Adaptive Frame", "Lightweight Frame"],
+          "body": 44.504,
+          "precision": 79.845,
+          "burstSize": 1,
+          "burstDelay": 13,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Aggressive Frame"],
+          "body": 48.7,
+          "precision": 90.1,
+          "burstSize": 1,
+          "burstDelay": 15,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "9.7.0",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Precision Frame"],
+          "body": 45.297,
+          "precision": 70.61,
+          "burstSize": 1,
+          "burstDelay": 10,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Heavy Burst"],
+          "body": 23.995,
+          "precision": 52.93,
+          "burstSize": 2,
+          "burstDelay": 11,
+          "innerBurstDelay": 3,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pulse Rifle",
+      "frames": [
+        {
+          "names": ["Adaptive Frame"],
+          "body": 21.996,
+          "precision": 36.444,
+          "burstSize": 3,
+          "burstDelay": 10,
+          "innerBurstDelay": 2,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Rapid-Fire Frame"],
+          "body": 15.5,
+          "precision": 27.9,
+          "burstSize": 3,
+          "burstDelay": 6,
+          "innerBurstDelay": 2,
+          "damage": {
+            "source": "9.5.0",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["High-Impact Frame"],
+          "body": 21.496,
+          "precision": 38.566,
+          "burstSize": 3,
+          "burstDelay": 12,
+          "innerBurstDelay": 2,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Lightweight Frame", "Legacy PR-55 Frame"],
+          "body": 18.8,
+          "precision": 30.1,
+          "burstSize": 3,
+          "burstDelay": 8,
+          "innerBurstDelay": 2,
+          "damage": {
+            "source": "9.7.0",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Aggressive Burst"],
+          "body": 15.495,
+          "precision": 30.23,
+          "burstSize": 4,
+          "burstDelay": 10,
+          "innerBurstDelay": 2,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Heavy Burst"],
+          "body": 22.996,
+          "precision": 42.61,
+          "burstSize": 2,
+          "burstDelay": 9,
+          "innerBurstDelay": 2,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scout Rifle",
+      "frames": [
+        {
+          "names": ["Lightweight Frame"],
+          "body": 38.006,
+          "precision": 64.461,
+          "burstSize": 1,
+          "burstDelay": 9,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Precision Frame"],
+          "body": 38.506,
+          "precision": 69.084,
+          "burstSize": 1,
+          "burstDelay": 10,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["High-Impact Frame"],
+          "body": 42.001,
+          "precision": 84.414,
+          "burstSize": 1,
+          "burstDelay": 12,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Rapid-Fire Frame"],
+          "body": 27.3,
+          "precision": 53.25,
+          "burstSize": 1,
+          "burstDelay": 7,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "9.7.0",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Aggressive Frame"],
+          "body": 53.995,
+          "precision": 91.58,
+          "burstSize": 1,
+          "burstDelay": 15,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sidearm",
+      "frames": [
+        {
+          "names": ["Adaptive Frame", "Together Forever"],
+          "body": 36.083,
+          "precision": 57.662,
+          "burstSize": 1,
+          "burstDelay": 6,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Adaptive Burst", "Adaptive Frame"],
+          "body": 20.091,
+          "precision": 36.44,
+          "burstSize": 3,
+          "burstDelay": 7,
+          "innerBurstDelay": 2,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Lightweight Frame"],
+          "body": 31.038,
+          "precision": 49.6,
+          "burstSize": 1,
+          "burstDelay": 5,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Rapid-Fire Frame"],
+          "body": 25.114,
+          "precision": 39.641,
+          "burstSize": 1,
+          "burstDelay": 4,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Precision Frame"],
+          "body": 40.154,
+          "precision": 64.168,
+          "burstSize": 1,
+          "burstDelay": 7,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Heavy Burst"],
+          "body": 31,
+          "precision": 49.6,
+          "burstSize": 2,
+          "burstDelay": 8,
+          "innerBurstDelay": 3,
+          "damage": {
+            "source": "9.1.5",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Submachine Gun",
+      "frames": [
+        {
+          "names": ["Adaptive Frame"],
+          "body": 11.498,
+          "precision": 19.727,
+          "burstSize": 1,
+          "burstDelay": 2,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Lightweight Frame", "MIDA Synergy"],
+          "body": 10.6,
+          "precision": 20.265,
+          "burstSize": 1,
+          "burstDelay": 2,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Aggressive Frame"],
+          "body": 13.604,
+          "precision": 23.874,
+          "burstSize": 1,
+          "burstDelay": 2.5,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        {
+          "names": ["Precision Frame"],
+          "body": 16.551,
+          "precision": 26.449,
+          "burstSize": 1,
+          "burstDelay": 3,
+          "innerBurstDelay": 0,
+          "damage": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "timing": {
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      ]
+    }
+  ],
+  "perks": [
+    {
+      "name": "Rapid-Fire Frame",
+      "always": {
+        "reload": 0.8
+      },
+      "note": "Oracle Engine scales the reload time of an empty magazine by 0.8 for the frame, and it gives the frame of a crafted weapon the same scale.",
+      "enhanced": {
+        "same": true,
+        "source": "oracle",
+        "checked": "9.7.0.6"
+      },
+      "source": "oracle",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Drop Mag",
+      "always": {
+        "reload": 0.9
+      },
+      "note": "The plug also raises the Reload Speed stat by 30 and lowers the Magazine stat by 30, and the stats of the copy hold both changes.",
+      "source": "clarity",
+      "entry": 4134353779,
+      "uploaded": "2024-04-01",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Kill Clip",
+      "states": [
+        {
+          "damage": 1.25
+        }
+      ],
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 1015611457,
+      "uploaded": "2026-01-17",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Rampage",
+      "states": [
+        {
+          "label": "at 1 stack",
+          "damage": 1.1
+        },
+        {
+          "label": "at 3 stacks",
+          "damage": 1.331
+        }
+      ],
+      "note": "Update 9.5.0 changed how the stacks expire and left the damage of a stack as it stands.",
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 3425386926,
+      "uploaded": "2025-12-27",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Multikill Clip",
+      "states": [
+        {
+          "label": "after 1 final blow",
+          "damage": 1.17
+        },
+        {
+          "label": "after 3 final blows",
+          "damage": 1.5
+        }
+      ],
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 2458213969,
+      "uploaded": "2024-08-12",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Swashbuckler",
+      "states": [
+        {
+          "label": "at 1 stack",
+          "damage": 1.067
+        },
+        {
+          "label": "at 5 stacks",
+          "damage": 1.333
+        }
+      ],
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 4082225868,
+      "uploaded": "2025-07-14",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Adrenaline Junkie",
+      "states": [
+        {
+          "label": "at 1 stack",
+          "damage": 1.067
+        },
+        {
+          "label": "at 5 stacks",
+          "damage": 1.333
+        }
+      ],
+      "note": "Updates 9.5.5 and 9.7.0 fixed which final blows activate the perk and left the damage of a stack as it stands.",
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 11612903,
+      "uploaded": "2024-08-12",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Frenzy",
+      "states": [
+        {
+          "damage": 1.15,
+          "reloadStat": 100
+        }
+      ],
+      "note": "The perk also grants 100 Handling, which the numbers do not read. Update 9.7.0 fixed the duration of the enhanced perk and left the damage and the Reload Speed bonus as they stand.",
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 4104185692,
+      "uploaded": "2026-07-13",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "One for All",
+      "states": [
+        {
+          "damage": 1.35
+        }
+      ],
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 4049631843,
+      "uploaded": "2026-07-07",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Desperate Measures",
+      "states": [
+        {
+          "label": "at 1 stack",
+          "damage": 1.1
+        },
+        {
+          "label": "at 3 stacks",
+          "damage": 1.3
+        }
+      ],
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 2109543898,
+      "uploaded": "2024-08-12",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Harmony",
+      "states": [
+        {
+          "damage": 1.2
+        }
+      ],
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 438098033,
+      "uploaded": "2024-04-12",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Focused Fury",
+      "states": [
+        {
+          "damage": 1.25
+        }
+      ],
+      "note": "Update 9.7.0 raised the damage bonus from 20% to 25%.",
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 2896038713,
+      "uploaded": "2026-07-07",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Golden Tricorn",
+      "states": [
+        {
+          "label": "at 1 stack",
+          "damage": 1.15
+        },
+        {
+          "label": "at 2 stacks",
+          "damage": 1.5
+        }
+      ],
+      "source": "clarity",
+      "entry": 2610012052,
+      "uploaded": "2024-12-24",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Collective Action",
+      "states": [
+        {
+          "damage": 1.1
+        }
+      ],
+      "note": "Update 9.7.0 keeps the damage bonus against players at 10% and gives the enhanced perk 11%.",
+      "enhanced": {
+        "states": [
+          {
+            "damage": 1.11
+          }
+        ],
+        "source": "9.7.0",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 3324494224,
+      "uploaded": "2026-07-07",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Adagio",
+      "states": [
+        {
+          "damage": 1.3,
+          "damageByType": {
+            "Hand Cannon": 1.27
+          },
+          "delay": 1.2
+        }
+      ],
+      "note": "Update 9.7.0 lowered the damage bonus on hand cannons from 30% to 27%.",
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 3673922083,
+      "uploaded": "2026-07-07",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Master of Arms",
+      "states": [
+        {
+          "label": "at 1 stack",
+          "damage": 1.15
+        },
+        {
+          "label": "at 2 stacks",
+          "damage": 1.25
+        }
+      ],
+      "enhanced": {
+        "same": true,
+        "source": "manifest",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 3081867624,
+      "uploaded": "2024-10-16",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Surrounded",
+      "states": [
+        {
+          "damage": 1.4
+        }
+      ],
+      "enhanced": {
+        "states": [
+          {
+            "damage": 1.47
+          }
+        ],
+        "source": "clarity",
+        "entry": 781192741,
+        "uploaded": "2023-06-13",
+        "checked": "9.7.0.6"
+      },
+      "source": "clarity",
+      "entry": 3708227201,
+      "uploaded": "2024-08-12",
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Target Lock",
+      "states": [
+        {
+          "ramp": {
+            "after": 0.125,
+            "low": 0.058375,
+            "high": 0.2503125,
+            "start": -0.35,
+            "end": 1.135
+          }
+        }
+      ],
+      "note": "The ramp is the formula of Oracle Engine against players. Clarity entry 365154968 of 2025-05-26 gives the same first and last bonus, 10.46% and 25%. Entry 2939589096 of 2024-02-29 gives the enhanced perk 12.55% and 30%.",
+      "enhanced": {
+        "states": [
+          {
+            "ramp": {
+              "after": 0.125,
+              "low": 0.07005,
+              "high": 0.300375,
+              "start": -0.35,
+              "end": 1.135
+            }
+          }
+        ],
+        "source": "oracle",
+        "checked": "9.7.0.6"
+      },
+      "source": "oracle",
+      "checked": "9.7.0.6"
+    }
+  ],
+  "neutral": [
+    {
+      "reason": "The plug changes only stats, and the numbers read the stats of the copy.",
+      "source": "manifest",
+      "checked": "9.7.0.6",
+      "names": [
+        "Arrowhead Brake",
+        "Chambered Compensator",
+        "Corkscrew Rifling",
+        "Extended Barrel",
+        "Fluted Barrel",
+        "Full Bore",
+        "Hammer-Forged Rifling",
+        "Polygonal Rifling",
+        "Smallbore",
+        "Accurized Rounds",
+        "Appended Mag",
+        "Extended Mag",
+        "Flared Magwell",
+        "Light Mag",
+        "Steady Rounds",
+        "Tactical Mag",
+        "Combat Grip",
+        "Heavy Grip",
+        "Polymer Grip",
+        "Smooth Grip",
+        "Textured Grip",
+        "Composite Stock",
+        "Fitted Stock",
+        "Hand-Laid Stock",
+        "Short-Action Stock",
+        "Abundant Ammo",
+        "Bandolier"
+      ]
+    },
+    {
+      "reason": "A sight changes the zoom and the stats of the copy.",
+      "source": "manifest",
+      "checked": "9.7.0.6",
+      "types": ["Sight", "Scope"]
+    },
+    {
+      "reason": "The mod changes only stats, the zoom, the radar, the recoil, the flinch, or the time to ready, stow, or aim the weapon. Clarity describes the base mod, so the group leaves out an enhanced mod.",
+      "source": "clarity",
+      "checked": "9.7.0.6",
+      "plugTypes": ["Weapon Mod"],
+      "names": [
+        "Adept Counterbalance",
+        "Adept Handling",
+        "Adept Icarus Grip",
+        "Adept Mag",
+        "Adept Range",
+        "Adept Reload",
+        "Adept Stability",
+        "Adept Targeting",
+        "Anti-Flinch",
+        "Backup Mag",
+        "Ballistics",
+        "CQC Optics: High",
+        "CQC Optics: Low",
+        "Counterbalance Stock",
+        "Freehand Grip",
+        "Full Auto Retrofit",
+        "Icarus Grip",
+        "Marksman Optics: High",
+        "Marksman Optics: Low",
+        "Quick Access Sling",
+        "Radar Booster",
+        "Radar Tuner",
+        "Sprint Grip",
+        "Tactical",
+        "Targeting Adjuster"
+      ]
+    },
+    {
+      "reason": "The perk changes accuracy, stability, recoil, flinch, aim assistance, handling, range, zoom, movement, or the radar.",
+      "source": "manifest",
+      "checked": "9.7.0.6",
+      "names": [
+        "Air Assault",
+        "Closing Time",
+        "Dynamic Sway Reduction",
+        "Encore",
+        "Eye of the Storm",
+        "Firmly Planted",
+        "Fragile Focus",
+        "Full Auto Trigger System",
+        "Heating Up",
+        "Hip-Fire Grip",
+        "Iron Gaze",
+        "Iron Reach",
+        "Killing Wind",
+        "Lone Wolf",
+        "Moving Target",
+        "No Distractions",
+        "Offhand Strike",
+        "Opening Shot",
+        "Perfect Float",
+        "Quickdraw",
+        "Rangefinder",
+        "Shot Swap",
+        "Slickdraw",
+        "Snapshot Sights",
+        "Steady Hands",
+        "Swap Mag",
+        "Tap the Trigger",
+        "To the Pain",
+        "Tunnel Vision",
+        "Under Pressure",
+        "Well-Rounded",
+        "Zen Moment",
+        "Collective Purpose",
+        "Disaster Plan",
+        "Featherweight",
+        "Fleet Footed",
+        "Hot Swap",
+        "Loss",
+        "Nadir Focus",
+        "Paracausal Fluid",
+        "Right Hook",
+        "Roar of Battle",
+        "Search Party",
+        "Skulking Wolf",
+        "Suros Synergy",
+        "Unburied Treasure"
+      ]
+    },
+    {
+      "reason": "The magazine changes how a round flinches the target, ricochets, or overpenetrates, or it raises the damage only against the shields of combatants.",
+      "source": "manifest",
+      "checked": "9.7.0.6",
+      "names": [
+        "Armor-Piercing Rounds",
+        "High-Caliber Rounds",
+        "Ricochet Rounds",
+        "Seraph Rounds"
+      ]
+    },
+    {
+      "reason": "The perk acts on the wielder or on allies, such as ability energy, ammo meter progress, health, an overshield, or damage resistance.",
+      "source": "manifest",
+      "checked": "9.7.0.6",
+      "names": [
+        "Attrition Orbs",
+        "Collective Demolition",
+        "Collective Pugilism",
+        "Dimensional Shift",
+        "Heal Clip",
+        "Impromptu Ammunition",
+        "Lead From Light",
+        "Proximity Power",
+        "Pugilist",
+        "Recycled Energy",
+        "Repulsor Brace",
+        "Rimestealer",
+        "Strategist",
+        "Thresh",
+        "Turnabout",
+        "Unrelenting",
+        "Wellspring",
+        "Bray Inheritance",
+        "Bray Legacy",
+        "Classy Contender",
+        "Dawning Surprise",
+        "Dealer's Choice",
+        "Extrovert",
+        "Indomitability",
+        "Land Tank",
+        "Souldrinker",
+        "To Excess",
+        "Vanguard Determination",
+        "Vanguard's Vindication"
+      ]
+    },
+    {
+      "reason": "The perk acts after a final blow, at the place of the defeated target.",
+      "source": "manifest",
+      "checked": "9.7.0.6",
+      "names": ["Crystalline Corpsebloom", "Hatchling", "Headstone"]
+    },
+    {
+      "reason": "The perk acts only against combatants, and the numbers hold against a Guardian.",
+      "source": "manifest",
+      "checked": "9.7.0.6",
+      "names": ["Problem Solver", "Stunning Recovery"]
+    },
+    {
+      "reason": "The mod acts only against Champions, and the numbers hold against a Guardian. Clarity describes the base mod, so the group leaves out the enhanced mod.",
+      "source": "clarity",
+      "checked": "9.7.0.6",
+      "plugTypes": ["Weapon Mod"],
+      "names": ["Stunloader"]
+    },
+    {
+      "reason": "The mod creates an elemental pickup or an Orb of Power after final blows. Clarity describes the base mod, so the group leaves out the enhanced mod.",
+      "source": "clarity",
+      "checked": "9.7.0.6",
+      "plugTypes": ["Weapon Mod"],
+      "names": ["Synergy"]
+    },
+    {
+      "reason": "The perk acts while the weapon is stowed.",
+      "source": "manifest",
+      "checked": "9.7.0.6",
+      "names": ["Auto-Loading Holster"]
+    },
+    {
+      "reason": "The plug changes only the look of the weapon.",
+      "source": "9.0.0.1",
+      "checked": "9.7.0.6",
+      "types": ["Combat Flair"]
+    }
+  ]
+}
