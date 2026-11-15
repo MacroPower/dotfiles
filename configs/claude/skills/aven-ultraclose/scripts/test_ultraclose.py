@@ -33,9 +33,9 @@ def clean_env():
     return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
-def ultraclose(*args, cwd, env, script=SCRIPT):
-    """Run one ultraclose.py command and return its standard output."""
-    p = subprocess.run(
+def finished(*args, cwd, env, script=SCRIPT):
+    """Run one ultraclose.py command that must pass, and return its process."""
+    return subprocess.run(
         [sys.executable, str(script), *args],
         cwd=cwd,
         env=env,
@@ -43,7 +43,11 @@ def ultraclose(*args, cwd, env, script=SCRIPT):
         capture_output=True,
         text=True,
     )
-    return p.stdout
+
+
+def ultraclose(*args, cwd, env, script=SCRIPT):
+    """Run one ultraclose.py command and return its standard output."""
+    return finished(*args, cwd=cwd, env=env, script=script).stdout
 
 
 def refused(*args, cwd, env):
@@ -105,10 +109,13 @@ def launchable_repo(tmp):
 
 
 def triage(tmp, repo, env, *rows):
-    """Add one task per row to the run. Each row holds at least a ref."""
+    """Add one task per row to the run, and return the standard error.
+
+    Each row holds at least a ref.
+    """
     file = Path(tmp, "triage.json")
     file.write_text(json.dumps([{"title": "t", "files": [], **row} for row in rows]))
-    ultraclose("triage", str(file), cwd=repo, env=env)
+    return finished("triage", str(file), cwd=repo, env=env).stderr
 
 
 def state_of(run):
@@ -142,6 +149,10 @@ REF = "APP-7KQ9"
 # The shared glob of a configured run, and a file that the glob covers.
 GLOB = "*/tools/mcp/*"
 COVERED = "tools/mcp/render.go"
+# The sentence that names the glob of a file at the root of the repository.
+# The help of each --shared flag prints it, and so does each warning about
+# a shared glob that matches no file.
+ROOT_GLOB = "/README.md matches the README.md at the root of the repository"
 # The line that status prints for a run that has ended.
 ENDED = "ended: no task is pending, inflight, or approved"
 # The states of a task that keep a run from its end, and the other states.
@@ -396,6 +407,155 @@ class ConfigTest(unittest.TestCase):
                 ultraclose("config", *flags, cwd=repo, env=env)
                 started = json.loads(ultraclose("next", cwd=repo, env=env))
                 self.assertEqual([t["task"]["ref"] for t in started], want)
+
+
+def unmatched_globs(stderr):
+    """The shared globs that the warnings on a standard error name."""
+    start, end = "warning: the shared glob ", " matches no file of any task"
+    return [
+        line.removeprefix(start).removesuffix(end)
+        for line in stderr.splitlines()
+        if line.startswith(start) and line.endswith(end)
+    ]
+
+
+class SharedGlobTest(unittest.TestCase):
+    """A shared glob matches "/" plus the path of a file."""
+
+    def assert_warns(self, stderr, globs):
+        """The standard error holds one warning per glob, and then the rule."""
+        self.assertEqual(unmatched_globs(stderr), globs)
+        if globs:
+            self.assertIn(ROOT_GLOB, stderr.splitlines()[-1])
+        else:
+            self.assertEqual(stderr, "")
+
+    def test_glob_matches_slash_plus_path(self):
+        # Two tasks edit one file. They start together when the shared
+        # glob matches the file, and triage warns about the glob when it
+        # does not.
+        refs = ["APP-0001", "APP-0002"]
+        # name: (the shared glob, the file, whether the glob matches it)
+        cases = {
+            "a leading slash and the root file": ("/README.md", "README.md", True),
+            "a leading slash and a nested file": (
+                "/README.md",
+                "docs/README.md",
+                False,
+            ),
+            "a leading star and the root file": ("*/README.md", "README.md", True),
+            "a leading star and a nested file": (
+                "*/README.md",
+                "docs/README.md",
+                True,
+            ),
+            "a bare name and the root file": ("README.md", "README.md", False),
+            "a bare path and a nested file": (
+                "docs/README.md",
+                "docs/README.md",
+                False,
+            ),
+        }
+        for name, (glob, file, matched) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = launchable_repo(tmp)
+                run = str(Path(tmp, "run"))
+                ultraclose("init", "--run", run, "--shared", glob, cwd=repo, env=env)
+                stderr = triage(
+                    tmp, repo, env, *({"ref": r, "files": [file]} for r in refs)
+                )
+                self.assert_warns(stderr, [] if matched else [glob])
+                started = json.loads(ultraclose("next", cwd=repo, env=env))
+                self.assertEqual(
+                    [t["task"]["ref"] for t in started], refs if matched else refs[:1]
+                )
+
+    def test_triage_warns_about_unmatched_globs(self):
+        # name: (the init --shared globs, the files of each task of each
+        # triage, the globs that the last triage warns about)
+        cases = {
+            "no --shared flag": ([], [[["pkg/a.go"]]], []),
+            "a default glob as a flag": (["*/tests/*"], [[["pkg/a.go"]]], []),
+            "one glob of two matches no file": (
+                ["README.md", "*/docs/*"],
+                [[["docs/a.md"], ["README.md"]]],
+                ["README.md"],
+            ),
+            "two globs match no file": (
+                ["README.md", "docs/*"],
+                [[["docs/a.md", "README.md"]]],
+                ["README.md", "docs/*"],
+            ),
+            "a task without a file": (["/README.md"], [[[]]], ["/README.md"]),
+            "a file of an earlier triage": (
+                ["/README.md"],
+                [[["README.md"]], [["pkg/a.go"]]],
+                [],
+            ),
+            "a run without a task": (["README.md"], [[]], []),
+        }
+        for name, (globs, triages, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                args = ["init", "--run", str(Path(tmp, "run"))]
+                for glob in globs:
+                    args += ["--shared", glob]
+                ultraclose(*args, cwd=repo, env=env)
+                n = 0
+                for tasks in triages:
+                    rows = []
+                    for files in tasks:
+                        rows.append({"ref": f"APP-000{n}", "files": files})
+                        n += 1
+                    stderr = triage(tmp, repo, env, *rows)
+                self.assert_warns(stderr, want)
+
+    def test_config_warns_about_unmatched_glob_that_it_adds(self):
+        # The shared glob of a configured run matches no file of the task.
+        # name: (the files of the task, or None for a run without a task,
+        # the config flags, the globs that config warns about)
+        cases = {
+            "--shared adds a glob that matches no file": (
+                ["README.md"],
+                ["--shared", "README.md"],
+                ["README.md"],
+            ),
+            "--shared adds a glob that matches a file": (
+                ["README.md"],
+                ["--shared", "/README.md"],
+                [],
+            ),
+            "--shared names a glob of init": (
+                ["README.md"],
+                ["--shared", GLOB],
+                [GLOB],
+            ),
+            "--unshared removes the glob that --shared names": (
+                ["README.md"],
+                ["--shared", GLOB, "--unshared", GLOB],
+                [],
+            ),
+            "no --shared flag": (["README.md"], ["--limit", "3"], []),
+            "a run without a task": (None, ["--shared", "README.md"], []),
+        }
+        for name, (files, flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                run = Path(tmp, "run")
+                configured_run(repo, env, run)
+                if files is not None:
+                    triage(tmp, repo, env, {"ref": REF, "files": files})
+                p = finished("config", *flags, cwd=repo, env=env)
+                self.assert_warns(p.stderr, want)
+                # The standard output holds only the config.
+                self.assertEqual(json.loads(p.stdout), state_of(run)["config"])
+
+    def test_help_states_rule(self):
+        for args in (["--help"], ["init", "--help"], ["config", "--help"]):
+            with self.subTest(" ".join(args)), tempfile.TemporaryDirectory() as tmp:
+                text = ultraclose(*args, cwd=tmp, env=clean_env())
+                # The help wraps its lines at the width of the terminal.
+                self.assertIn(ROOT_GLOB, " ".join(text.split()))
 
 
 def stale(copy):

@@ -82,10 +82,15 @@ approved task. `status` then prints an `ended` line.
    unless the commit hook already runs that check. Pass
    `--health '<command>'` when the check or a commit hook requires a
    service, such as Docker. The health command is a fast command that fails
-   when the service is down, such as `docker version`. Pass
-   `--shared <glob>` for each kind of file that two running tasks may both
-   edit. Each `--shared` glob adds to the default globs, which cover test
-   files.
+   when the service is down, such as `docker version`.
+
+   Pass `--shared <glob>` for each kind of file that two running tasks may
+   both edit. Each `--shared` glob adds to the default globs, which cover
+   test files. The scheduler matches each glob against `/` plus the path
+   of a file relative to the repository, and `*` also matches `/`. So
+   `/README.md` matches the `README.md` at the root of the repository,
+   `*/README.md` matches the `README.md` of every directory, and
+   `README.md` matches no file.
 5. Write `rules.md` in the run directory. Every agent reads it, so state
    each rule as an instruction:
    - The commands that build, test, and run the full check.
@@ -118,6 +123,12 @@ approved task. `status` then prints an `ended` line.
    the hooks and pins they started with. Load the list with
    `ultraclose.py triage <file>`. The same command adds tasks later.
 
+   `triage` prints a warning for each `--shared` glob that matches no file
+   of any task. Such a glob shares no file, so two tasks that edit one
+   file still wait for each other. Replace a misspelled glob with
+   `ultraclose.py config --unshared <old> --shared <new>`. Keep a glob
+   that covers a file of a task that you have not triaged yet.
+
 ## Config
 
 `init` writes the config of a run, and the run keeps that config until you
@@ -125,9 +136,11 @@ change it. `ultraclose.py status` prints the limit, the shared globs, the
 check, and the health command. `ultraclose.py config` changes the config
 and prints the result. It takes the `--limit`, `--rounds`, `--check`,
 `--health`, `--shared`, and `--disk-floor-gb` flags of `init`, and its
-`--unshared <glob>` flag removes a shared glob. Every change applies to the
-commands that start after it, so a running Workflow and a queued landing
-keep the values that they started with.
+`--unshared <glob>` flag removes a shared glob. `config` prints the warning
+of `triage` for each glob that its `--shared` flag adds and that matches no
+file of any task. Every change applies to the commands that start after it,
+so a running Workflow and a queued landing keep the values that they
+started with.
 
 A run that you continue carries the config and the `rules.md` of the tasks
 that it started with. When you continue the run, fit both to the arguments

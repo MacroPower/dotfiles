@@ -43,6 +43,15 @@ answers. A check or a commit hook that stops the service also ends each
 landing with HEALTHFAIL, and the output then names the log of the failed
 step. When a task ends in HEALTHFAIL after the check or the commit a
 second time, read that log instead of landing the task again.
+
+A shared glob names files that two running tasks may both edit. The
+scheduler matches each glob against "/" plus the path of a file relative
+to the repository, and "*" also matches "/". So /README.md matches the
+README.md at the root of the repository, */README.md matches the
+README.md of every directory, and README.md matches no file. The triage
+command prints a warning for each glob that a --shared flag added and
+that matches no file of any task. The config command prints the same
+warning for each such glob that its --shared flag adds.
 """
 
 import argparse
@@ -75,6 +84,14 @@ DEFAULT_SHARED = [
     "*/testdata/*",
     "*/__tests__/*",
 ]
+# How a shared glob matches a file. The help of each --shared flag prints
+# the rule, and so does the warning about a glob that matches no file.
+GLOB_RULE = (
+    'A shared glob matches "/" plus the path of a file relative to the'
+    ' repository, and "*" also matches "/". So /README.md matches the'
+    " README.md at the root of the repository, */README.md matches the"
+    " README.md of every directory, and README.md matches no file."
+)
 # The Workflow script, which sits beside this file. Each run keeps a copy
 # of it under the same name.
 WORKFLOW = "close-task.js"
@@ -141,12 +158,48 @@ def branch(ref):
     return f"task/{ref}"
 
 
+def matches(glob, file):
+    """Whether a shared glob matches a file, by the rule in GLOB_RULE."""
+    return fnmatch.fnmatch("/" + file, glob)
+
+
 def locks(cfg, task):
     return {
-        f
-        for f in task["files"]
-        if not any(fnmatch.fnmatch("/" + f, g) for g in cfg["shared"])
+        f for f in task["files"] if not any(matches(g, f) for g in cfg["shared"])
     }
+
+
+def unmatched(st):
+    """The globs that a --shared flag added and that match no file of any task.
+
+    Such a glob shares no file, so two tasks that edit one file still wait
+    for each other. The result leaves out the default globs, because most
+    runs hold no file for some of them. A run without a task has no file
+    to match, so the result is empty.
+    """
+    cfg, tasks = st["config"], st["tasks"]
+    if not tasks:
+        return []
+    files = {f for t in tasks.values() for f in t["files"]}
+    return [
+        g
+        for g in cfg["shared"]
+        if g not in DEFAULT_SHARED and not any(matches(g, f) for f in files)
+    ]
+
+
+def warn_unmatched(globs):
+    """Print a warning for each shared glob that matches no file."""
+    for g in globs:
+        print(
+            f"warning: the shared glob {g} matches no file of any task",
+            file=sys.stderr,
+        )
+    if globs:
+        print(
+            f"{GLOB_RULE} To replace a glob, run config --unshared OLD --shared NEW.",
+            file=sys.stderr,
+        )
 
 
 def blockers(st, task):
@@ -315,7 +368,10 @@ def cmd_config(a):
         cfg["shared"] = [
             g for g in dict.fromkeys(cfg["shared"] + a.shared) if g not in a.unshared
         ]
+        # The triage command warns about the globs of earlier commands.
+        unused = [g for g in unmatched(st) if g in a.shared]
     print(json.dumps(cfg, indent=1, sort_keys=True))
+    warn_unmatched(unused)
 
 
 def cmd_triage(a):
@@ -348,7 +404,9 @@ def cmd_triage(a):
                     "flags": [],
                 }
                 added += 1
+        unused = unmatched(st)
     print(f"added={added} updated={updated}")
+    warn_unmatched(unused)
 
 
 def start(st, run, ref):
@@ -663,7 +721,7 @@ def main():
         "--shared",
         action="append",
         metavar="GLOB",
-        help="add a glob to the default test-file globs",
+        help=f"add a glob to the default test-file globs. {GLOB_RULE}",
     )
     s.add_argument("--disk-floor-gb", type=float, default=30)
     s.add_argument(
@@ -686,7 +744,7 @@ def main():
         action="append",
         default=[],
         metavar="GLOB",
-        help="add a glob to the shared globs",
+        help=f"add a glob to the shared globs. {GLOB_RULE}",
     )
     s.add_argument(
         "--unshared",
