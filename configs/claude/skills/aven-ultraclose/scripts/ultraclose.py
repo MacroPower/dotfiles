@@ -259,6 +259,14 @@ project that aven infers from the main checkout, and it covers every
 project when aven infers none. With --limit N, untriaged prints at most
 N rows, and the tasks that the run holds do not count toward N.
 
+The land command takes only an inflight task or an approved task. It
+sets the task to approved before the landing starts, and a failed
+landing leaves the task approved. The command refuses a task in each
+other state, because that task has no change that waits for a landing.
+Each refusal prints an error and no RESULT line, and it changes nothing.
+So a second landing of a landed task leaves the task landed, and the run
+still ends.
+
 The land command prints the failing output of a failed landing. The last
 line that a failed landing prints is the RESULT line. With --next, a
 landing with the result OK or PR runs the next command after it prints
@@ -394,6 +402,10 @@ UNFINISHED = ("pending", "inflight", "approved", "proposed")
 # waits for its pull request to merge. The base branch lacks the change
 # of each of them.
 LOCKING = ("inflight", "approved", "proposed")
+# The states of a task that the land command takes. An inflight task has
+# the change that its agents wrote, and an approved task waits for its
+# landing. No task in another state has a change that waits for a landing.
+LANDABLE = ("inflight", "approved")
 PRIORITY = {"urgent": 0, "high": 1, "medium": 2, "low": 3, "none": 4}
 # The aven statuses of an open task.
 AVEN_OPEN = ("inbox", "backlog", "todo", "active")
@@ -2150,6 +2162,31 @@ def cmd_land(a):
                 " Record the merge with the merged command. To change the"
                 " pull request, relaunch the task with the args command, and"
                 " land it after its review"
+            )
+        # A landing that fails leaves its task approved. An approved task
+        # keeps its file locks and keeps the run from its end. So the
+        # command refuses each task that has no change to land before it
+        # sets the state.
+        if t["state"] not in LANDABLE:
+            # Each error says what a task in its state needs. A relaunch
+            # reopens a landed or a closed task, so only the error for a
+            # noted task names the args command.
+            hint = {
+                "pending": (
+                    "The next command starts the task, and the landing follows"
+                    " its review"
+                ),
+                "noted": (
+                    "To make a new attempt at the task, relaunch it with the"
+                    " args command, and land it after its review"
+                ),
+                "landed": "A landed task does not need a landing or a relaunch",
+                "closed": "A closed task does not need a landing or a relaunch",
+            }[t["state"]]
+            die(
+                f"{ref} is {t['state']}, so it has no change that waits for a"
+                " landing. The land command takes only an inflight task or an"
+                f" approved task, and it changed nothing. {hint}"
             )
         # A task that waits for its landing frees its slot and keeps its
         # file locks.

@@ -5046,6 +5046,125 @@ class LandTest(LandCase):
                 self.assert_landed(repo, env, (p.returncode, output.splitlines()))
 
 
+class LandableTest(LandCase):
+    """The land command takes only an inflight task or an approved task.
+
+    A landing sets its task to approved. An approved task keeps its file
+    locks and keeps the run from its end. So the command refuses a task
+    in each other state before it changes the run. PullRequestTest covers
+    the proposed task.
+    """
+
+    # The text of each action that the error of a refusal can name. Each
+    # error names one of them.
+    ACTIONS = (
+        "next command",
+        "args command",
+        "does not need a landing or a relaunch",
+    )
+
+    def actions(self, message):
+        """Return each text of ACTIONS that the error message holds."""
+        return [action for action in self.ACTIONS if action in message]
+
+    def refusal(self, tmp, repo, env, ref, *flags):
+        """Land a task that the land command refuses, and return the error.
+
+        The flags go to the land command. The refusal prints no RESULT
+        line. It leaves the state of the run and the base branch as they
+        are.
+        """
+        run = Path(tmp, "run")
+        before = state_of(run), git("rev-parse", "HEAD", cwd=repo, env=env)
+        p = subprocess.run(
+            [sys.executable, str(SCRIPT), "land", ref, *flags],
+            cwd=repo,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual((p.returncode, p.stdout), (1, ""), p.stderr)
+        after = state_of(run), git("rev-parse", "HEAD", cwd=repo, env=env)
+        self.assertEqual(after, before)
+        self.assertEqual(git("status", "--porcelain", cwd=repo, env=env), "")
+        return p.stderr
+
+    def test_second_landing_leaves_task_landed(self):
+        # The first landing removed the worktree, so a second landing has
+        # no change to land.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            self.assert_landed(repo, env, self.land(repo, env))
+            message = self.refusal(tmp, repo, env, REF)
+            self.assertIn(f"{REF} is landed", message)
+            self.assertIn("only an inflight task or an approved task", message)
+            # A relaunch with the args command reopens the task, so the
+            # error does not name the args command.
+            self.assertNotIn("args command", message)
+            self.assertEqual(
+                self.actions(message), ["does not need a landing or a relaunch"]
+            )
+            # The run still counts its task as landed, and it has ended.
+            lines = ultraclose("status", cwd=repo, env=env).splitlines()
+            self.assertIn(ENDED, lines)
+            self.assertFalse([line for line in lines if line.startswith("approved ")])
+            self.assertEqual(self.task_states(tmp), {REF: "landed"})
+
+    def test_task_without_change_to_land_takes_no_landing(self):
+        # The run holds the task of start_task and a second task, which
+        # waits for that task. name: (the task, its state, whether the
+        # worktree of the task holds a file that git does not track, the
+        # action that the error names)
+        cases = {
+            "a pending task": (self.OTHER, "pending", False, "next command"),
+            "a noted task": (REF, "noted", False, "args command"),
+            "a noted task that keeps its worktree": (
+                REF,
+                "noted",
+                True,
+                "args command",
+            ),
+            "a closed task": (
+                REF,
+                "closed",
+                False,
+                "does not need a landing or a relaunch",
+            ),
+        }
+        for name, (ref, task_state, kept, action) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                self.add_other(tmp, repo, env, after=[REF])
+                wt = Path(repo, ".claude", "worktrees", f"t-{REF}")
+                if kept:
+                    Path(wt, "probe.txt").write_text("probe\n")
+                if ref == REF:
+                    ultraclose("set", REF, task_state, cwd=repo, env=env)
+                    self.assertEqual(wt.exists(), kept)
+                self.assertEqual(self.task_states(tmp)[ref], task_state)
+                message = self.refusal(tmp, repo, env, ref, "--next")
+                self.assertIn(f"{ref} is {task_state}", message)
+                self.assertEqual(self.actions(message), [action])
+                # The refused landing did not run next. The second task
+                # can start after the run closes the first task, and the
+                # next command then starts it.
+                started = [self.OTHER] if task_state == "closed" else []
+                self.assertEqual(self.next_refs(repo, env), started)
+
+    def test_approved_task_takes_another_landing(self):
+        # The check fails one time, so the first landing leaves the task
+        # approved.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(
+                tmp, "--check", 'test -e "$RAN" || { touch "$RAN"; exit 1; }'
+            )
+            self.assert_failed(repo, env, self.land(repo, env), "CHECKFAIL")
+            self.assertEqual(self.task_states(tmp), {REF: "approved"})
+            self.assert_landed(repo, env, self.land(repo, env))
+            self.assertEqual(self.task_states(tmp), {REF: "landed"})
+
+
 # A branch that a run lands on in place of main.
 RELEASE = "release/v1"
 # The branch that a landing names for the pull request of the task of

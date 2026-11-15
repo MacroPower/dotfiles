@@ -865,6 +865,14 @@ records no commit on the base branch. So it never prints `DIRTY`,
 `NOTBASE`, `TREEMISMATCH`, `POSTDIRTY`, `COMMITFAIL`, or `COMMITTIMEOUT`.
 Its `CONFLICT` comes from the merge of the base branch into the worktree.
 
+`ultraclose.py land` takes only an inflight or an approved task. For a task
+in another state, it prints an error that names the state, and it prints no
+`RESULT` line. The command then changes nothing, and it does not run `next`.
+So a second landing of a landed task leaves the task landed. Take no action
+for a landed or a closed task. Every noted task takes a landing only after
+you relaunch it with `ultraclose.py args <ref>` and its Workflow ends
+`approved` or `landable`.
+
 To sync a task, relaunch it with
 `ultraclose.py args <ref> --sync '<reason and failing output>'`. A sync
 agent merges and adapts, and a reviewer checks the merge. Land again after
