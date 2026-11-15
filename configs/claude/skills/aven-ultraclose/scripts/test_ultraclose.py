@@ -46,6 +46,109 @@ def ultraclose(*args, cwd, env, script=SCRIPT):
     return p.stdout
 
 
+def refused(*args, cwd, env):
+    """Run one ultraclose.py command that must fail, and return its message."""
+    p = subprocess.run(
+        [sys.executable, str(SCRIPT), *args],
+        cwd=cwd,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if not p.returncode:
+        raise AssertionError(f"ultraclose.py {' '.join(args)} passed:\n{p.stdout}")
+    return p.stderr
+
+
+def new_repo(tmp):
+    """Create an empty repository, and return it with a clean environment."""
+    repo, env = Path(tmp, "repo"), clean_env()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], env=env, check=True)
+    return repo, env
+
+
+def launchable_repo(tmp):
+    """Create a repository whose tasks can start, and return it with its env.
+
+    The repository has one commit, so a task branch can start from it.
+    A stub stands in for aven, which a task start calls.
+    """
+    repo, env = new_repo(tmp)
+    bin_dir = Path(tmp, "bin")
+    bin_dir.mkdir()
+    aven = bin_dir / "aven"
+    aven.write_text("#!/bin/sh\necho stub\n")
+    aven.chmod(0o755)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--no-verify",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
+        cwd=repo,
+        env=env,
+        check=True,
+    )
+    return repo, env
+
+
+def triage(tmp, repo, env, *rows):
+    """Add one task per row to the run. Each row holds at least a ref."""
+    file = Path(tmp, "triage.json")
+    file.write_text(json.dumps([{"title": "t", "files": [], **row} for row in rows]))
+    ultraclose("triage", str(file), cwd=repo, env=env)
+
+
+def state_of(run):
+    """The config and the tasks that a run directory holds."""
+    return json.loads((run / "state.json").read_text())
+
+
+def configured_run(repo, env, run):
+    """Start a run that sets each config value that a batch inherits.
+
+    The run sets a limit, a check, a health command, and a shared glob.
+    """
+    ultraclose(
+        "init",
+        "--run",
+        str(run),
+        "--limit",
+        "8",
+        "--check",
+        "sh check.sh",
+        "--health",
+        "docker version",
+        "--shared",
+        GLOB,
+        cwd=repo,
+        env=env,
+    )
+
+
+REF = "APP-7KQ9"
+# The shared glob of a configured run, and a file that the glob covers.
+GLOB = "*/tools/mcp/*"
+COVERED = "tools/mcp/render.go"
+# The line that status prints for a run that has ended.
+ENDED = "ended: no task is pending, inflight, or approved"
+# The states of a task that keep a run from its end, and the other states.
+UNFINISHED = ("pending", "inflight", "approved")
+FINISHED = ("landed", "noted", "closed")
+
+
 class InitTest(unittest.TestCase):
     def test_shared(self):
         cases = {
@@ -65,19 +168,234 @@ class InitTest(unittest.TestCase):
         }
         for name, (flags, want) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
-                repo, run = Path(tmp, "repo"), Path(tmp, "run")
-                env = clean_env()
-                subprocess.run(
-                    ["git", "init", "-q", "-b", "main", str(repo)],
-                    env=env,
-                    check=True,
-                )
+                repo, env = new_repo(tmp)
+                run = Path(tmp, "run")
                 args = ["init", "--run", str(run)]
                 for glob in flags:
                     args += ["--shared", glob]
                 ultraclose(*args, cwd=repo, env=env)
-                cfg = json.loads((run / "state.json").read_text())["config"]
-                self.assertEqual(cfg["shared"], want)
+                self.assertEqual(state_of(run)["config"]["shared"], want)
+
+    def first_run(self, tmp, task_state=None):
+        """Start a configured run, and return the repo, the env, and the run.
+
+        The run holds one task in the given state, or no task.
+        """
+        repo, env = new_repo(tmp)
+        run = Path(tmp, "first").resolve()
+        configured_run(repo, env, run)
+        if task_state:
+            triage(tmp, repo, env, {"ref": REF})
+            ultraclose("set", REF, task_state, cwd=repo, env=env)
+        return repo, env, run
+
+    def test_replaces_ended_run(self):
+        # name: (the state of the task of the first run, the flags of the
+        # second init)
+        cases = {"a run with no task": (None, [])}
+        cases |= {f"a run with one {s} task": (s, []) for s in FINISHED}
+        cases |= {f"--force and one {s} task": (s, ["--force"]) for s in UNFINISHED}
+        for name, (task_state, flags) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = self.first_run(tmp, task_state)
+                before = state_of(first)
+                second = Path(tmp, "second").resolve()
+                out = ultraclose(
+                    "init", "--run", str(second), *flags, cwd=repo, env=env
+                )
+                self.assertIn(f"replaced the run at {first}\n", out)
+                # The new run takes no task and no config from the first run.
+                state = state_of(second)
+                self.assertEqual(state["tasks"], {})
+                keys = ("limit", "check", "health", "shared")
+                self.assertEqual(
+                    {k: state["config"][k] for k in keys},
+                    {"limit": 5, "check": "", "health": "", "shared": DEFAULT_SHARED},
+                )
+                status = ultraclose("status", cwd=repo, env=env)
+                self.assertEqual(status.splitlines()[0], f"run={second}")
+                self.assertEqual(state_of(first), before)
+
+    def test_keeps_run_that_has_not_ended(self):
+        for task_state in UNFINISHED:
+            with self.subTest(task_state), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = self.first_run(tmp, task_state)
+                before = state_of(first)
+                second = Path(tmp, "second")
+                message = refused("init", "--run", str(second), cwd=repo, env=env)
+                self.assertIn(f"the run at {first} has not ended", message)
+                self.assertFalse(second.exists())
+                status = ultraclose("status", cwd=repo, env=env)
+                self.assertEqual(status.splitlines()[0], f"run={first}")
+                self.assertEqual(state_of(first), before)
+
+    def test_refuses_directory_of_earlier_run(self):
+        # The repository names the second run, and the first run is older.
+        cases = {
+            "the run that the repository names": ("second", []),
+            "the same run with --force": ("second", ["--force"]),
+            "an older run": ("first", []),
+        }
+        for name, (directory, flags) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = self.first_run(tmp)
+                second = Path(tmp, "second").resolve()
+                ultraclose(
+                    "init", "--run", str(second), "--limit", "9", cwd=repo, env=env
+                )
+                runs = {"first": first, "second": second}
+                before = {n: state_of(r) for n, r in runs.items()}
+                message = refused(
+                    "init", "--run", str(runs[directory]), *flags, cwd=repo, env=env
+                )
+                self.assertIn(f"{runs[directory]} holds an earlier run", message)
+                status = ultraclose("status", cwd=repo, env=env)
+                self.assertEqual(status.splitlines()[0], f"run={second}")
+                self.assertEqual({n: state_of(r) for n, r in runs.items()}, before)
+
+
+class StatusTest(unittest.TestCase):
+    """The status command shows what a later batch of tasks inherits."""
+
+    def test_prints_config(self):
+        # name: (the init flags, the shared globs, the check, the health
+        # command)
+        cases = {
+            "the defaults": ([], DEFAULT_SHARED, "none", "none"),
+            "a shared glob, a check, and a health command": (
+                ["--shared", GLOB, "--check", "sh check.sh", "--health", "true"],
+                DEFAULT_SHARED + [GLOB],
+                "sh check.sh",
+                "true",
+            ),
+        }
+        for name, (flags, shared, check, health) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                ultraclose(
+                    "init", "--run", str(Path(tmp, "run")), *flags, cwd=repo, env=env
+                )
+                lines = ultraclose("status", cwd=repo, env=env).splitlines()
+                self.assertIn(f"shared: {' '.join(shared)}", lines)
+                self.assertIn(f"check: {check}", lines)
+                self.assertIn(f"health: {health}", lines)
+
+    def test_state_without_health_key(self):
+        # A run can continue from a state file that init wrote without
+        # the health key.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            st = state_of(run)
+            del st["config"]["health"]
+            (run / "state.json").write_text(json.dumps(st))
+            lines = ultraclose("status", cwd=repo, env=env).splitlines()
+            self.assertIn("health: none", lines)
+
+    def test_marks_ended_run(self):
+        # name: (the state of each task, whether status marks the run)
+        cases = {"no task": ([], True)}
+        cases |= {f"one {s} task": ([s], True) for s in FINISHED}
+        cases |= {f"one {s} task": ([s], False) for s in UNFINISHED}
+        cases |= {
+            f"a landed task and one {s} task": (["landed", s], False)
+            for s in UNFINISHED
+        }
+        for name, (task_states, ended) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+                refs = [f"APP-000{n}" for n in range(len(task_states))]
+                if refs:
+                    triage(tmp, repo, env, *({"ref": ref} for ref in refs))
+                for ref, task_state in zip(refs, task_states):
+                    ultraclose("set", ref, task_state, cwd=repo, env=env)
+                lines = ultraclose("status", cwd=repo, env=env).splitlines()
+                self.assertEqual(ENDED in lines, ended)
+
+
+class ConfigTest(unittest.TestCase):
+    """The config command changes a run after init."""
+
+    def test_changes_config(self):
+        shared = DEFAULT_SHARED + [GLOB]
+        # name: (the flags, the config values that change)
+        cases = {
+            "no flag": ([], {}),
+            "--limit": (["--limit", "10"], {"limit": 10}),
+            "--rounds": (["--rounds", "4"], {"rounds": 4}),
+            "--check": (["--check", "sh other.sh"], {"check": "sh other.sh"}),
+            "an empty --check": (["--check", ""], {"check": ""}),
+            "--health": (["--health", "true"], {"health": "true"}),
+            "an empty --health": (["--health", ""], {"health": ""}),
+            "--disk-floor-gb": (["--disk-floor-gb", "12.5"], {"diskFloorGb": 12.5}),
+            "--shared adds a glob": (
+                ["--shared", "*/main.go"],
+                {"shared": shared + ["*/main.go"]},
+            ),
+            "--shared keeps one copy of a glob": (["--shared", GLOB], {}),
+            "--unshared removes an init glob": (
+                ["--unshared", GLOB],
+                {"shared": DEFAULT_SHARED},
+            ),
+            "--unshared removes a default glob": (
+                ["--unshared", "*/tests/*"],
+                {"shared": [g for g in shared if g != "*/tests/*"]},
+            ),
+            "several flags": (
+                ["--limit", "10", "--shared", "*/main.go", "--unshared", GLOB],
+                {"limit": 10, "shared": DEFAULT_SHARED + ["*/main.go"]},
+            ),
+        }
+        for name, (flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                run = Path(tmp, "run")
+                configured_run(repo, env, run)
+                triage(tmp, repo, env, {"ref": REF})
+                before = state_of(run)
+                printed = json.loads(ultraclose("config", *flags, cwd=repo, env=env))
+                after = state_of(run)
+                self.assertEqual(after["config"], {**before["config"], **want})
+                self.assertEqual(printed, after["config"])
+                self.assertEqual(after["tasks"], before["tasks"])
+
+    def test_refuses_to_remove_absent_glob(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            run = Path(tmp, "run")
+            configured_run(repo, env, run)
+            before = state_of(run)
+            message = refused(
+                "config",
+                "--limit",
+                "10",
+                "--unshared",
+                "*/absent/*",
+                cwd=repo,
+                env=env,
+            )
+            self.assertIn("no shared glob */absent/*", message)
+            # The command changes nothing when it refuses one flag.
+            self.assertEqual(state_of(run), before)
+
+    def test_next_follows_shared_globs(self):
+        # Two tasks edit one file, and the shared glob of the run covers it.
+        refs = ["APP-0001", "APP-0002"]
+        # name: (the config flags, the tasks that next starts)
+        cases = {
+            "the run keeps the glob": ([], refs),
+            "config removes the glob": (["--unshared", GLOB], refs[:1]),
+        }
+        for name, (flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = launchable_repo(tmp)
+                configured_run(repo, env, Path(tmp, "run"))
+                triage(tmp, repo, env, *({"ref": r, "files": [COVERED]} for r in refs))
+                ultraclose("config", *flags, cwd=repo, env=env)
+                started = json.loads(ultraclose("next", cwd=repo, env=env))
+                self.assertEqual([t["task"]["ref"] for t in started], want)
 
 
 def stale(copy):
@@ -96,48 +414,11 @@ def symlinked(copy):
 class WorkflowCopyTest(unittest.TestCase):
     """The run directory holds a copy of close-task.js that Workflow loads."""
 
-    REF = "APP-7KQ9"
-
     def start_run(self, tmp):
-        """Start a run with one pending task, and return the repo and the env.
-
-        The repository has one commit, so a task branch can start from it.
-        A stub stands in for aven, which a task start calls.
-        """
-        repo, run, bin_dir = Path(tmp, "repo"), Path(tmp, "run"), Path(tmp, "bin")
-        bin_dir.mkdir()
-        aven = bin_dir / "aven"
-        aven.write_text("#!/bin/sh\necho stub\n")
-        aven.chmod(0o755)
-        env = clean_env()
-        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
-        subprocess.run(
-            ["git", "init", "-q", "-b", "main", str(repo)], env=env, check=True
-        )
-        subprocess.run(
-            [
-                "git",
-                "-c",
-                "user.name=test",
-                "-c",
-                "user.email=test@example.com",
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "-q",
-                "--no-verify",
-                "--allow-empty",
-                "-m",
-                "init",
-            ],
-            cwd=repo,
-            env=env,
-            check=True,
-        )
-        ultraclose("init", "--run", str(run), cwd=repo, env=env)
-        triage = Path(tmp, "triage.json")
-        triage.write_text(json.dumps([{"ref": self.REF, "title": "t", "files": []}]))
-        ultraclose("triage", str(triage), cwd=repo, env=env)
+        """Start a run with one pending task, and return the repo and the env."""
+        repo, env = launchable_repo(tmp)
+        ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+        triage(tmp, repo, env, {"ref": REF})
         return repo, env
 
     def assert_loadable(self, copy):
@@ -170,13 +451,8 @@ class WorkflowCopyTest(unittest.TestCase):
         }
         for name, layout in layouts.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
-                repo, run = Path(tmp, "repo"), Path(tmp, "run")
-                env = clean_env()
-                subprocess.run(
-                    ["git", "init", "-q", "-b", "main", str(repo)],
-                    env=env,
-                    check=True,
-                )
+                repo, env = new_repo(tmp)
+                run = Path(tmp, "run")
                 script = layout(tmp)
                 ultraclose("init", "--run", str(run), cwd=repo, env=env, script=script)
                 self.assert_loadable(run / "close-task.js")
@@ -185,7 +461,7 @@ class WorkflowCopyTest(unittest.TestCase):
         # Each command prints the Workflow input of the pending task.
         commands = {
             "next": (["next"], lambda out: json.loads(out)[0]),
-            "args": (["args", self.REF], json.loads),
+            "args": (["args", REF], json.loads),
         }
         damages = {
             "a missing copy": Path.unlink,
@@ -207,7 +483,7 @@ class WorkflowCopyTest(unittest.TestCase):
 
     def test_launch_keeps_loadable_copy(self):
         # Workflow refuses a script that a command replaces during the load.
-        commands = {"next": ["next"], "args": ["args", self.REF]}
+        commands = {"next": ["next"], "args": ["args", REF]}
         for command, args in commands.items():
             with self.subTest(command), tempfile.TemporaryDirectory() as tmp:
                 repo, env = self.start_run(tmp)
@@ -224,7 +500,6 @@ class WorkflowCopyTest(unittest.TestCase):
 class LandTest(unittest.TestCase):
     """A landing prints its result last and tells a down service from a fault."""
 
-    REF = "APP-7KQ9"
     SUBJECT = "feat: add a file"
     # The engine file stands in for a service that the check and the
     # commit hook require. The environment of the test names the file.
@@ -264,9 +539,7 @@ class LandTest(unittest.TestCase):
         self.git("init", "-q", "-b", "main", str(repo), cwd=tmp, env=env)
         self.git("commit", "-q", "--allow-empty", "-m", "init", cwd=repo, env=env)
         ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
-        triage = Path(tmp, "triage.json")
-        triage.write_text(json.dumps([{"ref": self.REF, "title": "t", "files": []}]))
-        ultraclose("triage", str(triage), cwd=repo, env=env)
+        triage(tmp, repo, env, {"ref": REF})
         task = json.loads(ultraclose("next", cwd=repo, env=env))[0]["task"]
         Path(task["wt"], "a.txt").write_text("a\n")
         self.git("add", "-A", cwd=task["wt"], env=env)
@@ -288,7 +561,7 @@ class LandTest(unittest.TestCase):
     def land(self, repo, env):
         """Land the task. Return the exit status and the printed lines."""
         p = subprocess.run(
-            [sys.executable, str(SCRIPT), "land", self.REF],
+            [sys.executable, str(SCRIPT), "land", REF],
             cwd=repo,
             env=env,
             check=False,
@@ -301,14 +574,14 @@ class LandTest(unittest.TestCase):
         """The landing printed the result last and left the base branch alone."""
         status, lines = landing
         self.assertEqual(status, 2, lines)
-        self.assertEqual(lines[-1], f"RESULT {self.REF} {result}")
+        self.assertEqual(lines[-1], f"RESULT {REF} {result}")
         self.assertEqual(self.git("log", "--format=%s", cwd=repo, env=env), "init")
         self.assertEqual(self.git("status", "--porcelain", cwd=repo, env=env), "")
 
     def assert_landed(self, repo, env, landing):
         status, lines = landing
         self.assertEqual(status, 0, lines)
-        self.assertTrue(lines[-1].startswith(f"RESULT {self.REF} OK "), lines)
+        self.assertTrue(lines[-1].startswith(f"RESULT {REF} OK "), lines)
         self.assertEqual(
             self.git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
         )
@@ -421,6 +694,27 @@ class LandTest(unittest.TestCase):
             # The task did not change. The service runs again.
             Path(env["ENGINE"]).touch()
             self.assert_landed(repo, env, self.land(repo, env))
+
+    def test_config_changes_health(self):
+        # The service is down. name: (the init flags, the config flags,
+        # whether the landing ends in HEALTHFAIL)
+        cases = {
+            "config sets a health command": ([], ["--health", self.HEALTH], True),
+            "config removes the health command": (
+                ["--health", self.HEALTH],
+                ["--health", ""],
+                False,
+            ),
+        }
+        for name, (flags, config, fails) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, *flags)
+                ultraclose("config", *config, cwd=repo, env=env)
+                landing = self.land(repo, env)
+                if fails:
+                    self.assert_failed(repo, env, landing, "HEALTHFAIL")
+                else:
+                    self.assert_landed(repo, env, landing)
 
     def test_state_without_health_key(self):
         # A run can continue from a state file that init wrote without
@@ -549,12 +843,10 @@ class WorkflowResultTest(unittest.TestCase):
     over the agents of one launch.
     """
 
-    REF = "APP-7KQ9"
-
     def label(self, short):
         """Turn a short label such as "fix r1" into the label of the script."""
         kind, _, rest = short.partition(" ")
-        return f"{kind} {self.REF} {rest}".strip()
+        return f"{kind} {REF} {rest}".strip()
 
     def run_workflow(self, agents, rounds=6, resume=None):
         """Run close-task.js with scripted agents.
@@ -564,10 +856,10 @@ class WorkflowResultTest(unittest.TestCase):
         the result of the script and each agent call by short label.
         """
         task = {
-            "ref": self.REF,
+            "ref": REF,
             "title": "t",
             "wt": "/repo/wt",
-            "dir": f"/run/tasks/{self.REF}",
+            "dir": f"/run/tasks/{REF}",
         }
         if resume:
             task["resume"] = resume

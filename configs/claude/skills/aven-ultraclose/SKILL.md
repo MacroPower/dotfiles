@@ -57,24 +57,35 @@ Every epic stays open while one of its children is open. Set an epic to
 `done` when its last child lands.
 
 The run ends when `ultraclose.py status` counts no pending, inflight, or
-approved task.
+approved task. `status` then prints an `ended` line.
 
 ## Setup
 
-1. Run `ultraclose.py status`. If it reports a run, continue that run and
-   skip the rest of the setup.
+1. Run `ultraclose.py status`, and act on what it reports:
+   - **No run:** do the rest of the setup.
+   - **A run with an `ended` line:** do the rest of the setup, which
+     starts a new run. The arguments ask for a new batch of tasks. Do not
+     copy the limit, the check, the health command, the shared globs, or the
+     `rules.md` of the ended run. They fit the tasks that it closed.
+   - **A run without an `ended` line:** continue that run, and skip the
+     rest of the setup. First fit the run to the arguments and to the
+     open tasks that are not in it, as the Config section says.
 2. Confirm that the main checkout is clean and on the base branch.
 3. Find how the project builds, tests, and checks itself, and what its
    commit hooks run. Read CLAUDE.md, the task runner config, and
    `git log -15`.
-4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`. Pass
-   `--check '<command>'` with the full check of the project, unless the
-   commit hook already runs that check. Pass `--health '<command>'` when the
-   check or a commit hook requires a service, such as Docker. The health
-   command is a fast command that fails when the service is down, such as
-   `docker version`. Pass `--shared <glob>` for each kind of file that two
-   running tasks may both edit. Each `--shared` glob adds to the default
-   globs, which cover test files.
+4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`. If
+   that directory holds an earlier run, pass a new directory, such as
+   `<scratchpad>/ultraclose-2`. `init` refuses the directory of an earlier
+   run, so the new run starts without the `rules.md` and the `notes.md` of
+   that run. Pass `--check '<command>'` with the full check of the project,
+   unless the commit hook already runs that check. Pass
+   `--health '<command>'` when the check or a commit hook requires a
+   service, such as Docker. The health command is a fast command that fails
+   when the service is down, such as `docker version`. Pass
+   `--shared <glob>` for each kind of file that two running tasks may both
+   edit. Each `--shared` glob adds to the default globs, which cover test
+   files.
 5. Write `rules.md` in the run directory. Every agent reads it, so state
    each rule as an instruction:
    - The commands that build, test, and run the full check.
@@ -106,6 +117,33 @@ approved task.
    task runs alone after the other tasks, so that the other landings keep
    the hooks and pins they started with. Load the list with
    `ultraclose.py triage <file>`. The same command adds tasks later.
+
+## Config
+
+`init` writes the config of a run, and the run keeps that config until you
+change it. `ultraclose.py status` prints the limit, the shared globs, the
+check, and the health command. `ultraclose.py config` changes the config
+and prints the result. It takes the `--limit`, `--rounds`, `--check`,
+`--health`, `--shared`, and `--disk-floor-gb` flags of `init`, and its
+`--unshared <glob>` flag removes a shared glob. Every change applies to the
+commands that start after it, so a running Workflow and a queued landing
+keep the values that they started with.
+
+A run that you continue carries the config and the `rules.md` of the tasks
+that it started with. When you continue the run, fit both to the arguments
+and to the open tasks that are not in the run:
+
+- If the arguments hold a number, set the limit to it.
+- Remove each shared glob that covers files that two of those tasks must
+  not edit at the same time, such as the source files of one module.
+  `next` starts such tasks together, and a landing returns `CONFLICT` when
+  both tasks changed the same lines.
+- Change the check when it skips a part of the repository that those tasks
+  change. When the new check requires a service that the health command
+  does not test, change the health command as well.
+- Rewrite each rule in `rules.md` that the landed tasks made false, such as
+  the layout of a module that they split. Remove each exception that the
+  run made for one of them.
 
 ## Loop
 
@@ -188,11 +226,11 @@ notes.
 
 ## Caps
 
-The Workflow caps each task at 6 review rounds, and `init --rounds` changes
-the cap. At the cap it runs one final cycle. In that cycle, a fixer applies
-only the exact fixes of the open findings, and a reviewer checks only those
-fixes. If findings remain, the reviewer decides between `landable` and
-`unconverged`.
+The Workflow caps each task at 6 review rounds, and the `--rounds` flag of
+`init` or `config` changes the cap. At the cap it runs one final cycle. In
+that cycle, a fixer applies only the exact fixes of the open findings, and
+a reviewer checks only those fixes. If findings remain, the reviewer
+decides between `landable` and `unconverged`.
 
 Agents must not learn the cap, because an agent that knows it rushes or
 softens its work near it. The Workflow prompts never state the cap or say

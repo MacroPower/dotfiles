@@ -11,8 +11,16 @@ directory of this script into the run directory. Pass that copy to the
 Workflow tool as scriptPath. The tool refuses the script in the skill
 directory after Nix store optimisation hard-links it.
 
+A run ends when no task is pending, inflight, or approved. The init
+command replaces a run that has ended, and with --force it replaces a run
+that has not. Each run takes a directory of its own, so init refuses a
+directory that holds an earlier run.
+
   init --run DIR [--limit N] [--rounds N] [--check CMD] [--health CMD]
        [--shared GLOB]... [--disk-floor-gb N] [--force]
+  config [--limit N] [--rounds N] [--check CMD] [--health CMD]
+       [--shared GLOB]... [--unshared GLOB]... [--disk-floor-gb N]
+                         change the config of the run, then print it
   triage FILE            add or update tasks from a JSON list
   next                   start one task per free slot, print each Workflow input
   args REF [--round N] [--final] [--sync REASON]
@@ -25,16 +33,16 @@ directory after Nix store optimisation hard-links it.
 The land command prints the failing output of a failed landing. The last
 line that it prints is the RESULT line.
 
-The health command of init --health is a fast command that fails when a
-service that the check or a commit hook requires is down. A landing runs
-it in the main checkout before the merge, and again after a failed check
-or a failed commit. A failed health command ends the landing with the
-result HEALTHFAIL. The failure does not show that the task needs a change,
-so land it again after the service answers. A check or a commit hook that
-stops the service also ends each landing with HEALTHFAIL, and the output
-then names the log of the failed step. When a task ends in HEALTHFAIL after
-the check or the commit a second time, read that log instead of landing the
-task again.
+The health command of init --health and config --health is a fast
+command that fails when a service that the check or a commit hook
+requires is down. A landing runs it in the main checkout before the
+merge, and again after a failed check or a failed commit. A failed health
+command ends the landing with the result HEALTHFAIL. The failure does not
+show that the task needs a change, so land it again after the service
+answers. A check or a commit hook that stops the service also ends each
+landing with HEALTHFAIL, and the output then names the log of the failed
+step. When a task ends in HEALTHFAIL after the check or the commit a
+second time, read that log instead of landing the task again.
 """
 
 import argparse
@@ -51,11 +59,13 @@ from pathlib import Path
 
 STATES = ("pending", "inflight", "approved", "landed", "noted", "closed")
 SETTLED = ("landed", "closed")
+UNFINISHED = ("pending", "inflight", "approved")
 PRIORITY = {"urgent": 0, "high": 1, "medium": 2, "low": 3, "none": 4}
 # Files that match a shared glob hold no lock, so two running tasks may
 # both edit them. The scheduler matches each glob against "/" plus the
-# path relative to the repository. The run config holds these globs
-# plus the glob of each init --shared flag.
+# path relative to the repository. The run config starts with these
+# globs plus the glob of each init --shared flag, and the config command
+# adds and removes globs.
 DEFAULT_SHARED = [
     "*_test.*",
     "*/test_*",
@@ -145,6 +155,11 @@ def blockers(st, task):
     return [a for a in task["after"] if a in tasks and tasks[a]["state"] not in SETTLED]
 
 
+def ended(tasks):
+    """A run ends when it holds no unfinished task."""
+    return not any(t["state"] in UNFINISHED for t in tasks.values())
+
+
 def pick(st):
     cfg, tasks = st["config"], st["tasks"]
     busy = [r for r, t in tasks.items() if t["state"] in ("inflight", "approved")]
@@ -152,8 +167,7 @@ def pick(st):
     held = set().union(*(locks(cfg, tasks[r]) for r in busy)) if busy else set()
     last_busy = any(tasks[r]["last"] for r in busy)
     others_open = any(
-        not t["last"] and t["state"] in ("pending", "inflight", "approved")
-        for t in tasks.values()
+        not t["last"] and t["state"] in UNFINISHED for t in tasks.values()
     )
     pending = sorted(
         (r for r, t in tasks.items() if t["state"] == "pending"),
@@ -231,12 +245,25 @@ def cmd_init(a):
     repo = main_checkout()
     old = sh("git", "config", "--get", "ultraclose.run", cwd=repo, check=False)
     old = old.stdout.strip()
-    if old and Path(old, "state.json").exists() and not a.force:
-        die(f"a run exists at {old}. Continue it, or pass --force to start over")
+    replaces = bool(old) and Path(old, "state.json").exists()
+    if replaces and not a.force:
+        tasks = json.loads(Path(old, "state.json").read_text())["tasks"]
+        if not ended(tasks):
+            die(
+                f"the run at {old} has not ended. Continue it, or pass --force"
+                " and a new run directory to replace it"
+            )
     base = out("git", "branch", "--show-current", cwd=repo)
     if not base:
         die("the main checkout has a detached HEAD")
     run = Path(a.run).resolve()
+    # The directory of an earlier run holds its rules.md, its notes.md,
+    # and the history of its tasks, and the new run must not inherit them.
+    if (run / "state.json").exists():
+        die(
+            f"{run} holds an earlier run, and each run takes a directory of"
+            " its own. Pass a new directory"
+        )
     for d in (run, run / "tasks", run / "logs"):
         d.mkdir(parents=True, exist_ok=True)
     install_workflow(run)
@@ -262,7 +289,33 @@ def cmd_init(a):
     }
     (run / "state.json").write_text(json.dumps({"config": cfg, "tasks": {}}))
     sh("git", "config", "--local", "ultraclose.run", str(run), cwd=repo)
+    if replaces:
+        print(f"replaced the run at {old}")
     print(f"run={run} repo={repo} base={base} limit={a.limit}")
+
+
+def cmd_config(a):
+    repo = main_checkout()
+    run = run_dir(repo)
+    with state(run) as st:
+        cfg = st["config"]
+        if absent := [g for g in a.unshared if g not in cfg["shared"]]:
+            die(
+                f"no shared glob {' '.join(absent)}. The shared globs are"
+                f" {' '.join(cfg['shared'])}"
+            )
+        changes = {
+            "limit": a.limit,
+            "rounds": a.rounds,
+            "check": a.check,
+            "health": a.health,
+            "diskFloorGb": a.disk_floor_gb,
+        }
+        cfg.update({k: v for k, v in changes.items() if v is not None})
+        cfg["shared"] = [
+            g for g in dict.fromkeys(cfg["shared"] + a.shared) if g not in a.unshared
+        ]
+    print(json.dumps(cfg, indent=1, sort_keys=True))
 
 
 def cmd_triage(a):
@@ -415,6 +468,12 @@ def cmd_status(a):
     counts = {s: sum(1 for t in tasks.values() if t["state"] == s) for s in STATES}
     print(f"run={run}")
     print(" ".join(f"{s}={n}" for s, n in counts.items()), f"limit={cfg['limit']}")
+    print(f"shared: {' '.join(cfg['shared'])}")
+    print(f"check: {cfg['check'] or 'none'}")
+    # A run can continue from a state file that has no health key.
+    print(f"health: {cfg.get('health') or 'none'}")
+    if ended(tasks):
+        print("ended: no task is pending, inflight, or approved")
     for ref, t in sorted(tasks.items()):
         if t["state"] == "inflight":
             hours = (now - t["startedAt"]) / 3600
@@ -607,8 +666,37 @@ def main():
         help="add a glob to the default test-file globs",
     )
     s.add_argument("--disk-floor-gb", type=float, default=30)
-    s.add_argument("--force", action="store_true")
+    s.add_argument(
+        "--force", action="store_true", help="replace a run that has not ended"
+    )
     s.set_defaults(fn=cmd_init)
+
+    # A flag that the command line omits leaves its config value as it is.
+    s = sub.add_parser("config")
+    s.add_argument("--limit", type=int)
+    s.add_argument("--rounds", type=int)
+    s.add_argument("--check", help="an empty command removes the check")
+    s.add_argument(
+        "--health",
+        metavar="CMD",
+        help="an empty command removes the health command",
+    )
+    s.add_argument(
+        "--shared",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="add a glob to the shared globs",
+    )
+    s.add_argument(
+        "--unshared",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="remove a glob from the shared globs",
+    )
+    s.add_argument("--disk-floor-gb", type=float)
+    s.set_defaults(fn=cmd_config)
 
     s = sub.add_parser("triage")
     s.add_argument("file")
