@@ -257,8 +257,9 @@ func (m *Dev) cachedBuild(ctx context.Context, platform dagger.Platform) (*dagge
 // claude.json with the build.
 func (m *Dev) DevBase(
 	ctx context.Context,
-	// Kagi API key for the MCP server configuration. Injected as
-	// KAGI_API_KEY during home-manager activation.
+	// Kagi API key for the Kagi MCP server. The container gets the key
+	// as the secret variable KAGI_API_KEY, which the engine sets in the
+	// environment of each process that the container runs.
 	// +optional
 	kagiApiKey *dagger.Secret,
 ) (*dagger.Container, error) {
@@ -312,6 +313,14 @@ ln -sf /claude-state/claude.json ` + homeDir + `/.claude.json
 // ~/.claude.json stays the regular file that the activation wrote.
 // [Dev.DevBase] adds the volume (see [withClaudeState]).
 //
+// When kagiApiKey is set, the container gets the key as the secret
+// variable KAGI_API_KEY. The activation runs ahead of that step, so it
+// does not read the key. The engine sets the variable in the
+// environment of each process that the container runs after that step.
+// The terminal sessions of [Dev.Shell] and [Dev.Sandbox] are such
+// processes, and the Kagi MCP server of a session reads the key when
+// it starts.
+//
 // The container mounts the krew cache volume of [Dev.Shell] at the krew
 // root. The shell sessions of [Dev.Shell] run as root with no egress
 // filter, and they run the krew plugins of the volume. A container that
@@ -336,13 +345,15 @@ func (m *Dev) devBaseForPlatform(
 	ctr := built.
 		WithMountedCache(krewRoot, dag.CacheVolume(devCacheNamespace+":krew-shell"))
 
+	// The key must stay a secret. The value of a plain variable is an
+	// argument of the withEnvVariable call. The engine writes that
+	// argument to the ID of the container and to the trace of the call.
+	// A publish of the container writes the value to the config of the
+	// image. The engine passes the value of a secret variable only to
+	// the processes of the container, and it replaces the value in
+	// their output.
 	if kagiApiKey != nil {
-		plaintext, err := kagiApiKey.Plaintext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("reading kagi api key: %w", err)
-		}
-
-		ctr = ctr.WithEnvVariable("KAGI_API_KEY", plaintext)
+		ctr = ctr.WithSecretVariable("KAGI_API_KEY", kagiApiKey)
 	}
 
 	// setup-dev: create fish history symlink, disable atuin systemd

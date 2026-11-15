@@ -111,6 +111,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(m.TestAggregates)
 	eg.Go(func() error { return m.TestDevBase(ctx) })
 	eg.Go(func() error { return m.TestDevBaseEnv(ctx) })
+	eg.Go(func() error { return m.TestDevBaseKagiKey(ctx) })
 	eg.Go(func() error { return m.TestDevBaseShellConfig(ctx) })
 	eg.Go(func() error { return m.TestDevBaseNoBuildArtifacts(ctx) })
 	eg.Go(func() error { return m.TestDevBaseClaudeState(ctx) })
@@ -225,6 +226,46 @@ func (m *Tests) TestDevBaseEnv(ctx context.Context) error {
 				return fmt.Errorf("env %s: missing segment %q: %s", name, seg, val)
 			}
 		}
+	}
+
+	return nil
+}
+
+// TestDevBaseKagiKey verifies that [Dev.DevBase] passes the Kagi API
+// key to the container as the secret variable KAGI_API_KEY. A process
+// of the container must read the key from its environment, and the
+// config of the container must not hold the key. The engine writes
+// each variable of the config to the ID of the container and to the
+// trace of the call that sets the variable. A publish of the container
+// writes the variable to the config of the image.
+//
+// +check
+func (m *Tests) TestDevBaseKagiKey(ctx context.Context) error {
+	// The value is not a credential. The test wraps it in a secret
+	// because DevBase takes the key as a secret.
+	want := "value-of-the-test-key"
+
+	ctr := dag.Dev().DevBase(dagger.DevDevBaseOpts{
+		KagiAPIKey: dag.SetSecret("test-kagi-api-key", want),
+	})
+
+	val, err := ctr.EnvVariable(ctx, "KAGI_API_KEY")
+	if err != nil {
+		return fmt.Errorf("reading env KAGI_API_KEY: %w", err)
+	}
+
+	if val != "" {
+		return fmt.Errorf("env KAGI_API_KEY: the container config holds the key")
+	}
+
+	// The engine replaces the value of a secret variable in the output
+	// of an exec. The shell therefore compares the value, and the test
+	// reads only the exit status.
+	_, err = ctr.
+		WithExec([]string{"sh", "-c", `[ "$KAGI_API_KEY" = "$1" ]`, "sh", want}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("comparing KAGI_API_KEY of a process with the key: %w", err)
 	}
 
 	return nil
