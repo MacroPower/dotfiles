@@ -281,6 +281,8 @@ FINISHED = ("landed", "noted", "closed")
 # change, by the key of the resume field that carries each one. The agents
 # of close-task.js write the files, and the args command reads them.
 STORED_FILES = {"summary": "summary.txt", "notes": "notes.txt"}
+# The directory that holds a golangci-lint cache of one checkout.
+LINT_CACHE = "golangci-lint-cache"
 
 
 def store_step(task_dir):
@@ -1213,7 +1215,9 @@ class LandTest(unittest.TestCase):
     """What a landing prints, and how it tells a down service from a fault.
 
     A failed landing prints its result last. A landing with --next and the
-    result OK then starts the next tasks.
+    result OK then starts the next tasks. The check and the commit hooks
+    of a landing do not read the golangci-lint cache that every checkout
+    shares.
     """
 
     SUBJECT = "feat: add a file"
@@ -1231,6 +1235,12 @@ class LandTest(unittest.TestCase):
     RECORD = 'touch "$RAN"'
     # A step that passes, and whose first run stops the service.
     STOP_ONCE = 'test -e "$RAN" || { touch "$RAN"; rm "$ENGINE"; }'
+    # A step that passes and records the golangci-lint cache that it got.
+    # The format argument names the file of the record.
+    SEEN_CACHE = 'printf %s "$GOLANGCI_LINT_CACHE" >"$SEEN.{}"'
+    # A step that passes and adds an entry to its golangci-lint cache, as
+    # golangci-lint does.
+    FILL_CACHE = 'mkdir -p "$GOLANGCI_LINT_CACHE" && touch "$GOLANGCI_LINT_CACHE/entry"'
 
     def start_task(self, tmp, *flags, hook="exit 0"):
         """Start a run with one task that is ready to land.
@@ -1354,6 +1364,42 @@ class LandTest(unittest.TestCase):
                 landing = self.land(repo, env)
                 self.assert_failed(repo, env, landing, result)
                 self.assertIn(output, landing[1][:-1])
+
+    def test_lint_cache(self):
+        # golangci-lint 2.12 reports the cached issues of another checkout
+        # of the same module. So no step of a landing reads the cache that
+        # every checkout shares.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(
+                tmp,
+                "--check",
+                f"{self.SEEN_CACHE.format('check')} && {self.FILL_CACHE}",
+                hook=self.SEEN_CACHE.format("hook"),
+            )
+            shared = Path(tmp, "shared")
+            env["GOLANGCI_LINT_CACHE"] = str(shared)
+            env["SEEN"] = str(Path(tmp, "seen"))
+            wt = Path(repo, ".claude", "worktrees", f"t-{REF}")
+            git_dir = self.git("rev-parse", "--absolute-git-dir", cwd=wt, env=env)
+            # The check filled its cache, and the worktree stayed clean.
+            self.assert_landed(repo, env, self.land(repo, env))
+            seen = {
+                step: Path(tmp, f"seen.{step}").read_text()
+                for step in ("check", "hook")
+            }
+            # The cache of the check sits in the git directory of the
+            # worktree. The commit hooks run in the main checkout, and
+            # their cache sits in the run directory.
+            self.assertEqual(
+                seen,
+                {
+                    "check": str(Path(git_dir, LINT_CACHE)),
+                    "hook": str(Path(tmp, "run").resolve() / LINT_CACHE),
+                },
+            )
+            self.assertFalse(shared.exists())
+            # git removed the cache of the check together with the worktree.
+            self.assertFalse(Path(seen["check"]).exists())
 
     def test_next_starts_tasks_after_landing(self):
         # The second task cannot start while the first task runs.

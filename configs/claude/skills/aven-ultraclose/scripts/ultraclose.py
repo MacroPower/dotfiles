@@ -65,6 +65,17 @@ landing, --next does not run next. When next fails after the landing, its
 error follows the RESULT line, and the command exits with a failure
 status.
 
+The land command sets GOLANGCI_LINT_CACHE for the check and for the
+commit, so that neither step reads the golangci-lint cache that every
+checkout shares. golangci-lint 2.12 reports the cached issues of another
+checkout of the same module, under the paths of that checkout, and a
+landing removes the worktree that those paths name. The check gets the
+golangci-lint-cache directory inside the git directory of the task
+worktree, which git removes together with the worktree. The commit runs
+in the main checkout, and it gets the golangci-lint-cache directory of
+the run directory. A check that sets the variable itself keeps its own
+value.
+
 The health command of init --health and config --health is a fast
 command that fails when a service that the check or a commit hook
 requires is down. A landing runs it in the main checkout before the
@@ -90,6 +101,7 @@ import argparse
 import fcntl
 import fnmatch
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -133,6 +145,10 @@ WORKFLOW = "close-task.js"
 # change, by the key of the resume field that carries each one. The
 # prompts of close-task.js name the same files.
 STORED = {"summary": "summary.txt", "notes": "notes.txt"}
+# The directory that holds a golangci-lint cache of one checkout. A landing
+# keeps one inside the git directory of the task worktree and one inside
+# the run directory.
+LINT_CACHE = "golangci-lint-cache"
 
 
 def die(msg):
@@ -692,6 +708,21 @@ def cmd_watch(a):
         time.sleep(60)
 
 
+def lint_env(cache):
+    """The environment of a landing step that might run golangci-lint.
+
+    The step gets a golangci-lint cache that no other checkout writes.
+    golangci-lint 2.12 keys its cache by the path of each file inside its
+    module and by the content of the file, not by the directory of the
+    checkout. It stores each issue with the absolute path of its file. So
+    a checkout reads the issues that another checkout of the same module
+    cached, under the paths of that checkout. After a landing removes
+    that checkout, golangci-lint cannot read the nolint comments of those
+    files, and it reports each issue that they suppressed.
+    """
+    return {**os.environ, "GOLANGCI_LINT_CACHE": str(cache)}
+
+
 def tail(path, n=40):
     return "\n".join(Path(path).read_text(errors="replace").splitlines()[-n:])
 
@@ -721,11 +752,11 @@ def cmd_land(a):
         print(f"RESULT {ref} {code}")
         sys.exit(2)
 
-    def logged(name, *cmd, cwd):
+    def logged(name, *cmd, cwd, env=None):
         path = logs / f"{ref}.{name}.log"
         with open(path, "w") as f:
             rc = subprocess.run(
-                cmd, cwd=cwd, stdout=f, stderr=subprocess.STDOUT, check=False
+                cmd, cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT, check=False
             )
         return rc.returncode, path
 
@@ -783,7 +814,18 @@ def cmd_land(a):
         if added:
             fail("REFINDIFF", "\n".join(added[:20]))
         if cfg["check"]:
-            rc, log = logged("check", "sh", "-c", cfg["check"], cwd=wt)
+            # The cache sits in the git directory of the worktree. So the
+            # worktree stays clean, and git removes the cache together
+            # with the worktree.
+            git_dir = out("git", "rev-parse", "--absolute-git-dir", cwd=wt)
+            rc, log = logged(
+                "check",
+                "sh",
+                "-c",
+                cfg["check"],
+                cwd=wt,
+                env=lint_env(Path(git_dir, LINT_CACHE)),
+            )
             if rc:
                 require_health(f"after the check failed, see {log}")
                 fail("CHECKFAIL", tail(log))
@@ -809,7 +851,17 @@ def cmd_land(a):
         # commit. The commit must record the staged tree, so compare the
         # two and retry one time.
         for attempt in (1, 2):
-            rc, log = logged("commit", "git", "commit", "-F", str(msg), cwd=repo)
+            # The commit hooks run in the main checkout. Its cache sits in
+            # the run directory, where no worktree writes.
+            rc, log = logged(
+                "commit",
+                "git",
+                "commit",
+                "-F",
+                str(msg),
+                cwd=repo,
+                env=lint_env(run / LINT_CACHE),
+            )
             if rc:
                 rollback()
                 require_health(f"after the commit failed, see {log}")

@@ -111,6 +111,12 @@ approved task. `status` then prints an `ended` line.
    - Commands that agents must not run. A `dagger call` from a linked
      worktree has emptied the index of the main checkout, so forbid Dagger
      in worktrees unless the project requires it.
+   - A private lint cache for each worktree, when the project lints with
+     golangci-lint. With the cache that all checkouts share, golangci-lint
+     2.12 reports the issues of a worktree that a landing removed, under
+     the paths of that worktree. Tell agents to set
+     `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint-cache"`
+     for each command that runs golangci-lint, such as `task lint`.
 
    Do not tell agents where to report a fault outside their task, even in
    a rule that forbids the commands that file tasks. The Workflow prompts
@@ -334,6 +340,13 @@ removes the worktree, and sets the task to `done`. Each landing of a run
 with a health command runs that command before the merge, and again after a
 failed check or a failed commit.
 
+`ultraclose.py land` sets `GOLANGCI_LINT_CACHE` for the check and for the
+commit, so neither step reads the lint cache that all checkouts share. The
+check gets the directory that the lint cache rule of the Setup section
+names, inside the git directory of the worktree. Git removes that directory
+together with the worktree. The commit hooks run in the main checkout, and
+they get the `golangci-lint-cache` directory of the run directory.
+
 The command prints a `RESULT` line. After an `OK` result, the `--next` flag
 runs `next`, so one background call lands the task and starts the next
 tasks. The list of input objects that `next` prints follows the `RESULT`
@@ -432,6 +445,13 @@ the Loop table says.
 - **Disk:** when `watch` prints `DISK`, clean the build caches only while no
   landing and no check runs, then start `watch` again. A cache clean races
   running builds, so land again any task that failed during the clean.
+- **Lint cache:** golangci-lint issues under the path of another worktree,
+  such as `../t-<ref>/...`, come from the lint cache that all checkouts
+  share. The command that reported them ran without the private cache
+  that the Setup section describes. If `rules.md` lacks that rule, add
+  it. Do not clean the shared cache to remove the issues. Every clean
+  races the commands that lint with that cache, and the issues return
+  when a landing removes the next worktree that filled the cache.
 - **Interrupted run:** after a usage limit, a model switch, or a new
   session, run `ultraclose.py status`. A landing that ran `next` during
   the interruption set each task of its list to inflight, but no Workflow
