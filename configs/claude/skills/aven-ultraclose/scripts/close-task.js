@@ -43,6 +43,16 @@ const HISTORY = `${T.dir}/history.md`
 // resume field of the input.
 const SUMMARY = `${T.dir}/summary.txt`
 const NOTES = `${T.dir}/notes.txt`
+// The branch of the task. `ultraclose.py` names it in the input, because
+// a landing that proposes a pull request renames the branch. An input
+// without the name comes from a task that starts on its first branch.
+const BRANCH = T.branch || `task/${T.ref}`
+// What the orchestrator does with the finished change. The pr field of
+// the input is true for a run whose landings propose pull requests. The
+// landing of such a run records no commit on the base branch.
+const LANDING = args.pr
+  ? `The orchestrator opens a pull request against ${base} later. The first line of the message in ${MSG} becomes its title, and the rest of the message becomes its body.`
+  : `The orchestrator writes the real commit on ${base} later, from the message in ${MSG}.`
 
 // One task that the orchestrator files, in the format of the track-issue
 // skill.
@@ -182,12 +192,12 @@ const NARROW_SCHEMA = {
 // agent that reads a message about other work can abandon its assignment.
 const rules = `
 Ground rules:
-- The worktree is ${T.wt}, on branch task/${T.ref}, which was cut from ${base}. Work only there. Use absolute paths under it for every file you read or edit, and start every shell command with \`cd ${T.wt} && \`. Never change files or git state in the main checkout ${repo} or in another worktree. Other agents work in sibling worktrees at the same time.
+- The worktree is ${T.wt}, on branch ${BRANCH}, which was cut from ${base}. Work only there. Use absolute paths under it for every file you read or edit, and start every shell command with \`cd ${T.wt} && \`. Never change files or git state in the main checkout ${repo} or in another worktree. Other agents work in sibling worktrees at the same time.
 - The task description is ${T.dir}/task.md. Read it in full. Its line numbers come from an older commit, so they might have drifted. Other task refs that it names are separate work for other agents, so do not implement them.
 - ${run}/rules.md holds the rules of this project: how to build and test, the full check, the commit message format, and what you must not run. Read it before you start. Its rules override your defaults.
 - Never write a task ref such as ${T.ref} in code, comments, docs, or the commit message.
 - Never run \`git stash\` in any form. All worktrees share one stash list, so a pop takes the entry of another agent. To see the old code, run \`git show ${base}:path\` or \`git diff ${base}\`. Never run \`git checkout\`, \`git restore\`, \`git reset\`, or \`git clean\` on a file that you did not change.
-- Commit work in progress with hooks off: \`cd ${T.wt} && git add -A && git commit -q --no-verify -m wip\`. The orchestrator writes the real commit on ${base} later, from the message in ${MSG}.
+- Commit work in progress with hooks off: \`cd ${T.wt} && git add -A && git commit -q --no-verify -m wip\`. ${LANDING}
 - Other builds share this machine. Iterate with targeted builds and tests, and run the full check only when the work is otherwise finished. Never clear a shared build cache.
 - Run at most two build, test, or probe commands at the same time. Every agent of this run shares the memory and the CPUs of this machine. When the memory runs out, the kernel kills the commands of other agents and the services of the user. Never create load on the machine to reproduce a failure. For example, do not run copies of a test at the same time with \`rust-parallel\`, \`xargs -P\`, or background jobs, and do not run a stress tool. To reproduce a failure that appears only under load, repeat the test in sequence, or limit the test to one CPU, such as with \`GOMAXPROCS=1\` or \`taskset -c 0\`. When the failure still does not appear, find its cause in the code.
 - If the worktree holds uncommitted changes when you start, an earlier agent with your assignment stopped in the middle of its work. Read those changes first, keep what is right, and finish the assignment.
@@ -330,7 +340,7 @@ The current commit message is in ${MSG}.
 ${summaryNote(current)}
 Steps:
 1. Read the task file and \`cd ${T.wt} && git diff ${base}...HEAD\`, so that you know the change. Read \`git log --stat HEAD..${base}\`, so that you know what ${base} gained.
-2. Merge ${base} into the branch: \`cd ${T.wt} && git merge --no-verify ${base}\`. Resolve each conflict so that both changes keep their intent. Before you resolve a conflicted file, read the commits of ${base} that changed it (\`git log -p HEAD..${base} -- path\`). Finish the merge with \`git commit --no-verify --no-edit\`.
+2. Merge ${base} into the branch: \`cd ${T.wt} && git merge --no-verify -m "Merge ${base}" ${base}\`. Keep the \`-m\` option, because the default message of a merge names the branch of this task. Resolve each conflict so that both changes keep their intent. Before you resolve a conflicted file, read the commits of ${base} that changed it (\`git log -p HEAD..${base} -- path\`). Finish the merge with \`git commit --no-verify --no-edit\`.
 3. Adapt the code, tests, and docs of this task to the interfaces and the behavior that ${base} has. Never revert or weaken what ${base} gained. Check that the docs of this task are still true beside the new commits.
 4. Make the full check pass in the worktree.
 5. Update ${MSG} only where the merge changed what the diff against ${base} does.

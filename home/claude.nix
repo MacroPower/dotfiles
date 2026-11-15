@@ -408,7 +408,9 @@ let
   # conditional rules let a push to a branch named `<type>/<name>`, and
   # a draft pull request from one, run without a prompt. By convention
   # such a name marks a working branch, so `main` and every other
-  # branch keep the prompt.
+  # branch keep the prompt. `BRANCH_TYPES` in
+  # configs/claude/skills/aven-ultraclose/scripts/ultraclose.py copies
+  # these types, so update both together.
   conventionalBranchTypes = [
     "build"
     "chore"
