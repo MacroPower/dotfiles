@@ -76,13 +76,15 @@
 # Related Rules
 #
 # Passive voice makes the thing acted on the subject of the sentence
-# (`the flag was hidden`). A passive form (`was refactored to`) also
-# draws a finding from the Optional ProsePassive. `was updated to use`
-# and `was changed to use` each draw a finding from that rule, and so
-# does `was previously` before `hidden` or `renamed` (`the flag was
-# previously hidden`). No guard separates the two rules. The change
-# sense of `has been updated` is a passive, and the Optional
-# ProsePassive already reports it.
+# (`the flag was hidden`). `was updated to use` and `was changed to use`
+# each also draw a finding from the Optional ProsePassive, and so does
+# `was previously` before `hidden` or `renamed` (`the flag was
+# previously hidden`). No guard separates the two rules. `was refactored
+# to` draws a finding only from this rule. The tagger does not mark
+# `refactored` as a verb, and the `missed` list of the Optional
+# ProsePassive does not hold the word. The change sense of `has been
+# updated` is a passive, and the Optional ProsePassive already reports
+# it.
 #
 # Measurement
 #
