@@ -54,6 +54,41 @@ in
         extraGroups = [ "audio" ];
       };
 
+      # home-manager loads home.sessionVariables only in the shells that it
+      # manages, and it manages only fish on this host. Workmux starts each
+      # agent from the user's bash login shell. The agent and every command
+      # that it runs therefore do not get those variables. NixOS exports
+      # the variables of this set in every login shell, and PAM sets them
+      # in every session, whatever the shell.
+      #
+      # home/tools.nix sets DAGGER_LEAVE_OLD_ENGINE. Without that variable,
+      # a Dagger CLI removes the engine containers of every other Dagger
+      # version each time it connects to its own engine. A call from a
+      # repository that pins another version then loses its engine and
+      # hangs without output.
+      environment.sessionVariables = {
+        inherit (config.home-manager.users.${config.dotfiles.system.username}.home.sessionVariables)
+          DAGGER_LEAVE_OLD_ENGINE
+          ;
+      };
+
+      # Every login shell sources the script that this assertion reads. The
+      # assertion fails the evaluation when a change leaves the variable
+      # only in home.sessionVariables, which the agents do not load.
+      assertions = [
+        {
+          assertion = lib.hasInfix "\nexport DAGGER_LEAVE_OLD_ENGINE=" config.system.build.setEnvironment.text;
+          message = ''
+            terrarium: the environment of a login shell does not hold
+            DAGGER_LEAVE_OLD_ENGINE. Workmux starts each agent from a bash
+            login shell, and that shell does not load
+            home.sessionVariables. Without the variable, the Dagger CLI of
+            one agent removes the engine that the Dagger CLI of another
+            version uses. Set the variable in environment.sessionVariables.
+          '';
+        }
+      ];
+
       # The VM has no swap. When its memory runs out, the kernel gives
       # each process a score and kills the process with the highest
       # score. The score is the memory that the process holds, plus the

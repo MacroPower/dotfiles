@@ -427,3 +427,22 @@ journalctl -k --since today -g 'Killed process'
 ```sh
 sudo systemctl restart "user@$(id -u).service"
 ```
+
+### Dagger engines
+
+Each Dagger version keeps its own engine container in the VM. Sessions in repositories that pin different Dagger versions can therefore run Dagger at the same time. `docker ps` lists each engine as `dagger-engine-<version>`.
+
+The `DAGGER_LEAVE_OLD_ENGINE` variable keeps the engines. Without it, a Dagger CLI removes the engine containers of every other version each time it connects to its own engine. A call on a removed engine then hangs without output. `home/tools.nix` sets the variable for the shells that home-manager manages. Workmux starts each agent from a bash login shell, which does not load the home-manager variables, so `hosts/nixos/terrarium.nix` copies the variable into the system environment.
+
+Run `task switch` in the VM. The switch applies the variable to each agent that workmux starts after it. Agents keep the environment that they started with, so restart each agent that started before the switch. To check a session, run this command in it, which prints `1` when the session has the variable:
+
+```sh
+printenv DAGGER_LEAVE_OLD_ENGINE
+```
+
+An engine stays in the VM after every project moves to another Dagger version, and it keeps its cache. To free the disk space, list the engines and remove the engine of each unused version. Before you remove an engine, wait until no session runs a Dagger call on it. A call on the engine that you remove hangs without output. These commands list the engines and remove one of them:
+
+```sh
+docker ps -a --filter name=dagger-engine-
+docker rm -fv dagger-engine-<version>
+```
