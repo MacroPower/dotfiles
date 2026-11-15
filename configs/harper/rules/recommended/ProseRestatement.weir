@@ -19,16 +19,17 @@
 # Without the comma, `short` describes the noun after it (`memory is in
 # short supply`), so the phrase passes.
 #
-# `Ultimately,` stays out. It announces a summary less often than it
-# leads a point that the paragraph has not made yet (`Ultimately, your
-# applications run as containers inside Pods`).
-#
 # `in short,` before a second adjective still fires (`write in short,
 # plain sentences`), because no guard reads the word after the comma.
 #
 # Related Rules
 #
 # The Required ProseRestatement holds every other restatement.
+#
+# ProseSentenceAdverb reports `Ultimately,`, so this rule leaves the
+# opener out. `Ultimately,` announces a summary less often than it
+# leads a point that the paragraph has not made yet (`Ultimately, your
+# applications run as containers inside Pods`).
 #
 # Measurement
 #
