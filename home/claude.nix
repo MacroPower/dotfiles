@@ -334,6 +334,8 @@ let
                   "true"
                   "absentOrTrue"
                   "absentOrZero"
+                  "absent"
+                  "pullRequestRecorded"
                 ];
                 description = ''
                   Test that the field must pass. A field set to null
@@ -354,6 +356,20 @@ let
                     true.
                   - `absentOrZero`: the field is absent, false, an empty
                     string, or an empty list.
+                  - `absent`: the field is absent. Use it for a field
+                    that changes something at every value, false and
+                    the empty string included.
+                  - `pullRequestRecorded`: the field is the number of a
+                    pull request that an agent opened from this host.
+                    The CreatePullRequest entry of the PostToolUse
+                    hooks records each pull request that the
+                    `create_pull_request` tool of the GitHub MCP server
+                    opens. hook-router keeps the record in its state
+                    database, and every session on the host reads it.
+                    The test reads the owner and the name of the
+                    repository from the `owner` and `repo` fields of
+                    the call, and compares both without regard to case.
+                    It fails when hook-router cannot read the database.
                 '';
               };
               pattern = mkOption {
@@ -3222,9 +3238,10 @@ in
           # covers. A deny rule at the hook level redirects each one to
           # the MCP tool named in the value. Each call of that tool
           # prompts, so the confirmation moves from the gh CLI ask rule
-          # to the MCP permission prompt. create_pull_request is the
-          # exception. hook-router decides it with the rule in
-          # conditionalRules of this bundle, and a call that meets the
+          # to the MCP permission prompt. create_pull_request,
+          # update_pull_request, and update_pull_request_branch are the
+          # exceptions. hook-router decides them with the rules in
+          # conditionalRules of this bundle, and a call that meets a
           # rule runs without a prompt. Writes with no equivalent stay
           # with the ask rules below, such as pr comment, run delete,
           # workflow enable, workflow disable, and the issue writes.
@@ -3498,22 +3515,20 @@ in
             "mcp__github__update_issue_comment"
             "mcp__github__run_secret_scanning"
           ];
-          # Pull request and Actions write tools. With
-          # create_pull_request, which conditionalRules decides, they
-          # are the only write surface the MCP serves here. Each call
-          # of a tool in this list prompts, and so does each mutating
-          # gh CLI command. add_comment_to_pending_review rides along
-          # with pull_request_review_write, because a pending review
-          # needs both. actions_run_trigger triggers, re-runs, and
-          # cancels workflow runs.
+          # Pull request and Actions write tools. With the tools that
+          # conditionalRules decides, they are the only write surface
+          # the MCP serves here. Each call of a tool in this list
+          # prompts, and so does each mutating gh CLI command.
+          # add_comment_to_pending_review rides along with
+          # pull_request_review_write, because a pending review needs
+          # both. actions_run_trigger triggers, re-runs, and cancels
+          # workflow runs.
           permissions.ask = [
             "mcp__github__actions_run_trigger"
             "mcp__github__add_comment_to_pending_review"
             "mcp__github__add_reply_to_pull_request_comment"
             "mcp__github__merge_pull_request"
             "mcp__github__pull_request_review_write"
-            "mcp__github__update_pull_request"
-            "mcp__github__update_pull_request_branch"
           ];
           # mcp__github__create_pull_request has no permissions.ask
           # entry, because hook-router decides each call on its
@@ -3532,10 +3547,37 @@ in
           # fork. An owner name holds no slash, so the pattern does not
           # match that form, and a pull request from a fork prompts.
           #
-          # prose-lint checks `title` and `body` before the rule allows
+          # mcp__github__update_pull_request and
+          # mcp__github__update_pull_request_branch have no
+          # permissions.ask entry either. Agents call GitHub with the
+          # token of the user, so the author of a pull request does not
+          # show whether an agent opened it. hook-router therefore
+          # records each pull request that create_pull_request opens
+          # in its state database, through the CreatePullRequest hook
+          # entry of PostToolUse. The record covers a call that the
+          # user approved at a prompt. The `pullRequestRecorded` test
+          # reads the record. Every session on the host reads it, so a
+          # later session edits a pull request that an earlier session
+          # opened. Each host keeps its own record.
+          #
+          # On a recorded pull request, update_pull_request runs
+          # without a prompt when it sets only `title`, `body`,
+          # `state`, or `draft: true`. `state` closes or reopens the
+          # pull request. The call prompts when it marks the pull
+          # request ready with `draft: false`, names a reviewer, or
+          # sets `base` or `maintainer_can_modify`. The server applies
+          # `base` and `maintainer_can_modify` at every value, so
+          # their test is `absent`. update_pull_request_branch runs
+          # without a prompt on a recorded pull request. Both tools
+          # prompt on every other pull request.
+          #
+          # Each rule tests the record last, so hook-router opens the
+          # database only for a call that meets the other conditions.
+          #
+          # prose-lint checks `title` and `body` before a rule allows
           # a call, through proseLint.toolFields of this bundle.
           #
-          # Mirrored by createPullRequestRules in
+          # Mirrored by pullRequestRules in
           # `tools/hook-router/mcp_test.go`, so update both together.
           conditionalRules = [
             {
@@ -3553,6 +3595,40 @@ in
                 {
                   field = "reviewers";
                   test = "absentOrZero";
+                }
+              ];
+            }
+            {
+              tool = "mcp__github__update_pull_request";
+              conditions = [
+                {
+                  field = "draft";
+                  test = "absentOrTrue";
+                }
+                {
+                  field = "reviewers";
+                  test = "absentOrZero";
+                }
+                {
+                  field = "base";
+                  test = "absent";
+                }
+                {
+                  field = "maintainer_can_modify";
+                  test = "absent";
+                }
+                {
+                  field = "pullNumber";
+                  test = "pullRequestRecorded";
+                }
+              ];
+            }
+            {
+              tool = "mcp__github__update_pull_request_branch";
+              conditions = [
+                {
+                  field = "pullNumber";
+                  test = "pullRequestRecorded";
                 }
               ];
             }
@@ -3713,7 +3789,7 @@ in
             items = [
               "Use `mcp__github__*` and `mcp__git__*` tools for reading GitHub data (issues, PRs, releases, Actions runs and job logs, security alerts, discussions, projects, code search, etc.)"
               "The `gh` CLI is available for functions the `mcp__github__*` tools do not serve. A hook redirects the `gh` subcommands that have an MCP equivalent. Note that `gh api` is always denied."
-              "`mcp__github__create_pull_request` runs without a prompt when `draft` is true, `head` is a branch named `<type>/<name>`, and the call sets no `reviewers`. `<type>` is one of ${conventionalBranchTypeList}. Every other call prompts, so open each pull request as a draft from a branch of that form, such as `fix/retry-timeout`."
+              "`mcp__github__create_pull_request` runs without a prompt when `draft` is true, `head` is a branch named `<type>/<name>`, and the call sets no `reviewers`. `<type>` is one of ${conventionalBranchTypeList}. Every other call prompts, so open each pull request as a draft from a branch of that form, such as `fix/retry-timeout`. On a pull request that an agent opened with this tool from this host, `mcp__github__update_pull_request` runs without a prompt when it sets only `title`, `body`, `state`, or `draft: true`, and `mcp__github__update_pull_request_branch` runs without a prompt. An edit that sets `draft: false`, `reviewers`, `base`, or `maintainer_can_modify` prompts, and so does every edit to another pull request."
             ];
           };
         };
@@ -4483,7 +4559,22 @@ in
                       (scoped "subagent" (router "PostToolUse" null))
                     ];
                   }
-                ];
+                ]
+                # Records each pull request that create_pull_request
+                # opens in the state database of hook-router
+                # (tools/hook-router/pullrequest.go). The
+                # `pullRequestRecorded` test in conditionalRules of the
+                # github bundle reads the record. "CreatePullRequest"
+                # is a routing sentinel, so this matcher is what names
+                # the tool. The entry stays synchronous, because the
+                # record must exist before the next call edits the
+                # pull request. Claude Code fires PostToolUse only for
+                # a call that succeeded, so a call that fails leaves no
+                # record.
+                ++ lib.optional cfg.toolBundles.github.enable {
+                  matcher = "^mcp__github__create_pull_request$";
+                  hooks = [ (router "PostToolUse" "CreatePullRequest") ];
+                };
                 # Fires when a tool call throws, not when one exits
                 # non-zero: the Bash tool returns normally on a non-zero
                 # exit and folds the code into stderr. The realistic

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 )
@@ -33,6 +34,27 @@ const (
 	// TestAbsentOrZero holds when the field is absent, false, an empty
 	// string, or an empty list.
 	TestAbsentOrZero = "absentOrZero"
+	// TestAbsent holds when the field is absent. Unlike
+	// [TestAbsentOrZero], it fails for false, an empty string, and an
+	// empty list, so it suits a field that changes something at every
+	// value.
+	TestAbsent = "absent"
+	// TestPullRequestRecorded holds when the field is the number of a
+	// pull request that the [PullRequestLookup] of the ruleset reports
+	// as recorded. The number must be a whole number greater than
+	// zero. The test reads the owner and the name of the repository
+	// from the `owner` and `repo` fields of the same call, which must
+	// hold non-empty strings. It fails when the ruleset has no lookup
+	// and when the lookup returns an error.
+	TestPullRequestRecorded = "pullRequestRecorded"
+)
+
+// Keys of tool_input that name the repository of a pull request for
+// [TestPullRequestRecorded]. The pull request tools of the GitHub MCP
+// server take the repository under these keys.
+const (
+	ownerKey = "owner"
+	repoKey  = "repo"
 )
 
 // Condition is one test on a top-level tool_input field of an MCP tool
@@ -130,7 +152,7 @@ func compile(c Condition) (condition, error) {
 		needsPattern = true
 	case TestBranchMatches:
 		needsPattern, needsRepo = true, true
-	case TestTrue, TestAbsentOrTrue, TestAbsentOrZero:
+	case TestTrue, TestAbsentOrTrue, TestAbsentOrZero, TestAbsent, TestPullRequestRecorded:
 	default:
 		return condition{}, fmt.Errorf("field %s: unknown test %q", c.Field, c.Test)
 	}
@@ -161,11 +183,12 @@ func compile(c Condition) (condition, error) {
 }
 
 // holds reports whether every condition of the rule holds for input.
-// It stops at the first condition that fails, so resolve runs only
-// when every condition before a [TestBranchMatches] condition holds.
-func (r Rule) holds(ctx context.Context, input map[string]any, resolve BranchResolver) bool {
+// It stops at the first condition that fails. A [TestBranchMatches] or
+// [TestPullRequestRecorded] condition therefore calls into src only
+// when every condition before it holds.
+func (r Rule) holds(ctx context.Context, input map[string]any, src sources) bool {
 	for _, c := range r.conditions {
-		if !c.holds(ctx, input, resolve) {
+		if !c.holds(ctx, input, src) {
 			return false
 		}
 	}
@@ -184,9 +207,9 @@ func (r Rule) describe() string {
 	return strings.Join(parts, " and ")
 }
 
-// holds reports whether the condition holds for input. resolve serves
-// [TestBranchMatches] alone.
-func (c condition) holds(ctx context.Context, input map[string]any, resolve BranchResolver) bool {
+// holds reports whether the condition holds for input. src serves
+// [TestBranchMatches] and [TestPullRequestRecorded] alone.
+func (c condition) holds(ctx context.Context, input map[string]any, src sources) bool {
 	value := input[c.Field]
 
 	switch c.Test {
@@ -196,15 +219,21 @@ func (c condition) holds(ctx context.Context, input map[string]any, resolve Bran
 		return ok && c.whole(s)
 
 	case TestBranchMatches:
-		branch, ok := c.branch(ctx, input, resolve)
+		branch, ok := c.branch(ctx, input, src.branch)
 
 		return ok && c.whole(branch)
+
+	case TestPullRequestRecorded:
+		return c.recorded(ctx, input, src.pullRequest)
 
 	case TestTrue:
 		return value == true
 
 	case TestAbsentOrTrue:
 		return value == nil || value == true
+
+	case TestAbsent:
+		return value == nil
 
 	default:
 		return value == nil || zero(value)
@@ -250,6 +279,44 @@ func (c condition) branch(ctx context.Context, input map[string]any, resolve Bra
 	return name, true
 }
 
+// recorded reports whether lookup has a record of the pull request
+// that a [TestPullRequestRecorded] condition tests. The field supplies
+// the number, and the [ownerKey] and [repoKey] keys of input supply the
+// repository. recorded reports false when input does not name a pull
+// request, when lookup is nil, and when lookup returns an error.
+func (c condition) recorded(ctx context.Context, input map[string]any, lookup PullRequestLookup) bool {
+	owner, ok := input[ownerKey].(string)
+	if !ok || owner == "" {
+		return false
+	}
+
+	repo, ok := input[repoKey].(string)
+	if !ok || repo == "" {
+		return false
+	}
+
+	number, ok := pullNumber(input[c.Field])
+	if !ok || lookup == nil {
+		return false
+	}
+
+	found, err := lookup(ctx, owner, repo, number)
+
+	return err == nil && found
+}
+
+// pullNumber returns value as the number of a pull request. It accepts
+// a JSON number that is whole and between 1 and [math.MaxInt32],
+// inclusive.
+func pullNumber(value any) (int, bool) {
+	v, ok := value.(float64)
+	if !ok || v < 1 || v > math.MaxInt32 || v != math.Trunc(v) {
+		return 0, false
+	}
+
+	return int(v), true
+}
+
 // zero reports whether value is false, an empty string, or an empty
 // list.
 func zero(value any) bool {
@@ -280,6 +347,14 @@ func (c condition) describe() string {
 		return fmt.Sprintf("`%s` is true", c.Field)
 	case TestAbsentOrTrue:
 		return fmt.Sprintf("`%s` is absent or true", c.Field)
+	case TestAbsent:
+		return fmt.Sprintf("`%s` is absent", c.Field)
+	case TestPullRequestRecorded:
+		return fmt.Sprintf(
+			"`%s` is a pull request of `%s`/`%s` that an agent opened from this host",
+			c.Field, ownerKey, repoKey,
+		)
+
 	default:
 		return fmt.Sprintf("`%s` is absent, false, or empty", c.Field)
 	}

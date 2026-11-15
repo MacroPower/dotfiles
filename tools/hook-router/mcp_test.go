@@ -597,7 +597,7 @@ func TestHandleMCPPush(t *testing.T) {
 
 	logger := slog.New(slog.DiscardHandler)
 
-	rules, err := parseMCPRules(pushRules, logger)
+	rules, err := parseMCPRules(pushRules, nil, logger)
 	require.NoError(t, err)
 
 	cfg := config{mcpRules: rules}
@@ -773,13 +773,13 @@ func TestHandleMCPPush(t *testing.T) {
 	})
 }
 
-// createPullRequestRules is the --mcp-rules JSON that home/claude.nix
+// pullRequestRules is the --mcp-rules JSON that home/claude.nix
 // serializes for the pull request tools of the github bundle. It
 // mirrors the conditionalRules of that bundle, and the entries of its
 // permissions lists that name the tools here, so update both together.
-const createPullRequestRules = `{
+const pullRequestRules = `{
 	"allow": ["mcp__github__pull_request_read"],
-	"ask": ["mcp__github__merge_pull_request", "mcp__github__update_pull_request"],
+	"ask": ["mcp__github__merge_pull_request"],
 	"deny": ["mcp__github__create_pull_request_with_copilot"],
 	"conditional": [
 		{
@@ -793,6 +793,22 @@ const createPullRequestRules = `{
 					"repoField": ""
 				},
 				{"field": "reviewers", "test": "absentOrZero", "pattern": "", "repoField": ""}
+			]
+		},
+		{
+			"tool": "mcp__github__update_pull_request",
+			"conditions": [
+				{"field": "draft", "test": "absentOrTrue", "pattern": "", "repoField": ""},
+				{"field": "reviewers", "test": "absentOrZero", "pattern": "", "repoField": ""},
+				{"field": "base", "test": "absent", "pattern": "", "repoField": ""},
+				{"field": "maintainer_can_modify", "test": "absent", "pattern": "", "repoField": ""},
+				{"field": "pullNumber", "test": "pullRequestRecorded", "pattern": "", "repoField": ""}
+			]
+		},
+		{
+			"tool": "mcp__github__update_pull_request_branch",
+			"conditions": [
+				{"field": "pullNumber", "test": "pullRequestRecorded", "pattern": "", "repoField": ""}
 			]
 		}
 	]
@@ -809,7 +825,7 @@ func TestHandleMCPCreatePullRequest(t *testing.T) {
 
 	logger := slog.New(slog.DiscardHandler)
 
-	rules, err := parseMCPRules(createPullRequestRules, logger)
+	rules, err := parseMCPRules(pullRequestRules, nil, logger)
 	require.NoError(t, err)
 
 	cfg := config{
@@ -989,14 +1005,14 @@ func TestHandleMCPCreatePullRequest(t *testing.T) {
 		})
 	}
 
-	t.Run("pull request edit that keeps a draft stays on the ask list", func(t *testing.T) {
+	t.Run("merge of a draft from a conventional branch stays on the ask list", func(t *testing.T) {
 		t.Parallel()
 
-		const edit = "mcp__github__update_pull_request"
+		const merge = "mcp__github__merge_pull_request"
 
 		var stdout bytes.Buffer
 
-		input := mcpCall(t, edit, map[string]any{"pullNumber": 7, "draft": true, "head": "feat/x"})
+		input := mcpCall(t, merge, map[string]any{"pullNumber": 7, "draft": true, "head": "feat/x"})
 
 		require.NoError(t, handleMCP(t.Context(), input, &stdout, cfg, logger))
 
@@ -1004,7 +1020,7 @@ func TestHandleMCPCreatePullRequest(t *testing.T) {
 		assert.Equal(t, "ask", hso["permissionDecision"])
 		assert.Equal(
 			t,
-			"This MCP tool is on the ask list ("+edit+"). Confirm before running.",
+			"This MCP tool is on the ask list ("+merge+"). Confirm before running.",
 			hso["permissionDecisionReason"],
 		)
 	})

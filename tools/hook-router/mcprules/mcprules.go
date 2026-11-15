@@ -16,9 +16,10 @@ const (
 
 // Ruleset is the matcher for PreToolUse:MCP. It holds the allow, ask,
 // and deny pattern lists, the conditional allow rules, and the
-// [BranchResolver] that those rules call. Construct with [New] or
-// [Parse]. Both return a non-nil ruleset for empty input, so callers
-// can invoke [*Ruleset.Match] without nil guards.
+// [BranchResolver] and [PullRequestLookup] that those rules call.
+// Construct with [New] or [Parse]. Both return a non-nil ruleset for
+// empty input, so callers can invoke [*Ruleset.Match] without nil
+// guards.
 //
 // The deny list decides first. A tool with one or more conditional
 // rules then gets its decision from those rules. The ask and allow
@@ -27,11 +28,19 @@ const (
 // pattern wins. The order of the lists mirrors Claude Code's own
 // permission-rule precedence.
 type Ruleset struct {
-	branch BranchResolver
-	deny   []string
-	ask    []string
-	allow  []string
-	rules  []Rule
+	src   sources
+	deny  []string
+	ask   []string
+	allow []string
+	rules []Rule
+}
+
+// sources holds the functions that conditions call to read state from
+// outside a tool call. A nil function fails every condition that calls
+// it.
+type sources struct {
+	branch      BranchResolver
+	pullRequest PullRequestLookup
 }
 
 // BranchResolver returns the short name of the current branch of the
@@ -40,10 +49,20 @@ type Ruleset struct {
 // detached or the path holds no repository.
 type BranchResolver func(ctx context.Context, repo string) (string, error)
 
+// PullRequestLookup reports whether the caller holds a record of the
+// pull request with the given number in the repository owner/repo. The
+// record lists the pull requests that agents opened, so a
+// [TestPullRequestRecorded] condition can tell them from every other
+// pull request. The lookup must compare owner and repo without regard
+// to case, because GitHub does. It returns an error when it cannot
+// read the record.
+type PullRequestLookup func(ctx context.Context, owner, repo string, number int) (bool, error)
+
 // Option configures a [*Ruleset] that [New] or [Parse] builds.
 //
 //   - [WithRules]
 //   - [WithBranchResolver]
+//   - [WithPullRequestLookup]
 type Option func(*Ruleset)
 
 // WithRules adds conditional allow rules to the ruleset. Rules that
@@ -66,7 +85,17 @@ func WithRules(rules ...Rule) Option {
 // no branch, so the call resolves to ask. See [Option].
 func WithBranchResolver(resolve BranchResolver) Option {
 	return func(r *Ruleset) {
-		r.branch = resolve
+		r.src.branch = resolve
+	}
+}
+
+// WithPullRequestLookup sets the [PullRequestLookup] that a
+// [TestPullRequestRecorded] condition calls. Without a lookup, such a
+// condition fails for every call, so the call resolves to ask. See
+// [Option].
+func WithPullRequestLookup(lookup PullRequestLookup) Option {
+	return func(r *Ruleset) {
+		r.src.pullRequest = lookup
 	}
 }
 
@@ -115,7 +144,8 @@ type Result struct {
 // the ask and allow lists in that order. A nil receiver or an unmatched
 // tool returns matched == false, and the caller then falls through to
 // the normal permission flow. ctx bounds the [BranchResolver] call of a
-// [TestBranchMatches] condition.
+// [TestBranchMatches] condition and the [PullRequestLookup] call of a
+// [TestPullRequestRecorded] condition.
 func (r *Ruleset) Match(ctx context.Context, tool string, input map[string]any) (Result, bool) {
 	if r == nil {
 		return Result{}, false
@@ -132,7 +162,7 @@ func (r *Ruleset) Match(ctx context.Context, tool string, input map[string]any) 
 			continue
 		}
 
-		if rule.holds(ctx, input, r.branch) {
+		if rule.holds(ctx, input, r.src) {
 			return Result{Decision: DecisionAllow, Conditions: rule.describe()}, true
 		}
 

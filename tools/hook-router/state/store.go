@@ -49,9 +49,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 // after acquiring the write lock.
 //
 // CREATE TABLE IF NOT EXISTS creates `bash_failures`,
-// `subagent_starts`, `teammate_idle_blocks`, and
-// `message_lint_waivers`, which is re-runnable; the "duplicate column
-// name" guard only matches ALTER, so it does not apply there.
+// `subagent_starts`, `teammate_idle_blocks`, `message_lint_waivers`,
+// and `opened_pull_requests`, and each of those statements is
+// re-runnable. The "duplicate column name" guard matches only ALTER,
+// so it does not apply there.
 // Concurrent migrators are still serialized by the BEGIN IMMEDIATE
 // wrapper in [*Store.ensureSchema].
 var migrations = []string{
@@ -133,6 +134,21 @@ var migrations = []string{
 	    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
 	    PRIMARY KEY (session_id, message_hash)
 	)`,
+	// opened_pull_requests: one row per pull request that an agent
+	// opened on this host. The key names the pull request and no
+	// session, because a later session edits a pull request that an
+	// earlier session opened. NOCASE compares the owner and the
+	// repository without regard to case, the way GitHub does.
+	// session_id names the session that opened the pull request, and
+	// nothing reads it. [*Store.PruneStale] leaves the table alone.
+	`CREATE TABLE IF NOT EXISTS opened_pull_requests (
+	    owner      TEXT NOT NULL COLLATE NOCASE,
+	    repo       TEXT NOT NULL COLLATE NOCASE,
+	    number     INTEGER NOT NULL,
+	    session_id TEXT NOT NULL DEFAULT '',
+	    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+	    PRIMARY KEY (owner, repo, number)
+	)`,
 }
 
 const (
@@ -142,7 +158,7 @@ const (
 
 // SchemaVersion is the PRAGMA user_version a fully migrated database
 // reports. [Open] migrates older databases forward to it.
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 // Store manages plan-guard session state in a SQLite database.
 type Store struct {
@@ -320,9 +336,11 @@ func (s *Store) MaybePruneStale(ctx context.Context) (bool, error) {
 // (the failure history outlives session state on purpose, since
 // analysis tools may want to look back across many sessions). The
 // session-scoped tables share the sessions window because nothing
-// outside the session that wrote them reads them. The deterministic
-// entry point behind [*Store.MaybePruneStale], for callers (and tests)
-// that want cleanup without the probabilistic gate.
+// outside the session that wrote them reads them. It never removes an
+// `opened_pull_requests` row, because a pull request stays open for
+// longer than any window here, and later sessions read its row. The
+// deterministic entry point behind [*Store.MaybePruneStale], for
+// callers (and tests) that want cleanup without the probabilistic gate.
 func (s *Store) PruneStale(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE updated_at < datetime('now', '-24 hours')`)
@@ -785,4 +803,49 @@ func (s *Store) RecordCompaction(ctx context.Context, id, trigger string) error 
 	}
 
 	return nil
+}
+
+// PullRequest names one pull request by the owner and the name of its
+// repository and by its number, such as pull request 44 of
+// MacroPower/terrarium.
+type PullRequest struct {
+	Owner  string
+	Repo   string
+	Number int
+}
+
+// RecordPullRequest records that an agent opened pr, in the session
+// sessionID. Recording a pull request a second time changes nothing.
+// Every session on the host reads the record through
+// [*Store.HasPullRequest], and [*Store.PruneStale] never removes it.
+func (s *Store) RecordPullRequest(ctx context.Context, pr PullRequest, sessionID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO opened_pull_requests (owner, repo, number, session_id)
+		 VALUES (?, ?, ?, ?)`,
+		pr.Owner, pr.Repo, pr.Number, sessionID)
+	if err != nil {
+		return fmt.Errorf("recording pull request: %w", err)
+	}
+
+	return nil
+}
+
+// HasPullRequest reports whether [*Store.RecordPullRequest] recorded
+// pr, in this session or in an earlier one. It compares the owner and
+// the repository without regard to the case of ASCII letters. GitHub
+// allows no other letters in either name.
+func (s *Store) HasPullRequest(ctx context.Context, pr PullRequest) (bool, error) {
+	var found int
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT EXISTS (
+		    SELECT 1 FROM opened_pull_requests
+		    WHERE owner = ? AND repo = ? AND number = ?
+		 )`,
+		pr.Owner, pr.Repo, pr.Number).Scan(&found)
+	if err != nil {
+		return false, fmt.Errorf("querying pull request: %w", err)
+	}
+
+	return found != 0, nil
 }

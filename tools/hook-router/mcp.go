@@ -11,10 +11,17 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/git"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
-// errRelativeRepo reports a repository path that is not absolute.
-var errRelativeRepo = errors.New("repository path is not absolute")
+var (
+	// errRelativeRepo reports a repository path that is not absolute.
+	errRelativeRepo = errors.New("repository path is not absolute")
+
+	// errNoStore reports a read of the state store on a hook that runs
+	// without one.
+	errNoStore = errors.New("no state store configured")
+)
 
 // handleMCP resolves an MCP tool call against the lists and the
 // conditional rules of --mcp-rules. It lints the prose arguments the
@@ -42,6 +49,12 @@ var errRelativeRepo = errors.New("repository path is not absolute")
 // the call names. [parseMCPRules] gives the ruleset the resolver of
 // [currentBranch] for that read. A branch that does not resolve fails
 // the rule, so the call gets an ask.
+//
+// A rule can also test whether an agent opened the pull request that a
+// call names. [handlePostCreatePullRequest] records those pull requests
+// in the state store, and [parseMCPRules] gives the ruleset the lookup
+// of [recordedPullRequest] to read them. A record that the lookup
+// cannot read fails the rule, so the call gets an ask.
 //
 // A deny-listed tool gets its deny without a lint. For every other
 // tool, the string arguments that the message lint's ToolFields name go
@@ -135,14 +148,88 @@ func conditionalDecision(ctx context.Context, tool string, res mcprules.Result, 
 
 // parseMCPRules builds the ruleset of [handleMCP] from the --mcp-rules
 // JSON. The ruleset reads the current branch of a repository through
-// [currentBranch].
-func parseMCPRules(rulesJSON string, logger *slog.Logger) (*mcprules.Ruleset, error) {
-	rules, err := mcprules.Parse(rulesJSON, mcprules.WithBranchResolver(currentBranch(logger)))
+// [currentBranch]. It reads the record of the pull requests that agents
+// opened through [recordedPullRequest], which opens the state store
+// with openStore. A nil openStore fails every condition that reads the
+// record.
+func parseMCPRules(
+	rulesJSON string,
+	openStore func(context.Context) (*state.Store, error),
+	logger *slog.Logger,
+) (*mcprules.Ruleset, error) {
+	rules, err := mcprules.Parse(
+		rulesJSON,
+		mcprules.WithBranchResolver(currentBranch(logger)),
+		mcprules.WithPullRequestLookup(recordedPullRequest(openStore, logger)),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("parsing --mcp-rules: %w", err)
 	}
 
 	return rules, nil
+}
+
+// recordedPullRequest returns the [mcprules.PullRequestLookup] of the
+// hook. The lookup reports whether [handlePostCreatePullRequest]
+// recorded a pull request, in this session or in an earlier one. It
+// logs each answer, because the answer decides whether a call prompts.
+//
+// [eventNeedsStore] keeps the store closed on PreToolUse:MCP, so the
+// lookup opens it through open for the one read and closes it again.
+// A call whose rule fails before the lookup runs never opens the
+// store. The lookup returns [errNoStore] when open is nil.
+func recordedPullRequest(
+	open func(context.Context) (*state.Store, error),
+	logger *slog.Logger,
+) mcprules.PullRequestLookup {
+	return func(ctx context.Context, owner, repo string, number int) (bool, error) {
+		attrs := []any{
+			slog.String("owner", owner),
+			slog.String("repo", repo),
+			slog.Int("number", number),
+		}
+
+		found, err := hasPullRequest(ctx, open, state.PullRequest{Owner: owner, Repo: repo, Number: number})
+		if err != nil {
+			logger.WarnContext(ctx, "pull request record unread", append(attrs, slog.Any("error", err))...)
+
+			return false, err
+		}
+
+		logger.InfoContext(ctx, "pull request record read", append(attrs, slog.Bool("recorded", found))...)
+
+		return found, nil
+	}
+}
+
+// hasPullRequest opens the state store through open and reports
+// whether it holds a record of pr. It closes the store before it
+// returns.
+func hasPullRequest(
+	ctx context.Context,
+	open func(context.Context) (*state.Store, error),
+	pr state.PullRequest,
+) (bool, error) {
+	if open == nil {
+		return false, errNoStore
+	}
+
+	store, err := open(ctx)
+	if err != nil {
+		return false, fmt.Errorf("opening store: %w", err)
+	}
+
+	found, err := store.HasPullRequest(ctx, pr)
+	if err != nil {
+		return false, errors.Join(fmt.Errorf("reading the pull request record: %w", err), store.Close())
+	}
+
+	err = store.Close()
+	if err != nil {
+		return false, fmt.Errorf("closing store: %w", err)
+	}
+
+	return found, nil
 }
 
 // currentBranch returns the [mcprules.BranchResolver] of the hook. The

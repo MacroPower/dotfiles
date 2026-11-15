@@ -54,6 +54,19 @@ func TestEventNeedsStore(t *testing.T) {
 			input: `{"tool_name":"Bash"}`,
 			want:  true,
 		},
+		"PostToolUse CreatePullRequest via --tool needs store": {
+			event: "PostToolUse", tool: "CreatePullRequest", want: true,
+		},
+		"PostToolUse of an MCP tool via stdin fallback skips store": {
+			event: "PostToolUse",
+			input: `{"tool_name":"mcp__github__create_pull_request","tool_response":[{"type":"text","text":"{}"}]}`,
+			want:  false,
+		},
+		"PostToolUse Bash via stdin fallback with a string tool_response needs store": {
+			event: "PostToolUse",
+			input: `{"tool_name":"Bash","tool_response":"ok"}`,
+			want:  true,
+		},
 		"PostToolUse Write skips store": {
 			event: "PostToolUse",
 			input: `{"tool_name":"Write"}`,

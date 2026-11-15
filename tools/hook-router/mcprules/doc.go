@@ -21,6 +21,12 @@
 // through the [BranchResolver] of the ruleset. The caller supplies the
 // resolver, and the package itself runs no git command.
 //
+// Another test asks whether an agent opened the pull request that a
+// call names. The caller keeps the record of those pull requests, and
+// the test reads it through the [PullRequestLookup] of the ruleset. A
+// rule can then allow an edit to such a pull request and leave every
+// other pull request to the prompt.
+//
 // Claude Code prompts on a settings ask rule even when a hook allows
 // the call. A tool with a conditional rule must therefore have no
 // settings ask or allow entry. The hook decision is then the only one

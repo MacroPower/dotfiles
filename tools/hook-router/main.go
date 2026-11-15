@@ -66,8 +66,9 @@ import (
 // wires it to a non-nil (possibly empty) value, but a bare config{}
 // test literal may leave it nil, since [mcprules.Ruleset.Match] and
 // [mcprules.Ruleset.Empty] guard a nil receiver. mainErr builds it with
-// [parseMCPRules], which adds the resolver of [currentBranch]. A
-// ruleset that a test builds another way resolves no current branch.
+// [parseMCPRules], which adds the resolver of [currentBranch] and the
+// lookup of [recordedPullRequest]. A ruleset that a test builds another
+// way resolves no current branch and finds no recorded pull request.
 //
 // commitSkills lists the wrap-up skill names (without leading slash)
 // whose UserPromptSubmit invocation clears plan-guard state. A nil or
@@ -111,7 +112,8 @@ import (
 // PreToolUse:MCP. [eventNeedsStore] keeps the store closed for both
 // so the hot path skips the open, and this opener is how
 // [lintMessages] reaches it anyway. nil disables the waiver, which
-// fails open.
+// fails open. mainErr hands the same opener to [parseMCPRules] for the
+// lookup of [recordedPullRequest].
 //
 // agentScope limits [run] to payloads from the main conversation or to
 // payloads from a subagent (see [agentScope]). Its zero value handles
@@ -217,7 +219,7 @@ func (s agentScope) accepts(agentID string) bool {
 func main() {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
 	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd, UserPromptSubmit, SubagentStart, TeammateIdle, PreCompact)")
-	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or the MCP routing sentinel)")
+	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or a routing sentinel: MCP, FileWrite, or CreatePullRequest)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
@@ -322,7 +324,17 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("command rules engine is empty")
 	}
 
-	mcp, err := parseMCPRules(mcpRulesJSON, logger)
+	// PreToolUse:MCP runs with the store closed. The pull request
+	// lookup of the MCP rules and the message-lint waiver open it
+	// through this opener.
+	var openStore func(context.Context) (*state.Store, error)
+	if dbPath != "" {
+		openStore = func(ctx context.Context) (*state.Store, error) {
+			return state.Open(ctx, dbPath)
+		}
+	}
+
+	mcp, err := parseMCPRules(mcpRulesJSON, openStore, logger)
 	if err != nil {
 		return err
 	}
@@ -414,12 +426,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		}
 	}
 
-	if dbPath != "" {
-		cfg.openStore = func(ctx context.Context) (*state.Store, error) {
-			return state.Open(ctx, dbPath)
-		}
-	}
-
+	cfg.openStore = openStore
 	cfg.skipPlanReview = skipPlanReview
 
 	return run(ctx, bytes.NewReader(input), os.Stdout, event, tool, store, cfg, logger)
@@ -430,7 +437,9 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 // an empty tool peeks at the stdin payload's tool_name to resolve the
 // matcher-less fallback. Returns false for events whose only handler
 // is a no-op default (e.g. PreToolUse:Bash, PostToolUse:Read) so
-// [mainErr] can skip the SQLite open on the hot path.
+// [mainErr] can skip the SQLite open on the hot path. PreToolUse:MCP
+// is one of them. A rule that reads the pull request record opens the
+// store itself, through the opener that [parseMCPRules] takes.
 func eventNeedsStore(event, tool string, input []byte) bool {
 	switch event {
 	case "Stop", "SessionStart", "UserPromptSubmit",
@@ -445,6 +454,10 @@ func eventNeedsStore(event, tool string, input []byte) bool {
 			if err == nil {
 				toolName = parsed.ToolName
 			}
+		}
+
+		if toolName == "CreatePullRequest" {
+			return true
 		}
 
 		return toolName == "AskUserQuestion" || toolName == "Bash"
@@ -520,11 +533,13 @@ func run(
 			return nil
 		}
 	case "PostToolUse":
-		// home/claude.nix wires a single matcher-less PostToolUse hook
-		// and lets hook-router route by tool internally. Claude Code
-		// does not inject a $CLAUDE_TOOL_NAME env var, so the tool
-		// name has to come from the stdin payload. The --tool flag is
-		// honored as an override for ad-hoc invocations.
+		// The PostToolUse hook entries of home/claude.nix pass no
+		// --tool for the tools of Claude Code, and hook-router routes
+		// by tool internally. Claude Code does not inject a
+		// $CLAUDE_TOOL_NAME env var, so the tool name comes from the
+		// stdin payload. The --tool flag overrides that name for
+		// ad-hoc invocations, and it carries the CreatePullRequest
+		// routing sentinel.
 		toolName := tool
 		if toolName == "" {
 			parsed, err := hook.ParseInput(input)
@@ -560,6 +575,17 @@ func run(
 
 		case "Write", "Edit", "MultiEdit":
 			return handlePostFileWrite(ctx, input, cfg, logger)
+
+		case "CreatePullRequest":
+			// Routing sentinel from the hook matcher that names the
+			// create_pull_request tool of the GitHub MCP server. It
+			// arrives through --tool alone, because no payload carries
+			// it as a tool name.
+			if store == nil {
+				return nil
+			}
+
+			return handlePostCreatePullRequest(ctx, input, store, logger)
 
 		default:
 			return nil

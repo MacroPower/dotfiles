@@ -1,6 +1,7 @@
 package hook
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,16 +11,22 @@ import (
 //
 // Cwd, HookEventName, and TranscriptPath are sent on every event.
 // Source is set on SessionStart only (one of "startup", "resume",
-// "clear", "compact"). ToolResponse is set on PostToolUse only.
-// AgentID and AgentType are set on SubagentStart and SubagentStop,
-// TeammateName on TeammateIdle, and Trigger on PreCompact and
-// PostCompact (one of "manual", "auto").
+// "clear", "compact"). AgentID and AgentType are set on SubagentStart
+// and SubagentStop, TeammateName on TeammateIdle, and Trigger on
+// PreCompact and PostCompact (one of "manual", "auto").
+//
+// The tool_response of a PostToolUse payload has one of two forms.
+// Claude Code sends a JSON object for its own tools, such as Bash, and
+// ToolResponse holds that object. It sends a list of content blocks for
+// an MCP tool, and ToolContent holds that list. [ParseInput] leaves
+// both empty for a tool_response of any other form.
 type Input struct {
 	SessionID      string         `json:"session_id"`
 	HookEventName  string         `json:"hook_event_name"`
 	ToolName       string         `json:"tool_name"`
 	ToolInput      map[string]any `json:"tool_input"`
 	ToolResponse   map[string]any `json:"tool_response"`
+	ToolContent    []ContentBlock `json:"-"`
 	TranscriptPath string         `json:"transcript_path"`
 	Prompt         string         `json:"prompt"`
 	StopHookActive bool           `json:"stop_hook_active"`
@@ -32,12 +39,52 @@ type Input struct {
 	Trigger        string         `json:"trigger"`
 }
 
+// ContentBlock is one block of the result of an MCP tool call. Type
+// names the kind of the block, and Text holds the text of a block whose
+// Type is "text".
+type ContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
 // ParseInput decodes the JSON payload Claude Code wrote to the hook's
 // stdin into an [Input].
+//
+// The form of tool_response never fails the decode. A payload whose
+// tool_response is a string, or a list that holds something other than
+// content blocks, decodes with [Input.ToolResponse] and
+// [Input.ToolContent] empty.
 func ParseInput(data []byte) (Input, error) {
-	var h Input
-	if err := json.Unmarshal(data, &h); err != nil {
+	// The outer field takes tool_response from the field of Input with
+	// the same key, because encoding/json prefers the field that is
+	// less nested.
+	var payload struct {
+		Input
+
+		ToolResponse json.RawMessage `json:"tool_response"`
+	}
+
+	err := json.Unmarshal(data, &payload)
+	if err != nil {
 		return Input{}, fmt.Errorf("parsing hook input: %w", err)
+	}
+
+	h := payload.Input
+
+	response := bytes.TrimSpace(payload.ToolResponse)
+
+	switch {
+	case bytes.HasPrefix(response, []byte("{")):
+		err = json.Unmarshal(response, &h.ToolResponse)
+		if err != nil {
+			h.ToolResponse = nil
+		}
+
+	case bytes.HasPrefix(response, []byte("[")):
+		err = json.Unmarshal(response, &h.ToolContent)
+		if err != nil {
+			h.ToolContent = nil
+		}
 	}
 
 	return h, nil

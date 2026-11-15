@@ -2,13 +2,17 @@
 // plan-guard lifecycle rows keyed by session_id, pending plan handoffs
 // keyed by the Claude Code window PID, a log of failed Bash commands
 // for later analysis, the subagents each session spawned, the
-// teammates the idle gate has already blocked once, and the commit and
+// teammates the idle gate has already blocked once, the commit and
 // pull request messages the lint has already denied once for
-// Recommended findings.
+// Recommended findings, and the pull requests that agents opened.
 //
 // Everything keyed by session_id shares that key's lifecycle: clearing
 // or resetting a session drops the rows that gate its next plan cycle,
 // and pruning removes them on the same 24-hour window.
+//
+// The record of opened pull requests belongs to the host instead of to
+// a session. Its key is the pull request, every session reads it, and
+// neither a session reset nor pruning removes a row from it.
 //
 // The store is built for many short-lived concurrent processes
 // sharing one database file: WAL mode, per-connection busy timeouts, a

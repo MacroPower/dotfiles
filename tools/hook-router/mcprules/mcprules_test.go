@@ -2,7 +2,9 @@ package mcprules_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -149,7 +151,28 @@ func TestNewRule(t *testing.T) {
 				{Field: "set_upstream", Test: mcprules.TestTrue},
 				{Field: "force_with_lease", Test: mcprules.TestAbsentOrTrue},
 				{Field: "tags", Test: mcprules.TestAbsentOrZero},
+				{Field: "remote", Test: mcprules.TestAbsent},
+				{Field: "pullNumber", Test: mcprules.TestPullRequestRecorded},
 			},
+		},
+		"pattern on absent": {
+			tool:       "mcp__git__git_push",
+			conditions: []mcprules.Condition{{Field: "remote", Test: mcprules.TestAbsent, Pattern: "origin"}},
+			err:        mcprules.ErrInvalidRule,
+		},
+		"pattern on pullRequestRecorded": {
+			tool: "mcp__github__update_pull_request",
+			conditions: []mcprules.Condition{
+				{Field: "pullNumber", Test: mcprules.TestPullRequestRecorded, Pattern: "[0-9]+"},
+			},
+			err: mcprules.ErrInvalidRule,
+		},
+		"repo field on pullRequestRecorded": {
+			tool: "mcp__github__update_pull_request",
+			conditions: []mcprules.Condition{
+				{Field: "pullNumber", Test: mcprules.TestPullRequestRecorded, RepoField: "repo"},
+			},
+			err: mcprules.ErrInvalidRule,
 		},
 		"pattern that does not compile": {
 			tool:       "mcp__git__git_push",
@@ -385,12 +408,55 @@ func TestConditions(t *testing.T) {
 	isTrue := mcprules.Condition{Field: "v", Test: mcprules.TestTrue}
 	absentOrTrue := mcprules.Condition{Field: "v", Test: mcprules.TestAbsentOrTrue}
 	absentOrZero := mcprules.Condition{Field: "v", Test: mcprules.TestAbsentOrZero}
+	absent := mcprules.Condition{Field: "v", Test: mcprules.TestAbsent}
 
 	cases := map[string]struct {
 		input     map[string]any
 		condition mcprules.Condition
 		want      bool
 	}{
+		"absent: absent field": {
+			condition: absent,
+			input:     map[string]any{"other": "x"},
+			want:      true,
+		},
+		"absent: nil input": {
+			condition: absent,
+			want:      true,
+		},
+		"absent: null": {
+			condition: absent,
+			input:     map[string]any{"v": nil},
+			want:      true,
+		},
+		"absent: false": {
+			condition: absent,
+			input:     map[string]any{"v": false},
+		},
+		"absent: true": {
+			condition: absent,
+			input:     map[string]any{"v": true},
+		},
+		"absent: empty string": {
+			condition: absent,
+			input:     map[string]any{"v": ""},
+		},
+		"absent: string with text": {
+			condition: absent,
+			input:     map[string]any{"v": "main"},
+		},
+		"absent: empty list": {
+			condition: absent,
+			input:     map[string]any{"v": []any{}},
+		},
+		"absent: the number zero": {
+			condition: absent,
+			input:     map[string]any{"v": float64(0)},
+		},
+		"absent: empty object": {
+			condition: absent,
+			input:     map[string]any{"v": map[string]any{}},
+		},
 		"matches: string that the pattern matches": {
 			condition: matches,
 			input:     map[string]any{"v": "feat/x"},
@@ -757,6 +823,229 @@ func TestBranchMatches(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPullRequestRecorded checks the [mcprules.TestPullRequestRecorded]
+// test against the values of its field, the values of the owner and
+// repo fields, and the answers of the [mcprules.PullRequestLookup].
+func TestPullRequestRecorded(t *testing.T) {
+	t.Parallel()
+
+	const tool = "mcp__github__update_pull_request"
+
+	errUnread := errors.New("unread")
+
+	// record holds the pull requests that the lookup reports. The
+	// repository octo-org/broken fails every lookup.
+	record := map[string]bool{"octo-org/widgets#12": true}
+
+	recorded := mcprules.Condition{Field: "pullNumber", Test: mcprules.TestPullRequestRecorded}
+	notDraft := mcprules.Condition{Field: "draft", Test: mcprules.TestAbsentOrTrue}
+
+	cases := map[string]struct {
+		input      map[string]any
+		conditions []mcprules.Condition
+		wantLookup []string
+		noLookup   bool
+		want       bool
+	}{
+		"recorded pull request": {
+			input:      map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": float64(12)},
+			wantLookup: []string{"octo-org/widgets#12"},
+			want:       true,
+		},
+		"another number": {
+			input:      map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": float64(13)},
+			wantLookup: []string{"octo-org/widgets#13"},
+		},
+		"another repository": {
+			input:      map[string]any{"owner": "octo-org", "repo": "gadgets", "pullNumber": float64(12)},
+			wantLookup: []string{"octo-org/gadgets#12"},
+		},
+		"another owner": {
+			input:      map[string]any{"owner": "someone", "repo": "widgets", "pullNumber": float64(12)},
+			wantLookup: []string{"someone/widgets#12"},
+		},
+		"lookup returns an error": {
+			input:      map[string]any{"owner": "octo-org", "repo": "broken", "pullNumber": float64(12)},
+			wantLookup: []string{"octo-org/broken#12"},
+		},
+		"largest number": {
+			input:      map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": float64(2147483647)},
+			wantLookup: []string{"octo-org/widgets#2147483647"},
+		},
+		"number past the largest": {
+			input: map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": float64(2147483648)},
+		},
+		"number is absent": {
+			input: map[string]any{"owner": "octo-org", "repo": "widgets"},
+		},
+		"number is null": {
+			input: map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": nil},
+		},
+		"number is a string": {
+			input: map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": "12"},
+		},
+		"number is zero": {
+			input: map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": float64(0)},
+		},
+		"number is negative": {
+			input: map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": float64(-12)},
+		},
+		"number has a fraction": {
+			input: map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": 12.5},
+		},
+		"owner is absent": {
+			input: map[string]any{"repo": "widgets", "pullNumber": float64(12)},
+		},
+		"owner is empty": {
+			input: map[string]any{"owner": "", "repo": "widgets", "pullNumber": float64(12)},
+		},
+		"owner is not a string": {
+			input: map[string]any{"owner": []any{"octo-org"}, "repo": "widgets", "pullNumber": float64(12)},
+		},
+		"repo is absent": {
+			input: map[string]any{"owner": "octo-org", "pullNumber": float64(12)},
+		},
+		"repo is empty": {
+			input: map[string]any{"owner": "octo-org", "repo": "", "pullNumber": float64(12)},
+		},
+		"nil input": {},
+		"no lookup": {
+			input:    map[string]any{"owner": "octo-org", "repo": "widgets", "pullNumber": float64(12)},
+			noLookup: true,
+		},
+		"condition before it fails, so the lookup does not run": {
+			conditions: []mcprules.Condition{notDraft, recorded},
+			input: map[string]any{
+				"owner":      "octo-org",
+				"repo":       "widgets",
+				"pullNumber": float64(12),
+				"draft":      false,
+			},
+		},
+		"condition after it fails": {
+			conditions: []mcprules.Condition{recorded, notDraft},
+			input: map[string]any{
+				"owner":      "octo-org",
+				"repo":       "widgets",
+				"pullNumber": float64(12),
+				"draft":      false,
+			},
+			wantLookup: []string{"octo-org/widgets#12"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var looked []string
+
+			opts := []mcprules.Option{}
+			if !tc.noLookup {
+				opts = append(opts, mcprules.WithPullRequestLookup(
+					func(_ context.Context, owner, repo string, number int) (bool, error) {
+						key := fmt.Sprintf("%s/%s#%d", owner, repo, number)
+						looked = append(looked, key)
+
+						if repo == "broken" {
+							return true, errUnread
+						}
+
+						return record[key], nil
+					},
+				))
+			}
+
+			conditions := tc.conditions
+			if conditions == nil {
+				conditions = []mcprules.Condition{recorded}
+			}
+
+			opts = append(opts, mcprules.WithRules(mustRule(t, tool, conditions...)))
+			rs := mcprules.New(nil, nil, nil, opts...)
+
+			got, matched := rs.Match(t.Context(), tool, tc.input)
+			require.True(t, matched, "a tool with a conditional rule always gets a decision")
+
+			want := mcprules.DecisionAsk
+			if tc.want {
+				want = mcprules.DecisionAllow
+			}
+
+			assert.Equal(t, want, got.Decision)
+			assert.Equal(t, tc.wantLookup, looked)
+
+			if tc.conditions == nil {
+				assert.Equal(
+					t,
+					"`pullNumber` is a pull request of `owner`/`repo` that an agent opened from this host",
+					got.Conditions,
+				)
+			}
+		})
+	}
+}
+
+// TestParsePullRequestLookup checks that [mcprules.Parse] hands its
+// options to the ruleset, so that a parsed pull request condition
+// reaches the lookup. It also checks that the lookup gets the number
+// of a call as JSON decodes it.
+func TestParsePullRequestLookup(t *testing.T) {
+	t.Parallel()
+
+	const (
+		tool    = "mcp__github__update_pull_request_branch"
+		payload = `{"conditional":[{"tool":"mcp__github__update_pull_request_branch","conditions":[
+			{"field":"base","test":"absent"},
+			{"field":"pullNumber","test":"pullRequestRecorded"}
+		]}]}`
+	)
+
+	lookup := func(_ context.Context, owner, repo string, number int) (bool, error) {
+		return owner == "octo-org" && repo == "widgets" && number == 12, nil
+	}
+
+	// input decodes args the way the hook decodes tool_input.
+	input := func(args string) map[string]any {
+		var m map[string]any
+		require.NoError(t, json.Unmarshal([]byte(args), &m))
+
+		return m
+	}
+
+	rs, err := mcprules.Parse(payload, mcprules.WithPullRequestLookup(lookup))
+	require.NoError(t, err)
+
+	got, matched := rs.Match(t.Context(), tool, input(`{"owner":"octo-org","repo":"widgets","pullNumber":12}`))
+	require.True(t, matched)
+	assert.Equal(t, mcprules.Result{
+		Decision: mcprules.DecisionAllow,
+		Conditions: "`base` is absent and " +
+			"`pullNumber` is a pull request of `owner`/`repo` that an agent opened from this host",
+	}, got)
+
+	got, matched = rs.Match(t.Context(), tool, input(`{"owner":"octo-org","repo":"widgets","pullNumber":13}`))
+	require.True(t, matched)
+	assert.Equal(t, mcprules.DecisionAsk, got.Decision)
+
+	got, matched = rs.Match(
+		t.Context(), tool, input(`{"owner":"octo-org","repo":"widgets","pullNumber":12,"base":""}`),
+	)
+	require.True(t, matched)
+	assert.Equal(t, mcprules.DecisionAsk, got.Decision)
+
+	rs, err = mcprules.Parse(payload)
+	require.NoError(t, err)
+
+	got, matched = rs.Match(t.Context(), tool, input(`{"owner":"octo-org","repo":"widgets","pullNumber":12}`))
+	require.True(t, matched)
+	assert.Equal(t, mcprules.DecisionAsk, got.Decision)
+
+	rs, err = mcprules.Parse("", mcprules.WithPullRequestLookup(lookup))
+	require.NoError(t, err)
+	assert.True(t, rs.Empty(), "a lookup alone decides no call")
 }
 
 // TestParseBranchResolver checks that [mcprules.Parse] hands its

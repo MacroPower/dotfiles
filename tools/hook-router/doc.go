@@ -18,10 +18,12 @@
 //     allows a call of its tool when the arguments meet every
 //     condition. Every other call of that tool gets an ask. A
 //     condition on a branch name reads the current branch of the
-//     repository that the call names when the call names no branch. It
-//     lints the tool arguments that the toolFields of
-//     --message-lint-config name, and findings deny the call before the
-//     allow or ask decision. A deny-listed tool skips the lint.
+//     repository that the call names when the call names no branch. A
+//     condition on a pull request holds when the state database
+//     records that an agent opened it. It lints the tool arguments
+//     that the toolFields of --message-lint-config name, and findings
+//     deny the call before the allow or ask decision. A deny-listed
+//     tool skips the lint.
 //   - PreToolUse:FileWrite asks, under --write-guard, before a Write,
 //     Edit, MultiEdit, or NotebookEdit call in plan or
 //     bypassPermissions mode writes a path that the sandbox denies to
@@ -39,6 +41,11 @@
 //     collapse) through updatedToolOutput. When archiving is on, it
 //     writes the uncompacted stream to a file and appends a pointer, so
 //     the dropped detail stays recoverable.
+//   - PostToolUse:CreatePullRequest records the pull request that a
+//     create_pull_request call of the GitHub MCP server opened, so a
+//     conditional rule can allow later edits to it. "CreatePullRequest"
+//     is a routing sentinel like "MCP", and the hook matcher names the
+//     tool.
 //   - PostToolUse:Write/Edit/MultiEdit runs the matching file formatter
 //     on the written file, then the matching linter from --linter-rules.
 //     Findings block through exit code 2, which reaches the agent that

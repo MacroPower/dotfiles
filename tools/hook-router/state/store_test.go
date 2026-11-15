@@ -469,6 +469,40 @@ func TestPruneStale_PrunesSessionScopedTables_Beyond24h(t *testing.T) {
 	assert.Equal(t, 1, waiverCount, "stale waiver must be pruned, fresh must survive")
 }
 
+// TestPruneStale_KeepsOpenedPullRequests checks that the record of a
+// pull request outlives every window of [state.Store.PruneStale]. The
+// record also outlives the reset and the clearing of the session that
+// wrote it.
+func TestPruneStale_KeepsOpenedPullRequests(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	old := state.PullRequest{Owner: "octo-org", Repo: "widgets", Number: 12}
+	fresh := state.PullRequest{Owner: "octo-org", Repo: "widgets", Number: 13}
+
+	require.NoError(t, store.RecordPullRequest(ctx, old, "stale-sess"))
+	require.NoError(t, store.RecordPullRequest(ctx, fresh, "fresh-sess"))
+
+	// Older than the 24-hour session window and than the retention of
+	// bash_failures.
+	_, err := store.DB().ExecContext(ctx,
+		`UPDATE opened_pull_requests SET created_at = datetime('now', '-400 days') WHERE number = ?`,
+		old.Number)
+	require.NoError(t, err)
+
+	require.NoError(t, store.PruneStale(ctx))
+	require.NoError(t, store.ResetSession(ctx, "stale-sess"))
+	require.NoError(t, store.ClearSession(ctx, "fresh-sess"))
+
+	for _, pr := range []state.PullRequest{old, fresh} {
+		found, err := store.HasPullRequest(ctx, pr)
+		require.NoError(t, err)
+		assert.True(t, found, "pull request %d must keep its record", pr.Number)
+	}
+}
+
 // TestStore_ConcurrentWriters_DistinctSessions exercises inter-process
 // contention on the file lock: each goroutine writes to its own session
 // but all share the same database file.
@@ -1304,6 +1338,177 @@ func TestEnsureSchema_UpgradesFromV8(t *testing.T) {
 	claimed, err := store.MarkMessageLintWarned(t.Context(), "s1", "hash-a")
 	require.NoError(t, err)
 	assert.True(t, claimed)
+}
+
+// seedV9 opens a fresh DB, which walks every migration, so every table
+// lands at the current schema. It then undoes the step from v9 to v10
+// by dropping opened_pull_requests and rolling user_version back to 9.
+func seedV9(t *testing.T, dbPath string) {
+	t.Helper()
+
+	seed, err := state.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	for _, stmt := range []string{
+		`DROP TABLE IF EXISTS opened_pull_requests`,
+		`PRAGMA user_version = 9`,
+	} {
+		_, err = seed.DB().ExecContext(t.Context(), stmt)
+		require.NoError(t, err, stmt)
+	}
+
+	require.NoError(t, seed.Close())
+}
+
+// TestEnsureSchema_UpgradesFromV9 seeds a DB at the v9 schema, which
+// has no opened_pull_requests, and reopens it. The step from v9 to v10
+// must land, so user_version reaches the current state.SchemaVersion
+// and the store reads and writes the added table.
+func TestEnsureSchema_UpgradesFromV9(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "v9.db")
+
+	seedV9(t, dbPath)
+
+	store, err := state.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, store.Close())
+	})
+
+	var version int
+
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
+		`PRAGMA user_version`).Scan(&version))
+	assert.Equal(t, state.SchemaVersion, version, "user_version must reach current state.SchemaVersion after migration")
+
+	pr := state.PullRequest{Owner: "octo-org", Repo: "widgets", Number: 12}
+
+	require.NoError(t, store.RecordPullRequest(t.Context(), pr, "s1"))
+
+	found, err := store.HasPullRequest(t.Context(), pr)
+	require.NoError(t, err)
+	assert.True(t, found)
+}
+
+func TestStoreRecordPullRequest(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	pr := state.PullRequest{Owner: "MacroPower", Repo: "terrarium", Number: 44}
+
+	found, err := store.HasPullRequest(ctx, pr)
+	require.NoError(t, err)
+	assert.False(t, found, "an empty store holds no record")
+
+	require.NoError(t, store.RecordPullRequest(ctx, pr, "s1"))
+	require.NoError(t, store.RecordPullRequest(ctx, pr, "s2"), "a second record of one pull request is not an error")
+
+	var (
+		count   int
+		session string
+	)
+
+	require.NoError(t, store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*), MIN(session_id) FROM opened_pull_requests`).Scan(&count, &session))
+	assert.Equal(t, 1, count, "a second record of one pull request adds no row")
+	assert.Equal(t, "s1", session, "the row keeps the session that opened the pull request")
+
+	cases := map[string]struct {
+		pr   state.PullRequest
+		want bool
+	}{
+		"the recorded pull request": {
+			pr:   pr,
+			want: true,
+		},
+		"owner in another case": {
+			pr:   state.PullRequest{Owner: "macropower", Repo: "terrarium", Number: 44},
+			want: true,
+		},
+		"repository in another case": {
+			pr:   state.PullRequest{Owner: "MacroPower", Repo: "Terrarium", Number: 44},
+			want: true,
+		},
+		"another number": {
+			pr: state.PullRequest{Owner: "MacroPower", Repo: "terrarium", Number: 45},
+		},
+		"another repository": {
+			pr: state.PullRequest{Owner: "MacroPower", Repo: "x", Number: 44},
+		},
+		"another owner": {
+			pr: state.PullRequest{Owner: "octo-org", Repo: "terrarium", Number: 44},
+		},
+		"owner that the recorded owner starts": {
+			pr: state.PullRequest{Owner: "MacroPower2", Repo: "terrarium", Number: 44},
+		},
+		"owner pattern": {
+			pr: state.PullRequest{Owner: "Macro%", Repo: "terrarium", Number: 44},
+		},
+		"empty owner and repository": {
+			pr: state.PullRequest{Number: 44},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			found, err := store.HasPullRequest(ctx, tc.pr)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, found)
+		})
+	}
+}
+
+// TestStoreRecordPullRequest_OtherConnection checks that a store which
+// another process opens later reads a record, the way a later session
+// does.
+func TestStoreRecordPullRequest_OtherConnection(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	pr := state.PullRequest{Owner: "octo-org", Repo: "widgets", Number: 12}
+
+	writer, err := state.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+	require.NoError(t, writer.RecordPullRequest(t.Context(), pr, "s1"))
+	require.NoError(t, writer.Close())
+
+	reader, err := state.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, reader.Close())
+	})
+
+	found, err := reader.HasPullRequest(t.Context(), pr)
+	require.NoError(t, err)
+	assert.True(t, found)
+}
+
+// TestStoreRecordPullRequest_NoTable checks that the record methods
+// return an error when the store has no opened_pull_requests table.
+// [*Store.HasPullRequest] then reports no record.
+func TestStoreRecordPullRequest_NoTable(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+	pr := state.PullRequest{Owner: "octo-org", Repo: "widgets", Number: 12}
+
+	_, err := store.DB().ExecContext(ctx, `DROP TABLE opened_pull_requests`)
+	require.NoError(t, err)
+
+	require.ErrorContains(t, store.RecordPullRequest(ctx, pr, "s1"), "recording pull request")
+
+	found, err := store.HasPullRequest(ctx, pr)
+	require.ErrorContains(t, err, "querying pull request")
+	assert.False(t, found)
 }
 
 func TestStoreMarkMessageLintWarned(t *testing.T) {
