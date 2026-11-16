@@ -9,3 +9,7 @@ trim_trailing_whitespace = true
 [*.nix]
 indent_style = space
 indent_size = 2
+
+# Dagger writes dagger.lock with no final newline.
+[dagger.lock]
+insert_final_newline = unset
