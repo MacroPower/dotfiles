@@ -22,7 +22,17 @@
 // of GH_TOKEN when git connects to github.com over https after those
 // rewrites.
 //
-// When the origin remote has another URL, the error names both URLs.
+// When the origin remote has another URL, the error names both URLs
+// before the rewrites. For the origin remote, it names the URL that
+// the git config of the destination stores, when git_clone accepts
+// that URL as the url input. A call that passes that URL as the url
+// input matches the destination. The git config does not always store
+// such a URL. For example, a file under .git/remotes can define the
+// origin remote. The git config can also store for it an alias such as
+// gh:org/repo that a rewrite expands, or an http URL when the server
+// runs without --allow-insecure. The error then names both URLs after
+// the rewrites, and it says so.
+//
 // The git config can store a credential in a URL, such as in the base
 // of a rewrite. The tool result must not hold that credential, so the
 // error names each URL without its password. It also names each URL

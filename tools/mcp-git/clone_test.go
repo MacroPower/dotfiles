@@ -1228,23 +1228,211 @@ func TestCheckOrigin(t *testing.T) {
 	}
 }
 
-// The mismatch error names the URL that git reads for origin, and it
-// names the url input without the rewrites. It names each URL without
-// a trailing ".git" suffix.
-func TestCheckOriginMismatchNamesURLInput(t *testing.T) {
+// mirrorRewrite is git config text with a url.<base>.insteadOf
+// rewrite whose base starts with the prefix that the rewrite replaces.
+// A URL that starts with the base also starts with that prefix, so git
+// applies the rewrite to the output of the rewrite.
+const mirrorRewrite = "[url \"" + aliasPrefix + "mirror/\"]\n\tinsteadOf = " + aliasPrefix + "\n"
+
+// chainRewrite is git config text with two url.<base>.insteadOf
+// rewrites. The second rewrite replaces the base of the first rewrite.
+// git applies one rewrite to a URL. It therefore applies the second
+// rewrite to the output of the first rewrite only when a caller passes
+// that output as a URL.
+const chainRewrite = "[url \"https://first.invalid/\"]\n\tinsteadOf = " + aliasPrefix + "\n" +
+	"[url \"https://second.invalid/\"]\n\tinsteadOf = https://first.invalid/\n"
+
+// remoteNamed returns git config text that stores url as a URL of the
+// remote name. When name is itself a URL, git reads a url input that
+// holds name as the name of that remote, and not as a URL.
+func remoteNamed(name, url string) string {
+	return "[remote \"" + name + "\"]\n\turl = " + url + "\n"
+}
+
+// suffixRewrite is git config text with a url.<base>.insteadOf
+// rewrite that matches https://example.invalid/a only together with
+// its ".git" suffix.
+const suffixRewrite = "[url \"" + aliasPrefix + "mirror/a.git\"]\n\tinsteadOf = " + aliasPrefix + "a.git\n"
+
+// The mismatch error names for origin the URL that the git config
+// stores, before the rewrites, and it names the url input. It names
+// each URL without a trailing ".git" suffix, unless the URL without
+// the suffix does not match the checkout or equals the other URL. A
+// call that passes the first URL as the url input must match the
+// checkout. The URL that git reads for origin does not always match,
+// because git applies the rewrites to that URL again.
+func TestCheckOriginMismatchNamesStoredURL(t *testing.T) {
 	t.Parallel()
 
-	bare := initBareRepo(t)
-	dest := initWorkClone(t, bare)
+	tcs := map[string]struct {
+		config string
+		origin string
+		url    string
+		got    string
+		want   string
+	}{
+		"no rewrite": {
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+			got:    "https://example.invalid/a",
+			want:   "https://example.invalid/b",
+		},
+		"rewrite changes the origin and the url input": {
+			config: mirrorRewrite,
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+			got:    "https://example.invalid/a",
+			want:   "https://example.invalid/b",
+		},
+		"url input is the URL that git reads for origin": {
+			config: mirrorRewrite,
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "mirror/a",
+			got:    "https://example.invalid/a",
+			want:   "https://example.invalid/mirror/a",
+		},
+		"second rewrite changes the URL that git reads for origin": {
+			config: chainRewrite,
+			origin: aliasPrefix + "a.git",
+			url:    "https://first.invalid/a",
+			got:    "https://example.invalid/a",
+			want:   "https://first.invalid/a",
+		},
+		// git fetches from the first URL of a remote.
+		"origin has two URLs": {
+			config: remoteNamed("origin", aliasPrefix+"c.git"),
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+			got:    "https://example.invalid/a",
+			want:   "https://example.invalid/b",
+		},
+		// An empty value of remote.<name>.url clears the URLs that the
+		// git config stores before it, in git 2.46 and later.
+		"empty value clears the first URL of origin": {
+			config: remoteNamed("origin", "") + remoteNamed("origin", aliasPrefix+"c.git"),
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+			got:    "https://example.invalid/c",
+			want:   "https://example.invalid/b",
+		},
+		// The rewrite points one repository at a fork. It does not
+		// match the stored URL without its ".git" suffix.
+		"rewrite matches the stored URL with its .git suffix": {
+			config: "[url \"" + aliasPrefix + "me/fork.git\"]\n\tinsteadOf = " + aliasPrefix + "org/repo.git\n",
+			origin: aliasPrefix + "org/repo.git",
+			url:    aliasPrefix + "org/other",
+			got:    "https://example.invalid/org/repo.git",
+			want:   "https://example.invalid/org/other",
+		},
+		"stored URL and url input differ only in the .git suffix": {
+			config: suffixRewrite,
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "a",
+			got:    "https://example.invalid/a.git",
+			want:   "https://example.invalid/a",
+		},
+		"url input differs from the stored URL only in the .git suffix": {
+			config: suffixRewrite,
+			origin: aliasPrefix + "a",
+			url:    aliasPrefix + "a.git",
+			got:    "https://example.invalid/a",
+			want:   "https://example.invalid/a.git",
+		},
+	}
 
-	aliasOrigin(t, bare, dest)
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	err := (&handler{}).checkOrigin(t.Context(), aliasPrefix+"other.git", dest)
-	require.ErrorIs(t, err, ErrOriginMismatch)
+			dest := initOriginRepo(t, tc.origin, tc.config)
+			h := &handler{}
 
-	want := "origin URL mismatch: got " + strings.TrimSuffix(bare, ".git") + ", want " + aliasPrefix + "other"
+			err := h.checkOrigin(t.Context(), tc.url, dest)
+			require.ErrorIs(t, err, ErrOriginMismatch)
+			require.EqualError(t, err, "origin URL mismatch: got "+tc.got+", want "+tc.want)
 
-	assert.EqualError(t, err, want)
+			require.NoError(t, h.checkOrigin(t.Context(), tc.got, dest))
+		})
+	}
+}
+
+// The mismatch error names each URL after the rewrites when no URL
+// that the git config stores for origin matches the checkout as a url
+// input. The two URLs after the rewrites differ, because checkOrigin
+// compares them, and the error says which URLs it names.
+func TestCheckOriginMismatchNamesRewrittenURLs(t *testing.T) {
+	t.Parallel()
+
+	const rewritten = ": this message names each URL after the URL rewrites of the git config"
+
+	tcs := map[string]struct {
+		config string
+		origin string
+		url    string
+		want   string
+	}{
+		// git reads the url input "https://example.invalid/a.git" as
+		// the remote of that name, so that input does not match the
+		// checkout.
+		"git config defines a remote whose name is the stored URL": {
+			config: remoteNamed(aliasPrefix+"a.git", aliasPrefix+"c.git"),
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+			want:   "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/b" + rewritten,
+		},
+		"rewrite adds a credential to each URL": {
+			config: credentialRewrite + remoteNamed(aliasPrefix+"a.git", aliasPrefix+"c.git"),
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+			want:   "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/b" + rewritten,
+		},
+		// The error names the url input after the rewrites, so the two
+		// URLs differ even when a rewrite changes its own output. The
+		// url input before the rewrites equals the URL that git reads
+		// for origin.
+		"rewrite changes the url input": {
+			config: shorthandRewrite + mirrorRewrite,
+			origin: "gh:org/a.git",
+			url:    aliasPrefix + "org/a",
+			want:   "origin URL mismatch: got https://example.invalid/org/a, want https://example.invalid/mirror/org/a" + rewritten,
+		},
+		// The error keeps the note about the rewrites when it also
+		// says that the URLs differ only in a credential.
+		"URLs after the rewrites differ only in a credential": {
+			config: remoteNamed(credentialPrefix+"a.git", aliasPrefix+"c.git"),
+			origin: credentialPrefix + "a.git",
+			url:    aliasPrefix + "a.git",
+			want: "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/a" + rewritten +
+				": the URLs differ only in a user or a password that this message leaves out",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dest := initOriginRepo(t, tc.origin, tc.config)
+
+			err := (&handler{}).checkOrigin(t.Context(), tc.url, dest)
+			require.ErrorIs(t, err, ErrOriginMismatch)
+			assert.EqualError(t, err, tc.want)
+		})
+	}
+}
+
+// The git config of a repository can lack remote.origin.url, such as
+// when a file under .git/remotes defines origin. storedOrigin then
+// returns no URL.
+func TestStoredOriginWithoutConfigURL(t *testing.T) {
+	t.Parallel()
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	runGitCmds(t, [][]string{{"git", "init", "-q", dest}})
+
+	stored, err := (&handler{}).storedOrigin(t.Context(), dest, aliasPrefix+"a.git")
+	require.NoError(t, err)
+	assert.Empty(t, stored)
 }
 
 // credentialPrefix is aliasPrefix with a user and a password.
@@ -1363,6 +1551,135 @@ func TestHandleCloneMismatchOmitsCredential(t *testing.T) { //nolint:paralleltes
 		"origin URL mismatch: got https://example.invalid/a, want https://example.invalid/b",
 		resultText(t, result),
 	)
+}
+
+// git applies a rewrite of the git config to a URL that already holds
+// the output of the rewrite. A caller that passes the URL that git
+// reads for origin therefore does not match the checkout. The result
+// of git_clone must name the URL that matches, and it must name two
+// URLs that differ.
+func TestHandleCloneMismatchNamesStoredURL(t *testing.T) {
+	t.Parallel()
+
+	dest := initOriginRepo(t, aliasPrefix+"a.git", mirrorRewrite)
+	h := &handler{}
+
+	for _, tc := range []struct {
+		url  string
+		want string
+	}{
+		{
+			url:  aliasPrefix + "b.git",
+			want: "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/b",
+		},
+		{
+			url:  aliasPrefix + "mirror/a",
+			want: "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/mirror/a",
+		},
+	} {
+		result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: tc.url, Dest: dest})
+		require.NoError(t, err)
+		require.True(t, result.IsError)
+		assert.Equal(t, tc.want, resultText(t, result))
+	}
+}
+
+// shorthandRewrite is git config text with a url.<base>.insteadOf
+// rewrite that expands the alias gh:org/repo to an https URL under
+// aliasPrefix.
+const shorthandRewrite = "[url \"" + aliasPrefix + "\"]\n\tinsteadOf = gh:\n"
+
+// httpRewrite is git config text with a url.<base>.insteadOf rewrite
+// that turns each http URL of example.invalid into an https URL.
+const httpRewrite = "[url \"" + aliasPrefix + "\"]\n\tinsteadOf = http://example.invalid/\n"
+
+// The git config can store for origin a URL that git_clone refuses as
+// a url input, such as an alias that a rewrite expands. The mismatch
+// error must not name that URL. A call that passes the URL that the
+// error names for origin must pass the checks that git_clone runs on
+// the url input before it pulls.
+func TestHandleCloneMismatchSkipsRefusedStoredURL(t *testing.T) {
+	t.Parallel()
+
+	const rewritten = ": this message names each URL after the URL rewrites of the git config"
+
+	tcs := map[string]struct {
+		h      *handler
+		config string
+		origin string
+		url    string
+		got    string
+		want   string
+		note   string
+	}{
+		"alias that a rewrite expands": {
+			h:      &handler{},
+			config: shorthandRewrite,
+			origin: "gh:org/repo.git",
+			url:    aliasPrefix + "other.git",
+			got:    "https://example.invalid/org/repo",
+			want:   "https://example.invalid/other",
+			note:   rewritten,
+		},
+		"http URL that a rewrite turns into an https URL": {
+			h:      &handler{},
+			config: httpRewrite,
+			origin: "http://example.invalid/a.git",
+			url:    aliasPrefix + "b.git",
+			got:    "https://example.invalid/a",
+			want:   "https://example.invalid/b",
+			note:   rewritten,
+		},
+		"local path that a rewrite turns into an https URL": {
+			h:      &handler{},
+			config: "[url \"" + aliasPrefix + "\"]\n\tinsteadOf = /srv/\n",
+			origin: "/srv/a.git",
+			url:    aliasPrefix + "b.git",
+			got:    "https://example.invalid/a",
+			want:   "https://example.invalid/b",
+			note:   rewritten,
+		},
+		// git reads origin from the first value of remote.origin.url.
+		// The second value gives the same URL after the rewrites.
+		"origin also stores a URL that git_clone accepts": {
+			h:      &handler{},
+			config: shorthandRewrite + remoteNamed("origin", aliasPrefix+"org/repo.git"),
+			origin: "gh:org/repo.git",
+			url:    aliasPrefix + "other.git",
+			got:    "https://example.invalid/org/repo",
+			want:   "https://example.invalid/other",
+		},
+		"server accepts http URLs": {
+			h:      &handler{allowInsecure: true},
+			config: httpRewrite,
+			origin: "http://example.invalid/a.git",
+			url:    aliasPrefix + "b.git",
+			got:    "http://example.invalid/a",
+			want:   "https://example.invalid/b",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dest := initOriginRepo(t, tc.origin, tc.config)
+
+			result, _, err := tc.h.handleClone(t.Context(), nil, CloneInput{URL: tc.url, Dest: dest})
+			require.NoError(t, err)
+			require.True(t, result.IsError)
+			require.Equal(t,
+				"origin URL mismatch: got "+tc.got+", want "+tc.want+tc.note,
+				resultText(t, result),
+			)
+
+			// handleClone runs these checks on the url input before it
+			// pulls. The test runs them without handleClone, because
+			// the pull contacts the remote.
+			require.NoError(t, tc.h.checkURL(tc.got))
+			require.NoError(t, tc.h.checkOrigin(t.Context(), tc.got, dest))
+		})
+	}
 }
 
 func TestStripCredential(t *testing.T) {

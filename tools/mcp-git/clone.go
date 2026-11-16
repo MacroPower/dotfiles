@@ -313,20 +313,39 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 // url.<base>.insteadOf rewrites of the git config each time it reads
 // the URL of a remote. The URL that it reads for origin can therefore
 // differ from url, and checkOrigin applies the rewrites to url as
-// well. It reads both URLs in dest, so the same config files rewrite
-// each URL. It strips a trailing ".git" suffix from each URL after the
-// rewrites, and then it compares the two URLs.
+// well, with [rewriteURL]. It reads both URLs in dest, so the same
+// config files rewrite each URL. It strips a trailing ".git" suffix
+// from each URL after the rewrites, and then it compares the two URLs.
 //
-// An [ErrOriginMismatch] error names the URL that git reads for
-// origin, and it names url without the rewrites. It names each URL
-// without a trailing ".git" suffix.
+// An [ErrOriginMismatch] error names the URL of [handler.storedOrigin]
+// for origin, and it names url. It names both URLs before the
+// rewrites. git_clone accepts the first URL as url, and a caller that
+// passes it matches the checkout. The URL that git reads for origin
+// does not always match the checkout. git applies the rewrites to that
+// URL again when a caller passes it as url. A rewrite whose base
+// starts with the prefix that the rewrite replaces changes its own
+// output.
+//
+// The error names each URL without a trailing ".git" suffix. It keeps
+// the suffix of the URL of storedOrigin when the URL without it does
+// not match the checkout, as [matchingForm] decides. It keeps the
+// suffix of url when the URL without it equals the first URL that the
+// error names. The two URLs therefore differ before [stripCredential]
+// removes a credential from each.
+//
+// When storedOrigin returns no URL, the error names the two URLs that
+// checkOrigin compares, after the rewrites, and it says so. For
+// example, storedOrigin returns no URL when [handler.checkURL] refuses
+// the URL that the git config stores for origin, such as the alias
+// gh:org/repo of a rewrite whose insteadOf value is gh:. That rewrite
+// gives a URL that checkURL accepts.
 //
 // The tool result holds the error, so the error names each URL as
-// [stripCredential] returns it. The base of a rewrite can add a user
-// and a password to the URL that git reads for origin. The git config
-// of dest can also store both in the URL of origin. When the two URLs
-// differ only in a part that stripCredential removes, the error names
-// two equal URLs. It then says that a user or a password differs.
+// [stripCredential] returns it. The git config of dest can store a
+// user and a password in the URL of origin. The base of a rewrite can
+// add both to a URL. When the two URLs differ only in a part that
+// stripCredential removes, the error names two equal URLs. It then
+// says that a user or a password differs.
 func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	origin, err := gitValue(ctx, "-C", dest, "remote", "get-url", "origin")
 	if err != nil {
@@ -345,23 +364,7 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 		return fmt.Errorf("reading the origin remote of %s: %w", dest, err)
 	}
 
-	// git ls-remote --get-url prints url after the rewrites, and it
-	// does not contact the remote. When the git config defines a
-	// remote whose name is url, such as with git config
-	// remote.<url>.url, git ls-remote --get-url prints the URL of that
-	// remote instead. When url holds no '/', such as the SCP-style url
-	// git@host:repo, a file named url under .git/remotes or
-	// .git/branches of dest also defines such a remote. git ls-remote
-	// --get-url then prints the URL of that file, or it fails when git
-	// rejects the file.
-	//
-	// git remote add, git remote rename, and git clone --origin refuse
-	// a name that holds ':', and every url that checkURL accepts
-	// outside tests holds one. git writes a file under .git/remotes or
-	// .git/branches only when it copies one from the template
-	// directory. Only a config or a file that someone writes by hand
-	// therefore defines such a remote.
-	rewritten, err := gitValue(ctx, "-C", dest, "ls-remote", "--get-url", "--", url)
+	rewritten, err := rewriteURL(ctx, dest, url)
 	if err != nil {
 		if errors.Is(err, ErrTimeout) {
 			return err
@@ -371,23 +374,155 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	}
 
 	got := strings.TrimSuffix(origin, ".git")
-	want := strings.TrimSuffix(url, ".git")
+	want := strings.TrimSuffix(rewritten, ".git")
 
-	if got == strings.TrimSuffix(rewritten, ".git") {
+	if got == want {
 		return nil
+	}
+
+	stored, err := h.storedOrigin(ctx, dest, origin)
+	if err != nil {
+		return err
+	}
+
+	note := ""
+
+	if stored == "" {
+		note = ": this message names each URL after the URL rewrites of the git config"
+	} else {
+		got, err = matchingForm(ctx, dest, stored, got)
+		if err != nil {
+			return err
+		}
+
+		// got passes the check and url does not, so the two differ.
+		want = strings.TrimSuffix(url, ".git")
+		if want == got {
+			want = url
+		}
 	}
 
 	shownGot := stripCredential(got)
 	shownWant := stripCredential(want)
 
-	if shownGot == shownWant && got != want {
-		return fmt.Errorf(
-			"%w: got %s, want %s: the URLs differ only in a user or a password that this message leaves out",
-			ErrOriginMismatch, shownGot, shownWant,
-		)
+	// got and want differ. When stripCredential returns the same URL
+	// for both, they differ only in a part that it removes. The note
+	// about the rewrites stays, because the caller must still learn
+	// that the error names each URL after the rewrites.
+	if shownGot == shownWant {
+		note += ": the URLs differ only in a user or a password that this message leaves out"
 	}
 
-	return fmt.Errorf("%w: got %s, want %s", ErrOriginMismatch, shownGot, shownWant)
+	return fmt.Errorf("%w: got %s, want %s%s", ErrOriginMismatch, shownGot, shownWant, note)
+}
+
+// matchingForm returns stored without a trailing ".git" suffix when a
+// url input of git_clone that holds that form still passes
+// [handler.checkOrigin]. Otherwise it returns stored. stored is the
+// URL of [handler.storedOrigin], and got is the URL that git reads for
+// origin, without a trailing ".git" suffix.
+//
+// A url.<base>.insteadOf rewrite can match stored only together with
+// its ".git" suffix, such as a rewrite whose insteadOf value is
+// https://host/org/repo.git. git then rewrites stored but not the form
+// without the suffix.
+func matchingForm(ctx context.Context, dest, stored, got string) (string, error) {
+	trimmed := strings.TrimSuffix(stored, ".git")
+	if trimmed == stored {
+		return stored, nil
+	}
+
+	rewritten, err := rewriteURL(ctx, dest, trimmed)
+	if errors.Is(err, ErrTimeout) {
+		return "", err
+	}
+
+	if err == nil && strings.TrimSuffix(rewritten, ".git") == got {
+		return trimmed, nil
+	}
+
+	// When rewriteURL fails, git rejects trimmed as a url input, so
+	// trimmed does not pass the check.
+	return stored, nil
+}
+
+// rewriteURL returns url after git applies the url.<base>.insteadOf
+// rewrites of the git config of the repository at dest. It runs git
+// ls-remote --get-url, which does not contact the remote.
+//
+// When the git config defines a remote whose name is url, such as with
+// git config remote.<url>.url, git ls-remote --get-url prints the URL
+// of that remote instead. When url holds no '/', such as the SCP-style
+// url git@host:repo, a file named url under .git/remotes or
+// .git/branches of dest also defines such a remote. git ls-remote
+// --get-url then prints the URL of that file, or it fails when git
+// rejects the file.
+//
+// git remote add, git remote rename, and git clone --origin refuse a
+// name that holds ':', and every url that [handler.checkURL] accepts
+// outside tests holds one. git writes a file under .git/remotes or
+// .git/branches only when it copies one from the template directory.
+// Only a config or a file that someone writes by hand therefore
+// defines such a remote.
+func rewriteURL(ctx context.Context, dest, url string) (string, error) {
+	return gitValue(ctx, "-C", dest, "ls-remote", "--get-url", "--", url)
+}
+
+// storedOrigin returns the URL that the git config of the repository
+// at dest stores for the origin remote, before git applies the
+// url.<base>.insteadOf rewrites to it. origin is the URL that git
+// reads for that remote, after the rewrites. git_clone accepts the
+// returned URL as a url input, and that input passes
+// [handler.checkOrigin].
+//
+// The config can hold more than one value of remote.origin.url, and
+// git reads origin from one of them. storedOrigin returns the first
+// value that [handler.checkURL] accepts and for which [rewriteURL]
+// returns origin. It returns "" when the config holds no such value.
+// For example, the config does not set the key when a file under
+// .git/remotes defines origin. checkURL refuses some values whose
+// rewrites it accepts, such as the alias gh:org/repo, an http URL
+// without allowInsecure, or a local path without allowFileURLs.
+// rewriteURL returns another URL for a value when the config defines
+// a remote whose name is the value.
+func (h *handler) storedOrigin(ctx context.Context, dest, origin string) (string, error) {
+	values, err := gitValue(ctx, "-C", dest, "config", "--get-all", "remote.origin.url")
+	if err != nil {
+		if errors.Is(err, ErrTimeout) {
+			return "", err
+		}
+
+		// git config exits 1 when the config does not set the key.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("reading git config remote.origin.url of %s: %w", dest, err)
+	}
+
+	for stored := range strings.SplitSeq(values, "\n") {
+		// An empty value clears the values before it, and git rejects
+		// an empty url input. handleClone refuses a url input that
+		// checkURL refuses before it calls checkOrigin, so the caller
+		// cannot pass such a value.
+		if stored == "" || h.checkURL(stored) != nil {
+			continue
+		}
+
+		rewritten, err := rewriteURL(ctx, dest, stored)
+		if errors.Is(err, ErrTimeout) {
+			return "", err
+		}
+
+		// When rewriteURL fails, git rejects the value as a url input,
+		// so the value cannot pass the check.
+		if err == nil && rewritten == origin {
+			return stored, nil
+		}
+	}
+
+	return "", nil
 }
 
 // stripCredential returns url without the credential that it embeds,
