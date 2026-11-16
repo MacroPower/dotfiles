@@ -54,6 +54,10 @@ var (
 	// origin remote.
 	ErrNoOrigin = errors.New("dest holds a repository that has no origin remote")
 
+	// ErrNoOriginURL is returned when the origin remote of the existing
+	// repo at dest has no URL.
+	ErrNoOriginURL = errors.New("dest holds a repository whose origin remote has no URL")
+
 	// ErrCorruptDest is returned when dest holds a .git directory that
 	// [checkGitDir] rejects and the handler cannot move dest aside.
 	ErrCorruptDest = errors.New("dest holds a corrupt git directory")
@@ -307,7 +311,9 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 
 // checkOrigin verifies that url is the URL of the origin remote of the
 // existing repo at dest. A repo that has no origin remote fails with
-// [ErrNoOrigin].
+// [ErrNoOrigin]. A repo whose origin remote has no URL fails with
+// [ErrNoOriginURL], as [originLacksURL] decides. Neither error depends
+// on url.
 //
 // git clone stores url as the URL of origin. git applies the
 // url.<base>.insteadOf rewrites of the git config each time it reads
@@ -364,6 +370,15 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 		return fmt.Errorf("reading the origin remote of %s: %w", dest, err)
 	}
 
+	lacksURL, err := originLacksURL(ctx, dest, origin)
+	if err != nil {
+		return err
+	}
+
+	if lacksURL {
+		return fmt.Errorf("%w: %s: choose another dest, or delete the directory and retry", ErrNoOriginURL, dest)
+	}
+
 	rewritten, err := rewriteURL(ctx, dest, url)
 	if err != nil {
 		if errors.Is(err, ErrTimeout) {
@@ -414,6 +429,45 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	}
 
 	return fmt.Errorf("%w: got %s, want %s%s", ErrOriginMismatch, shownGot, shownWant, note)
+}
+
+// originLacksURL reports whether the origin remote of the repository
+// at dest has no URL. origin is the URL that git reads for that
+// remote.
+//
+// The git config defines the remote without a URL when it stores no
+// URL in remote.origin.url and sets another key of the remote.
+// remote.origin.pushurl and remote.origin.fetch are such keys. git
+// uses the name of a remote without a URL as its URL, so git remote
+// get-url prints origin and exits with status 0.
+//
+// The git config can also store the word origin as the URL of the
+// remote. originLacksURL therefore reads remote.origin.url when origin
+// is the name of the remote. [configValue] returns the last value that
+// the config stores for the key. An empty value clears the URLs that
+// the config stores before it, in git 2.46 and later. The config
+// therefore stores no URL for the remote when configValue returns "".
+//
+// git applies the url.<base>.insteadOf rewrites to the name as well.
+// When a rewrite changes the name, git reads another URL for the
+// remote than its name, and originLacksURL returns false.
+// [handler.checkOrigin] then compares that URL with its url input.
+//
+// A file under .git/remotes or .git/branches can also store the word
+// origin as the URL of the remote. git reads the same URL for that
+// remote as for a remote without a URL, and originLacksURL returns
+// true for both remotes.
+func originLacksURL(ctx context.Context, dest, origin string) (bool, error) {
+	if origin != defaultRemote {
+		return false, nil
+	}
+
+	stored, err := configValue(ctx, dest, "remote.origin.url")
+	if err != nil {
+		return false, err
+	}
+
+	return stored == "", nil
 }
 
 // matchingForm returns stored without a trailing ".git" suffix when a

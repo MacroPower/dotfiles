@@ -22,6 +22,11 @@
 // of GH_TOKEN when git connects to github.com over https after those
 // rewrites.
 //
+// git_clone also refuses a destination whose origin remote has no URL,
+// and the error says that the remote has none. The git config defines
+// such a remote when it sets another key of the remote, such as
+// remote.origin.pushurl, and stores no URL in remote.origin.url.
+//
 // When the origin remote has another URL, the error names both URLs
 // before the rewrites. For the origin remote, it names the URL that
 // the git config of the destination stores, when git_clone accepts

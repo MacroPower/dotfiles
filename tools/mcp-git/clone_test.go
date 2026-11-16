@@ -1032,14 +1032,16 @@ func TestHandleOriginMismatch(t *testing.T) {
 }
 
 // A destination can hold a repository that has no origin remote, such
-// as the repository that git init creates. The error must name the
-// destination and the missing remote, and git_clone must leave the
-// destination in place.
+// as the repository that git init creates. Its git config can also
+// define the origin remote without a URL. The error must name the
+// destination and what the repository lacks, and git_clone must leave
+// the destination in place.
 func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 	t.Parallel()
 
 	tcs := map[string]struct {
 		setup func(t *testing.T, bare, dest string)
+		err   error
 	}{
 		"repository of git init": {
 			setup: func(t *testing.T, _, dest string) {
@@ -1047,6 +1049,7 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 
 				runGitCmds(t, [][]string{{"git", "init", "-q", dest}})
 			},
+			err: ErrNoOrigin,
 		},
 		"clone that lost its origin": {
 			setup: func(t *testing.T, bare, dest string) {
@@ -1057,6 +1060,7 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 					{"git", "-C", dest, "remote", "remove", "origin"},
 				})
 			},
+			err: ErrNoOrigin,
 		},
 		"repository with another remote": {
 			setup: func(t *testing.T, bare, dest string) {
@@ -1067,6 +1071,40 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 					{"git", "-C", dest, "remote", "add", "upstream", bare},
 				})
 			},
+			err: ErrNoOrigin,
+		},
+		"origin with a push URL and no URL": {
+			setup: func(t *testing.T, bare, dest string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{
+					{"git", "init", "-q", dest},
+					{"git", "-C", dest, "config", "remote.origin.pushurl", bare},
+				})
+			},
+			err: ErrNoOriginURL,
+		},
+		"origin with a fetch refspec and no URL": {
+			setup: func(t *testing.T, _, dest string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{
+					{"git", "init", "-q", dest},
+					{"git", "-C", dest, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"},
+				})
+			},
+			err: ErrNoOriginURL,
+		},
+		"clone that lost the URL of its origin": {
+			setup: func(t *testing.T, bare, dest string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{
+					{"git", "clone", "-q", bare, dest},
+					{"git", "-C", dest, "config", "--unset", "remote.origin.url"},
+				})
+			},
+			err: ErrNoOriginURL,
 		},
 	}
 
@@ -1086,10 +1124,10 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, result.IsError)
 
-			text := resultText(t, result)
-			assert.Contains(t, text, ErrNoOrigin.Error()+": "+dest)
-			assert.NotContains(t, text, ErrOriginMismatch.Error())
-			assert.NotContains(t, text, "exit status")
+			assert.Equal(t,
+				tc.err.Error()+": "+dest+": choose another dest, or delete the directory and retry",
+				resultText(t, result),
+			)
 
 			assert.DirExists(t, filepath.Join(dest, ".git"))
 
@@ -1418,6 +1456,115 @@ func TestCheckOriginMismatchNamesRewrittenURLs(t *testing.T) {
 			assert.EqualError(t, err, tc.want)
 		})
 	}
+}
+
+// initConfigRepo creates a repository with git init, adds config to
+// its git config, and returns its path.
+func initConfigRepo(t *testing.T, config string) string {
+	t.Helper()
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	runGitCmds(t, [][]string{{"git", "init", "-q", dest}})
+	appendGitConfig(t, dest, config)
+
+	return dest
+}
+
+// pushOnlyOrigin is git config text that defines the origin remote
+// with a push URL and without a URL.
+const pushOnlyOrigin = "[remote \"origin\"]\n\tpushurl = " + aliasPrefix + "p.git\n"
+
+// The git config can define the origin remote without a URL. git then
+// uses the name of the remote as its URL, and git remote get-url
+// prints origin. The error must say that the remote has no URL
+// whatever the url input holds, and it must not name origin as a URL.
+func TestCheckOriginWithoutURL(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		h      *handler
+		config string
+		url    string
+	}{
+		"git config sets only a push URL": {
+			h:      &handler{},
+			config: pushOnlyOrigin,
+			url:    aliasPrefix + "b.git",
+		},
+		"git config sets only a fetch refspec": {
+			h:      &handler{},
+			config: "[remote \"origin\"]\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n",
+			url:    aliasPrefix + "b.git",
+		},
+		// An empty value of remote.<name>.url clears the URLs that the
+		// git config stores before it, in git 2.46 and later.
+		"empty value clears the URL of origin": {
+			h:      &handler{},
+			config: remoteNamed("origin", aliasPrefix+"a.git") + remoteNamed("origin", ""),
+			url:    aliasPrefix + "a.git",
+		},
+		// git reads the url input "origin" as the name of the remote,
+		// so the two URLs that checkOrigin compares are equal.
+		"url input is the name of the remote": {
+			h:      &handler{allowFileURLs: true},
+			config: pushOnlyOrigin,
+			url:    "origin",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dest := initConfigRepo(t, tc.config)
+
+			err := tc.h.checkOrigin(t.Context(), tc.url, dest)
+			require.ErrorIs(t, err, ErrNoOriginURL)
+			assert.EqualError(t, err,
+				"dest holds a repository whose origin remote has no URL: "+dest+
+					": choose another dest, or delete the directory and retry",
+			)
+		})
+	}
+}
+
+// The git config can store the word origin as the URL of the origin
+// remote. git reads the same URL for that remote as for an origin
+// remote without a URL. The remote has a URL, so checkOrigin must
+// compare that URL with the url input.
+func TestCheckOriginStoredRemoteName(t *testing.T) {
+	t.Parallel()
+
+	dest := initOriginRepo(t, "origin", "")
+	h := &handler{allowFileURLs: true}
+
+	err := h.checkOrigin(t.Context(), aliasPrefix+"b.git", dest)
+	require.ErrorIs(t, err, ErrOriginMismatch)
+	require.EqualError(t, err, "origin URL mismatch: got origin, want https://example.invalid/b")
+
+	require.NoError(t, h.checkOrigin(t.Context(), "origin", dest))
+}
+
+// git applies the rewrites of the git config to the name that it uses
+// as the URL of a remote without a URL. When a rewrite changes the
+// name, git reads another URL for origin than the name. checkOrigin
+// must compare that URL with the url input, as it compares every other
+// URL of origin.
+func TestCheckOriginRewrittenRemoteName(t *testing.T) {
+	t.Parallel()
+
+	dest := initConfigRepo(t, pushOnlyOrigin+"[url \""+aliasPrefix+"\"]\n\tinsteadOf = ori\n")
+	h := &handler{}
+
+	err := h.checkOrigin(t.Context(), aliasPrefix+"b.git", dest)
+	require.ErrorIs(t, err, ErrOriginMismatch)
+	require.EqualError(t, err,
+		"origin URL mismatch: got https://example.invalid/gin, want https://example.invalid/b"+
+			": this message names each URL after the URL rewrites of the git config",
+	)
+
+	require.NoError(t, h.checkOrigin(t.Context(), aliasPrefix+"gin", dest))
 }
 
 // The git config of a repository can lack remote.origin.url, such as
