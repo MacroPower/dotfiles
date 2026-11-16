@@ -14,20 +14,45 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/gittest"
 )
 
-// TestMain keeps the repository of the developer from every test. The
-// tests run git in their setup and through [git.Runner]. Variables of
-// the environment point git at a repository. With GIT_DIR set, a git
-// command acts on the repository that GIT_DIR names, not on the
-// repository of its working directory. The setup of a test then
+// TestMain keeps the git config and the repository of the developer
+// from every test. The tests run git in their setup and through
+// [git.Runner], and keys of the git config change what git does. With
+// core.hooksPath set in the global config, each git commit of a test
+// setup runs the hooks of the developer. git init also copies the
+// hooks of the template directory that GIT_TEMPLATE_DIR names. Each git
+// command of the tests therefore skips the system config and reads an
+// empty global config, and git init copies no template.
+//
+// Variables of the environment point git at a repository. With GIT_DIR
+// set, a git command acts on the repository that GIT_DIR names, not on
+// the repository of its working directory. The setup of a test then
 // commits to the branch of the developer. TestMain therefore unsets
 // each variable that [gittest.RepositoryEnv] lists.
 func TestMain(m *testing.M) {
-	err := gittest.UnsetRepositoryEnv(context.Background())
+	err := gittest.IsolateEnv(context.Background())
 	if err != nil {
 		panic(err)
 	}
 
 	os.Exit(m.Run())
+}
+
+// [TestMain] makes git skip the system config, the global config, and
+// the template directory of the developer. The git commands of the
+// tests must therefore read no key of that config, and they must run
+// no hook of the developer.
+func TestGitSkipsDeveloperConfig(t *testing.T) {
+	t.Parallel()
+
+	gittest.CheckConfigEnv(t, func(t *testing.T) {
+		t.Helper()
+
+		// The tests create their repositories with these commands.
+		// git runs hooks for the git add, the git commit, and the git
+		// checkout among them. The git commit signs its commit when
+		// the config says so.
+		runGit(t, initTestRepo(t), "checkout", "-b", "feat/x")
+	})
 }
 
 // [TestMain] unsets each variable of the environment that points git

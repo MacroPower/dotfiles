@@ -18,11 +18,11 @@ import (
 // it is. runLeaking starts such a process.
 const leakEnv = "HOOK_ROUTER_GITTEST_LEAK"
 
-// TestMain keeps the repository of the developer from every test, as
-// the documentation of package gittest describes.
+// TestMain keeps the git config and the repository of the developer
+// from every test, as the documentation of package gittest describes.
 func TestMain(m *testing.M) {
 	if os.Getenv(leakEnv) == "" {
-		err := gittest.UnsetRepositoryEnv(context.Background())
+		err := gittest.IsolateEnv(context.Background())
 		if err != nil {
 			panic(err)
 		}
@@ -40,7 +40,7 @@ func TestRepositoryEnv(t *testing.T) {
 	assert.Subset(t, names, []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"})
 }
 
-func TestUnsetRepositoryEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
+func TestIsolateEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
 	names, err := gittest.RepositoryEnv(t.Context())
 	require.NoError(t, err)
 
@@ -54,7 +54,13 @@ func TestUnsetRepositoryEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
 		t.Setenv(name, "value")
 	}
 
-	require.NoError(t, gittest.UnsetRepositoryEnv(t.Context()))
+	// The shell of a developer can name a global config file, turn the
+	// system config on, and name a template directory.
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "0")
+	t.Setenv("GIT_TEMPLATE_DIR", t.TempDir())
+
+	require.NoError(t, gittest.IsolateEnv(t.Context()))
 
 	for _, name := range names {
 		_, set := os.LookupEnv(name)
@@ -62,12 +68,40 @@ func TestUnsetRepositoryEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
 	}
 
 	assert.Equal(t, "value", os.Getenv(other))
+	assert.Equal(t, os.DevNull, os.Getenv("GIT_CONFIG_GLOBAL"))
+	assert.Equal(t, "1", os.Getenv("GIT_CONFIG_NOSYSTEM"))
+
+	// git init falls back to the init.templateDir key and then to the
+	// template directory of the git installation when the variable is
+	// unset. An empty value makes it copy no template at all.
+	template, set := os.LookupEnv("GIT_TEMPLATE_DIR")
+	assert.True(t, set, "GIT_TEMPLATE_DIR is unset")
+	assert.Empty(t, template)
 }
 
-// When git cannot list the variables, [gittest.UnsetRepositoryEnv]
-// returns the error and unsets nothing. A TestMain then stops before
-// the tests run, and no test runs git with GIT_DIR still set.
-func TestUnsetRepositoryEnvWithoutGit(t *testing.T) { //nolint:paralleltest // t.Setenv
+// git reads the global config before it lists the variables, and it
+// stops at a config file that it cannot parse. [gittest.IsolateEnv]
+// must therefore skip the config of the developer before it runs git.
+func TestIsolateEnvWithBrokenConfig(t *testing.T) { //nolint:paralleltest // t.Setenv
+	file := filepath.Join(t.TempDir(), "gitconfig")
+
+	require.NoError(t, os.WriteFile(file, []byte("[broken\n"), 0o644))
+	t.Setenv("GIT_CONFIG_GLOBAL", file)
+
+	var exitErr *exec.ExitError
+
+	_, err := gittest.RepositoryEnv(t.Context())
+	require.ErrorAs(t, err, &exitErr)
+
+	require.NoError(t, gittest.IsolateEnv(t.Context()))
+
+	assert.Equal(t, os.DevNull, os.Getenv("GIT_CONFIG_GLOBAL"))
+}
+
+// When git cannot list the variables, [gittest.IsolateEnv] returns the
+// error and unsets nothing. A TestMain then stops before the tests
+// run, and no test runs git with GIT_DIR still set.
+func TestIsolateEnvWithoutGit(t *testing.T) { //nolint:paralleltest // t.Setenv
 	t.Setenv("GIT_DIR", "value")
 
 	// No directory of PATH holds git.
@@ -76,7 +110,7 @@ func TestUnsetRepositoryEnvWithoutGit(t *testing.T) { //nolint:paralleltest // t
 	_, err := gittest.RepositoryEnv(t.Context())
 	require.ErrorIs(t, err, exec.ErrNotFound)
 
-	err = gittest.UnsetRepositoryEnv(t.Context())
+	err = gittest.IsolateEnv(t.Context())
 	require.ErrorIs(t, err, exec.ErrNotFound)
 
 	assert.Equal(t, "value", os.Getenv("GIT_DIR"))
@@ -124,7 +158,9 @@ func TestCheckRepositoryEnv(t *testing.T) {
 func TestCheckRepositoryEnvFindsLeak(t *testing.T) {
 	t.Parallel()
 
-	out := runLeaking(t)
+	const checked = "TestCheckRepositoryEnv"
+
+	out := runLeaking(t, checked)
 
 	assert.Contains(t, out, "--- FAIL: "+checked+"/")
 	assert.NotContains(t, out, "--- PASS: "+checked+"/")
@@ -139,25 +175,50 @@ func TestCheckRepositoryEnvFindsLeak(t *testing.T) {
 func TestCheckRepositoryEnvStopsBeforeCases(t *testing.T) {
 	t.Parallel()
 
+	const checked = "TestCheckRepositoryEnv"
+
 	dev := gittest.InitRepository(t)
 	before := gittest.ReadTree(t, dev)
 
-	out := runLeaking(t, "GIT_DIR="+filepath.Join(dev, ".git"))
+	out := runLeaking(t, checked, "GIT_DIR="+filepath.Join(dev, ".git"))
 
 	assert.Contains(t, out, "TestMain left GIT_DIR set")
 	assert.NotContains(t, out, checked+"/")
 	assert.Equal(t, before, gittest.ReadTree(t, dev), "a file of the repository changed")
 }
 
-// checked names the test that runLeaking runs.
-const checked = "TestCheckRepositoryEnv"
+// [TestMain] makes git skip the system config, the global config, and
+// the template directory of the developer, so the check passes.
+func TestCheckConfigEnv(t *testing.T) {
+	t.Parallel()
+
+	gittest.CheckConfigEnv(t, commitRepository)
+}
+
+// [gittest.CheckConfigEnv] must fail every one of its cases when
+// TestMain leaves git to read the system config, the global config,
+// and the template directory. Together the failures must report a key
+// that git config read from the config file of a case and a hook that
+// git ran from the hooks directory of a case.
+func TestCheckConfigEnvFindsLeak(t *testing.T) {
+	t.Parallel()
+
+	const checked = "TestCheckConfigEnv"
+
+	out := runLeaking(t, checked)
+
+	assert.Contains(t, out, "--- FAIL: "+checked+"/")
+	assert.NotContains(t, out, "--- PASS: "+checked+"/")
+	assert.Contains(t, out, "git read the config of the developer")
+	assert.Contains(t, out, "git ran a hook of the developer")
+}
 
 // runLeaking starts the test binary again with leakEnv and env set,
-// and the new process runs [TestCheckRepositoryEnv]. The [TestMain] of
-// that process and of each process that it starts then unsets nothing.
-// runLeaking fails t when the process passes, and it returns the output
-// of the process.
-func runLeaking(t *testing.T, env ...string) string {
+// and the new process runs the test that checked names. The [TestMain]
+// of that process and of each process that it starts then leaves the
+// environment as it is. runLeaking fails t when the process passes,
+// and it returns the output of the process.
+func runLeaking(t *testing.T, checked string, env ...string) string {
 	t.Helper()
 
 	binary, err := os.Executable()

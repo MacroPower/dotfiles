@@ -136,6 +136,7 @@
 // composes them.
 //
 // The gittest subpackage serves the tests, and no engine imports it.
-// Each test package that runs git imports it to unset the variables of
-// the environment that point git at a repository.
+// It keeps the git config, the template directory, and the repository
+// of the developer out of the tests. Each test package that runs git
+// imports it.
 package main

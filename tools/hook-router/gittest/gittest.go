@@ -19,6 +19,30 @@ import (
 // probeEnv marks a process that [CheckRepositoryEnv] started.
 const probeEnv = "HOOK_ROUTER_GITTEST_PROBE"
 
+// configProbeEnv marks a process that [CheckConfigEnv] started.
+const configProbeEnv = "HOOK_ROUTER_GITTEST_CONFIG_PROBE"
+
+// canaryKey names a config key that only the config file of a case of
+// [CheckConfigEnv] sets.
+const canaryKey = "gittest.developerConfig"
+
+// configEnv holds each variable that [IsolateEnv] sets, with its
+// value. With GIT_CONFIG_NOSYSTEM set, git skips the system config.
+// With GIT_CONFIG_GLOBAL set, git reads the file that the variable
+// names as the global config. It then reads neither the .gitconfig
+// file of the home directory nor the config file of the XDG directory.
+//
+// GIT_TEMPLATE_DIR names the template directory, and it takes
+// precedence over the init.templateDir key of the config. git init and
+// git clone copy the files of the template directory, such as its
+// hooks, into each repository that they create. With the variable set
+// to an empty value, they copy no file.
+var configEnv = map[string]string{
+	"GIT_CONFIG_NOSYSTEM": "1",
+	"GIT_CONFIG_GLOBAL":   os.DevNull,
+	"GIT_TEMPLATE_DIR":    "",
+}
+
 // RepositoryEnv returns the name of each variable of the environment
 // that is local to one repository, such as GIT_DIR, GIT_WORK_TREE, and
 // GIT_INDEX_FILE. git rev-parse --local-env-vars prints the names, so
@@ -33,14 +57,29 @@ func RepositoryEnv(ctx context.Context) ([]string, error) {
 	return strings.Fields(string(out)), nil
 }
 
-// UnsetRepositoryEnv unsets each variable that [RepositoryEnv] lists,
-// for the whole process. A TestMain calls it before it runs the tests.
+// IsolateEnv keeps the git config and the repository of the developer
+// from each git command of the process. A TestMain calls it before it
+// runs the tests.
 //
-// The list also holds variables that pass config to git, such as
-// GIT_CONFIG_COUNT and GIT_CONFIG_PARAMETERS. The git commands of the
-// process then read no config from those variables. They still read
-// the system config and the global config of the developer.
-func UnsetRepositoryEnv(ctx context.Context) error {
+// IsolateEnv makes git skip the system config and read an empty global
+// config. It sets an empty template directory, so git init and git
+// clone copy no hook into a new repository. It also unsets each
+// variable that [RepositoryEnv] lists. The list holds the variables
+// that pass config to git, such as GIT_CONFIG_COUNT and
+// GIT_CONFIG_PARAMETERS. A git command of the process therefore reads
+// only the config of the repository that it acts on.
+func IsolateEnv(ctx context.Context) error {
+	// git reads the system config and the global config before it
+	// prints the names of RepositoryEnv. It stops at a config file
+	// that it cannot parse. The variables of configEnv are therefore
+	// in place before RepositoryEnv runs git.
+	for name, value := range configEnv {
+		err := os.Setenv(name, value)
+		if err != nil {
+			return fmt.Errorf("setting %s: %w", name, err)
+		}
+	}
+
 	names, err := RepositoryEnv(ctx)
 	if err != nil {
 		return err
@@ -50,7 +89,7 @@ func UnsetRepositoryEnv(ctx context.Context) error {
 		// git reads an empty value of some of these variables. For
 		// example, a git config command writes the file that
 		// GIT_CONFIG names, and it fails when the value names no file.
-		// UnsetRepositoryEnv therefore unsets each variable.
+		// IsolateEnv therefore unsets each variable.
 		err := os.Unsetenv(name)
 		if err != nil {
 			return fmt.Errorf("unsetting %s: %w", name, err)
@@ -163,6 +202,209 @@ func CheckRepositoryEnv(t *testing.T, setup func(t *testing.T)) {
 			assert.Equal(t, before, readTree(t, dev), "a file of the repository changed")
 			require.NoError(t, err, "%s", out)
 		})
+	}
+}
+
+// CheckConfigEnv fails t when the TestMain of its test package leaves
+// git to read the system config, the global config, or the template
+// directory of the developer. One top-level test of each test package
+// that runs git calls it. setup runs git commands that the tests of the
+// package run, such as the commands that create a repository with one
+// commit.
+//
+// TestMain sets its variables when the test binary starts, so a test
+// that sets them again undoes the work of TestMain. CheckConfigEnv
+// therefore starts the test binary again for each of its cases. The
+// new process runs only the test that called CheckConfigEnv. In that
+// process, CheckConfigEnv checks that git config does not find a key
+// of the config file of the case, and it runs setup. The case then
+// checks that git ran no hook of the case.
+//
+// The environment of each case leads git to a config file or to a
+// template directory of the case. A config file sits in one of the
+// places where git looks for the system config or the global config.
+// It names a directory of hooks in core.hooksPath, and it makes git
+// commit sign each commit with a program that fails. A template
+// directory holds the hooks in its hooks directory, and git init
+// copies them into each repository that it creates.
+//
+// [CheckRepositoryEnv] covers the variables that pass config to git,
+// because [RepositoryEnv] lists them.
+func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
+	t.Helper()
+
+	if os.Getenv(configProbeEnv) != "" {
+		// git config exits 1 when no config sets the key, and only
+		// the config file of the case sets canaryKey. setup stops the
+		// test when a git command fails, so this check runs first.
+		cmd := exec.CommandContext(t.Context(), "git", "config", "--get", canaryKey)
+		cmd.Dir = t.TempDir()
+
+		_, err := cmd.Output()
+
+		var exitErr *exec.ExitError
+		if assert.ErrorAs(t, err, &exitErr, "git read the config of the developer") {
+			assert.Equal(t, 1, exitErr.ExitCode(), "%s", exitErr.Stderr)
+		}
+
+		setup(t)
+
+		return
+	}
+
+	binary, err := os.Executable()
+	require.NoError(t, err)
+
+	run := "-test.run=^" + t.Name() + "$"
+
+	tcs := map[string]struct {
+		// env names the variable that leads git to the config file or
+		// to the template directory.
+		env string
+		// file is the path of the config file inside the directory
+		// that env names. It is empty when env names the config file.
+		file string
+		// template is true when env names a template directory. The
+		// case then writes no config file.
+		template bool
+	}{
+		"system config": {
+			env: "GIT_CONFIG_SYSTEM",
+		},
+		"global config variable": {
+			env: "GIT_CONFIG_GLOBAL",
+		},
+		"config in the home directory": {
+			env:  "HOME",
+			file: ".gitconfig",
+		},
+		"config in the XDG directory": {
+			env:  "XDG_CONFIG_HOME",
+			file: filepath.Join("git", "config"),
+		},
+		// git reads the init.templateDir key from the config, which
+		// the other cases cover. The variable names the template
+		// directory outside the config.
+		"template directory": {
+			env:      "GIT_TEMPLATE_DIR",
+			template: true,
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dev := t.TempDir()
+			home := filepath.Join(dev, "home")
+			xdg := filepath.Join(dev, "xdg")
+			ran := filepath.Join(dev, "ran")
+			path := filepath.Join(dev, "developer")
+
+			for _, dir := range []string{home, xdg} {
+				require.NoError(t, os.MkdirAll(dir, 0o755))
+			}
+
+			if tc.template {
+				writeHooks(t, filepath.Join(path, "hooks"), ran)
+			} else {
+				hooks := filepath.Join(dev, "hooks")
+
+				writeHooks(t, hooks, ran)
+				writeConfig(t, filepath.Join(path, tc.file), hooks)
+			}
+
+			// Each case names a home directory, an XDG directory, and
+			// a system config of its own. The process inherits no
+			// template directory, so only the template directory case
+			// names one. When TestMain leaves git to read the config
+			// and the template directory, the process therefore reads
+			// those of the case. It runs no hook of the developer who
+			// runs the tests.
+			env := []string{
+				"HOME=" + home,
+				"XDG_CONFIG_HOME=" + xdg,
+				"GIT_CONFIG_SYSTEM=" + os.DevNull,
+				tc.env + "=" + path,
+				configProbeEnv + "=1",
+			}
+
+			//nolint:gosec // G204: binary is the test binary itself.
+			cmd := exec.CommandContext(t.Context(), binary, run)
+			cmd.Env = slices.Concat(environWithoutConfigEnv(), env)
+
+			out, err := cmd.CombinedOutput()
+
+			// A process that fails can still run a hook, so the case
+			// reports both.
+			assert.NoFileExists(t, ran, "git ran a hook of the developer")
+			require.NoError(t, err, "%s", out)
+		})
+	}
+}
+
+// environWithoutConfigEnv returns the environment of the process
+// without the variables of configEnv. The process holds them after its
+// TestMain called [IsolateEnv]. A process that inherits them skips the
+// config file and the template directory of each case, whatever its
+// own TestMain does.
+func environWithoutConfigEnv() []string {
+	return slices.DeleteFunc(os.Environ(), func(entry string) bool {
+		name, _, _ := strings.Cut(entry, "=")
+		_, ok := configEnv[name]
+
+		return ok
+	})
+}
+
+// writeHooks creates the directory dir and writes hooks to it. Each
+// hook appends its path to the file ran when git runs it.
+func writeHooks(t *testing.T, dir, ran string) {
+	t.Helper()
+
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	// git runs these hooks for commands of a test setup, such as git
+	// add, git commit, and git checkout.
+	names := []string{
+		"pre-commit",
+		"prepare-commit-msg",
+		"commit-msg",
+		"post-commit",
+		"post-checkout",
+		"post-index-change",
+		"reference-transaction",
+	}
+
+	script := "#!/bin/sh\necho \"$0\" >> '" + ran + "'\n"
+
+	for _, name := range names {
+		//nolint:gosec // G306: git runs a hook only when the file is executable.
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755))
+	}
+}
+
+// writeConfig writes the config of a developer to file, and it creates
+// the directory of the file. The config sets core.hooksPath to the
+// directory hooks, and it sets canaryKey. It also makes git commit sign
+// each commit with a program that fails. git config writes the file,
+// so git quotes each value.
+func writeConfig(t *testing.T, file, hooks string) {
+	t.Helper()
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+
+	for _, setting := range [][2]string{
+		{"core.hooksPath", hooks},
+		{"commit.gpgSign", "true"},
+		{"gpg.program", "false"},
+		{canaryKey, "true"},
+	} {
+		//nolint:gosec // G204: the arguments name a file and a setting of the case.
+		cmd := exec.CommandContext(t.Context(), "git", "config", "--file", file, setting[0], setting[1])
+
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%v: %s", cmd.Args, out)
 	}
 }
 
