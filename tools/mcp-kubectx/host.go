@@ -232,11 +232,14 @@ func (s *stringSliceFlag) Set(v string) error {
 // runHostSelect adds a provision record for the SA to the ledger
 // before it creates the SA. A later `host sweep` of the same
 // kubeconfig reads that record to delete the SA after the `serve`
-// that owns it has died, on whichever cluster the SA lies. With
-// both ids set, an id that is not 16 lowercase hex characters fails
-// the call with [ledger.ErrInvalidID] before any cluster-side
-// mutation. When the create fails, runHostSelect removes the record
-// only after a failure that left nothing on the cluster, such as a
+// that owns it has died, on whichever cluster the SA lies. The
+// record carries the time of its write. A `host sweep` keeps the
+// record when its caller took the live set before that time,
+// because that live set might miss the `serve`. With both ids set,
+// an id that is not 16 lowercase hex characters fails the call
+// with [ledger.ErrInvalidID] before any cluster-side mutation.
+// When the create fails, runHostSelect removes the record only
+// after a failure that left nothing on the cluster, such as a
 // create that RBAC forbids.
 func runHostSelect(ctx context.Context, args []string) error {
 	contextName, rest, err := splitLeadingPositional(args)
@@ -407,7 +410,9 @@ func runHostSelect(ctx context.Context, args []string) error {
 	// select` that dies between the two steps then leaves a record
 	// of an SA that does not exist, which a sweep removes, and never
 	// an SA that no record names. Without both ids no `serve` owns
-	// the SA, so no sweep can tell when to delete it.
+	// the SA, so no sweep can tell when to delete it. The time of
+	// the write tells a sweep whose live set predates the `serve`
+	// to keep the record.
 	records := hostLedger()
 	record := ledger.Record{
 		HostID:         *saHostID,
@@ -417,6 +422,7 @@ func runHostSelect(ctx context.Context, args []string) error {
 		Namespace:      namespace,
 		ServiceAccount: saName,
 		ClusterScoped:  sa.ClusterScoped,
+		Written:        time.Now().UTC(),
 	}
 	recorded := *saHostID != "" && *saInstanceID != ""
 

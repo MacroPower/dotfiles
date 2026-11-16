@@ -27,6 +27,18 @@ import (
 //nolint:grouper // tunable timeout, kept separate from the sentinel-error var block
 var recordPassTimeout = 30 * time.Second
 
+// recordSlack is the margin that the record pass of [runHostSweep]
+// subtracts from the time of the live set before it compares that
+// time with the time of each provision record. `host select` takes
+// the time of a record from the clock of the host. The live set
+// takes its time from the clock of the calling `serve`. The clock
+// of a Lima guest can run ahead of the clock of the host. Then a
+// record that `host select` wrote after the live set looks older
+// than the live set, and the slack keeps such a record. A record of
+// a dead `serve` that `host select` wrote less than recordSlack
+// before the live set stays until a later sweep.
+const recordSlack = time.Minute
+
 // runHostSweep is the body of the `host sweep` subcommand. It
 // deletes the SAs and bindings that dead `serve` instances of one
 // host id left behind. It runs two passes.
@@ -42,14 +54,16 @@ var recordPassTimeout = 30 * time.Second
 // The record pass covers every cluster of the swept kubeconfig. It
 // reads the provision records of the host id from the ledger. It
 // takes each record whose instance id is not in the live set and
-// whose kubeconfig is the swept kubeconfig. For each of them it
-// deletes the recorded SA and binding through the context of the
-// record. It removes the record after the cluster holds neither
-// resource. A record whose deletes fail stays, so the next sweep
-// tries again. A record of another kubeconfig waits for a sweep with
-// --kubeconfig set to that path. The record pass runs only when
-// --context is empty, so that an explicit --context limits the whole
-// sweep to that cluster.
+// whose kubeconfig is the swept kubeconfig. Of these, it takes only
+// the records that `host select` wrote more than [recordSlack]
+// before --live-as-of. For each record that it takes, it deletes
+// the recorded SA and binding through the context of the record. It
+// removes the record after the cluster holds neither resource. A
+// record whose deletes fail stays, so the next sweep tries again. A
+// record of another kubeconfig waits for a sweep with --kubeconfig
+// set to that path. The record pass runs only when --context is
+// empty, so that an explicit --context limits the whole sweep to
+// that cluster.
 //
 // The record pass never loads the kubeconfig file that a record
 // names. A Lima guest can run `host select` with a --kubeconfig of
@@ -95,23 +109,27 @@ var recordPassTimeout = 30 * time.Second
 // serve of this host is alive, so both passes delete every
 // resource of the host id that they find. The label pass still
 // keeps the resources that the apiserver created after
-// --live-as-of. When the calling serve invokes [runHostSweep]
-// from [*handler.runSweep], its own id is always in the live set.
-// The serve writes its sidecar before it starts the sweep, and
-// [socket.DiscoverLive] reads that sidecar. An operator who passes
-// zero --live-instance-id flags by hand accepts the destructive
-// semantics.
+// --live-as-of. The record pass still keeps the records that
+// `host select` wrote after --live-as-of. When the calling serve
+// invokes [runHostSweep] from [*handler.runSweep], its own id is
+// always in the live set. The serve writes its sidecar before it
+// starts the sweep, and [socket.DiscoverLive] reads that sidecar.
+// An operator who passes zero --live-instance-id flags by hand
+// accepts the destructive semantics.
 //
 // --live-as-of is the time at which the caller took the live set,
 // in RFC 3339 format. It defaults to the start of the sweep. A
-// serve that starts after that time is missing from the live set,
-// but it can create resources before the list calls of the label
-// pass answer. So the label pass keeps each resource that the
+// serve that starts after that time is missing from the live set.
+// It can write a provision record before the record pass reads the
+// ledger, and it can create resources before the list calls of the
+// label pass answer. So the label pass keeps each resource that the
 // apiserver created at that time minus [sweep.CreationSlack] or
-// later. A time after the start of the sweep comes from a clock
-// that runs ahead of the clock of this host, such as the clock of
-// a Lima guest. The sweep then uses its own start instead, because
-// the caller took the live set before the sweep started.
+// later. The record pass keeps each record that `host select` wrote
+// at that time minus [recordSlack] or later. A time after the start
+// of the sweep comes from a clock that runs ahead of the clock of
+// this host, such as the clock of a Lima guest. The sweep then uses
+// its own start instead, because the caller took the live set
+// before the sweep started.
 func runHostSweep(ctx context.Context, args []string) error {
 	started := time.Now()
 
@@ -142,8 +160,8 @@ func runHostSweep(ctx context.Context, args []string) error {
 	fs.Func(
 		"live-as-of",
 		"RFC 3339 time at which the caller took the --live-instance-id set; "+
-			"the label pass keeps each resource created after it, with a minute of slack for clock skew "+
-			"(default: the start of the sweep)",
+			"the sweep keeps each resource and each provision record created after it, "+
+			"with a minute of slack for clock skew (default: the start of the sweep)",
 		func(v string) error {
 			t, err := time.Parse(time.RFC3339, v)
 			if err != nil {
@@ -192,18 +210,18 @@ func runHostSweep(ctx context.Context, args []string) error {
 		return fmt.Errorf("resolve kubeconfig path: %w", err)
 	}
 
-	// The record pass works on the records that exist now, before
-	// the first cluster call. The live set is a snapshot from the
-	// start of the calling serve, and a serve that starts later is
-	// not in it. Such a serve can add records while a pass waits
-	// on a slow cluster. The record pass must not read those
-	// records, because it takes every record of a serve outside the
-	// live set for the record of a dead serve.
+	// The live set is a snapshot from the start of the calling
+	// serve, and a serve that starts later is not in it. Such a
+	// serve can write records before the sweep reads the ledger, and
+	// deadRecords keeps them by the time of each record. Such a
+	// serve can also write records while a pass waits on a slow
+	// cluster. The record pass reads the ledger before the first
+	// cluster call, so it never sees those records.
 	records := hostLedger()
 
 	var dead []ledger.Record
 	if *contextName == "" {
-		dead = deadRecords(ctx, records, sweptKubeconfig, *hostID, live)
+		dead = deadRecords(ctx, records, sweptKubeconfig, *hostID, live, liveAsOf)
 	}
 
 	// The passes run at the same time. A label pass that waits on
@@ -276,18 +294,21 @@ func sweepLabeled(
 }
 
 // deadRecords returns the provision records of the host hostID
-// whose instance id is not in live and whose kubeconfig is
+// whose instance id is not in live, that `host select` wrote before
+// liveAsOf minus [recordSlack], and whose kubeconfig is
 // kubeconfigPath. Each of them names an SA that a dead `serve` left
 // behind, or that a dead `serve` released without removing the
-// record. It logs each other record of a dead instance and leaves
-// that record in the ledger. When it cannot read the ledger, it
-// logs the failure and returns no records, so the record pass does
-// nothing.
+// record. liveAsOf is the time of live. A record written after it
+// might belong to a `serve` that started after the caller took
+// live. It logs each other record outside live and leaves that
+// record in the ledger. When it cannot read the ledger, it logs the
+// failure and returns no records, so the record pass does nothing.
 func deadRecords(
 	ctx context.Context,
 	records *ledger.Ledger,
 	kubeconfigPath, hostID string,
 	live map[string]struct{},
+	liveAsOf time.Time,
 ) []ledger.Record {
 	all, err := records.List()
 	if err != nil {
@@ -295,6 +316,8 @@ func deadRecords(
 
 		return nil
 	}
+
+	cutoff := liveAsOf.Add(-recordSlack)
 
 	var dead []ledger.Record
 
@@ -304,6 +327,19 @@ func deadRecords(
 		}
 
 		if _, isLive := live[r.InstanceID]; isLive {
+			continue
+		}
+
+		if !r.Written.Before(cutoff) {
+			slog.InfoContext(ctx, "host sweep skipped provision record written after the live set",
+				slog.String("context", r.Context),
+				slog.String("namespace", r.Namespace),
+				slog.String("name", r.ServiceAccount),
+				slog.String("instance_id", r.InstanceID),
+				slog.Time("written", r.Written),
+				slog.Time("live_as_of", liveAsOf),
+			)
+
 			continue
 		}
 
@@ -482,8 +518,10 @@ func forgetServiceAccount(
 //
 // liveAsOf is the time at which the serve took liveSet, and
 // runSweep passes it as --live-as-of. A serve that starts after
-// that time is missing from liveSet, so the label pass keeps each
-// resource that the apiserver created after liveAsOf.
+// that time is missing from liveSet. So the label pass keeps each
+// resource that the apiserver created after liveAsOf, and the
+// record pass keeps each provision record that `host select` wrote
+// after liveAsOf.
 //
 // Refuses to invoke [runHostSweep] when liveSet is empty or does
 // not contain h.instanceID. Either case indicates degraded

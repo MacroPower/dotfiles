@@ -5,9 +5,10 @@
 //
 // A record locates one ServiceAccount by the kubeconfig file, the
 // context, the namespace, and the name. It also says whether the
-// binding of the ServiceAccount is a ClusterRoleBinding. The name
-// of the record file holds the host id and the instance id of the
-// `serve` that owns the ServiceAccount.
+// binding of the ServiceAccount is a ClusterRoleBinding, and when
+// `host select` wrote the record. The name of the record file holds
+// the host id and the instance id of the `serve` that owns the
+// ServiceAccount.
 //
 // `host select` adds the record before it creates the
 // ServiceAccount, so a `host select` that dies between the two
@@ -19,7 +20,10 @@
 // sweep. It deletes each recorded ServiceAccount and its binding on
 // the cluster of the record. It removes the record only after the
 // cluster holds neither resource, and it keeps every record of
-// another kubeconfig.
+// another kubeconfig. It also keeps each record that `host select`
+// wrote after the caller of the sweep took the set of live
+// instances. The `serve` of such a record might be alive but
+// missing from that set.
 //
 // Each record is one file named <host-id>.<instance-id>.<key>.json.
 // The key is a hash of the location, so the name of the file holds

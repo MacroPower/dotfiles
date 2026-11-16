@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -37,12 +38,14 @@ const (
 )
 
 // testLiveAsOf is the --live-as-of time of the sweep fixtures that
-// pass one. testCreated is the creation time of each labeled
-// resource that a fixture expects the label pass to delete, an hour
-// before testLiveAsOf. Both lie before the start of every test. So
-// the sweep uses testLiveAsOf as the fixture gives it. A fixture
-// without --live-as-of gets the start of the sweep, which lies
-// after testCreated.
+// pass one. testCreated lies an hour before testLiveAsOf. It is the
+// creation time of each labeled resource that a fixture expects the
+// label pass to delete. It is also the time of each provision
+// record that a fixture expects the record pass to release. Both
+// lie before the start of every test. So the sweep uses
+// testLiveAsOf as the fixture gives it. A fixture without
+// --live-as-of gets the start of the sweep, which lies after
+// testCreated.
 var (
 	testLiveAsOf = time.Date(2020, time.January, 2, 12, 30, 0, 0, time.UTC)
 	testCreated  = testLiveAsOf.Add(-time.Hour)
@@ -604,6 +607,8 @@ func TestRunHostSweepIgnoresEmptyLiveID(t *testing.T) { //nolint:paralleltest //
 // sweepRecord returns a provision record of testHostID for the SA
 // saName in the namespace ns. The record reaches its cluster
 // through contextName of the kubeconfig at kubeconfigPath.
+// `host select` wrote it at testCreated, before the live set of
+// every sweep.
 func sweepRecord(instanceID, kubeconfigPath, contextName, saName string) ledger.Record {
 	return ledger.Record{
 		HostID:         testHostID,
@@ -612,6 +617,140 @@ func sweepRecord(instanceID, kubeconfigPath, contextName, saName string) ledger.
 		Context:        contextName,
 		Namespace:      "ns",
 		ServiceAccount: saName,
+		Written:        testCreated,
+	}
+}
+
+// TestRunHostSweepKeepsRecordOfLateServe pins that the record pass
+// never releases the SA of a serve that started after the live set.
+// The calling serve takes the live set, and then a later serve runs
+// `host select` before the sweep reads the ledger. The later serve
+// is missing from the live set, but `host select` wrote its record
+// after --live-as-of.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepKeepsRecordOfLateServe(t *testing.T) {
+	records := withHostLedger(t)
+	withHostStdout(t)
+
+	prod := &kubetest.Fake{}
+	withHostKubeClient(t, prod)
+
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	liveAsOf := time.Now()
+
+	require.NoError(t, selectProd(t, kubeconfigPath,
+		"--sa-host-id", testHostID,
+		"--sa-instance-id", testOtherDeadID,
+	))
+
+	late := listRecords(t, records)
+	require.Len(t, late, 1)
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+		"--live-as-of", liveAsOf.UTC().Format(time.RFC3339Nano),
+	}))
+
+	assert.Empty(t, prod.DeletedSAs, "the SA of the late serve must survive the sweep")
+	assert.Empty(t, prod.DeletedRoleBindings, "the binding of the late serve must survive the sweep")
+	assert.Equal(t, late, listRecords(t, records))
+}
+
+// TestRunHostSweepRecordPassComparesWriteTime pins the time that the
+// record pass compares with the time of each record. It keeps each
+// record that `host select` wrote at the time of the live set minus
+// [recordSlack] or later. It releases each older record, and each
+// record without a time. When --live-as-of is missing or lies after
+// the start of the sweep, the sweep compares with its own start.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepRecordPassComparesWriteTime(t *testing.T) {
+	now := time.Now().UTC()
+
+	tests := map[string]struct {
+		args     []string
+		written  map[string]time.Time
+		released []string
+	}{
+		"live set of the caller": {
+			args: []string{
+				"--live-instance-id", testInstanceID,
+				"--live-as-of", testLiveAsOf.Format(time.RFC3339),
+			},
+			written: map[string]time.Time{
+				"claude-sa-old":     testLiveAsOf.Add(-recordSlack - time.Second),
+				"claude-sa-cutoff":  testLiveAsOf.Add(-recordSlack),
+				"claude-sa-slack":   testLiveAsOf.Add(-recordSlack + time.Second),
+				"claude-sa-late":    testLiveAsOf.Add(time.Second),
+				"claude-sa-untimed": {},
+			},
+			released: []string{"ns/claude-sa-old", "ns/claude-sa-untimed"},
+		},
+		"live-as-of is missing": {
+			args: []string{"--live-instance-id", testInstanceID},
+			written: map[string]time.Time{
+				"claude-sa-old": now.Add(-2 * recordSlack),
+				"claude-sa-new": now,
+			},
+			released: []string{"ns/claude-sa-old"},
+		},
+		"live-as-of lies after the start of the sweep": {
+			args: []string{
+				"--live-instance-id", testInstanceID,
+				"--live-as-of", now.Add(time.Hour).Format(time.RFC3339),
+			},
+			written: map[string]time.Time{
+				"claude-sa-old": now.Add(-2 * recordSlack),
+				"claude-sa-new": now,
+			},
+			released: []string{"ns/claude-sa-old"},
+		},
+		"no serve is alive": {
+			args: []string{"--live-as-of", testLiveAsOf.Format(time.RFC3339)},
+			written: map[string]time.Time{
+				"claude-sa-old":  testLiveAsOf.Add(-recordSlack - time.Second),
+				"claude-sa-late": testLiveAsOf.Add(time.Second),
+			},
+			released: []string{"ns/claude-sa-old"},
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			staging := &kubetest.Fake{}
+
+			withHostKubeClients(t, map[string]kube.Client{"prod": &kubetest.Fake{}, "staging": staging})
+
+			records := withHostLedger(t)
+			kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+			var kept []ledger.Record
+
+			for saName, written := range tc.written {
+				r := sweepRecord(testDeadID, kubeconfigPath, "staging", saName)
+				r.Written = written
+
+				addRecords(t, records, r)
+
+				if !slices.Contains(tc.released, "ns/"+saName) {
+					kept = append(kept, r)
+				}
+			}
+
+			args := []string{
+				"--kubeconfig", kubeconfigPath,
+				"--host-id", testHostID,
+			}
+
+			require.NoError(t, runHostSweep(t.Context(), append(args, tc.args...)))
+
+			assert.ElementsMatch(t, tc.released, staging.DeletedSAs)
+			assert.ElementsMatch(t, kept, listRecords(t, records))
+		})
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statefile"
@@ -36,7 +37,8 @@ const recordExt = ".json"
 // Record says that the `serve` instance InstanceID of the host
 // HostID provisioned, or was about to provision, one
 // ServiceAccount. The fields Kubeconfig, Context, Namespace, and
-// ServiceAccount locate the ServiceAccount.
+// ServiceAccount locate the ServiceAccount. Written says when the
+// record came to the ledger.
 type Record struct {
 	// HostID is the persistent host id of the `serve` that owns
 	// the ServiceAccount. It comes from the name of the record
@@ -65,12 +67,21 @@ type Record struct {
 	// a ClusterRoleBinding. When it is false, the binding is a
 	// RoleBinding in Namespace.
 	ClusterScoped bool `json:"clusterScoped"`
+
+	// Written is the time at which `host select` wrote the record,
+	// on the clock of the host. The orphan sweep compares it with
+	// the time of its set of live instances. It keeps each record
+	// that `host select` wrote after that time, because the `serve`
+	// of such a record might be alive but missing from the set. The
+	// zero time lies before every set.
+	Written time.Time `json:"written"`
 }
 
 // SameServiceAccount reports whether r and other locate the same
-// ServiceAccount. The comparison ignores the owner of each record.
-// A caller that knows only the location of a ServiceAccount uses it
-// to find every record of that ServiceAccount.
+// ServiceAccount. The comparison ignores the owner and the time of
+// each record. A caller that knows only the location of a
+// ServiceAccount uses it to find every record of that
+// ServiceAccount.
 func (r Record) SameServiceAccount(other Record) bool {
 	return r.Kubeconfig == other.Kubeconfig &&
 		r.Context == other.Context &&
@@ -91,10 +102,11 @@ func New(dir string) *Ledger {
 	return &Ledger{dir: dir}
 }
 
-// Add writes the record r. Adding a record that the ledger already
-// holds succeeds and leaves one file. The write goes through a
-// temporary file and a rename, so [Ledger.List] never reads a
-// partial record.
+// Add writes the record r. The owner and the location of a record
+// name its file. So a record with the owner and the location of a
+// record that the ledger already holds replaces that record and
+// leaves one file. The write goes through a temporary file and a
+// rename, so [Ledger.List] never reads a partial record.
 //
 // Add returns [ErrInvalidID] when the host id or the instance id of
 // r is malformed, and an error that wraps [ErrAdd] when the write

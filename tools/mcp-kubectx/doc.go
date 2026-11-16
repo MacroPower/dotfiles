@@ -99,7 +99,8 @@
 //     --context, and it covers every cluster of the host
 //     kubeconfig. It deletes the SA and the binding of each
 //     provision record of that kubeconfig whose instance id is
-//     absent from that set, on the cluster of the record.
+//     absent from that set, on the cluster of the record. It keeps
+//     each record that `host select` wrote after --live-as-of.
 //     Best-effort: surfaces [kubeconfig.ErrLoad] when the label
 //     pass cannot load the host kubeconfig. It surfaces
 //     [sweep.ErrList] on total list-call failure of the label pass,
@@ -377,9 +378,9 @@
 // writes one provision record for each SA that it creates for a
 // `serve`. The record lies in the ledger directory on the host,
 // <host's $XDG_STATE_HOME>/mcp-kubectx-run/ledger, and it holds the
-// kubeconfig path, the context, the namespace, the SA name, and
-// the ids of the `serve`. `host release` removes the record after
-// it has deleted the SA and the binding.
+// kubeconfig path, the context, the namespace, the SA name, the ids
+// of the `serve`, and the time of the write. `host release` removes
+// the record after it has deleted the SA and the binding.
 //
 // Every `serve` runs a background `host sweep` at startup, with
 // the set of live serves that it discovered through the per-slot
@@ -405,7 +406,12 @@
 // is not in the set of live serves. For each record it deletes the
 // SA and the binding through the context of the record, and then it
 // removes the record. A record whose deletes fail stays, so the
-// sweep of the next serve tries again.
+// sweep of the next serve tries again. A serve that starts after
+// the calling serve takes the set can run `host select` before the
+// record pass reads the ledger. So the record pass keeps each
+// record that `host select` wrote after the calling serve took the
+// set, with [recordSlack] for a guest clock that runs ahead of the
+// host clock.
 //
 // The record pass takes only the records that name the host
 // kubeconfig of the sweep. It never loads the kubeconfig file of a

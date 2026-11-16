@@ -617,10 +617,10 @@ each live `serve` of its env. The `serve` collects the live set from
 the live UDS sidecars across the slot pool. The sweep runs two passes
 at the same time, and both delete only resources of that `host-id`.
 
-| Pass   | Clusters                                                    | Deletes                                                                                                                           |
-| ------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Label  | The cluster of the `current-context` in the host kubeconfig | Each labeled SA and binding whose `instance-id` is not live and that the apiserver created more than a minute before the live set |
-| Record | Each cluster of the host kubeconfig that a record names     | The SA and the binding of each record whose `instance-id` is not live                                                             |
+| Pass   | Clusters                                                    | Deletes                                                                                                                                   |
+| ------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Label  | The cluster of the `current-context` in the host kubeconfig | Each labeled SA and binding whose `instance-id` is not live and that the apiserver created more than a minute before the live set         |
+| Record | Each cluster of the host kubeconfig that a record names     | The SA and the binding of each record whose `instance-id` is not live and that `host select` wrote more than a minute before the live set |
 
 The label pass covers one cluster, because the labels do not say
 which other clusters hold resources of this host. A `serve`
@@ -651,23 +651,34 @@ the live set, less one minute. The minute covers the whole seconds of
 clock of the `serve`. A resource of a dead `serve` that the apiserver
 created in that minute stays until the sweep of a later `serve`.
 
-`host sweep` takes the time of the live set from `--live-as-of`.
-When that time lies after the start of `host sweep`, the clock of
-the `serve`, such as the clock of a Lima guest, runs ahead of the
-clock of the host. The label pass then uses the start of `host sweep`
-instead.
-
 The record pass runs these steps:
 
 1. It reads the provision records of its `host-id` before the first
    cluster call. It takes each record whose `instance-id` is not in
    the live set and that names the host kubeconfig of the sweep.
-2. For each such record, it deletes the SA and the binding by name,
+2. It keeps each record that `host select` wrote a minute or less
+   before the `serve` took the live set, or later.
+3. For each other record, it deletes the SA and the binding by name,
    through the context of the record in the host kubeconfig. A
    resource that the cluster does not hold counts as deleted.
-3. It removes the record after the cluster holds neither resource.
+4. It removes the record after the cluster holds neither resource.
    When a delete fails, it keeps the record, so the sweep of the
    next `serve` tries again.
+
+Each `serve` that starts after the live set can also run
+`host select` before the record pass reads the ledger. So the record
+pass compares the time of each record with the time of the live set,
+less one minute. `host select` takes the time of a record from the
+clock of the host. The minute covers a clock of the `serve`, such as
+the clock of a Lima guest, that runs ahead of the clock of the host.
+A record of a dead `serve` that `host select` wrote in that minute
+stays until the sweep of a later `serve`.
+
+`host sweep` takes the time of the live set from `--live-as-of`.
+When that time lies after the start of `host sweep`, the clock of
+the `serve`, such as the clock of a Lima guest, runs ahead of the
+clock of the host. Both passes then use the start of `host sweep`
+instead.
 
 The record pass keeps each record that names another kubeconfig
 file, and it never loads that file. A Lima guest can add such a
@@ -695,7 +706,9 @@ A provision record says that one `serve` owns one SA. The record
 holds the path of the host kubeconfig, the context, the namespace,
 the SA name, and whether the binding is a ClusterRoleBinding. With
 these fields the record pass deletes the SA and the binding by name,
-without a `list` call.
+without a `list` call. The record also holds the time of its write,
+so that the record pass keeps the record of a `serve` that started
+after the live set.
 
 Each record is one JSON file on the host, mode `0600`, at this path:
 
@@ -726,6 +739,7 @@ These events write and remove a record:
 | The record pass deletes the SA and the binding                                          | Removed                                         |
 | The record pass cannot delete the SA or the binding                                     | Kept for the record pass of the next `serve`    |
 | The record pass finds a record of another kubeconfig                                    | Kept for a record pass of that kubeconfig       |
+| The record pass finds a record that `host select` wrote after the live set              | Kept for the record pass of a later `serve`     |
 
 `host select` writes the record first. A `host select` that dies
 before the create call then leaves a record of an SA that does not
@@ -826,7 +840,8 @@ The label pass then deletes every resource with the matching
 deletes the SA of every record of that `host-id`. Without
 `--live-as-of`, the label pass still keeps each resource that the
 apiserver created a minute or less before `host sweep` started, or
-later.
+later. The record pass keeps each record that `host select` wrote in
+that time.
 
 To sweep one cluster by label, name its context:
 

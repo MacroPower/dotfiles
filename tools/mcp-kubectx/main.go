@@ -200,9 +200,10 @@ func runServe(ctx context.Context, args []string) error {
 	// own slot is included because the sidecar write above completed
 	// successfully and the listener is already in the LISTEN state.
 	// A serve that starts after DiscoverLive probes its slot is
-	// missing from the snapshot, so the sweep keeps each resource
-	// that the apiserver created after liveAsOf. liveAsOf precedes
-	// the probes, so each such serve starts after liveAsOf.
+	// missing from the snapshot. So the sweep keeps each resource
+	// that the apiserver created, and each provision record that
+	// `host select` wrote, after liveAsOf. liveAsOf precedes the
+	// probes, so each such serve starts after liveAsOf.
 	liveAsOf := time.Now()
 	liveSet := socket.DiscoverLive(ctx, h.socketSlots, guest)
 

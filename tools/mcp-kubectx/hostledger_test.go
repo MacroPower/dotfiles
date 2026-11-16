@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,8 +104,8 @@ func addRecords(t *testing.T, l *ledger.Ledger, records ...ledger.Record) {
 
 // TestHostSelectRecordsServiceAccount pins the provision record
 // that `host select` writes for a `serve`. The record locates the
-// created SA and names its binding kind, and it is on disk before
-// the create call reaches the cluster.
+// created SA, names its binding kind, and holds the time of the
+// call. It is on disk before the create call reaches the cluster.
 func TestHostSelectRecordsServiceAccount(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	tests := map[string]struct {
 		args          []string
@@ -132,9 +133,21 @@ func TestHostSelectRecordsServiceAccount(t *testing.T) { //nolint:paralleltest /
 			path := writeTestKubeconfig(t, testKubeconfig())
 
 			args := append([]string{"--sa-instance-id", testInstanceID, "--sa-host-id", testHostID}, tc.args...)
+
+			before := time.Now()
+
 			require.NoError(t, selectProd(t, path, args...))
 
+			after := time.Now()
+
 			require.Len(t, fake.CreatedSAs, 1)
+
+			got := listRecords(t, records)
+			require.Len(t, got, 1)
+
+			written := got[0].Written
+			assert.False(t, written.Before(before), "record written at %v, before the call at %v", written, before)
+			assert.False(t, written.After(after), "record written at %v, after the call at %v", written, after)
 
 			want := []ledger.Record{{
 				HostID:         testHostID,
@@ -144,9 +157,10 @@ func TestHostSelectRecordsServiceAccount(t *testing.T) { //nolint:paralleltest /
 				Namespace:      "ns",
 				ServiceAccount: strings.TrimPrefix(fake.CreatedSAs[0], "ns/"),
 				ClusterScoped:  tc.clusterScoped,
+				Written:        written,
 			}}
 
-			assert.Equal(t, want, listRecords(t, records))
+			assert.Equal(t, want, got)
 			assert.Equal(t, want, atCreate, "the record must be on disk before the create call")
 		})
 	}

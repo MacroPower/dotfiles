@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,8 +34,9 @@ func record(name string) ledger.Record {
 }
 
 // TestAddThenList pins the round trip that the sweep relies on.
-// Every field of an added record comes back. A context name with
-// path separators and colons does not change where the file lands.
+// Every field of an added record comes back, the time of the write
+// to the nanosecond. A context name with path separators and colons
+// does not change where the file lands.
 func TestAddThenList(t *testing.T) {
 	t.Parallel()
 
@@ -49,6 +51,7 @@ func TestAddThenList(t *testing.T) {
 		Namespace:      "kube-system",
 		ServiceAccount: "claude-sa-0123abcd",
 		ClusterScoped:  true,
+		Written:        time.Date(2026, time.March, 4, 12, 30, 0, 123456789, time.UTC),
 	}
 
 	require.NoError(t, l.Add(want))
@@ -80,6 +83,34 @@ func TestAddIsIdempotent(t *testing.T) {
 	got, err := l.List()
 	require.NoError(t, err)
 	assert.Equal(t, []ledger.Record{r}, got)
+}
+
+// TestAddReplacesTimeOfRecord pins that the time of a record does
+// not name its file. A second Add of a record with the same owner
+// and location replaces the time, and the ledger holds one record.
+func TestAddReplacesTimeOfRecord(t *testing.T) {
+	t.Parallel()
+
+	l := ledger.New(t.TempDir())
+
+	first := record("claude-sa-1")
+	first.Written = time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC)
+
+	second := first
+	second.Written = first.Written.Add(time.Hour)
+
+	require.NoError(t, l.Add(first))
+	require.NoError(t, l.Add(second))
+
+	got, err := l.List()
+	require.NoError(t, err)
+	assert.Equal(t, []ledger.Record{second}, got)
+
+	require.NoError(t, l.Remove(first), "Remove must find the file whatever the time of the record")
+
+	got, err = l.List()
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 // TestListSeparatesRecords pins the parts of the identity of a
@@ -309,6 +340,7 @@ func TestSameServiceAccount(t *testing.T) {
 		"other host":       {change: func(r *ledger.Record) { r.HostID = hostB }, want: true},
 		"other instance":   {change: func(r *ledger.Record) { r.InstanceID = instance2 }, want: true},
 		"other binding":    {change: func(r *ledger.Record) { r.ClusterScoped = true }, want: true},
+		"other write time": {change: func(r *ledger.Record) { r.Written = time.Unix(1, 0) }, want: true},
 		"other kubeconfig": {change: func(r *ledger.Record) { r.Kubeconfig = "/other" }},
 		"other context":    {change: func(r *ledger.Record) { r.Context = "staging" }},
 		"other namespace":  {change: func(r *ledger.Record) { r.Namespace = "other" }},
