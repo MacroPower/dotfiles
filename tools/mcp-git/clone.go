@@ -50,7 +50,7 @@ var (
 	ErrOriginMismatch = errors.New("origin URL mismatch")
 
 	// ErrCorruptDest is returned when dest holds a .git directory that
-	// git cannot open and the directory cannot be moved aside.
+	// [checkGitDir] rejects and the handler cannot move dest aside.
 	ErrCorruptDest = errors.New("dest holds a corrupt git directory")
 
 	// ErrClone wraps the underlying git clone failure.
@@ -176,11 +176,16 @@ func (h *handler) handleClone(
 	return h.clone(ctx, input, aside)
 }
 
-// checkGitDir reports whether git can open gitDir as a repository.
-// A cleanup job that deletes old files one at a time, such as
-// systemd-tmpfiles on /tmp, can remove HEAD and config and keep the
-// rest of the directory. The --git-dir flag stops git from walking
-// up to a repository that encloses the destination.
+// checkGitDir reports whether git can open gitDir as a repository and
+// gitDir holds a config file. A cleanup job such as systemd-tmpfiles
+// on /tmp deletes old files one at a time. It can remove HEAD, config,
+// or both, and keep the rest of the directory. The --git-dir flag
+// stops git from walking up to a repository that encloses the
+// destination.
+//
+// git opens a git directory that has HEAD and no config file. git
+// clone writes the origin remote to the config file, so a checkout
+// that lost the file has no origin to pull from.
 func checkGitDir(ctx context.Context, gitDir string) error {
 	_, err := gitValue(ctx, "--git-dir", gitDir, "rev-parse", "--git-dir")
 	if err != nil {
@@ -189,6 +194,11 @@ func checkGitDir(ctx context.Context, gitDir string) error {
 		}
 
 		return fmt.Errorf("%w: %s", ErrNotRepo, gitDir)
+	}
+
+	_, err = os.Stat(filepath.Join(gitDir, "config"))
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrNotRepo, gitDir, err)
 	}
 
 	return nil

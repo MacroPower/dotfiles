@@ -829,6 +829,7 @@ func TestHandleCloneCorruptDest(t *testing.T) {
 	}{
 		"missing HEAD and config": {remove: []string{"HEAD", "config"}},
 		"missing HEAD":            {remove: []string{"HEAD"}},
+		"missing config":          {remove: []string{"config"}},
 	}
 
 	for name, tc := range tcs {
