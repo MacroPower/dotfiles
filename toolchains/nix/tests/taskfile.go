@@ -103,6 +103,14 @@ func (m *Nix) TwiceChecked() {}
 	// and it reads the last line as a comment. So a checker that drops
 	// the indent of a joined line fails the probe. A checker that reads
 	// a comment line after the end of a split command fails it too.
+	//
+	// In the folded block, a backslash at the end of a line also
+	// splits a command. Each later line of the block has a deeper
+	// indent than its first line. YAML keeps the line break before
+	// such a line. So the shell joins the lines of the block as it
+	// joins the lines of a literal block. A checker that joins every
+	// line of a folded scalar with a space keeps each backslash in the
+	// command, and it fails the probe.
 	runnableProbeCmds = "- dagger check nix:checked\n" +
 		"- cmd: dagger check nix:twice-checked\n" +
 		"- dagger call nix plain\n" +
@@ -132,7 +140,11 @@ func (m *Nix) TwiceChecked() {}
 		"  # dagger check nix:plain\n" +
 		"- |\n" +
 		"  dagger call nix twice-\\\n" +
-		"  checked"
+		"  checked\n" +
+		"- >\n" +
+		"  dagger \\\n" +
+		"    check \\\n" +
+		"    nix:checked"
 )
 
 // taskfileProbe is a probe of [checkTaskfileProbes] that the nix
@@ -164,10 +176,19 @@ var (
 		// matches a check, so the command passes without running
 		// Plain.
 		{"- dagger check nix:checked nix:plain", "dagger check nix:checked nix:plain"},
-		// YAML joins the lines of a plain scalar, and of a folded block
-		// scalar, into one command.
+		// YAML joins the two lines of a plain scalar with a space. It
+		// joins the two lines of this folded block scalar the same way,
+		// because the second line has the same indent as the first line.
+		// So each entry runs one command with two patterns.
 		{"- dagger check nix:checked\n  nix:plain", "dagger check nix:checked nix:plain"},
 		{"- >\n  dagger check nix:checked\n  nix:plain", "dagger check nix:checked nix:plain"},
+		// YAML keeps the line break before a line of a folded block
+		// scalar that has a deeper indent than the first line of the
+		// scalar. So the shell runs the second line of this block as a
+		// command of its own, not as arguments of the first command. A
+		// checker that joins the two lines with a space reads one
+		// `dagger call` command, and it passes the entry.
+		{"- >\n  dagger call nix plain\n    dagger check nix:plain", "dagger check nix:plain"},
 		// A flag before the pattern hides the pattern from
 		// checkCommandRe.
 		{"- dagger check --fail-fast nix:plain", "dagger check --fail-fast nix:plain"},
@@ -414,11 +435,20 @@ var (
 // sh -c 'dagger check nix:lint'.
 //
 // The test reads each command as Task runs it. It decodes the Taskfile
-// as YAML, which joins the lines of each plain or folded scalar. Then it
-// reads every string of the result, such as the desc of a task. A
-// command ends at the end of its line or at a shell operator, such as
-// && or a pipe. The test reads the Taskfile and the Go files of the
-// root module of the nix toolchain from the default source of [Nix].
+// as YAML. Then it reads every string of the result, such as the desc
+// of a task. A command ends at the end of its line or at a shell
+// operator, such as && or a pipe. The test reads the Taskfile and the
+// Go files of the root module of the nix toolchain from the default
+// source of [Nix].
+//
+// The YAML decoder joins two lines of a plain scalar with a space. So
+// a pattern on the second line is a second pattern of the command on
+// the first line. The decoder joins two lines of a folded scalar the
+// same way only when neither line has a deeper indent than the first
+// line of the scalar. It keeps the line break before and after a
+// deeper line, as it keeps each line break of a literal scalar. So
+// the shell reads a deeper line as the start of a command, unless the
+// line before it ends in a backslash.
 //
 // The shell joins a line that ends in a backslash to the next line, so
 // a backslash can split a command at any place. The test joins those
@@ -459,11 +489,11 @@ var (
 // command that names a function that the command does not run, or a
 // command of another form. A check of a right Taskfile returns no
 // error, so it cannot show that fault. The probes include commands that
-// YAML joins onto one line and commands that share a line with another
-// command. They also include commands that go on after a quote, a
-// backtick, or &>, and commands that a backslash splits. The self-check
-// also fails when the test fails a right command or misreads a name of
-// two words.
+// YAML joins onto one line, commands on lines that YAML keeps apart,
+// and commands that share a line. They also include commands that go
+// on after a quote, a backtick, or &>, and commands that a backslash
+// splits. The self-check also fails when the test fails a right command
+// or misreads a name of two words.
 //
 // +check
 func (m *Tests) TestTaskfileCommands(ctx context.Context) error {
@@ -575,9 +605,16 @@ func checkTaskfileCommands(taskfile string, goFiles map[string]string) error {
 // taskfileText decodes taskfile as YAML and returns the strings of it,
 // one after another, with a newline between each two. The strings are
 // the values of the scalars of taskfile, such as each command and each
-// task name. YAML joins the lines of a plain or a folded scalar, so
-// each string holds a command as Task runs it. The function skips each
-// alias, because it reads the node of the alias at its anchor.
+// task name. Task also decodes the Taskfile as YAML, so each string
+// holds a command as Task runs it. The function skips each alias,
+// because it reads the node of the alias at its anchor.
+//
+// The YAML decoder joins two lines of a plain scalar with a space. It
+// joins two lines of a folded scalar the same way only when neither
+// line has a deeper indent than the first line of the scalar. It keeps
+// the line break before and after a deeper line, and it keeps each
+// line break of a literal scalar. In a plain or a folded scalar, each
+// blank line between two lines stays as one line break.
 //
 // The function passes each string through [shellText] before it joins
 // the strings. Task runs each command of the Taskfile as a script of
