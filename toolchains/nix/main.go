@@ -220,6 +220,9 @@ func (m *Nix) validateHome(ctx context.Context, name string) error {
 // A full build of each activation package is too slow for every run
 // of the checks, so `dagger check` does not run this function.
 // `task nix:build:home` runs it with `dagger call nix build-home`.
+// In each run of the checks, [Nix.Build] evaluates each home-manager
+// configuration of the flake, whatever its system is. It does not
+// build an activation package.
 func (m *Nix) BuildHome(ctx context.Context) error {
 	base := m.base()
 	sys, err := nixSystem(ctx, base)
@@ -252,17 +255,23 @@ func (m *Nix) BuildHome(ctx context.Context) error {
 }
 
 // Build evaluates the system derivation of each darwin configuration
-// and of each NixOS configuration of the flake. It evaluates the
-// configurations for every system, whatever the system of the Dagger
-// engine is, and it does not build a derivation.
+// and of each NixOS configuration of the flake. It also evaluates the
+// derivation of the activation package of each home-manager
+// configuration. It evaluates the configurations for every system,
+// whatever the system of the Dagger engine is, and it does not build a
+// derivation.
 // +check
 func (m *Nix) Build(ctx context.Context) error {
 	// Each entry names a flake output that holds host configurations.
 	// drvPath is the attribute path, from a configuration of that output,
-	// of the store path of the derivation that builds the system.
+	// of the store path of the derivation that builds the configuration.
+	// That derivation builds the system of a darwin or a NixOS
+	// configuration, and it builds the activation package of a
+	// home-manager configuration.
 	outputs := []struct{ name, drvPath string }{
 		{name: "darwinConfigurations", drvPath: "system.drvPath"},
 		{name: "nixosConfigurations", drvPath: "config.system.build.toplevel.drvPath"},
+		{name: "homeConfigurations", drvPath: "activationPackage.drvPath"},
 	}
 
 	var refs []string

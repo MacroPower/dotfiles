@@ -189,20 +189,45 @@ func nixWithFlake(contents string) *dagger.Nix {
 	})
 }
 
-// hostsFlake returns a flake.nix file whose flake has no inputs, one
-// darwin configuration, and one NixOS configuration. Each configuration
-// holds only the attribute that [Nix.Build] evaluates, which is the
-// store path of the derivation of its system. darwin is the Nix
-// expression of that attribute in the darwin configuration, and nixos
-// is the Nix expression of that attribute in the NixOS configuration.
-func hostsFlake(darwin, nixos string) string {
-	return fmt.Sprintf(`{
-  outputs = _: {
-    darwinConfigurations.mac.system.drvPath = %s;
-    nixosConfigurations.vm.config.system.build.toplevel.drvPath = %s;
-  };
+// hostAttrs holds the attribute path, from the outputs of the flake that
+// [hostsFlake] returns, of each attribute that [Nix.Build] evaluates.
+// Each path names one configuration of the flake. The flake holds a
+// darwin configuration, a NixOS configuration, a home-manager
+// configuration for aarch64-linux, and a home-manager configuration for
+// x86_64-linux. The name of each home-manager configuration ends with
+// its system, as in the flake of the repository. The Dagger engine that
+// runs the test has one of those systems. So the other home-manager
+// configuration names a system that the engine does not have.
+var hostAttrs = []string{
+	"darwinConfigurations.mac.system.drvPath",
+	"nixosConfigurations.vm.config.system.build.toplevel.drvPath",
+	`homeConfigurations."dev@aarch64-linux".activationPackage.drvPath`,
+	`homeConfigurations."dev@x86_64-linux".activationPackage.drvPath`,
 }
-`, darwin, nixos)
+
+// hostsFlake returns a flake.nix file whose flake has no inputs and one
+// configuration for each path of hostAttrs. Each configuration holds
+// only the attribute at its path, which is the store path of the
+// derivation that builds the configuration. The attribute at broken
+// does not evaluate, and each other attribute evaluates to a string.
+// When broken is empty, every attribute evaluates.
+func hostsFlake(broken string) string {
+	var flake strings.Builder
+
+	flake.WriteString("{\n  outputs = _: {\n")
+
+	for _, attr := range hostAttrs {
+		expr := evaluatingExpr
+		if attr == broken {
+			expr = throwingExpr
+		}
+
+		fmt.Fprintf(&flake, "    %s = %s;\n", attr, expr)
+	}
+
+	flake.WriteString("  };\n}\n")
+
+	return flake.String()
 }
 
 // TestSourceToolchains verifies that the default source of [Nix] holds
@@ -438,27 +463,26 @@ func (m *Tests) TestFlakeCheck(ctx context.Context) error {
 }
 
 // TestBuild verifies that [Nix.Build] evaluates each darwin
-// configuration and each NixOS configuration of the flake. The test
-// checks flakes that have no inputs, so it does not evaluate the flake
-// of the repository. Build passes when both configurations of the flake
-// evaluate. It fails when the darwin configuration does not evaluate,
-// and it fails when the NixOS configuration does not evaluate.
+// configuration, each NixOS configuration, and each home-manager
+// configuration of the flake, whatever system the configuration names.
+// The test checks the flakes that [hostsFlake] returns. They have no
+// inputs, so the test does not evaluate the flake of the repository.
+// Build passes when every configuration of the flake evaluates. For
+// each path of hostAttrs, it fails when only the configuration at that
+// path does not evaluate.
 //
 // +check
 func (m *Tests) TestBuild(ctx context.Context) error {
-	err := nixWithFlake(hostsFlake(evaluatingExpr, evaluatingExpr)).Build(ctx)
+	err := nixWithFlake(hostsFlake("")).Build(ctx)
 	if err != nil {
 		return fmt.Errorf("building a flake whose configurations evaluate: %w", err)
 	}
 
-	err = nixWithFlake(hostsFlake(throwingExpr, evaluatingExpr)).Build(ctx)
-	if err == nil {
-		return errors.New("build passed a flake whose darwin configuration does not evaluate")
-	}
-
-	err = nixWithFlake(hostsFlake(evaluatingExpr, throwingExpr)).Build(ctx)
-	if err == nil {
-		return errors.New("build passed a flake whose NixOS configuration does not evaluate")
+	for _, attr := range hostAttrs {
+		err = nixWithFlake(hostsFlake(attr)).Build(ctx)
+		if err == nil {
+			return fmt.Errorf("build passed a flake whose %s does not evaluate", attr)
+		}
 	}
 
 	return nil

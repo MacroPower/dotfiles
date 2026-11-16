@@ -12,7 +12,7 @@ tasks:
       - dagger call nix format -y
 
   build:
-    desc: Evaluate all host configurations
+    desc: Evaluate every darwin, NixOS, and home-manager configuration
     cmds:
       - dagger check nix:build
 
