@@ -477,20 +477,9 @@ func (m *Tests) TestTaskfileCommands(ctx context.Context) error {
 		return err
 	}
 
-	pattern := rootModulePath + "/*.go"
-
-	files, err := dag.Nix().Source().Glob(ctx, pattern)
+	goFiles, err := rootGoFiles(ctx)
 	if err != nil {
-		return fmt.Errorf("listing %s: %w", pattern, err)
-	}
-
-	goFiles := make(map[string]string, len(files))
-
-	for _, file := range files {
-		goFiles[file], err = sourceFile(ctx, file)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	err = checkTaskfileCommands(taskfile, goFiles)

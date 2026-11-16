@@ -38,6 +38,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestFormatSkipsDevGo(ctx) })
 	eg.Go(func() error { return m.TestFormatToolchains(ctx) })
 	eg.Go(func() error { return m.TestLintToolchains(ctx) })
+	eg.Go(func() error { return m.TestProfileCommands(ctx) })
 	eg.Go(func() error { return m.TestSbom(ctx) })
 	eg.Go(func() error { return m.TestSourceToolchains(ctx) })
 	eg.Go(func() error { return m.TestTaskfileCommands(ctx) })
@@ -155,6 +156,34 @@ func sourceFile(ctx context.Context, path string) (string, error) {
 	}
 
 	return contents, nil
+}
+
+// rootGoFiles returns the Go files of the root module of the nix
+// toolchain in the default source of [Nix]. It maps the path of each
+// file to its contents. It returns an error when the source holds no
+// such file, so that a test does not pass because it read no file.
+func rootGoFiles(ctx context.Context) (map[string]string, error) {
+	pattern := rootModulePath + "/*.go"
+
+	files, err := dag.Nix().Source().Glob(ctx, pattern)
+	if err != nil {
+		return nil, fmt.Errorf("listing %s: %w", pattern, err)
+	}
+
+	if len(files) == 0 {
+		return nil, fmt.Errorf("the project source holds no file that matches %s", pattern)
+	}
+
+	goFiles := make(map[string]string, len(files))
+
+	for _, file := range files {
+		goFiles[file], err = sourceFile(ctx, file)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return goFiles, nil
 }
 
 // nixWithFile returns the [Nix] module whose source is the default

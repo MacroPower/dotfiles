@@ -427,8 +427,32 @@ func (m *Nix) DependencySnapshot(
 		File("snapshot.json"), nil
 }
 
-// grypeBase returns a container with grype installed and the vulnerability
-// database cached. The SBOM file is mounted for scanning.
+const (
+	// grypeLink is the path, in the container that [Nix.grypeBase]
+	// returns, of the link to the grype package in the Nix store.
+	grypeLink = "/tmp/grype"
+
+	// grypeBin is the path of the grype binary in that container.
+	grypeBin = grypeLink + "/bin/grype"
+)
+
+// grypeBase returns a container that holds the grype package of
+// nixpkgs and the cache of the vulnerability database. The container
+// also holds the SBOM at /tmp/sbom.cdx.json and the grype configuration
+// of the source at /tmp/.grype.yaml. grypeBin is the path of the grype
+// binary in the container.
+//
+// The function builds grype with `nix build`, which writes the link at
+// grypeLink. It does not install grype in the default profile. That
+// profile is in /nix/var/nix, which [Nix.base] mounts from a cache
+// volume, so the profile outlives the run. After nixpkgs-unstable
+// changes the grype package, `nix profile install` fails on a profile
+// that holds the earlier grype.
+//
+// The build is a step of its own, so a failure of nix fails the
+// function. [Nix.Vulnscan] and [Nix.VulnscanSarif] accept each exit
+// status of the grype step, and a `nix run nixpkgs#grype` command in
+// that step hides a failure of nix.
 func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 	sbom, err := m.Sbom(ctx)
 	if err != nil {
@@ -439,7 +463,7 @@ func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 
 	return m.base().
 		WithMountedCache("/root/.cache/grype", dag.CacheVolume("grype-db")).
-		WithExec([]string{"nix", "profile", "install", "nixpkgs#grype"}).
+		WithExec([]string{"nix", "build", "nixpkgs#grype", "--out-link", grypeLink}).
 		WithFile("/tmp/sbom.cdx.json", sbom).
 		WithFile("/tmp/.grype.yaml", grypeConfig), nil
 }
@@ -452,7 +476,7 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 	}
 
 	out, err := ctr.
-		WithExec([]string{"grype", "--config", "/tmp/.grype.yaml", "sbom:/tmp/sbom.cdx.json"},
+		WithExec([]string{grypeBin, "--config", "/tmp/.grype.yaml", "sbom:/tmp/sbom.cdx.json"},
 			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
 		Stdout(ctx)
 	if err != nil {
@@ -482,7 +506,7 @@ func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
 
 	raw, err := ctr.
 		WithExec([]string{
-			"grype", "--config", "/tmp/.grype.yaml",
+			grypeBin, "--config", "/tmp/.grype.yaml",
 			"sbom:/tmp/sbom.cdx.json",
 			"--output", "sarif",
 			"--file", "/tmp/grype.sarif.json",
