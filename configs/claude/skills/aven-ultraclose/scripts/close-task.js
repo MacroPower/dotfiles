@@ -411,12 +411,74 @@ const attempt = async (prompt, { role, ...opts }) => {
 // defects last. No agent copies the list, so no entry changes on the way
 // to the orchestrator. Every result carries the list, whatever its status.
 const out = { ref: T.ref, title: T.title, rounds: 0, summary: RESUME ? RESUME.summary : '', notes: RESUME ? RESUME.notes : '', defects: [], findings: [], followups: [], boundedReview: false }
-const done = (status, extra) => ({ ...out, status, ...extra })
+
+// What the orchestrator does with a result. Each result carries its
+// action in the action field, with the `ultraclose.py` command that the
+// orchestrator runs. So the orchestrator does not map a status to its
+// commands from the text of the skill. A long run can drop that text
+// from its context.
+//
+// The set command of `ultraclose.py` runs the aven commands of a noted
+// task and of a closed task. It adds the note, and it sets the status of
+// the aven task. For a noted task, it also adds the branch and the pull
+// request of the task to the note.
+//
+// The pr field of the task holds the address of the pull request that
+// the task records. Only the relaunch of a proposed task has one. The
+// script contacts no remote, so the orchestrator closes that pull
+// request or leaves it open.
+const LAND = `land the task: run \`ultraclose.py land ${T.ref} --next\` in a background Bash call.`
+const NOTE_COMMAND = `ultraclose.py set ${T.ref} noted --note '<the reason and the open findings>'`
+// The text that notes the task, after a lead that says when to note it.
+const noteAfter = lead => `${lead}: run \`${NOTE_COMMAND}\`. The command adds the note and the branch of the task to the aven task, sets the aven task to todo, and keeps the branch. Describe the findings in the note, and do not count the review rounds there. Do not force the task through.${T.pr ? ` Leave the pull request ${T.pr} open for the user, and record it in notes.md.` : ''}`
+const NOTE = noteAfter('Note the task')
+const CLOSE = `close the task: run \`ultraclose.py set ${T.ref} closed --note '<the evidence>'\` with the evidence that the notes give. The command adds the note to the aven task and sets the aven task to done.`
+// A review that covered only the final fixes. The orchestrator reports
+// each task that landed after such a review.
+const BOUNDED = ' The last review covered only the final fixes, so record the task in notes.md.'
+const sentence = text => text[0].toUpperCase() + text.slice(1)
+const ACTIONS = {
+  approved: sentence(LAND),
+  landable: `File each entry of followups as an aven task with \`aven add\`, and link each new task with \`aven related add <new-ref> ${T.ref}\`. Then ${LAND}`,
+  obsolete: T.pr ? `Close the pull request ${T.pr} with mcp__github__update_pull_request when it is open, and record it in notes.md. Then ${CLOSE}` : sentence(CLOSE),
+  abandoned: NOTE,
+  rejected: NOTE,
+  unconverged: NOTE,
+}
+const RELAUNCH = `ultraclose.py args ${T.ref}`
+
+// What the orchestrator checks first when an agent of a role returned
+// nothing. Workflow starts no agent on a model that it cannot run, so
+// such an agent returns nothing. MODELS names a model for the role only
+// when the run names one, of its own or as the default model.
+const modelCheck = role => MODELS[role]
+  ? `The run names the model ${MODELS[role]} for the ${role} role. Check that Workflow can run that model, and correct a wrong model with the --model flag of \`ultraclose.py config\`. `
+  : ''
+
+// The action of an error result. The agent of the role returned nothing,
+// and so did its retry. The relaunch argument holds the command that
+// relaunches the task at that agent.
+const errorAction = (role, relaunch) => `${modelCheck(role)}${MODELS[role] ? 'Then relaunch' : 'Relaunch'} the task one time: run \`${relaunch}\`, and launch the object that it prints from the path in its script field. If that relaunch ends in error as well, note the task with \`${NOTE_COMMAND}\`.`
+
+// The action of an unconverged result whose narrowing agent returned
+// nothing. The change is a strict improvement, so a relaunch at the
+// final cycle can still land it after the orchestrator corrects a wrong
+// model. A relaunched task runs in a new Workflow, so the orchestrator
+// notes the task only when it does not relaunch it.
+const narrowAction = MODELS.narrow
+  ? `${modelCheck('narrow')}When the model was wrong, relaunch the task after you correct it: run \`${RELAUNCH} --final\`, and do not note the task. ${noteAfter('When the model is right, do not relaunch the task, and note it instead')}`
+  : NOTE
+
+const done = (status, extra) => {
+  const result = { ...out, status, ...extra }
+  const bounded = result.boundedReview && (status === 'approved' || status === 'landable') ? BOUNDED : ''
+  return { ...result, action: result.action || ACTIONS[status] + bounded }
+}
 
 let extra = ''
 if (RESUME && RESUME.sync) {
   const sync = await attempt(syncPrompt(RESUME.sync, out), { role: 'sync', label: `sync ${T.ref}`, phase: 'Sync', schema: SYNC_SCHEMA })
-  if (!sync) return done('error', { notes: 'the sync agent returned nothing' })
+  if (!sync) return done('error', { notes: 'the sync agent returned nothing', action: errorAction('sync', `${RELAUNCH} --sync '<the reason that started the sync agent>'`) })
   out.summary = sync.summary
   out.notes = sync.notes
   out.defects = sync.defects
@@ -428,7 +490,7 @@ Review the whole diff against ${base} again. Give the merge the most attention: 
 `
 } else if (!RESUME) {
   const impl = await attempt(implPrompt, { role: 'implementer', label: `impl ${T.ref}`, phase: 'Implement', schema: IMPL_SCHEMA })
-  if (!impl) return done('error', { notes: 'the implementer returned nothing' })
+  if (!impl) return done('error', { notes: 'the implementer returned nothing', action: errorAction('implementer', RELAUNCH) })
   out.summary = impl.summary
   out.notes = impl.notes
   out.defects = impl.defects
@@ -440,14 +502,14 @@ for (let round = FIRST; ; round++) {
   out.rounds = round
   const history = round > 1 ? historyNote(rebutted, true) : ''
   const rev = await attempt(reviewPrompt(round, out.summary, extra + history), { role: 'reviewer', label: `review ${T.ref} r${round}`, phase: 'Review', schema: REVIEW_SCHEMA })
-  if (!rev) return done('error', { notes: `the reviewer of round ${round} returned nothing` })
+  if (!rev) return done('error', { notes: `the reviewer of round ${round} returned nothing`, action: errorAction('reviewer', RELAUNCH) })
   if (rev.verdict === 'reject') return done('rejected', { notes: rev.reject_reason, findings: rev.findings })
   if (rev.findings.length === 0) return done('approved')
   log(`${T.ref}: round ${round} has ${rev.findings.length} findings`)
 
   const capped = round >= LAST
   const fix = await attempt(fixPrompt(round, rev.findings, capped, out), { role: 'fixer', label: `fix ${T.ref} r${round}`, phase: capped ? 'Final' : 'Fix', schema: FIX_SCHEMA })
-  if (!fix) return done('error', { notes: `the fixer of round ${round} returned nothing`, findings: rev.findings })
+  if (!fix) return done('error', { notes: `the fixer of round ${round} returned nothing`, findings: rev.findings, action: errorAction('fixer', RELAUNCH) })
   out.summary = fix.summary
   out.notes = fix.notes
   out.defects = out.defects.filter((_, i) => !fix.withdrawn_defects.includes(i + 1)).concat(fix.defects)
@@ -468,7 +530,7 @@ for (let round = FIRST; ; round++) {
   const landable = fin.verdict !== 'reject' && fin.improves_base && !fin.findings.some(f => f.regression)
   if (!landable) return done('unconverged', { notes: fin.reject_reason, findings: fin.findings })
   const narrow = await attempt(narrowPrompt(fin.findings, out), { role: 'narrow', label: `narrow ${T.ref}`, phase: 'Final', schema: NARROW_SCHEMA })
-  if (!narrow) return done('unconverged', { notes: 'the change is a strict improvement, but the narrowing agent returned nothing', findings: fin.findings })
+  if (!narrow) return done('unconverged', { notes: 'the change is a strict improvement, but the narrowing agent returned nothing', findings: fin.findings, action: narrowAction })
   out.summary = narrow.summary
   out.notes = narrow.notes
   out.defects = out.defects.concat(narrow.defects)

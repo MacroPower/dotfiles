@@ -40,6 +40,17 @@ inside the repository.
 | `ultraclose.py` | Keeps the run state, picks tasks, creates worktrees, and lands tasks. `--help` lists its commands. |
 | `close-task.js` | A Workflow script that takes one task from implementation through review. |
 
+Both tools print what you do next, so act on their output:
+
+- Each landing prints an `ACTION` line before its `RESULT` line.
+- Each Workflow result carries an `action` field.
+- Each command that refuses its task names the command that removes the
+  cause.
+
+This document names each command and the output that you act on. It adds
+the judgment that a script cannot make, such as the cause of a failed
+test.
+
 The run directory holds everything that must outlive your context:
 `state.json`, `rules.md`, `notes.md`, `logs/`, and `tasks/<ref>/`. The
 directory of a task holds its task file, its commit message (`msg.txt`),
@@ -150,8 +161,8 @@ repository:
 
 Every landing on a branch target commits in the main checkout, where the
 commit hooks run. So the main checkout must have that branch checked out,
-and `init` fails when it has another branch checked out. Step 2 of the
-Setup section says what to do then.
+and it must hold no uncommitted change. `init` fails otherwise, and step 2
+of the Setup section says what to do then.
 
 Every landing with a `pr` target leaves the main checkout alone, so the
 main checkout can have any branch checked out. Such a landing records no
@@ -195,19 +206,28 @@ task.
    setup. Write `rules.md` from this setup too. The values of an earlier
    run fit the arguments and the tasks of that run, and the version of the
    skill that created it.
-2. Choose the target of the run, as the Target section says, and confirm
-   that the main checkout is clean. For a branch target, the main checkout
-   must have that branch checked out. When it has another branch checked
-   out, act on where the target comes from:
-   - **The arguments name the branch:** check out the branch in the main
-     checkout with `git switch <branch>`.
-   - **The arguments name no target:** the user might want the tasks on
-     the branch that the main checkout has checked out. Ask the user where
-     the tasks land.
+2. Choose the target of the run, as the Target section says. In step 4,
+   `init` checks that the run can land on that target. Its error names
+   the cause when it fails. Act on that cause:
+   - **The main checkout has another branch checked out:** the cause
+     applies to a branch target. When the arguments name the branch,
+     check out the branch in the main checkout with `git switch <branch>`.
+     When the arguments name no target, the user might want the tasks on
+     the branch that the main checkout has checked out. Ask the user
+     where the tasks land.
+   - **The main checkout holds uncommitted changes:** the cause applies
+     to a branch target, and the error lists the changes. Ask the user
+     before you commit or remove a change that this session did not make.
+   - **The base branch holds a commit that its upstream branch lacks:**
+     the cause applies to a `pr` target. Each task branch starts from the
+     local base branch, so each pull request carries such a commit. Ask
+     the user whether to push the base branch, as the Pushes section
+     says.
 
-   For a `pr` target, confirm that the local base branch holds no commit
-   that the base branch on the remote lacks. Each task branch starts from
-   the local base branch, so each pull request carries such a commit.
+   `init` compares the base branch of a `pr` target with the remote
+   branch that it follows. When the base branch follows no remote branch,
+   `init` prints that it did not compare the two. Then confirm that the
+   remote holds each commit of the local base branch.
 3. Find how the project builds, tests, and checks itself, and what its
    commit hooks run. Read CLAUDE.md, the task runner config, and
    `git log -15`. Find the build caches that those commands fill, and the
@@ -518,40 +538,39 @@ models of its input object, as the Config section says.
 
 `ultraclose.py` does not check that Workflow can run a model. Agents that
 Workflow cannot start on their model return nothing, and the `notes` of
-the result name the agent that returned nothing. When a result names such
-an agent and the run names a model for its role, either of its own or the
-`default` model, check that model. Correct a wrong model with
-`config --model`, then relaunch the task.
+the result name the agent that returned nothing. When the run names a
+model for the role of that agent, the `action` field of the result names
+that model. Check the model, as the action says. The action also gives
+the command that relaunches the task after you correct a wrong model
+with `config --model`.
 
-The role of the agent that returned nothing sets the status of the result,
-and this table gives the relaunch that follows the correction:
-
-| Role | Status | Relaunch |
-| --- | --- | --- |
-| `narrow` | `unconverged` | Run `ultraclose.py args <ref> --final` in place of the action that the Loop table gives for `unconverged` |
-| `sync` | `error` | Run `ultraclose.py args <ref> --sync '<reason and failing output>'` with the reason that started the sync agent, as the `error` row of the Loop table says |
-| Each other role | `error` | Follow the `error` row of the Loop table |
+When the reviewer of the final cycle returns nothing, the `action` field
+of the result notes the task and names no model. A reviewer of the same
+Workflow answered on the model of that role before the final cycle, so
+the model works.
 
 ## Leftover work
 
 Each run resumes only the branches and the worktrees that it created, and
-those of the tasks that `init` moved to it. Earlier runs can leave a
-`task/<ref>` branch or a `t-<ref>` worktree for a task that is open again.
-Every run leaves the branch of each task that it notes. Runs that stop
-before their end also leave the worktree of each task that they started.
+those of the tasks that `init` moved to it. Earlier runs can leave work
+for a task that is open again:
+
+- **The `task/<ref>` branch:** every run leaves the branch of each task
+  that it notes.
+- **The `t-<ref>` worktree:** runs that stop before their end leave the
+  worktree of each task that they started.
+- **The branch of a pull request:** landings with a `pr` target propose
+  each task as a pull request. Runs leave the branch of such a task when
+  `init` does not move the task to the new run, such as with `--force`.
+  That branch has the name `<type>/<slug>`, and its pull request can
+  still be open. So `init` records the branch and the pull request of
+  each such task in the new run.
 
 The branch of an earlier run can sit far behind the base branch. Every
 landing carries the whole branch, as one squashed commit or as the commits
 of a pull request. So a task that starts on that branch lands the commits
-that the earlier run did not land.
-
-Runs also leave the branch of each task that a landing proposed as a
-pull request, when `init` does not move that task to the new run, such as
-with `--force`. That branch has the name `<type>/<slug>`, and its pull
-request can still be open. Each new attempt at the task opens a pull
-request of its own beside it. So `init` records the branch and the pull
-request of each such task in the new run. The new run counts that branch
-as leftover work too.
+that the earlier run did not land. Each new attempt at a task with a pull
+request also opens a pull request of its own beside the first one.
 
 `ultraclose.py next` starts no task while a pending task has leftover
 work, and neither does the `next` of a landing. `ultraclose.py args <ref>`
@@ -559,81 +578,45 @@ refuses a task that has leftover work. Each of these commands then prints
 one line per such task. The line names the branch, the count of its commits
 that the base branch lacks, and the worktree. For the branch of a pull
 request, the line also names the pull request, or says that the earlier
-run recorded none. Take these cleanup steps to move the leftover work of
-each task out of the way:
+run recorded none.
 
-1. If the line names a pull request, read it with
-   `mcp__github__pull_request_read`. If the line says that the earlier
-   run recorded no pull request, list the pull requests of the branch
-   with `mcp__github__list_pull_requests`. Set `head` to
-   `<owner>:<branch>` and `state` to `all`, and take `owner` and `repo`
-   from the URL of the remote. When the list is empty, the branch has no
-   pull request. Either the branch never reached the remote, or its pull
-   request never opened.
-2. If step 1 found a pull request, record it in `notes.md`. Close it with
-   `mcp__github__update_pull_request` and `state` set to `closed` when it
-   is open, unless the user asks you to keep it open. When it merged, the
-   task does not need a new attempt. Take the **Merged pull request**
-   steps of this section in place of the rest of this list.
-3. If the worktree holds uncommitted changes, commit them in the worktree
-   with `--no-verify`, so that the branch keeps them.
-4. Remove the worktree with `git worktree remove <path>`.
-5. Count the commits that the branch holds and the base branch lacks with
-   `git rev-list --count <base>..<branch>`. The `<base>` placeholder
-   names the base branch, and `<branch>` names the branch that the line
-   names, such as `task/<ref>`. The count that the command printed does
-   not include the commit of step 3, so use the new count.
-6. If the new count is 0, delete the branch with
-   `git branch -D <branch>`. Otherwise, rename it with
-   `git branch -m <branch> kept/<ref>-<date>`. The date is the date of
-   the cleanup, such as `kept/APP-7KQ9-20261114`. If a branch with that
-   name exists, add a counter, such as `kept/APP-7KQ9-20261114-2`.
-7. For each branch that you rename, add a note to the task with
-   `aven note`. Name the new branch in the note. Give the name that the
-   branch had before the rename. An earlier note that names the old name
-   then means the kept branch and not the branch of the new attempt.
-   Say that the branch holds an earlier attempt as a reference, and that
-   the implementer must not merge or rebase it. The implementer reads the
-   notes of the task in its task file.
+Move the leftover work of each task out of the way with
+`ultraclose.py leftover <ref>`. Then run `next` or `args <ref>` again.
+After a landing that printed the lines, run `ultraclose.py next`, because
+the task of the landing has landed. Each task starts on a new branch from
+the base branch.
 
-Then run `next` or `args <ref>` again. After a landing that printed the
-lines, run `ultraclose.py next`, because the task of the landing has
-landed. Each task starts on a new branch from the base branch.
+The `leftover` command keeps each commit and each uncommitted change of
+the earlier run. It prints the branch that keeps them, which has the name
+`kept/<ref>-<date>`. It also names that branch in a note on the aven
+task. The implementer of the new attempt reads the note in its task file.
 
-**Merged pull request:** when the pull request of a leftover branch
-merged, take these steps in place of a new attempt at its task:
+`ultraclose.py` contacts no remote. So the `leftover` command moves the
+branch of a pull request only with the `--pr <state>` flag, which gives
+the state of that pull request. Each refusal gives the steps that find
+the state. Take those steps, and follow these rules:
 
-1. Bring the merge into the local base branch, as step 2 of the merge
-   steps of the Pull requests section says.
-2. If the line names a worktree, take cleanup steps 3 and 4. A relaunch
-   of a proposed task works in such a worktree on the branch of the pull
-   request, and git deletes no branch that a worktree has checked out.
-3. Test whether the base branch holds the change of the branch:
-
-   ```bash
-   test "$(git merge-tree --write-tree <base> <branch>)" = "$(git rev-parse '<base>^{tree}')"
-   ```
-
-   The test passes when a merge of the branch into the base branch has no
-   conflict and changes no file. It fails for a conflict, and for a change
-   of the branch that the pull request lacks, such as a commit of a
-   relaunch. It also fails when a later commit of the base branch changed
-   the lines of the change. If it passes, delete the branch with
-   `git branch -D <branch>`. If it fails, rename the branch and add a
-   note, as cleanup steps 6 and 7 say.
-4. Set the aven task to `done` with `aven edit <ref> --status done`.
-5. Run `ultraclose.py set <ref> closed`.
+- Record each pull request that you find in `notes.md`.
+- Pass `--pr open` only when the user asks you to keep the pull request
+  open. Otherwise close an open pull request, and pass `--pr closed`.
+- Before you pass `--pr merged`, bring the merge into the local base
+  branch, as step 2 of the merge steps of the Pull requests section
+  says. A merged task does not need a new attempt, so the command then
+  closes the task and sets the aven task to `done`.
 
 `ultraclose.py set <ref> noted` removes the clean worktree of the task.
 `set <ref> closed` removes that worktree and then deletes the branch.
-Neither command deletes a branch whose worktree is gone or dirty. Both
-commands remove only the work of the run.
+Neither command deletes a branch whose worktree is gone or dirty.
+`set <ref> landed` removes the clean worktree as well. It deletes the
+branch only when the worktree is gone and the base branch holds the
+change of the branch. Each of these commands removes only the work of the
+run.
 
 For a task with leftover work, each `set` command keeps the worktree and
 the branch. When the worktree exists, the command prints a line that names
 the worktree. `next` starts only pending tasks, so the leftover work of a
-noted or closed task can stay. If you remove that work, follow the steps
-of this section, so that the branch keeps its commits.
+noted or closed task can stay. To remove that work, run the `leftover`
+command, so that a branch keeps its commits.
 
 `ultraclose.py` creates the directory of a task in the run directory when
 it starts the task. It treats the branch or the worktree of a task without
@@ -681,21 +664,36 @@ Repeat until the run ends:
    section says what to do then. It exits with an `ENDED` line when the
    run ends, so start it again after you add tasks to an ended run.
 4. End the turn. Each Workflow completion wakes you with a result. File its
-   `defects` as the Defects section says, in the same turn as you act on its
-   status. When the result gives a user message about other work as the
-   reason for its status, relaunch the task as the User messages section
-   says. Otherwise act on its `status` as this table says:
+   `defects` as the Defects section says, in the same turn as you act on
+   the result. When the result gives a user message about other work as
+   the reason for its status, relaunch the task as the User messages
+   section says. Otherwise take the action that the `action` field of
+   the result gives.
+
+The action of a result follows its `status`, and it gives the command
+that you run:
 
 | Status | Action |
 | --- | --- |
 | `approved` | Land the task. |
-| `landable` | The task reached its cap as a strict improvement with no regression. File each entry of `followups` with `aven add` and link it with `aven related add`. Then land the task. |
-| `obsolete` | Add the evidence with `aven note`, set the task to `done`, and run `ultraclose.py set <ref> closed`. |
-| `abandoned`, `rejected`, `unconverged` | If an `unconverged` result names the narrowing agent and the run names a model for that agent, check that model first, as the Models section says. After you correct a wrong model, relaunch the task as that section says. Otherwise add a note with the open findings and the branch name, set the task to `todo`, and run `ultraclose.py set <ref> noted`. The branch stays. Do not force the task through. |
-| `error` | If the run names a model for the agent that returned nothing, check that model first, as the Models section says. Relaunch the task one time. Run `ultraclose.py args <ref>`, and launch the object that it prints from the path in its `script` field, as step 2 says. When the sync agent returned nothing, add `--sync` with the reason that started that agent, so that the relaunch syncs the task again. After a second error, note the task. |
+| `landable` | File each entry of `followups` as a task, and land the task. |
+| `obsolete` | Close the task. |
+| `abandoned`, `rejected`, `unconverged` | Note the task. Do not force the task through. |
+| `error` | Relaunch the task one time, and note the task after a second error. |
 
-`ultraclose.py status` lists each pending task that waits for a noted task.
-Note those tasks too.
+To note or to close a task, run `ultraclose.py set` with the `--note`
+flag. The command runs the aven commands of the state that it sets:
+
+| Command | Aven task | Work of the run |
+| --- | --- | --- |
+| `set <ref> noted --note '<reason>'` | Gets the reason, the branch, and the pull request of the task as a note, and the status `todo` | The branch stays |
+| `set <ref> closed --note '<evidence>'` | Gets the evidence as a note, and the status `done` | The branch goes with a clean worktree |
+| `set <ref> landed` | Gets the status `done` | The branch goes when the base branch holds its change |
+
+Run `set <ref> landed` only when an `ACTION` line of a landing says that
+the task has landed. `set <ref> noted` prints a `stuck` line for each
+pending task that waits for a noted task, and so does `status`. Note
+those tasks too.
 
 A run with a `pr` target ends only after each of its pull requests has
 merged or closed. When no Workflow and no landing runs, and `next` starts
@@ -704,12 +702,8 @@ the `proposed` lines of `ultraclose.py status`, and end the turn. When the
 user reports a merge, continue as the Pull requests section says.
 
 The relaunch of a proposed task works on the branch of its open pull
-request. When such a relaunch ends `obsolete`, `abandoned`, `rejected`,
-or `unconverged`, act on the pull request as the Pull requests section
-says before you close or note the task.
-
-When `boundedReview` is true on a result, the last review covered only the
-final fixes. Record the task in `notes.md`.
+request. When such a relaunch does not end in a landing, its action also
+says what to do with the pull request.
 
 On an `approved` or `landable` result, `summary` and `notes` describe the
 change that lands. The implementer writes them, and each fixer revises
@@ -837,15 +831,53 @@ names, inside the git directory of the worktree. Git removes that directory
 together with the worktree. The commit hooks run in the main checkout, and
 they get the `golangci-lint-cache` directory of the run directory.
 
-The command prints a `RESULT` line. After an `OK` or a `PR` result, the
-`--next` flag runs `next`, so one background call lands the task and starts
-the next tasks. The list of input objects that `next` prints follows the
-`RESULT` line, and the list is empty when no task starts. After a failed
-landing, the flag does not run `next`.
+The command ends its output with these lines, in this order:
 
-When a landing fails, the `RESULT` line is the last line that the command
-prints. The last lines of the failing output come before it. The run
-directory holds the full output of each step in `logs/<ref>.<step>.log`.
+| Line | Content |
+| --- | --- |
+| The failing output | The last lines of the output of a failed step. The run directory holds the full output of each step in `logs/<ref>.<step>.log`. |
+| `TIMES` | How long the check and the commit took, such as `TIMES check=1m22s (median 1m24s) commit=11m52s (median 18s)`. |
+| `SLOW` | One line for each step that took more than twice its median, and more than a minute longer than its median. |
+| `ACTION` | The action that you take. |
+| `RESULT` | The result. It is the last line of a failed landing. |
+| The list of input objects | The tasks that `next` started after an `OK` or a `PR` result of a landing with `--next`. The list is empty when no task starts. |
+
+The time of the commit in the `TIMES` line includes the commit hooks. When
+a commit hook changes the index, the landing commits a second time, and
+the time of the commit covers both attempts. Each median covers the
+earlier landings of the run with the result `OK` or `PR`.
+`ultraclose.py status` prints the medians and the times of the last
+landings.
+
+Do not report the time of a step with a `SLOW` line as normal. Find the
+cause before you start another landing. A build cache that evicted its
+content is a common cause, and the Disk entry of the Hazards section says
+how to free space.
+
+Take the action that the `ACTION` line gives. The action names the
+command that you run, and the cause of the result where the script can
+tell it from the run. The script counts the failed landings of each task
+by cause. So the action changes when a task fails again for the same
+cause.
+
+After an `OK` or a `PR` result, the action of a landing with `--next` says
+to launch the objects of its list. Skip each object whose task you
+relaunched after the landing started, because a Workflow runs that task
+already.
+
+Some actions tell you to sync the task. To sync a task, relaunch it
+with the reason:
+
+```bash
+ultraclose.py args <ref> --sync '<reason and failing output>'
+```
+
+A sync agent merges and adapts, and a reviewer checks the merge. Land the
+task again after its Workflow ends `approved` or `landable`. Note the task
+when a second sync fails for the same reason.
+
+With the `--next` flag, one background call lands the task and starts the
+next tasks. After a failed landing, the flag does not run `next`.
 
 After a landing commits its task, or names the branch of the pull request,
 it does not stop at a command that fails. The target of the run sets the
@@ -873,42 +905,17 @@ git branch -q -D task/APP-7KQ9 failed:
 error: cannot delete branch 'task/APP-7KQ9' used by worktree at '/repo/.claude/worktrees/t-APP-7KQ9'
 The task landed, but its branch still exists. Repair the cause of the error, and run the git command again.
 TIMES check=1m22s (median 1m24s) commit=18s (median 18s)
-RESULT APP-7KQ9 OK 1a2b3c4 fix: retry a timeout
 ```
 
-Act on each failed command as this table says, in the order of the output:
+The `ACTION` line of such a landing gives the repair of each failed
+command, in the order of the output, with the command that you run.
 
-| Failed command | Action |
-| --- | --- |
-| `git worktree remove`, and the worktree still exists | Repair the cause that the error names, and run the failed command again. After `PR`, `ultraclose.py merged` fails until you do, because git deletes no branch that a worktree has checked out. When git then answers that the path is not a working tree, act as for a worktree that git no longer lists. |
-| `git worktree remove`, and git no longer lists the worktree | git deleted its record of the worktree, and only the directory of the worktree stays. Repair the cause that the error names, and delete the directory with `rm -rf <worktree>`. |
-| `git branch -D` | The task landed, and its branch still exists. When `git worktree remove` failed as well, the worktree of the task keeps the branch, so remove that worktree first. Otherwise, repair the cause that the error names. Then run the failed command again. |
-| `aven edit` | The task landed, and its aven task is still open. Run `aven edit <ref> --status done`. |
-
-Act on the result as this table says:
-
-| Result | Action |
-| --- | --- |
-| `OK` | Launch one Workflow per object of the list that follows the `RESULT` line, as the Loop section says. Skip each object whose task you relaunched after the landing started. When an error follows the line instead of the list, the task landed and `next` failed. Repair the cause of the error, and run `ultraclose.py next`. When a line before the `TIMES` line says that a command failed, the task still landed. Act on each failed command as the table of failed commands says. |
-| `PR` | Only a landing with a `pr` target prints this result. Act on the list that follows the `RESULT` line as for `OK`. Then push the branch and open the pull request, as the Pull requests section says. When a line before the `RESULT` line says that `git worktree remove` failed, the landing still proposed the task. Act on the failed command as the table of failed commands says. |
-| `CONFLICT` | The base branch moved under the task. Sync the task. |
-| `CHECKFAIL`, `COMMITFAIL` | The check or a commit hook failed. Find the cause in the failing output, and act on that cause. |
-| `CHECKTIMEOUT`, `COMMITTIMEOUT` | The check or the commit ran longer than the step timeout, and the landing stopped it. Find the cause in the last lines of the output, and act on that cause before you start another landing. |
-| `HEALTHFAIL` | The service that the check or a commit hook requires is down. Repair the service and land again. Do not sync the task. When the same task ends in `HEALTHFAIL` after the check or the commit a second time, read the log that the output names above the `RESULT` line, and do not land the task again. |
-| `NOWORKTREE` | The worktree of the task does not exist, and the output names its path. Find the cause, and act on that cause. |
-| `WTDIRTY` | An agent left files behind. Delete probe files and built binaries, commit real changes with `--no-verify`, and land again. |
-| `NOMSG` | In the run directory, `tasks/<ref>/msg.txt` does not exist, or it holds no text. Sync the task with a reason that asks for the commit message of the whole change. The sync agent then writes the message, and a reviewer checks it. |
-| `MSGHASREF`, `REFINDIFF` | Remove the task ref from the message or the code, and land again. |
-| `EMPTY` | The task branch holds no change against the base branch. Find the cause, and act on that cause. Do not sync the task. |
-| `LOGHASREF` | Only a landing with a `pr` target prints this result. A commit message of the task branch holds a task ref, and the push publishes each commit. Replace the commits of the branch with one commit, as the Pull requests section says, and land again. |
-| `BRANCHTAKEN` | Only a landing with a `pr` target prints this result. A branch blocks the name of the pull request branch, and the output names it. Act on the cause as the Pull requests section says. |
-| `DIRTY`, `NOTBASE`, `TREEMISMATCH` | An agent or a hook changed the main checkout. Stop landing, find the cause, and repair the checkout before the next landing. |
-| `POSTDIRTY` | The task landed, and the main checkout then held a change that the commit did not record. Stop landing, find the cause, and repair the checkout before the next landing. When a line before the `TIMES` line says that a command failed, act on each failed command as the table of failed commands says. Then run `ultraclose.py next`. Do not land the task again. |
-
-Every landing with a `pr` target leaves the main checkout alone, and it
-records no commit on the base branch. So it never prints `DIRTY`,
-`NOTBASE`, `TREEMISMATCH`, `POSTDIRTY`, `COMMITFAIL`, or `COMMITTIMEOUT`.
-Its `CONFLICT` comes from the merge of the base branch into the worktree.
+Every failed landing leaves its task `approved`, with one exception. A
+landing with the result `POSTDIRTY` lands its task before it fails,
+because the base branch holds the commit of the task by then. Every
+`approved` task keeps the files of its triage row, and each task that
+comes after it keeps waiting. The run also does not end while it holds an
+`approved` task.
 
 `ultraclose.py land` takes only an inflight or an approved task. For a task
 in another state, it prints an error that names the state, and it prints no
@@ -923,148 +930,41 @@ lock. So it prints the same error for a task that another landing landed
 or proposed during that wait. Take no action for that error, and act on
 the result of the other landing.
 
-To sync a task, relaunch it with
-`ultraclose.py args <ref> --sync '<reason and failing output>'`. A sync
-agent merges and adapts, and a reviewer checks the merge. Land the task
-again after its Workflow ends `approved` or `landable`, as the Loop table
-says. Note the task when a second sync fails for the same reason.
+The action of `CHECKFAIL`, `COMMITFAIL`, `CHECKTIMEOUT`, and
+`COMMITTIMEOUT` can send you to this section, because only the failing
+output shows the cause of these results.
 
-`CHECKFAIL` and `COMMITFAIL` do not show that the task must change, and each
-sync costs an agent run and a review. Find the cause in the failing output
-before you sync a task. Each cause has its own action:
+`CHECKFAIL` and `COMMITFAIL` do not show that the task must change, and
+each sync costs an agent run and a review. `land` reads the log of the
+failed step, and it quotes the first line that names a lack of memory or
+a full disk. Failed tests can print such a line too, such as a test that
+reports a killed process. The action says what to do when that line shows
+why the step failed. In every other case, find the cause in the failing
+output, and act on that cause:
 
 | Cause | Action |
 | --- | --- |
-| A down service, a network failure, a full disk, or a lack of memory stopped the check or the hook, such as a test that the kernel killed (`Killed`, `signal: killed`, exit status 137). | Repair the environment and land again. Do not sync the task. When the same task fails a second time for the same cause, read the log of the failed step, and do not land the task again. |
+| A failure of the environment that `land` did not name stopped the check or the hook, such as a down service or a network failure. | Repair the environment and land again. Do not sync the task. When the same task fails a second time for the same cause, do not land the task again. Sync the task with the log of the failed step when that log shows that the change causes the failure. Otherwise, note the task. |
 | A failed test covers code that the task did not change. | Land again one time. Sync the task when the same test fails again. |
 | The check or the hook reports a fault in the change, such as a broken build, a linter finding, or a failed test of the changed code. | Sync the task. |
 
-A `HEALTHFAIL` after the check or the commit shows that the environment
-failed during that step, but not why. The failing output of `CHECKFAIL` or
-`COMMITFAIL` shows the same when it names a down service, a network failure,
-a lack of memory, or a full disk. The change might cause the failure, such as
-with a test that fills the memory or the disk. Then each landing of the task causes the
-failure again. After the same task fails a second time for the same cause,
-sync the task with the log of the failed step when that log shows that the
-change causes the failure. Otherwise, note the task.
-
-Each landing stops its check and its commit when the step runs longer than
-the step timeout of the run. The landing then ends the processes of the
-step, and its result is `CHECKTIMEOUT` or `COMMITTIMEOUT`. So a hook that
-hangs holds the queued landings only until the landing stops it. The
-landing does not run the health command after it stops a step, so neither
-result shows whether the service answers.
-
-`CHECKTIMEOUT` and `COMMITTIMEOUT` do not show that the task must change.
-The output names the log of the step, and the last lines of that log come
-before the `TIMES` line. Those lines show what the step did when the
-landing stopped it. Each cause has its own action:
+`CHECKTIMEOUT` and `COMMITTIMEOUT` do not show that the task must change
+either. Each landing stops its check and its commit when the step runs
+longer than the step timeout of the run. So a hook that hangs holds the
+queued landings only until the landing stops it. The landing does not run
+the health command after it stops a step, so neither result shows whether
+the service answers. The last lines of the log of the step come before
+the `TIMES` line, and they show what the step did when the landing
+stopped it. Act on the cause before you start another landing:
 
 | Cause | Action |
 | --- | --- |
 | The step waited for a service that did not answer, such as a Dagger call whose engine another client removed. | Confirm that the service answers, such as with the health command of the run, and repair the service when it does not. Then land again. Do not sync the task. |
-| The step still did its work, such as a build that fills an empty cache. | Find why the step was slow, as this section says for the `TIMES` line. When a healthy step takes that long, raise the step timeout with `ultraclose.py config --step-timeout <seconds>`. Then land again. Do not sync the task. |
+| The step still did its work, such as a build that fills an empty cache. | Find why the step was slow. When a healthy step takes that long, raise the step timeout with `ultraclose.py config --step-timeout <seconds>`. Then land again. Do not sync the task. |
 | The step ran a build or a test of the changed code that does not end. | Sync the task. |
-
-The change might cause the wait for a service, such as with a test that
-stops the service. The same task can end in a timeout result a second
-time, with the end of its log at the same place. Then do not land the task
-again. Sync the task with the log of the step when that log shows that the
-change causes the wait. Otherwise, note the task.
-
-After `COMMITTIMEOUT`, the landing restores the main checkout as it does
-after a failed commit. A process that the landing killed can leave a lock
-file of git, and the landing then cannot restore the main checkout. Its
-output says so above the `TIMES` line, and it names the git command that
-failed, such as `git reset -q --hard <commit>`. Repair the main checkout
-before the next landing:
-
-1. Confirm that no git process runs in the main checkout.
-2. Remove the lock file that the output names.
-3. Run the git command that failed again, in the main checkout.
-4. Run `git clean -fd` in the main checkout.
-
-`POSTDIRTY` shows that, after the commit, the main checkout held a change
-that the commit did not record, such as a file that a commit hook left
-behind. The base branch holds the commit of the task by then, so the
-landing lands the task before it fails. It removes the worktree and the
-branch, sets the aven task to `done`, and sets the task to `landed` in the
-run. The output names the commit and lists each change of the main
-checkout above the `TIMES` line. The landing does not run `next`, so run
-`ultraclose.py next` after you repair the checkout.
-
-`NOWORKTREE` shows that the task lost its worktree after its review, or
-that an earlier landing of the task removed the worktree and then stopped
-before it set the task to `landed`. A landing that ends in `NOWORKTREE`
-leaves the task `approved`. Every `approved` task keeps the files of its
-triage row, and each task that comes after it keeps waiting. The run also
-does not end while it holds an `approved` task. Act on the cause as this
-table says:
-
-| Cause | Action |
-| --- | --- |
-| The base branch holds the commit of the task. An earlier landing recorded the commit, removed the worktree, and then stopped, such as when a signal ended the command. | Set the aven task to `done` with `aven edit <ref> --status done`, and run `ultraclose.py set <ref> landed`. |
-| The base branch lacks the commit of the task. The Workflow of the task returned `approved` or `landable`, and the worktree went missing after that. | Run `git worktree prune` in the main checkout, which removes the record that git keeps of a deleted worktree. When the branch of the task still exists, run `git worktree add <worktree> <branch>` there, record the repair in `notes.md`, and land the task again. When the branch is gone as well, relaunch the task with `ultraclose.py args <ref>`. The relaunch starts from the base branch at the implementer. Land the task after its Workflow ends `approved` or `landable`, as the Loop table says. |
-
-In that table, `<worktree>` is the path that the output names. `<branch>`
-is the branch that the `branch` field of the task in `state.json` names,
-or `task/<ref>` for a task without that field. Every agent commits its
-work, so the branch holds the change that the reviewers approved. Each
-relaunch of the task adds a review cycle to that change. The relaunch of
-a `landable` task can also return its `followups` again, and you then
-file each follow-up a second time.
-
-`EMPTY` shows that the base branch already holds each change of the task
-branch, so the landing has nothing to commit or to propose. The task
-branch also holds the base branch, so a sync has nothing to merge. Look in
-the log of the base branch for the commit that made the change of the
-task, such as with `git log --oneline <base> -- <file>` for a file of its
-triage row.
-
-A relaunch of a proposed task can end in `EMPTY` while its pull request is
-still open. So read the `pr` field of the task in `state.json` before you
-close or note the task. When the field names a pull request, read the pull
-request with `mcp__github__pull_request_read`. When the pull request is
-open, close it before you close the task, as the Pull requests section says
-for a relaunch that ends `obsolete`. Before you note the task, leave the
-pull request open and add its address to the note, as that section says
-for a relaunch that ends `abandoned`. Act on the cause as this table says:
-
-| Cause | Action |
-| --- | --- |
-| Another commit made the same change, such as the commit of a task that covers this task. | Close the task as the Loop section says for the status `obsolete`, with that commit as the evidence. |
-| The commit comes from this task. An earlier landing recorded it and then stopped before it removed the worktree, or the pull request of the task merged. | The task has landed. Set the aven task to `done` with `aven edit <ref> --status done`. Run `ultraclose.py set <ref> closed`, which removes the worktree and the branch. Then run `ultraclose.py set <ref> landed`. |
-| No commit of the base branch made the change, so the task branch holds no change of its own. | Read the `summary` and the `notes` of the Workflow result of the task. When they say that the task does not need a change, close the task as the Loop section says for the status `obsolete`. Otherwise run `git -C <worktree> reset -q --hard <base>` on the worktree of the task, and relaunch the task with `ultraclose.py args <ref>`. When the same task ends in `EMPTY` again, note the task. |
-
-`ultraclose.py args` starts a task at the implementer only when the task
-branch holds no commit that the base branch lacks. A branch whose commits
-cancel each other out still holds such commits. Without the reset, the
-relaunch of that task resumes at a review round. The reviewer then sees an
-empty diff with a `summary` that describes a change. The Workflow
-approved the empty branch once, and it can approve that branch again.
-
-When the remote holds the branch, such as for a task that records a pull
-request, the reset makes the next push replace commits there. So set
-`force_with_lease` on that push.
 
 When you fix something by hand before a landing, record the fix in
 `notes.md`, because no reviewer saw it.
-
-Each landing that runs the check or the commit prints a `TIMES` line before
-the `RESULT` line, such as
-`TIMES check=1m22s (median 1m24s) commit=11m52s (median 18s)`. The time of
-the commit includes the commit hooks. When a commit hook changes the index,
-the landing commits a second time, and the time of the commit covers both
-attempts. Each median covers the earlier
-landings of the run with the result `OK` or `PR`. `ultraclose.py status`
-prints the medians and the times of the last landings.
-
-Read the `TIMES` line of each landing. When a step takes more than twice
-its median, and more than a minute longer than its median, do not report
-the time as normal. Find the cause before you start another landing. A
-build cache that evicted its content is a common cause. `ultraclose.py
-status` prints the free space of each watched file system, and the Disk
-entry of the Hazards section says how to free space.
 
 ## Pull requests
 
@@ -1085,15 +985,10 @@ branch with such a name, and a draft pull request from it. Both calls then
 run without a prompt.
 
 The landing fails with `BRANCHTAKEN` when git cannot give the task branch
-that name. Its output gives the cause:
-
-- **A local branch or a remote branch has the name `<type>`:** git keeps
-  no branch below the name of another branch. So that branch blocks every
-  name that starts with `<type>/`, and the landing fails before the check.
-  Ask the user whether to rename or delete that branch, and land again
-  after the user does.
-- **Another command created a branch with the name during the check:**
-  land again. The next landing names a free branch.
+that name. Git keeps no branch below the name of another branch, so a
+branch with the name `<type>` blocks every name that starts with
+`<type>/`. The `ACTION` line says whether to ask the user about such a
+branch, or to land again.
 
 Take these steps for each `PR` result:
 
@@ -1134,15 +1029,10 @@ the push updates that pull request.
 
 The push publishes each commit of the branch with its message. So the
 landing fails with `LOGHASREF` when one of those messages holds a task
-ref, and its output names each such commit. Replace the commits of the
-branch with one commit, and land again:
-
-```bash
-cd <worktree> && git reset --soft "$(git merge-base <base> HEAD)" && git commit -q --no-verify -m wip
-```
-
-If the remote holds the branch already, the next push replaces commits
-there, so set `force_with_lease` on that push.
+ref, and its output names each such commit. The `ACTION` line gives the
+command that replaces the commits of the branch with one commit. If the
+remote holds the branch already, the next push replaces commits there,
+so set `force_with_lease` on that push.
 
 Every proposed task waits for its pull request to merge, and the run
 holds back the tasks that the merge affects:
@@ -1187,8 +1077,10 @@ its error gives:
   proposed the task did not remove the worktree. git deletes no branch
   that a worktree has checked out. Remove the worktree with the
   `git worktree remove --force <worktree>` command that the error gives.
-  When git fails, act on its error as the table of failed commands in the
-  Landing section says for `git worktree remove`. Then run
+  When git fails, repair the cause that its error names, and run the git
+  command again. When git then answers that the path is not a working
+  tree, git deleted its record of the worktree, and only the directory
+  stays. Delete the directory with `rm -rf <worktree>`. Then run
   `ultraclose.py merged <ref>` again.
 - **Another worktree has the branch checked out:** git deletes no such
   branch. The main checkout can have the branch checked out after a
@@ -1200,14 +1092,14 @@ these events as this table says:
 
 | Event | Action |
 | --- | --- |
-| The pull request has a conflict with the base branch | Bring the base branch up to date as step 2 of the merge steps says. Sync the task with `ultraclose.py args <ref> --sync '<reason>'`, as the Landing section says. The relaunch works on the branch of the pull request. Land the task again after its Workflow ends `approved` or `landable`, as the Loop table says. The `PR` result of that landing ends with `pr=<url>`. |
-| The user closes the pull request without a merge | Add a note with the reason and the branch name, set the task to `todo`, and run `ultraclose.py set <ref> noted`. The branch stays. When the user asks for the task again, relaunch it with `ultraclose.py args <ref>`. Its landing names the closed pull request, so the steps for each `PR` result open a new one. |
-| A relaunch of the task ends `obsolete` | Close the pull request with `mcp__github__update_pull_request` and `state` set to `closed`. Then act on the result as the Loop table says, and record the closed pull request in `notes.md`. |
-| A relaunch of the task ends `abandoned`, `rejected`, or `unconverged` | Leave the pull request open for the user, and add its address to the note of the task. Then act on the result as the Loop table says, and record the open pull request in `notes.md`. |
+| The pull request has a conflict with the base branch | Bring the base branch up to date as step 2 of the merge steps says. Sync the task with `ultraclose.py args <ref> --sync '<reason>'`, as the Landing section says. The relaunch works on the branch of the pull request. Land the task again after its Workflow ends `approved` or `landable`. The `PR` result of that landing ends with `pr=<url>`. |
+| The user closes the pull request without a merge | Note the task with `ultraclose.py set <ref> noted --note '<reason>'`. The branch stays. When the user asks for the task again, relaunch it with `ultraclose.py args <ref>`. Its landing names the closed pull request, so the steps for each `PR` result open a new one. |
+| A relaunch of the task ends `obsolete` | Take the action of the result. It names the pull request, and it says to close that pull request with `mcp__github__update_pull_request` before you close the task. Set `state` to `closed`, and record the closed pull request in `notes.md`. |
+| A relaunch of the task ends `abandoned`, `rejected`, or `unconverged` | Take the action of the result. It names the pull request, and it says to leave that pull request open for the user. `set <ref> noted` adds the address of the pull request to the note of the task. Record the open pull request in `notes.md`. |
 
 `ultraclose.py opened` records the pull request in the `pr` field of the
-task in `state.json`. Read that field before you close or note a task,
-because the task stays `inflight` during a relaunch.
+task in `state.json`. Each later launch of the task carries that pull
+request to the `action` of its result.
 
 The branch of a pull request does not have the name `task/<ref>`. So a
 new run finds that branch only in its record of the tasks that `init` left
@@ -1254,9 +1146,8 @@ relayed message is the request of that Workflow.
 
 When a result gives a user message about other work as the reason for its
 status, the status says nothing about the task. Relaunch the task with
-`ultraclose.py args <ref>` in place of the action that the Loop table gives
-for the status. When the message was about the task, act on the status as
-the Loop table says.
+`ultraclose.py args <ref>` in place of the action that the result gives.
+When the message was about the task, take the action of the result.
 
 ## Hazards
 

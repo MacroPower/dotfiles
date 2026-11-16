@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Tests for ultraclose.py and close-task.js.
 
-The tests also check that SKILL.md gives the orchestrator an action for
-each result that the land command prints. They check that SKILL.md has
+The tests also check SKILL.md against the scripts. SKILL.md tells the
+orchestrator to take the action that a landing and a Workflow result
+give, and it holds each section that such an action names. It also has
 the orchestrator run next after each set command that can let a task
 start.
 
@@ -12,6 +13,7 @@ script under Node, and they skip when node is not on PATH.
 
 import ast
 import fcntl
+import importlib.util
 import itertools
 import json
 import os
@@ -30,6 +32,21 @@ SCRIPT = Path(__file__).with_name("ultraclose.py")
 WORKFLOW = Path(__file__).with_name("close-task.js")
 SKILL = Path(__file__).parent.with_name("SKILL.md")
 NODE = shutil.which("node")
+# The tests load ultraclose.py as a module, and Python must not leave the
+# compiled module beside the script.
+sys.dont_write_bytecode = True
+
+
+def load_script():
+    """Load ultraclose.py as a module.
+
+    Most tests run the script as a command. A test loads the module for
+    a function whose result no command prints alone.
+    """
+    spec = importlib.util.spec_from_file_location("ultraclose_script", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 DEFAULT_SHARED = [
     "*_test.*",
     "*/test_*",
@@ -113,7 +130,11 @@ def refused(*args, cwd, env, script=SCRIPT, timeout=None):
 # edit.fails. The edit command of one task also fails while that
 # directory holds the file REF.edit.fails, where REF is the ref of the
 # task. Otherwise the command adds its arguments to the file edit.args,
-# as one line. Every other command prints one word.
+# as one line. The note command fails while the directory holds the
+# file note.fails. Otherwise it saves the text of its standard input in
+# the notes directory, in a file whose name holds the count of the
+# earlier notes and the ref of the task. Every other command prints one
+# word.
 AVEN_STUB = """\
 #!/bin/sh
 case "$1 $2" in
@@ -142,6 +163,19 @@ case "$1 $2" in
     fi
     shift
     echo "$*" >>"$AVEN_ANSWERS/edit.args"
+    echo stub
+    ;;
+"note "*)
+    if [ -e "$AVEN_ANSWERS/note.fails" ]; then
+        echo "Error: the database is locked" >&2
+        exit 1
+    fi
+    if [ "$3" != --stdin ]; then
+        echo "Error: the stub reads a note from --stdin" >&2
+        exit 1
+    fi
+    mkdir -p "$AVEN_ANSWERS/notes"
+    cat >"$AVEN_ANSWERS/notes/$(ls "$AVEN_ANSWERS/notes" | wc -l).$2"
     echo stub
     ;;
 *) echo stub ;;
@@ -203,6 +237,18 @@ def aven_edits(env):
     """
     record = Path(env["AVEN_ANSWERS"], "edit.args")
     return record.read_text().splitlines() if record.exists() else []
+
+
+def aven_notes(env):
+    """Each note that the aven stub saved, in the order of the commands.
+
+    Each entry holds the ref of the task and the text of the note.
+    """
+    saved = Path(env["AVEN_ANSWERS"], "notes")
+    if not saved.is_dir():
+        return []
+    files = sorted(saved.iterdir(), key=lambda f: int(f.name.split(".")[0]))
+    return [(f.name.split(".", 1)[1], f.read_text()) for f in files]
 
 
 def aven_listed_tasks(env, *tasks):
@@ -315,6 +361,19 @@ def state_of(run):
     return json.loads((run / "state.json").read_text())
 
 
+# The note that a test gives the set command for a state that requires one.
+NOTE = "the reason for the state"
+
+
+def set_args(ref, task_state):
+    """The arguments of the set command that sets a task to a state.
+
+    The states noted and closed require a note for the aven task.
+    """
+    note = ["--note", NOTE] if task_state in ("noted", "closed") else []
+    return ["set", ref, task_state, *note]
+
+
 def configured_run(repo, env, run, script=SCRIPT):
     """Start a run that sets each config value that a batch inherits.
 
@@ -416,7 +475,7 @@ def first_run(tmp, task_state=None, session=None, script=SCRIPT):
     configured_run(repo, earlier, run, script=script)
     if task_state:
         triage(tmp, repo, earlier, {"ref": REF})
-        ultraclose("set", REF, task_state, cwd=repo, env=earlier)
+        ultraclose(*set_args(REF, task_state), cwd=repo, env=earlier)
     if session == UNRECORDED:
         unrecorded(run)
     return repo, env, run
@@ -689,7 +748,7 @@ class InitTest(unittest.TestCase):
             runs = [first]
             for task_state, flags, name in steps:
                 triage(tmp, repo, env, {"ref": REF})
-                ultraclose("set", REF, task_state, cwd=repo, env=env)
+                ultraclose(*set_args(REF, task_state), cwd=repo, env=env)
                 before = [state_of(run) for run in runs]
                 out = ultraclose("init", "--run", str(first), *flags, cwd=repo, env=env)
                 run = first.with_name(name)
@@ -1117,7 +1176,7 @@ class TakeOverTest(unittest.TestCase):
         ]
         triage(tmp, repo, earlier, *rows)
         for ref, task_state in rest.items():
-            ultraclose("set", ref, task_state, cwd=repo, env=earlier)
+            ultraclose(*set_args(ref, task_state), cwd=repo, env=earlier)
         return repo, env, first, launch
 
     def assert_unchanged(self, repo, env, first, before):
@@ -1289,7 +1348,7 @@ class TakeOverTest(unittest.TestCase):
             second = Path(tmp, "second").resolve()
             later = in_session(env, "second")
             ultraclose("init", "--run", str(second), cwd=repo, env=later)
-            ultraclose("set", self.APPROVED, "landed", cwd=repo, env=later)
+            ultraclose(*set_args(self.APPROVED, "landed"), cwd=repo, env=later)
             # A session of another version of the skill takes over the
             # second run before its end.
             third = Path(tmp, "third").resolve()
@@ -1326,7 +1385,7 @@ class TakeOverTest(unittest.TestCase):
             ultraclose("next", cwd=repo, env=earlier)
             triage(tmp, repo, earlier, {"ref": waiting, "after": [noted]})
             for ref in (noted, other):
-                ultraclose("set", ref, "noted", cwd=repo, env=earlier)
+                ultraclose(*set_args(ref, "noted"), cwd=repo, env=earlier)
             self.assertIn(stuck, ultraclose("status", cwd=repo, env=earlier))
             before = state_of(first)
             env = in_session(env, "second")
@@ -1681,7 +1740,7 @@ class StatusTest(unittest.TestCase):
                 if refs:
                     triage(tmp, repo, env, *({"ref": ref} for ref in refs))
                 for ref, task_state in zip(refs, task_states):
-                    ultraclose("set", ref, task_state, cwd=repo, env=env)
+                    ultraclose(*set_args(ref, task_state), cwd=repo, env=env)
                 lines = ultraclose("status", cwd=repo, env=env).splitlines()
                 self.assertEqual(ENDED in lines, ended)
 
@@ -2584,7 +2643,7 @@ class WatchTest(unittest.TestCase):
             env=env,
         )
         triage(tmp, repo, env, {"ref": REF})
-        ultraclose("set", REF, task_state, cwd=repo, env=env)
+        ultraclose(*set_args(REF, task_state), cwd=repo, env=env)
         return repo, env
 
     def exit_after(self, repo, env, *command):
@@ -2609,7 +2668,7 @@ class WatchTest(unittest.TestCase):
         for unfinished, done in zip(UNFINISHED, itertools.cycle(FINISHED)):
             with self.subTest(unfinished), tempfile.TemporaryDirectory() as tmp:
                 repo, env = self.start(tmp, unfinished)
-                lines = self.exit_after(repo, env, "set", REF, done)
+                lines = self.exit_after(repo, env, *set_args(REF, done))
                 self.assertEqual(lines, [WATCH_ENDED])
 
     def test_exits_when_file_system_runs_low(self):
@@ -2878,7 +2937,7 @@ class DependencyTest(unittest.TestCase):
             triage(tmp, repo, env, {"ref": first}, {"ref": second})
             started = json.loads(ultraclose("next", cwd=repo, env=env))
             self.assertEqual([t["task"]["ref"] for t in started], [second])
-            ultraclose("set", second, "landed", cwd=repo, env=env)
+            ultraclose(*set_args(second, "landed"), cwd=repo, env=env)
             started = json.loads(ultraclose("next", cwd=repo, env=env))
             self.assertEqual([t["task"]["ref"] for t in started], [first])
 
@@ -2937,7 +2996,7 @@ class UntriagedTest(unittest.TestCase):
                 repo, env = new_repo(tmp)
                 ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
                 triage(tmp, repo, env, {"ref": REF})
-                ultraclose("set", REF, task_state, cwd=repo, env=env)
+                ultraclose(*set_args(REF, task_state), cwd=repo, env=env)
                 aven_listed_tasks(env, *listed_tasks)
                 rows = json.loads(ultraclose("untriaged", cwd=repo, env=env))
                 self.assertEqual(rows, want)
@@ -3077,7 +3136,7 @@ class UntriagedTest(unittest.TestCase):
             ["status"],
             ["next"],
             ["triage", "rows.json"],
-            ["set", REF, "noted"],
+            set_args(REF, "noted"),
         )
         for command in commands:
             with self.subTest(command[0]), tempfile.TemporaryDirectory() as tmp:
@@ -3293,7 +3352,7 @@ class WorkflowCopyTest(unittest.TestCase):
         # name: the commands that start the running task again
         relaunches = {
             "args": [["args", REF]],
-            "next": [["set", REF, "noted"], ["set", REF, "pending"], ["next"]],
+            "next": [set_args(REF, "noted"), ["set", REF, "pending"], ["next"]],
         }
         for name, commands in relaunches.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
@@ -3502,7 +3561,7 @@ class StoredTextTest(unittest.TestCase):
             "args on a branch without a commit": (0, [["args", REF]], True),
             "next after the task returns to pending": (
                 1,
-                [["set", REF, "noted"], ["set", REF, "pending"], ["next"]],
+                [set_args(REF, "noted"), ["set", REF, "pending"], ["next"]],
                 True,
             ),
             "args on a branch with a commit": (1, [["args", REF]], False),
@@ -3546,15 +3605,52 @@ WT = "WORKTREE"
 OTHER = "APP-0001"
 # What the refusal says about a run and the work of an earlier run.
 OWN_WORK = "a run resumes only its own work"
-# The command that the refusal names for the uncommitted changes of a
-# worktree, so that the removal of the worktree keeps them.
-COMMIT = "git commit --no-verify"
-# The command that the refusal names to count the commits of a branch
-# again after that commit.
-RECOUNT = "git rev-list --count main..<branch>"
+# The command that the refusal names for the work of an earlier run.
+LEFTOVER = "ultraclose.py leftover <ref>"
 # The sentence of the refusal that names the command to run after the
 # cleanup, with the words of that command.
 RETRY = "Then run ultraclose.py {}."
+# What the leftover command prints for each step that it takes. A line
+# about a branch takes the branch as its format argument. RENAMED also
+# takes the branch that keeps the commits, and the count of those commits
+# with its noun.
+COMMITTED = "committed the uncommitted changes of the worktree {}"
+REMOVED = "removed the worktree {}"
+EMPTY_BRANCH = "deleted the branch {}, which held no commit that main lacks"
+MERGED_BRANCH = "deleted the branch {}, whose change main holds"
+RENAMED = (
+    "renamed the branch {} to {}, which keeps its {} as a reference, and"
+    " added a note to the aven task"
+)
+MOVED = f"{REF} has no leftover work. A new attempt starts on a new branch from main"
+# The note that the leftover command adds to the aven task for a branch
+# that it renames. The format arguments are the new name of the branch and
+# its old name.
+KEPT_NOTE = (
+    "The branch {} holds an earlier attempt at this task. It had the name {}"
+    " before. The branch stays as a reference only, so do not merge it and"
+    " do not rebase onto it. A new attempt starts on a new branch from main."
+)
+
+
+def with_identity(tmp, env):
+    """Give the commits of an environment a name and an email address.
+
+    The leftover command commits with the git config of its caller. The
+    file replaces the config of the user, so the signing key of the user
+    does not reach the test repository.
+    """
+    config = Path(tmp, "gitconfig")
+    config.write_text("[user]\n\tname = test\n\temail = test@example.com\n")
+    env["GIT_CONFIG_GLOBAL"] = str(config)
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+
+
+def kept_branches(repo, env):
+    """The branches that the leftover command named, with the date of today."""
+    names = "--format=%(refname:lstrip=2)"
+    found = git("for-each-ref", names, f"refs/heads/kept/{REF}-*", cwd=repo, env=env)
+    return found.splitlines()
 # The line that set prints for the worktree of an earlier run, with the
 # path of that worktree.
 NOT_CREATED = "kept worktree {}, which this run did not create"
@@ -3562,7 +3658,7 @@ NOT_CREATED = "kept worktree {}, which this run did not create"
 
 def noted(tmp, repo, env, wt):
     """The first run notes its task, which removes the clean worktree."""
-    ultraclose("set", REF, "noted", cwd=repo, env=env)
+    ultraclose(*set_args(REF, "noted"), cwd=repo, env=env)
 
 
 def dirty(tmp, repo, env, wt):
@@ -3608,6 +3704,7 @@ class LeftoverTest(unittest.TestCase):
         task worktree.
         """
         repo, env, launch = running_task(tmp, commits)
+        with_identity(tmp, env)
         wt = launch["task"]["wt"]
         end(tmp, repo, env, wt)
         second = Path(tmp, "second")
@@ -3617,24 +3714,24 @@ class LeftoverTest(unittest.TestCase):
 
     def test_refuses_work_of_earlier_run(self):
         # name: (the commits of the task branch, what ends the first run,
-        # the line that names the leftover work, the repair, the commits
-        # of the kept branch). The repair holds the git commands that
-        # move the work out of the way. WT stands for the path of the
-        # task worktree. The commits of the kept branch are None when no
-        # kept branch remains.
+        # the line that names the leftover work, what the leftover command
+        # prints, the commits of the kept branch). WT stands for the path
+        # of the task worktree, and NEW for the name that the command
+        # gives the task branch. The commits of the kept branch are None
+        # when the command keeps no branch.
         cases = {
             "the branch of a noted task": (
                 1,
                 noted,
                 f"{REF}: the branch {BRANCH}, 1 commit ahead of main",
-                [["branch", "-m", BRANCH, KEPT]],
+                [RENAMED.format(BRANCH, "NEW", "1 commit")],
                 1,
             ),
             "a branch without a commit": (
                 0,
                 noted,
                 f"{REF}: the branch {BRANCH}, 0 commits ahead of main",
-                [["branch", "-D", BRANCH]],
+                [EMPTY_BRANCH.format(BRANCH)],
                 None,
             ),
             "the dirty worktree of a noted task": (
@@ -3643,26 +3740,25 @@ class LeftoverTest(unittest.TestCase):
                 f"{REF}: the branch {BRANCH}, 1 commit ahead of main,"
                 f" and the worktree {WT}",
                 [
-                    ["-C", WT, "add", "-A"],
-                    [*IDENTITY, "-C", WT, "commit", "-q", "--no-verify", "-m", "wip"],
-                    ["worktree", "remove", WT],
-                    ["branch", "-m", BRANCH, KEPT],
+                    COMMITTED.format(WT),
+                    REMOVED.format(WT),
+                    RENAMED.format(BRANCH, "NEW", "2 commits"),
                 ],
                 2,
             ),
             # The refusal counts 0 commits, and the commit of the
             # uncommitted changes puts the branch 1 commit ahead. So the
-            # repair renames the branch after it counts again.
+            # command renames the branch, which it counts after that
+            # commit.
             "the dirty worktree of a lost task without a commit": (
                 0,
                 dirty_lost,
                 f"{REF}: the branch {BRANCH}, 0 commits ahead of main,"
                 f" and the worktree {WT}",
                 [
-                    ["-C", WT, "add", "-A"],
-                    [*IDENTITY, "-C", WT, "commit", "-q", "--no-verify", "-m", "wip"],
-                    ["worktree", "remove", WT],
-                    ["branch", "-m", BRANCH, KEPT],
+                    COMMITTED.format(WT),
+                    REMOVED.format(WT),
+                    RENAMED.format(BRANCH, "NEW", "1 commit"),
                 ],
                 1,
             ),
@@ -3671,21 +3767,24 @@ class LeftoverTest(unittest.TestCase):
                 lost,
                 f"{REF}: the branch {BRANCH}, 2 commits ahead of main,"
                 f" and the worktree {WT}",
-                [["worktree", "remove", WT], ["branch", "-m", BRANCH, KEPT]],
+                [REMOVED.format(WT), RENAMED.format(BRANCH, "NEW", "2 commits")],
                 2,
             ),
+            # The worktree has the branch KEPT checked out, which the
+            # command leaves alone.
             "the worktree of a branch with another name": (
                 2,
                 renamed,
                 f"{REF}: the worktree {WT}",
-                [["worktree", "remove", WT]],
-                2,
+                [REMOVED.format(WT)],
+                None,
             ),
         }
-        for name, (commits, end, line, repair, kept) in cases.items():
+        for name, (commits, end, line, printed, kept) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
                 repo, env, second, wt = self.second_run(tmp, commits, end)
                 before = state_of(second)
+                notes = len(aven_notes(env))
                 # A refused command does not record the task as started,
                 # so each later command refuses the task again. Each
                 # refusal names the command that it refused.
@@ -3698,13 +3797,30 @@ class LeftoverTest(unittest.TestCase):
                     message = refused(*command, cwd=repo, env=env)
                     self.assertIn(line.replace(WT, wt), message.splitlines())
                     self.assertIn(OWN_WORK, message)
-                    self.assertIn(COMMIT, message)
-                    self.assertIn(RECOUNT, message)
+                    self.assertIn(LEFTOVER, message)
                     self.assertIn(RETRY.format(retry), message)
                 self.assertEqual(state_of(second), before)
-                for command in repair:
-                    args = [wt if arg == WT else arg for arg in command]
-                    git(*args, cwd=repo, env=env)
+                out = ultraclose("leftover", REF, cwd=repo, env=env)
+                new = kept_branches(repo, env)
+                self.assertEqual(len(new), 0 if kept is None else 1)
+                name = new[0] if new else ""
+                want = [text.replace(WT, wt).replace("NEW", name) for text in printed]
+                self.assertEqual(out.splitlines(), [*want, MOVED])
+                self.assertEqual(state_of(second), before)
+                self.assertFalse(Path(wt).exists())
+                # The command names each branch that it renames in a note
+                # on the aven task, with the old name of the branch.
+                added = aven_notes(env)[notes:]
+                if kept is None:
+                    self.assertEqual(added, [])
+                else:
+                    self.assertRegex(new[0], rf"^kept/{REF}-\d{{8}}$")
+                    self.assertEqual(added, [(REF, KEPT_NOTE.format(new[0], BRANCH))])
+                    # The branch keeps each commit and each uncommitted
+                    # change of the earlier run.
+                    self.assertEqual(self.ahead(repo, env, new[0]), kept)
+                if end is renamed:
+                    self.assertEqual(self.ahead(repo, env, KEPT), commits)
                 # The task starts on a new branch from the base branch.
                 launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
                 self.assertEqual(launch["task"]["ref"], REF)
@@ -3712,8 +3828,113 @@ class LeftoverTest(unittest.TestCase):
                 self.assertEqual(
                     git("branch", "--show-current", cwd=wt, env=env), BRANCH
                 )
-                if kept is not None:
-                    self.assertEqual(self.ahead(repo, env, KEPT), kept)
+
+    def test_leftover_keeps_uncommitted_changes(self):
+        # The worktree of the lost run holds a file that git does not
+        # track. The branch that the command keeps holds the file.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, _, _ = self.second_run(tmp, 1, dirty_lost)
+            ultraclose("leftover", REF, cwd=repo, env=env)
+            [kept] = kept_branches(repo, env)
+            self.assertEqual(git("show", f"{kept}:work.txt", cwd=repo, env=env), "work")
+
+    def test_leftover_keeps_work_when_aven_fails(self):
+        # The command adds the note before it renames the branch. So a
+        # failed aven command leaves the branch for a second run of the
+        # command.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, second, _ = self.second_run(tmp)
+            before = state_of(second)
+            notes = len(aven_notes(env))
+            failing = Path(env["AVEN_ANSWERS"], "note.fails")
+            failing.touch()
+            message = refused("leftover", REF, cwd=repo, env=env)
+            self.assertIn(f"aven note {REF} --stdin failed", message)
+            self.assertEqual(self.ahead(repo, env, BRANCH), 1)
+            self.assertEqual(kept_branches(repo, env), [])
+            self.assertEqual(state_of(second), before)
+            failing.unlink()
+            ultraclose("leftover", REF, cwd=repo, env=env)
+            [kept] = kept_branches(repo, env)
+            self.assertEqual(
+                aven_notes(env)[notes:], [(REF, KEPT_NOTE.format(kept, BRANCH))]
+            )
+
+    def test_leftover_names_free_branch(self):
+        # A branch has the name that the command gives the task branch on
+        # this day, so the command adds a counter.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, _, _ = self.second_run(tmp)
+            taken = f"kept/{REF}-{time.strftime('%Y%m%d')}"
+            git("branch", taken, "main", cwd=repo, env=env)
+            out = ultraclose("leftover", REF, cwd=repo, env=env)
+            if f"{taken}-2" not in kept_branches(repo, env):
+                # The date changed between the two commands of the test.
+                self.skipTest("the day ended during the test")
+            self.assertIn(RENAMED.format(BRANCH, f"{taken}-2", "1 commit"), out)
+            self.assertEqual(self.ahead(repo, env, taken), 0)
+            self.assertEqual(self.ahead(repo, env, f"{taken}-2"), 1)
+
+    def test_leftover_keeps_commits_of_detached_head(self):
+        # The worktree of the lost run has no branch checked out, and its
+        # HEAD holds a commit that no branch holds.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, _, wt = self.second_run(tmp, 1, lost)
+            git("switch", "-q", "--detach", cwd=wt, env=env)
+            empty_commit(wt, env, "detached")
+            tip = git("rev-parse", "HEAD", cwd=wt, env=env)
+            notes = len(aven_notes(env))
+            out = ultraclose("leftover", REF, cwd=repo, env=env).splitlines()
+            kept = kept_branches(repo, env)
+            self.assertEqual(len(kept), 2)
+            # The first branch keeps the commits of the detached HEAD, and
+            # the second branch keeps the task branch.
+            self.assertEqual(git("rev-parse", kept[0], cwd=repo, env=env), tip)
+            self.assertEqual(self.ahead(repo, env, kept[1]), 1)
+            self.assertIn(REMOVED.format(wt), out)
+            self.assertIn(RENAMED.format(BRANCH, kept[1], "1 commit"), out)
+            added = aven_notes(env)[notes:]
+            self.assertEqual([ref for ref, _ in added], [REF, REF])
+            self.assertIn(f"The branch {kept[0]} holds an earlier attempt", added[0][1])
+            self.assertIn("the detached HEAD of the worktree", added[0][1])
+
+    def test_leftover_takes_only_work_of_earlier_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # The run created the branch and the worktree of its task.
+            repo, env, launch = running_task(tmp, 2)
+            before = state_of(Path(tmp, "run"))
+            message = refused("leftover", REF, cwd=repo, env=env)
+            self.assertIn(f"{REF} has no branch and no worktree of an earlier", message)
+            self.assertIn("the command changed nothing", message)
+            self.assertIn(
+                f"unknown task {OTHER}", refused("leftover", OTHER, cwd=repo, env=env)
+            )
+            self.assertEqual(state_of(Path(tmp, "run")), before)
+            self.assertEqual(self.ahead(repo, env, BRANCH), 2)
+            self.assertTrue(Path(launch["task"]["wt"]).is_dir())
+            # Only the branch of a pull request takes the --pr flag.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, second, _ = self.second_run(tmp)
+            before = state_of(second)
+            message = refused("leftover", REF, "--pr", "closed", cwd=repo, env=env)
+            self.assertIn("has no branch that a landing proposed", message)
+            self.assertEqual(state_of(second), before)
+            self.assertEqual(self.ahead(repo, env, BRANCH), 1)
+
+    def test_leftover_leaves_directory_that_is_no_worktree(self):
+        # A directory has the path of the task worktree. In that
+        # directory, git acts on the main checkout.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, _, wt = self.second_run(tmp)
+            Path(wt).mkdir(parents=True)
+            Path(wt, "file.txt").write_text("f\n")
+            message = refused("leftover", REF, cwd=repo, env=env)
+            self.assertIn(f"{wt} is not a git worktree", message)
+            self.assertTrue(Path(wt, "file.txt").is_file())
+            self.assertEqual(self.ahead(repo, env, BRANCH), 1)
+            self.assertEqual(
+                git("log", "--format=%s", "main", cwd=repo, env=env), "init"
+            )
 
     def test_next_reports_work_for_waiting_task(self):
         # The task with the leftover work waits for the other task. The
@@ -3733,7 +3954,7 @@ class LeftoverTest(unittest.TestCase):
             )
             # Only a pending task starts, so next ignores the leftover
             # work of a task in another state.
-            ultraclose("set", REF, "noted", cwd=repo, env=env)
+            ultraclose(*set_args(REF, "noted"), cwd=repo, env=env)
             started = json.loads(ultraclose("next", cwd=repo, env=env))
             self.assertEqual([t["task"]["ref"] for t in started], [OTHER])
             self.assertEqual(self.ahead(repo, env, BRANCH), 1)
@@ -3750,11 +3971,11 @@ class LeftoverTest(unittest.TestCase):
         # name: the commands that launch the task of the run again
         cases = {
             "next after a noted task returns to pending": [
-                ["set", REF, "noted"],
+                set_args(REF, "noted"),
                 ["set", REF, "pending"],
                 ["next"],
             ],
-            "args of a noted task": [["set", REF, "noted"], ["args", REF]],
+            "args of a noted task": [set_args(REF, "noted"), ["args", REF]],
             "args of a running task": [["args", REF]],
         }
         for name, commands in cases.items():
@@ -3827,7 +4048,7 @@ class LeftoverTest(unittest.TestCase):
         for name, (end, task_state, has_worktree) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
                 repo, env, second, wt = self.second_run(tmp, 2, end)
-                printed = ultraclose("set", REF, task_state, cwd=repo, env=env)
+                printed = ultraclose(*set_args(REF, task_state), cwd=repo, env=env)
                 self.assertEqual(Path(wt).is_dir(), has_worktree)
                 self.assertEqual(self.ahead(repo, env, BRANCH), 2)
                 kept = []
@@ -3840,24 +4061,24 @@ class LeftoverTest(unittest.TestCase):
                 self.assertEqual(state_of(second)["tasks"][REF]["state"], task_state)
                 # The command does not record the work as the work of the
                 # run, so the run still refuses to resume it.
-                ultraclose("set", REF, "pending", cwd=repo, env=env)
+                ultraclose(*set_args(REF, "pending"), cwd=repo, env=env)
                 self.assertIn(OWN_WORK, refused("next", cwd=repo, env=env))
 
     def test_set_removes_work_of_its_run(self):
         # name: (the commands that end the task of the run, the state that
         # the last command sets, whether the branch remains)
         cases = {
-            "a noted task": ([["set", REF, "noted"]], "noted", True),
-            "a closed task": ([["set", REF, "closed"]], "closed", False),
+            "a noted task": ([set_args(REF, "noted")], "noted", True),
+            "a closed task": ([set_args(REF, "closed")], "closed", False),
             # The worktree of the task is gone, so the command keeps the
             # branch.
             "a noted task that the run closes": (
-                [["set", REF, "noted"], ["set", REF, "closed"]],
+                [set_args(REF, "noted"), set_args(REF, "closed")],
                 "closed",
                 True,
             ),
             "a noted task that the run starts again and closes": (
-                [["set", REF, "noted"], ["args", REF], ["set", REF, "closed"]],
+                [set_args(REF, "noted"), ["args", REF], set_args(REF, "closed")],
                 "closed",
                 False,
             ),
@@ -3878,7 +4099,7 @@ class LeftoverTest(unittest.TestCase):
                 repo, env, launch = running_task(tmp, 2)
                 wt = launch["task"]["wt"]
                 Path(wt, "dirty.txt").write_text("dirty\n")
-                printed = ultraclose("set", REF, task_state, cwd=repo, env=env)
+                printed = ultraclose(*set_args(REF, task_state), cwd=repo, env=env)
                 self.assertEqual(
                     printed.splitlines(),
                     [f"kept dirty worktree {wt}", f"{REF} {task_state}"],
@@ -4023,6 +4244,46 @@ def gone(process):
     return False
 
 
+# What the ACTION line of a landing holds when aven did not set the aven
+# task of the landing to done.
+STILL_OPEN = (
+    "The aven task is still open, because its aven command failed. Run aven"
+    f" edit {REF} --status done. "
+)
+# What the ACTION line of a landing holds when git did not remove the
+# worktree of the task. The format arguments are the worktree and the
+# main checkout.
+KEPT_WORKTREE = (
+    "git did not remove the worktree {0}. Repair the cause that the error of"
+    " git names, and run git worktree remove --force {0} again in the main"
+    " checkout {1}. When git then answers that {0} is not a working tree,"
+    " delete the directory with rm -rf {0}. "
+)
+# What the ACTION line of a landing holds when git deleted its record of
+# the worktree of the task, but the directory stays. The format argument
+# is the worktree.
+KEPT_DIRECTORY = (
+    "git deleted its record of the worktree {0}, but the directory stays."
+    " Repair the cause that the error of git names, and delete the directory"
+    " with rm -rf {0}. "
+)
+# What the ACTION line of a landing holds when git did not delete the
+# branch of the task. The format arguments are the first step of the
+# repair and the main checkout.
+KEPT_BRANCH = (
+    f"git did not delete the branch task/{REF}. {{0}}, and then run git branch"
+    f" -q -D task/{REF} in the main checkout {{1}}. "
+)
+# The first steps of KEPT_BRANCH, after a failed removal of the worktree
+# of the task and after a removal that passed.
+FIRST_REMOVE = "Remove the worktree first, because it keeps the branch"
+FIRST_REPAIR = "Repair the cause that the error of git names"
+# The action of a landing with the result OK and without --next.
+RUN_NEXT = (
+    "Run ultraclose.py next, which starts each task that this landing lets start."
+)
+
+
 class LandCase(unittest.TestCase):
     """The base of each test that lands a task."""
 
@@ -4084,7 +4345,10 @@ class LandCase(unittest.TestCase):
         out before the run starts. That branch holds one commit that main
         lacks.
         """
-        repo, run = Path(tmp, "repo"), Path(tmp, "run")
+        # The output names each path by its real path, which is the path
+        # that git prints. A temporary directory can sit behind a symbolic
+        # link, so the tests compare the output with real paths.
+        repo, run = Path(tmp, "repo").resolve(), Path(tmp, "run").resolve()
         # The landing commits with the git config of its caller. This
         # file replaces the config of the user, so the hook path and the
         # signing key of the user do not reach the test repository.
@@ -4291,11 +4555,26 @@ class LandCase(unittest.TestCase):
         started = json.loads(ultraclose("next", cwd=repo, env=env))
         return [t["task"]["ref"] for t in started]
 
+    def action(self, lines):
+        """The action that a landing prints in the line before its RESULT line."""
+        at = max(n for n, line in enumerate(lines) if line.startswith("RESULT "))
+        self.assertTrue(lines[at - 1].startswith("ACTION "), lines)
+        return lines[at - 1].removeprefix("ACTION ")
+
+    def detail(self, lines):
+        """The lines that a failed landing prints before its TIMES line and
+        its ACTION line."""
+        return [line for line in lines[:-2] if not line.startswith("TIMES ")]
+
     def assert_failed(self, repo, env, landing, result):
-        """The landing printed the result last and left the base branch alone."""
+        """The landing printed the result last and left the base branch alone.
+
+        The ACTION line comes right before the RESULT line.
+        """
         status, lines = landing
         self.assertEqual(status, 2, lines)
         self.assertEqual(lines[-1], f"RESULT {REF} {result}")
+        self.assertTrue(lines[-2].startswith("ACTION "), lines)
         self.assertEqual(git("log", "--format=%s", cwd=repo, env=env), "init")
         self.assertEqual(git("status", "--porcelain", cwd=repo, env=env), "")
 
@@ -4303,6 +4582,7 @@ class LandCase(unittest.TestCase):
         status, lines = landing
         self.assertEqual(status, 0, lines)
         self.assertTrue(lines[-1].startswith(f"RESULT {REF} OK "), lines)
+        self.assertTrue(lines[-2].startswith("ACTION "), lines)
         self.assertEqual(
             git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
         )
@@ -4310,12 +4590,13 @@ class LandCase(unittest.TestCase):
     def after_result(self, lines):
         """The lines that follow the RESULT line of a landing with the result OK.
 
-        The landing prints its TIMES line right before the RESULT line, so
-        the RESULT line is the second line.
+        The landing prints its TIMES line and its ACTION line right before
+        the RESULT line, so the RESULT line is the third line.
         """
         self.assertRegex(lines[0], r"^TIMES ", lines)
-        self.assertTrue(lines[1].startswith(f"RESULT {REF} OK "), lines)
-        return lines[2:]
+        self.assertRegex(lines[1], r"^ACTION ", lines)
+        self.assertTrue(lines[2].startswith(f"RESULT {REF} OK "), lines)
+        return lines[3:]
 
     def failed_commands(self, lines):
         """Split the reports of failed commands from the output of a landing.
@@ -4424,7 +4705,7 @@ class LandTest(LandCase):
                 repo, env = self.start_task(tmp, *flags, hook=hook)
                 landing = self.land(repo, env)
                 self.assert_failed(repo, env, landing, result)
-                self.assertIn(output, landing[1][:-1])
+                self.assertIn(output, self.detail(landing[1]))
 
     def test_lint_cache(self):
         # golangci-lint 2.12 reports the cached issues of another checkout
@@ -4561,7 +4842,15 @@ class LandTest(LandCase):
             self.assertIn(f"{REF} landed as {commit}", lines[0])
             self.assertEqual(lines[1], "?? left.txt")
             self.assertRegex(lines[2], r"^TIMES commit=\S+$")
-            self.assertEqual(lines[3:], [f"RESULT {REF} POSTDIRTY"])
+            self.assertEqual(
+                lines[3],
+                f"ACTION The task landed, and the main checkout {repo} then held"
+                " a change that the commit did not record. Stop landing, find the"
+                " cause, and repair the checkout before the next landing. Then"
+                " run ultraclose.py next, because this landing did not run it. Do"
+                " not land the task again.",
+            )
+            self.assertEqual(lines[4:], [f"RESULT {REF} POSTDIRTY"])
             # The landing finished its task as a landing with the result OK
             # does, and it did not run next.
             self.assertFalse(Path(repo, ".claude", "worktrees", f"t-{REF}").exists())
@@ -4572,6 +4861,8 @@ class LandTest(LandCase):
             )
             [entry] = state_of(Path(tmp, "run"))["landings"]
             self.assertEqual((entry["ref"], entry["result"]), (REF, "POSTDIRTY"))
+            # The task landed, so the run counts no failed landing for it.
+            self.assertNotIn("failures", state_of(Path(tmp, "run"))["tasks"][REF])
             # The landing keeps the file for the caller, and the land
             # command refuses the landed task.
             self.assertEqual(
@@ -4666,6 +4957,8 @@ class LandTest(LandCase):
                     ],
                 )
                 listed = self.after_result(lines[3:])
+                # The ACTION line gives the aven command first.
+                self.assertTrue(self.action(lines).startswith(STILL_OPEN), lines)
                 self.assertEqual(
                     git("log", "-1", "--format=%s", cwd=repo, env=env),
                     self.SUBJECT,
@@ -4698,8 +4991,8 @@ class LandTest(LandCase):
             status, lines = self.land(repo, env, "--next")
             self.assertEqual(status, 2, lines)
             # The report of the aven command comes first. The output then
-            # names the commit and the file, and the RESULT line comes
-            # last.
+            # names the commit and the file. The ACTION line gives the
+            # aven command, and the RESULT line comes last.
             self.assertEqual(
                 lines[:3],
                 [
@@ -4713,7 +5006,17 @@ class LandTest(LandCase):
             self.assertIn(f"{REF} landed as {commit}", lines[3])
             self.assertEqual(lines[4], "?? left.txt")
             self.assertRegex(lines[5], r"^TIMES commit=\S+$")
-            self.assertEqual(lines[6:], [f"RESULT {REF} POSTDIRTY"])
+            self.assertEqual(
+                lines[6:],
+                [
+                    f"ACTION The task landed, and the main checkout {repo} then"
+                    " held a change that the commit did not record. Stop landing,"
+                    " find the cause, and repair the checkout before the next"
+                    f" landing. {STILL_OPEN}Then run ultraclose.py next, because"
+                    " this landing did not run it. Do not land the task again.",
+                    f"RESULT {REF} POSTDIRTY",
+                ],
+            )
             # The task landed, its aven task is still active, and the
             # landing did not run next.
             self.assertEqual(branches(repo, env), ["main"])
@@ -4766,6 +5069,18 @@ class LandTest(LandCase):
                 self.assertIn("locked", reports[0][1])
                 self.assertIn(str(wt), reports[1][1])
                 listed = self.after_result(rest)
+                # The ACTION line gives the repair of each failed command
+                # first, in the order of the reports. The worktree keeps
+                # the branch, so the repair of the branch removes the
+                # worktree first.
+                real = Path(repo).resolve()
+                repairs = KEPT_WORKTREE.format(wt, real) + KEPT_BRANCH.format(
+                    FIRST_REMOVE, real
+                )
+                action = self.action(lines)
+                self.assertTrue(action.startswith(repairs), action)
+                if not flags:
+                    self.assertEqual(action, repairs + RUN_NEXT)
                 self.assertEqual(
                     git("log", "-1", "--format=%s", cwd=repo, env=env),
                     self.SUBJECT,
@@ -4815,6 +5130,12 @@ class LandTest(LandCase):
                 left, f"The task landed, but its branch still exists. {self.AGAIN}"
             )
             self.assertEqual(self.after_result(rest), [])
+            # git removed the worktree, so the ACTION line repairs the
+            # cause that the error names, and then deletes the branch.
+            self.assertEqual(
+                self.action(lines),
+                KEPT_BRANCH.format(FIRST_REPAIR, Path(repo).resolve()) + RUN_NEXT,
+            )
             self.assertEqual(self.task_states(tmp), {REF: "landed"})
             self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
             self.assertFalse(Path(repo, ".claude", "worktrees", f"t-{REF}").exists())
@@ -4837,8 +5158,9 @@ class LandTest(LandCase):
             status, lines = self.land(repo, env, "--next")
             self.assertEqual(status, 2, lines)
             # The reports of the two git commands come first. The output
-            # then names the commit and the file, and the RESULT line
-            # comes last.
+            # then names the commit and the file. The ACTION line gives the
+            # repair of the two git commands after the repair of the main
+            # checkout, and the RESULT line comes last.
             reports, rest = self.failed_commands(lines)
             self.assertEqual(
                 [command for command, _, _ in reports],
@@ -4848,7 +5170,20 @@ class LandTest(LandCase):
             self.assertIn(f"{REF} landed as {commit}", rest[0])
             self.assertEqual(rest[1], "?? left.txt")
             self.assertRegex(rest[2], r"^TIMES commit=\S+$")
-            self.assertEqual(rest[3:], [f"RESULT {REF} POSTDIRTY"])
+            real = Path(repo).resolve()
+            self.assertEqual(
+                rest[3:],
+                [
+                    f"ACTION The task landed, and the main checkout {real} then"
+                    " held a change that the commit did not record. Stop landing,"
+                    " find the cause, and repair the checkout before the next"
+                    f" landing. {KEPT_WORKTREE.format(wt, real)}"
+                    f"{KEPT_BRANCH.format(FIRST_REMOVE, real)}Then run"
+                    " ultraclose.py next, because this landing did not run it. Do"
+                    " not land the task again.",
+                    f"RESULT {REF} POSTDIRTY",
+                ],
+            )
             # The task landed, aven set its aven task to done, and the
             # landing did not run next.
             self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
@@ -4882,6 +5217,8 @@ class LandTest(LandCase):
                 " error, and delete the directory.",
             )
             self.assertEqual(self.after_result(rest), [])
+            # The ACTION line gives the command that deletes the directory.
+            self.assertEqual(self.action(lines), KEPT_DIRECTORY.format(wt) + RUN_NEXT)
             self.assertEqual(self.task_states(tmp), {REF: "landed"})
             self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
             self.assertEqual(branches(repo, env), ["main"])
@@ -5011,7 +5348,7 @@ class LandTest(LandCase):
                     Path(env["ENGINE"]).touch()
                 landing = self.land(repo, env)
                 self.assert_failed(repo, env, landing, result)
-                output = landing[1][:-1]
+                output = self.detail(landing[1])
                 if when:
                     self.assertIn("no engine", output)
                     found = [line for line in output if when in line]
@@ -5128,9 +5465,11 @@ class LandTest(LandCase):
                 if slow_step:
                     self.assertGreaterEqual(entry["times"][slow_step], 0.5)
                 # The TIMES line comes after the failing output and before
-                # the RESULT line. The first landing has no median.
+                # the ACTION line and the RESULT line. The first landing has
+                # no median.
                 times = " ".join(rf"{step}=\S+" for step in steps)
-                self.assertRegex(lines[-2], f"^TIMES {times}$")
+                self.assertRegex(lines[-3], f"^TIMES {times}$")
+                self.assertRegex(lines[-2], "^ACTION ")
                 self.assertTrue(lines[-1].startswith(f"RESULT {REF} {result}"), lines)
 
     def test_records_time_of_both_commit_attempts(self):
@@ -5149,7 +5488,7 @@ class LandTest(LandCase):
             self.assertEqual((entry["ref"], entry["result"]), (REF, "OK"))
             # The time of the commit covers both attempts.
             self.assertGreaterEqual(entry["times"]["commit"], 1.0)
-            self.assertRegex(landing[1][-2], r"^TIMES commit=\S+$")
+            self.assertRegex(landing[1][-3], r"^TIMES commit=\S+$")
 
     def test_landing_that_stops_before_check_records_no_time(self):
         # name: (the init flags, whether the task has a commit message,
@@ -5186,9 +5525,10 @@ class LandTest(LandCase):
             self.assert_failed(repo, env, landing, "CHECKFAIL")
             lines = landing[1]
             self.assertTrue(
-                lines[-3].startswith("the run did not record the times"), lines
+                lines[-4].startswith("the run did not record this landing"), lines
             )
-            self.assertRegex(lines[-2], r"^TIMES check=\S+$")
+            self.assertRegex(lines[-3], r"^TIMES check=\S+$")
+            # The run counts no failed landing that it cannot record.
             before["tasks"][REF]["state"] = "approved"
             self.assertEqual(state_of(Path(tmp, "run")), before)
 
@@ -5235,7 +5575,7 @@ class LandTest(LandCase):
                 times = " ".join(
                     rf"{step}=\S+ \(median {median}\)" for step, median in want.items()
                 )
-                self.assertRegex(lines[-2], f"^TIMES {times}$")
+                self.assertRegex(lines[-3], f"^TIMES {times}$")
                 self.assertTrue(lines[-1].startswith(f"RESULT {REF} {result}"), lines)
                 # The run keeps the earlier landings and adds this one.
                 landings = state_of(Path(tmp, "run"))["landings"]
@@ -5284,7 +5624,7 @@ class LandTest(LandCase):
                 # The step ended on the SIGINT of the stop, and the landing
                 # saw it end before the time of the next signal.
                 self.assertLess(entry["times"][step], limit + GRACE)
-                self.assertRegex(lines[-2], rf"^TIMES (check=\S+ )?{step}=\S+$")
+                self.assertRegex(lines[-3], rf"^TIMES (check=\S+ )?{step}=\S+$")
                 # The landing lock is free, and the task lands when its
                 # step ends in time. On a loaded host, a step that passes
                 # might take longer than the step timeout of the first
@@ -5428,7 +5768,16 @@ class LandTest(LandCase):
             self.assert_ended(self.hung_process(env))
             self.assertEqual(status, 2, lines)
             self.assertEqual(lines[-1], f"RESULT {REF} COMMITTIMEOUT")
-            self.assertRegex(lines[-2], r"^TIMES commit=\S+$")
+            self.assertRegex(lines[-3], r"^TIMES commit=\S+$")
+            # The action starts with the repair of the main checkout.
+            self.assertTrue(
+                self.action(lines).startswith(
+                    "The landing did not restore the main checkout. Repair it"
+                    " before the next landing. Confirm that no git process runs"
+                    f" in {repo}, and remove the lock file that the error names."
+                ),
+                lines,
+            )
             # The output names the branch whose changes the main checkout
             # holds, the git command that failed, and the lock file.
             output = "\n".join(lines)
@@ -5736,7 +6085,7 @@ class LandableTest(LandCase):
                 if kept:
                     Path(wt, "probe.txt").write_text("probe\n")
                 if ref == REF:
-                    ultraclose("set", REF, task_state, cwd=repo, env=env)
+                    ultraclose(*set_args(REF, task_state), cwd=repo, env=env)
                     self.assertEqual(wt.exists(), kept)
                 self.assertEqual(self.task_states(tmp)[ref], task_state)
                 message = self.refusal(tmp, repo, env, ref, "--next")
@@ -5947,6 +6296,114 @@ class TargetTest(LandCase):
             self.assertIn(f"the main checkout is not on {RELEASE}", landing[1])
             self.assertEqual(git("rev-parse", RELEASE, cwd=repo, env=env), release)
 
+    def test_init_takes_clean_main_checkout_for_branch_target(self):
+        # Every landing on a branch commits in the main checkout, and it
+        # fails while the main checkout holds a change. A landing that
+        # proposes a pull request leaves the main checkout alone.
+        # name: (the init flags, the file that the main checkout holds,
+        # whether init refuses the run)
+        cases = {
+            "a file that git does not track": ([], "untracked.txt", True),
+            "pull requests": (["--target", "pr"], "untracked.txt", False),
+            # Git ignores the task worktrees after init, so a landing
+            # does not count them.
+            "the worktree of an earlier run": (
+                [],
+                ".claude/worktrees/t-APP-0009/file.txt",
+                False,
+            ),
+        }
+        for name, (flags, file, refuses) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = launchable_repo(tmp)
+                # Without a global ignore file, git ignores no worktree
+                # before init.
+                env |= {
+                    "GIT_CONFIG_GLOBAL": os.devnull,
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                    "XDG_CONFIG_HOME": tmp,
+                }
+                Path(repo, file).parent.mkdir(parents=True, exist_ok=True)
+                Path(repo, file).write_text("f\n")
+                self.assertNotEqual(git("status", "--porcelain", cwd=repo, env=env), "")
+                run = Path(tmp, "run").resolve()
+                init = ("init", "--run", str(run), *flags)
+                if refuses:
+                    message = refused(*init, cwd=repo, env=env)
+                    self.assertIn(
+                        "the main checkout holds uncommitted changes", message
+                    )
+                    self.assertIn("the result DIRTY", message)
+                    self.assertIn(f"?? {file}", message.splitlines())
+                    self.assertFalse(run.exists())
+                    self.assertIn("no run found", refused("status", cwd=repo, env=env))
+                    Path(repo, file).unlink()
+                out = ultraclose(*init, cwd=repo, env=env)
+                self.assertIn(f"run={run} ", out)
+
+    def test_init_compares_base_branch_of_pull_requests_with_its_upstream(self):
+        def follow(repo, env):
+            """Make main follow the branch main of a remote, which holds
+            each commit of main."""
+            url = "https://example.invalid/app.git"
+            git("remote", "add", "origin", url, cwd=repo, env=env)
+            git("update-ref", "refs/remotes/origin/main", "main", cwd=repo, env=env)
+            git("config", "branch.main.remote", "origin", cwd=repo, env=env)
+            git("config", "branch.main.merge", "refs/heads/main", cwd=repo, env=env)
+
+        unchecked = "init did not compare main with a remote branch"
+        # Each task branch starts from the local base branch, so each
+        # pull request carries the commits of that branch that the remote
+        # lacks.
+        # name: (whether main follows a remote branch, the commits that
+        # main gains after that, the init flags, whether init refuses the
+        # run)
+        cases = {
+            "the remote holds each commit": (True, 0, ["--target", "pr"], False),
+            "the remote lacks a commit": (True, 1, ["--target", "pr"], True),
+            "the remote lacks two commits": (True, 2, ["--target", "pr:main"], True),
+            "a base branch that follows no remote branch": (
+                False,
+                1,
+                ["--target", "pr"],
+                False,
+            ),
+            # A landing on a branch pushes nothing.
+            "a branch target": (True, 1, [], False),
+        }
+        for name, (follows, commits, flags, refuses) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = launchable_repo(tmp)
+                if follows:
+                    follow(repo, env)
+                for n in range(commits):
+                    empty_commit(repo, env, f"local {n}")
+                run = Path(tmp, "run").resolve()
+                init = ("init", "--run", str(run), *flags)
+                if refuses:
+                    message = refused(*init, cwd=repo, env=env)
+                    count = "1 commit" if commits == 1 else f"{commits} commits"
+                    self.assertIn(
+                        f"That branch holds {count} that its upstream branch"
+                        " origin/main lacks",
+                        message,
+                    )
+                    # The refusal lists each commit, newest first.
+                    listed = [
+                        line.split(" ", 1)[1] for line in message.splitlines()[1:-1]
+                    ]
+                    self.assertEqual(
+                        listed, [f"local {n}" for n in reversed(range(commits))]
+                    )
+                    self.assertIn("Push main, or fetch origin/main", message)
+                    self.assertFalse(run.exists())
+                    # The remote gains the commits, such as with a push.
+                    ref = "refs/remotes/origin/main"
+                    git("update-ref", ref, "main", cwd=repo, env=env)
+                out = ultraclose(*init, cwd=repo, env=env)
+                self.assertIn(f"run={run} ", out)
+                self.assertEqual(unchecked in out, not follows)
+
 
 class PullRequestTest(LandCase):
     """A run with the target pr proposes each task as a pull request.
@@ -5971,6 +6428,16 @@ class PullRequestTest(LandCase):
         status, lines = self.land(repo, env)
         self.assertEqual((status, lines[-1]), (0, self.RESULT), lines)
         return repo, env
+
+    def assert_proposed(self, landing, result=None):
+        """The landing printed only its ACTION line and the result.
+
+        A landing without a check prints no TIMES line. The result
+        defaults to RESULT.
+        """
+        status, lines = landing
+        self.assertEqual((status, lines[1:]), (0, [result or self.RESULT]), lines)
+        self.assertRegex(lines[0], "^ACTION ")
 
     def task(self, tmp):
         """The task of start_task, as the state of the run holds it."""
@@ -6020,8 +6487,7 @@ class PullRequestTest(LandCase):
                     Path(repo, "untracked.txt").write_text("u\n")
                 before = branch_heads(repo, env)
                 change = before.pop(f"task/{REF}")
-                status, lines = self.land(repo, env)
-                self.assertEqual((status, lines), (0, [self.RESULT]))
+                self.assert_proposed(self.land(repo, env))
                 # The base branch did not move, so the landing commits on
                 # no branch. It renames the task branch, which starts from
                 # the base branch.
@@ -6056,7 +6522,7 @@ class PullRequestTest(LandCase):
                 repo, env = self.start_task(tmp, "--target", "pr", "--check", check)
                 landing = self.land(repo, env)
                 self.assertEqual((landing[0], landing[1][-1]), (status, result))
-                self.assertRegex(landing[1][-2], r"^TIMES check=\S+$")
+                self.assertRegex(landing[1][-3], r"^TIMES check=\S+$")
                 self.assertEqual(self.task(tmp)["state"], task_state)
                 self.assertIn(branch, branches(repo, env))
                 # A failed landing keeps the worktree for the next one.
@@ -6121,9 +6587,8 @@ class PullRequestTest(LandCase):
                 Path(tmp, "run", "tasks", REF, "msg.txt").write_text(message)
                 for ref in held:
                     git("update-ref", ref, "main", cwd=repo, env=env)
-                status, lines = self.land(repo, env)
-                self.assertEqual(
-                    (status, lines), (0, [f"RESULT {REF} PR head={branch} base=main"])
+                self.assert_proposed(
+                    self.land(repo, env), f"RESULT {REF} PR head={branch} base=main"
                 )
                 self.assertIn(branch, branches(repo, env))
                 self.assertEqual(self.task(tmp)["branch"], branch)
@@ -6144,6 +6609,11 @@ class PullRequestTest(LandCase):
                     landing[1][0],
                 )
                 self.assertIn(f"So feat blocks the branch {HEAD}", landing[1][0])
+                self.assertEqual(
+                    self.action(landing[1]),
+                    "Ask the user whether to rename or delete the branch feat, and"
+                    " land again after the user does.",
+                )
                 # The landing stops before the check, and the task keeps
                 # its branch and its worktree for the next landing.
                 self.assertFalse(Path(env["RAN"]).exists())
@@ -6163,6 +6633,12 @@ class PullRequestTest(LandCase):
             landing = self.land(repo, env)
             self.assert_failed(repo, env, landing, "BRANCHTAKEN")
             self.assertIn(f"a branch named '{HEAD}' already exists", landing[1][0])
+            self.assertEqual(
+                self.action(landing[1]),
+                "Another command created a branch with the name of the pull"
+                " request branch during the check. Land again, and the next"
+                " landing names a free branch.",
+            )
             self.assertEqual(self.task(tmp)["state"], "approved")
             self.assertNotIn("branch", self.task(tmp))
             self.assertIn(f"task/{REF}", branches(repo, env))
@@ -6222,7 +6698,12 @@ class PullRequestTest(LandCase):
                 # The landing names the commit, and it stops before the
                 # check.
                 self.assert_failed(repo, env, landing, result)
-                self.assertEqual(landing[1][:-1], [named])
+                self.assertEqual(self.detail(landing[1]), [named])
+                self.assertIn(
+                    f'cd {wt} && git reset --soft "$(git merge-base main HEAD)" &&'
+                    " git commit -q --no-verify -m wip. Then land again.",
+                    self.action(landing[1]),
+                )
                 self.assertFalse(Path(env["RAN"]).exists())
                 self.assertEqual(self.task(tmp)["state"], "approved")
                 # One commit in place of the commits of the branch drops
@@ -6266,9 +6747,9 @@ class PullRequestTest(LandCase):
                 self.add_other(tmp, repo, env, **row)
                 self.assertEqual(self.next_refs(repo, env), [])
                 status, lines = self.land(repo, env, "--next")
-                self.assertEqual((status, lines[0]), (0, self.RESULT), lines)
+                self.assertEqual((status, lines[1]), (0, self.RESULT), lines)
                 # The list of Workflow inputs follows the RESULT line.
-                started = json.loads("\n".join(lines[1:]))
+                started = json.loads("\n".join(lines[2:]))
                 refs = [t["task"]["ref"] for t in started]
                 self.assertEqual(refs, [self.OTHER] if starts else [])
                 if starts:
@@ -6307,9 +6788,21 @@ class PullRequestTest(LandCase):
                 "The landing proposed the task, but its worktree still exists."
                 f" {self.AGAIN}",
             )
-            # The list of Workflow inputs follows the RESULT line.
-            self.assertEqual(rest[0], self.RESULT)
-            started = json.loads("\n".join(rest[1:]))
+            # The ACTION line gives the repair of the worktree first, and
+            # it says that the merged command fails until the worktree
+            # goes. The list of Workflow inputs follows the RESULT line.
+            self.assertEqual(rest[1], self.RESULT)
+            action = rest[0].removeprefix("ACTION ")
+            self.assertTrue(
+                action.startswith(
+                    KEPT_WORKTREE.format(wt, Path(repo).resolve())
+                    + f"Until the worktree goes, ultraclose.py merged {REF} fails,"
+                    f" because the worktree has the branch {HEAD} checked out, and"
+                    " git deletes no such branch. Launch one Workflow per object"
+                ),
+                lines,
+            )
+            started = json.loads("\n".join(rest[2:]))
             self.assertEqual([t["task"]["ref"] for t in started], [self.OTHER])
             # The task waits as proposed on the branch of the pull
             # request, git kept the worktree, and the land command refuses
@@ -6364,7 +6857,17 @@ class PullRequestTest(LandCase):
                 " worktree, but the directory of the worktree still exists."
                 " Repair the cause of the error, and delete the directory.",
             )
-            self.assertEqual(rest, [self.RESULT])
+            # The ACTION line gives the command that deletes the directory
+            # before the push.
+            self.assertEqual(
+                rest,
+                [
+                    f"ACTION {KEPT_DIRECTORY.format(wt)}{RUN_NEXT} Then push the"
+                    f" branch {HEAD} and open its pull request, as the Pull"
+                    " requests section of SKILL.md says.",
+                    self.RESULT,
+                ],
+            )
             task = self.task(tmp)
             self.assertEqual((task["state"], task["branch"]), ("proposed", HEAD))
             # The directory keeps no branch. So when another worktree has
@@ -6398,8 +6901,7 @@ class PullRequestTest(LandCase):
             self.assertIn("the opened command takes only a proposed task", message)
             message = refused("opened", self.OTHER, URL, cwd=repo, env=env)
             self.assertIn(f"unknown task {self.OTHER}", message)
-            status, lines = self.land(repo, env)
-            self.assertEqual((status, lines), (0, [self.RESULT]))
+            self.assert_proposed(self.land(repo, env))
             out = ultraclose("opened", REF, URL, cwd=repo, env=env)
             self.assertEqual(out, f"{REF} proposed {URL}\n")
             self.assertEqual(self.task(tmp)["pr"], URL)
@@ -6508,9 +7010,12 @@ class PullRequestTest(LandCase):
         for task_state in ("closed", "noted"):
             with self.subTest(task_state), tempfile.TemporaryDirectory() as tmp:
                 repo, env = self.propose(tmp)
-                ultraclose("args", REF, "--sync", "a conflict", cwd=repo, env=env)
+                relaunch = ("args", REF, "--sync", "a conflict")
+                launch = json.loads(ultraclose(*relaunch, cwd=repo, env=env))
+                # The task records no pull request before opened.
+                self.assertNotIn("pr", launch["task"])
                 self.assertTrue(self.worktree(repo).exists())
-                out = ultraclose("set", REF, task_state, cwd=repo, env=env)
+                out = ultraclose(*set_args(REF, task_state), cwd=repo, env=env)
                 self.assertEqual(out, f"{REF} {task_state}\n")
                 self.assertFalse(self.worktree(repo).exists())
                 kept = [HEAD, "main"] if task_state == "noted" else ["main"]
@@ -6568,8 +7073,10 @@ class PullRequestTest(LandCase):
             reason = "the pull request has a conflict"
             relaunch = ultraclose("args", REF, "--sync", reason, cwd=repo, env=env)
             launch = json.loads(relaunch)
-            # The task starts again on the branch of the pull request.
+            # The task starts again on the branch of the pull request, and
+            # its input names that pull request.
             self.assertEqual((launch["pr"], launch["task"]["branch"]), (True, HEAD))
+            self.assertEqual(launch["task"]["pr"], URL)
             wt = launch["task"]["wt"]
             self.assertEqual(git("branch", "--show-current", cwd=wt, env=env), HEAD)
             self.assertEqual(self.task(tmp)["state"], "inflight")
@@ -6577,10 +7084,9 @@ class PullRequestTest(LandCase):
             self.commit(wt, env, "b.txt")
             change = git("rev-parse", "HEAD", cwd=wt, env=env)
             Path(launch["task"]["dir"], "msg.txt").write_text("fix: sync the file\n")
-            status, lines = self.land(repo, env)
             # The landing keeps the name of the branch, and its result
             # names the pull request that the task records.
-            self.assertEqual((status, lines), (0, [f"{self.RESULT} pr={URL}"]))
+            self.assert_proposed(self.land(repo, env), f"{self.RESULT} pr={URL}")
             self.assertEqual(branches(repo, env), [HEAD, "main"])
             self.assertEqual(git("rev-parse", HEAD, cwd=repo, env=env), change)
             task = self.task(tmp)
@@ -6603,7 +7109,7 @@ class PullRequestTest(LandCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo, env = self.propose(tmp)
             ultraclose("opened", REF, URL, cwd=repo, env=env)
-            ultraclose("set", REF, "noted", cwd=repo, env=env)
+            ultraclose(*set_args(REF, "noted"), cwd=repo, env=env)
             launch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
             self.assertEqual(launch["task"]["branch"], HEAD)
             self.commit(launch["task"]["wt"], env, "b.txt")
@@ -6674,7 +7180,7 @@ class PullRequestTest(LandCase):
             """A relaunch of the task ends noted, so the run ends."""
             opened(repo, env)
             ultraclose("args", REF, "--sync", "a conflict", cwd=repo, env=env)
-            ultraclose("set", REF, "noted", cwd=repo, env=env)
+            ultraclose(*set_args(REF, "noted"), cwd=repo, env=env)
 
         of_pr = f"the branch {HEAD} of the pull request {URL}, 1 commit ahead of main"
         # The orchestrator might never have pushed a branch whose task
@@ -6709,8 +7215,8 @@ class PullRequestTest(LandCase):
                 {"branch": HEAD, "pr": URL},
             ),
         }
-        close = "close that pull request with mcp__github__update_pull_request"
-        merged = "take the Merged pull request steps of the Leftover work section"
+        close = "Close an open pull request with mcp__github__update_pull_request"
+        states = "--pr none, --pr open, --pr closed, or --pr merged"
         # The refusal says how to find a pull request that the run did not
         # record.
         find = "list its pull requests with mcp__github__list_pull_requests"
@@ -6737,24 +7243,151 @@ class PullRequestTest(LandCase):
                 self.assertEqual(state_of(third)["left"], {REF: record})
                 triage(tmp, repo, env, {"ref": REF})
                 before = state_of(third)
-                for command in (["next"], ["args", REF]):
+                # The leftover command moves the branch only after the
+                # caller passes the state of the pull request.
+                for command in (["next"], ["args", REF], ["leftover", REF]):
                     message = refused(*command, cwd=repo, env=env)
                     self.assertIn(f"{REF}: {line}", message.splitlines())
-                    self.assertIn(OWN_WORK, message)
                     self.assertIn(close, message)
-                    self.assertIn(merged, message)
+                    self.assertIn(states, message)
                     self.assertEqual(find in message, "pr" not in record)
+                    if command[0] != "leftover":
+                        self.assertIn(OWN_WORK, message)
+                        self.assertIn(LEFTOVER, message)
+                found = "none"
+                if "pr" in record:
+                    # The branch of a recorded pull request has one.
+                    none = ("leftover", REF, "--pr", "none")
+                    message = refused(*none, cwd=repo, env=env)
+                    self.assertIn(f"recorded the pull request {URL}", message)
+                    found = "closed"
                 self.assertEqual(state_of(third), before)
-                # After the move of the branch, the task starts on a new
-                # branch from the base branch.
-                git("branch", "-m", HEAD, KEPT, cwd=repo, env=env)
+                self.assertEqual(branches(repo, env), [HEAD, "main"])
+                out = ultraclose("leftover", REF, "--pr", found, cwd=repo, env=env)
+                [kept] = kept_branches(repo, env)
+                self.assertEqual(
+                    out.splitlines(), [RENAMED.format(HEAD, kept, "1 commit"), MOVED]
+                )
+                self.assertEqual(
+                    aven_notes(env)[-1], (REF, KEPT_NOTE.format(kept, HEAD))
+                )
+                # The run drops the record of the branch, and the task
+                # starts on a new branch from the base branch.
+                self.assertEqual(state_of(third), {**before, "left": {}})
                 launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
                 self.assertEqual(launch["task"]["branch"], f"task/{REF}")
-                self.assertEqual(branches(repo, env), [KEPT, "main", f"task/{REF}"])
-                # A later init drops the record of a branch that is gone.
-                fourth = Path(tmp, "fourth").resolve()
-                ultraclose("init", "--run", str(fourth), "--force", cwd=repo, env=env)
-                self.assertEqual(state_of(fourth)["left"], {})
+                self.assertEqual(branches(repo, env), [kept, "main", f"task/{REF}"])
+
+    def test_leftover_closes_task_whose_pull_request_merged(self):
+        # A new run leaves the proposed task in the earlier run, and the
+        # pull request of the task then merges. The task does not need a
+        # new attempt.
+        # name: (whether the base branch gains the merge, whether a
+        # relaunch of the earlier run left a worktree, what the command
+        # prints about the branch)
+        cases = {
+            "the base branch holds the merge": (
+                True,
+                False,
+                MERGED_BRANCH.format(HEAD),
+            ),
+            "the worktree of a relaunch": (True, True, MERGED_BRANCH.format(HEAD)),
+            "the base branch lacks the change of the branch": (
+                False,
+                False,
+                RENAMED.format(HEAD, "NEW", "1 commit"),
+            ),
+        }
+        closed = f"{REF} closed, because its pull request merged. The aven task is done"
+        for name, (merges, relaunched, printed) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.propose(tmp)
+                ultraclose("opened", REF, URL, cwd=repo, env=env)
+                if relaunched:
+                    ultraclose("args", REF, "--sync", "a conflict", cwd=repo, env=env)
+                second = Path(tmp, "second").resolve()
+                ultraclose("init", "--run", str(second), "--force", cwd=repo, env=env)
+                triage(
+                    tmp, repo, env, {"ref": REF}, {"ref": self.OTHER, "after": [REF]}
+                )
+                if merges:
+                    self.merge(repo, env)
+                wt = self.worktree(repo)
+                self.assertEqual(wt.exists(), relaunched)
+                merged = ("leftover", REF, "--pr", "merged")
+                out = ultraclose(*merged, cwd=repo, env=env).splitlines()
+                kept = kept_branches(repo, env)
+                self.assertEqual(len(kept), 0 if merges else 1)
+                removed = [REMOVED.format(wt)] if relaunched else []
+                self.assertEqual(
+                    out, [*removed, printed.replace("NEW", "".join(kept)), closed]
+                )
+                self.assertFalse(wt.exists())
+                self.assertEqual(branches(repo, env), [*kept, "main"])
+                if kept:
+                    # The branch keeps the change that the base branch
+                    # lacks, and its note says that the task is done.
+                    _, note = aven_notes(env)[-1]
+                    self.assertIn(f"The branch {kept[0]} holds an earlier", note)
+                    self.assertIn("merged, so the task is done.", note)
+                # The command closes the task in aven and in the run, so
+                # the task that waits for it starts.
+                self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+                task = state_of(second)["tasks"][REF]
+                self.assertEqual(task["state"], "closed")
+                self.assertEqual(state_of(second)["left"], {})
+                self.assertEqual(self.next_refs(repo, env), [self.OTHER])
+
+    def test_leftover_keeps_branch_of_merged_pull_request_when_aven_fails(self):
+        # The command sets the aven task to done before it deletes the
+        # branch. So a failed aven command leaves the branch and the
+        # record of the run for a second run of the command.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.propose(tmp)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            second = Path(tmp, "second").resolve()
+            ultraclose("init", "--run", str(second), "--force", cwd=repo, env=env)
+            triage(tmp, repo, env, {"ref": REF})
+            self.merge(repo, env)
+            before = state_of(second), branches(repo, env)
+            self.assertIn(HEAD, before[1])
+            failing = Path(env["AVEN_ANSWERS"], "edit.fails")
+            failing.touch()
+            merged = ("leftover", REF, "--pr", "merged")
+            message = refused(*merged, cwd=repo, env=env)
+            self.assertIn(f"aven edit {REF} --status done failed", message)
+            self.assertEqual((state_of(second), branches(repo, env)), before)
+            failing.unlink()
+            ultraclose(*merged, cwd=repo, env=env)
+            self.assertEqual(branches(repo, env), ["main"])
+            self.assertEqual(state_of(second)["tasks"][REF]["state"], "closed")
+
+    def test_leftover_of_merged_pull_request_leaves_directory_that_is_no_worktree(
+        self,
+    ):
+        # A failed git worktree remove can leave the directory of the
+        # worktree after git drops its record. The command refuses that
+        # directory before it sets the aven task to done, so aven and the
+        # run still agree that the task is pending.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.propose(tmp)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            second = Path(tmp, "second").resolve()
+            ultraclose("init", "--run", str(second), "--force", cwd=repo, env=env)
+            triage(tmp, repo, env, {"ref": REF})
+            self.merge(repo, env)
+            wt = self.worktree(repo)
+            wt.mkdir(parents=True)
+            Path(wt, "file.txt").write_text("f\n")
+            before = state_of(second), branches(repo, env), aven_edits(env)
+            merged = ("leftover", REF, "--pr", "merged")
+            message = refused(*merged, cwd=repo, env=env)
+            self.assertIn(f"{wt} is not a git worktree", message)
+            self.assertEqual(
+                (state_of(second), branches(repo, env), aven_edits(env)), before
+            )
+            self.assertEqual(state_of(second)["tasks"][REF]["state"], "pending")
+            self.assertTrue(Path(wt, "file.txt").is_file())
 
     def test_new_run_that_takes_tasks_keeps_record(self):
         # The second run counts the branch of the pull request as leftover
@@ -6785,6 +7418,21 @@ class PullRequestTest(LandCase):
             line = f"the branch {HEAD} of the pull request {URL}"
             self.assertIn(line, message)
 
+    def test_new_run_drops_record_of_branch_that_is_gone(self):
+        # The user renames the branch of the pull request with git between
+        # two runs. The third run drops the record of the second run.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.propose(tmp)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            second = Path(tmp, "second").resolve()
+            ultraclose("init", "--run", str(second), "--force", cwd=repo, env=env)
+            record = {REF: {"branch": HEAD, "pr": URL}}
+            self.assertEqual(state_of(second)["left"], record)
+            git("branch", "-m", HEAD, KEPT, cwd=repo, env=env)
+            third = Path(tmp, "third").resolve()
+            ultraclose("init", "--run", str(third), "--force", cwd=repo, env=env)
+            self.assertEqual(state_of(third)["left"], {})
+
     def test_new_run_records_no_branch_of_closed_task(self):
         # The proposed task has no worktree, so set closed keeps its
         # branch. A new run counts no branch of a closed task as leftover
@@ -6792,7 +7440,7 @@ class PullRequestTest(LandCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo, env = self.propose(tmp)
             ultraclose("opened", REF, URL, cwd=repo, env=env)
-            ultraclose("set", REF, "closed", cwd=repo, env=env)
+            ultraclose(*set_args(REF, "closed"), cwd=repo, env=env)
             self.assertIn(HEAD, branches(repo, env))
             second = Path(tmp, "second").resolve()
             out = ultraclose("init", "--run", str(second), "--force", cwd=repo, env=env)
@@ -6812,12 +7460,940 @@ class PullRequestTest(LandCase):
             self.assertNotIn("pull request", message)
 
 
+class SetTest(LandCase):
+    """The set command also sets the aven task of a task that it notes,
+    closes, or lands.
+
+    It adds the note of a noted task and of a closed task to the aven
+    task. LeftoverTest covers the worktree and the branch that the
+    command removes for a noted task and for a closed task.
+    """
+
+    # The sentence that the command adds to the note of a noted task whose
+    # branch stays, with the name of the branch.
+    BRANCH_NOTE = "\n\nThe branch {} holds the work of this attempt."
+
+    def worktree(self, repo):
+        """The worktree of the task of start_task."""
+        return Path(repo, ".claude", "worktrees", f"t-{REF}")
+
+    def test_sets_aven_task(self):
+        # The task of start_task is active in aven.
+        # name: (the state, the status that the aven task gets, the note
+        # that the aven task gets)
+        cases = {
+            "a noted task": (
+                "noted",
+                "todo",
+                NOTE + self.BRANCH_NOTE.format(f"task/{REF}"),
+            ),
+            "a closed task": ("closed", "done", NOTE),
+            "a landed task": ("landed", "done", None),
+            "a pending task": ("pending", None, None),
+        }
+        for name, (task_state, status, note) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                ultraclose(*set_args(REF, task_state), cwd=repo, env=env)
+                self.assertEqual(self.task_states(tmp), {REF: task_state})
+                edits = [f"{REF} --status {status}"] if status else []
+                self.assertEqual(aven_edits(env), [f"{REF} --status active", *edits])
+                self.assertEqual(aven_notes(env), [(REF, note)] if note else [])
+
+    def test_noted_and_closed_require_note(self):
+        missing = [[], ["--note", ""], ["--note", "  "]]
+        for task_state in ("noted", "closed"):
+            with self.subTest(task_state), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                for flags in missing:
+                    message = refused("set", REF, task_state, *flags, cwd=repo, env=env)
+                    self.assertIn(f"the state {task_state} takes a note", message)
+                    self.assertIn("Pass --note TEXT", message)
+                # A refusal changes neither the run nor the aven task.
+                self.assertEqual(self.task_states(tmp), {REF: "inflight"})
+                self.assertEqual(aven_edits(env), [f"{REF} --status active"])
+                self.assertEqual(aven_notes(env), [])
+                self.assertTrue(self.worktree(repo).exists())
+
+    def test_other_states_take_no_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            for task_state in ("pending", "inflight", "approved", "proposed", "landed"):
+                with self.subTest(task_state):
+                    set_note = ("set", REF, task_state, "--note", NOTE)
+                    message = refused(*set_note, cwd=repo, env=env)
+                    self.assertIn(
+                        "--note applies only to the states noted and closed", message
+                    )
+            self.assertEqual(self.task_states(tmp), {REF: "inflight"})
+            self.assertEqual(aven_notes(env), [])
+
+    def test_note_of_noted_task_names_branch_and_pull_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # The run proposed the task, and the user closed the pull
+            # request.
+            repo, env = self.start_task(tmp, "--target", "pr")
+            self.add_other(tmp, repo, env)
+            self.land(repo, env)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            ultraclose(*set_args(REF, "noted"), cwd=repo, env=env)
+            # A task that never started has no branch to name.
+            ultraclose(*set_args(self.OTHER, "noted"), cwd=repo, env=env)
+            opened = f" The pull request of that branch is {URL}."
+            self.assertEqual(
+                aven_notes(env),
+                [
+                    (REF, NOTE + self.BRANCH_NOTE.format(HEAD) + opened),
+                    (self.OTHER, NOTE),
+                ],
+            )
+
+    def test_closed_names_pull_request_that_it_did_not_close(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--target", "pr")
+            self.land(repo, env)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            out = ultraclose(*set_args(REF, "closed"), cwd=repo, env=env)
+            self.assertEqual(
+                out.splitlines(),
+                [
+                    f"{REF} closed",
+                    f"{REF} records the pull request {URL}, which the command did"
+                    " not close",
+                ],
+            )
+
+    def test_failed_aven_command_changes_no_run(self):
+        # name: the file that makes a command of the aven stub fail
+        cases = {"aven edit fails": "edit.fails", "aven note fails": "note.fails"}
+        for name, fails in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                before = state_of(Path(tmp, "run"))
+                Path(env["AVEN_ANSWERS"], fails).touch()
+                message = refused(*set_args(REF, "noted"), cwd=repo, env=env)
+                self.assertIn(f"aven {fails.split('.')[0]} {REF}", message)
+                self.assertEqual(state_of(Path(tmp, "run")), before)
+                self.assertEqual(aven_notes(env), [])
+                self.assertTrue(self.worktree(repo).exists())
+                # The command passes after aven answers again, and the
+                # aven task gets one note.
+                Path(env["AVEN_ANSWERS"], fails).unlink()
+                ultraclose(*set_args(REF, "noted"), cwd=repo, env=env)
+                self.assertEqual(len(aven_notes(env)), 1)
+                self.assertEqual(aven_edits(env)[-1], f"{REF} --status todo")
+
+    def test_landed_removes_work_that_base_branch_holds(self):
+        branch = f"task/{REF}"
+        # name: (whether the base branch gains the change, whether the
+        # worktree is dirty, the lines before the last line, whether the
+        # worktree stays, whether the branch stays). WT stands for the
+        # path of the worktree.
+        cases = {
+            "the base branch holds the change": (True, False, [], False, False),
+            "the base branch lacks the change": (
+                False,
+                False,
+                [f"kept the branch {branch}, whose change main lacks"],
+                False,
+                True,
+            ),
+            "a worktree with a file that git does not track": (
+                True,
+                True,
+                [f"kept dirty worktree {WT}"],
+                True,
+                True,
+            ),
+        }
+        for name, (merges, dirty, printed, keeps_wt, keeps_branch) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                wt = self.worktree(repo)
+                if merges:
+                    git("merge", "-q", "--squash", branch, cwd=repo, env=env)
+                    git("commit", "-q", "-m", "squash", cwd=repo, env=env)
+                if dirty:
+                    Path(wt, "probe.txt").write_text("probe\n")
+                out = ultraclose("set", REF, "landed", cwd=repo, env=env)
+                want = [line.replace(WT, str(wt)) for line in printed]
+                self.assertEqual(out.splitlines(), [*want, f"{REF} landed"])
+                self.assertEqual(wt.exists(), keeps_wt)
+                self.assertEqual(branch in branches(repo, env), keeps_branch)
+                self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+                self.assertEqual(self.task_states(tmp), {REF: "landed"})
+
+    def test_landed_keeps_branch_that_git_cannot_delete(self):
+        # The base branch holds the change of the task branch, and a
+        # second worktree has the task branch checked out. So git refuses
+        # to delete the branch.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            branch, other = f"task/{REF}", Path(tmp, "other").resolve()
+            git("merge", "-q", "--squash", branch, cwd=repo, env=env)
+            git("commit", "-q", "-m", "squash", cwd=repo, env=env)
+            wt = str(self.worktree(repo))
+            git("worktree", "remove", "--force", wt, cwd=repo, env=env)
+            git("worktree", "add", "-q", str(other), branch, cwd=repo, env=env)
+            lines = ultraclose("set", REF, "landed", cwd=repo, env=env).splitlines()
+            # The command ends after the refusal, and the task lands.
+            self.assertEqual(len(lines), 2, lines)
+            self.assertTrue(
+                lines[0].startswith(
+                    f"kept the branch {branch}, which git cannot delete: "
+                ),
+                lines,
+            )
+            self.assertIn(str(other), lines[0])
+            self.assertEqual(lines[1], f"{REF} landed")
+            self.assertIn(branch, branches(repo, env))
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+            self.assertEqual(self.task_states(tmp), {REF: "landed"})
+
+    def test_noted_prints_each_task_that_waits_for_noted_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            self.add_other(tmp, repo, env, after=[REF])
+            stuck = f"stuck {self.OTHER} waits for noted {REF} | t"
+            out = ultraclose(*set_args(REF, "noted"), cwd=repo, env=env)
+            self.assertEqual(out.splitlines(), [f"{REF} noted", stuck])
+            # The status command prints the same line.
+            self.assertIn(stuck, ultraclose("status", cwd=repo, env=env).splitlines())
+            out = ultraclose(*set_args(self.OTHER, "noted"), cwd=repo, env=env)
+            self.assertEqual(out.splitlines(), [f"{self.OTHER} noted"])
+
+
+class LandActionTest(LandCase):
+    """A landing prints the action that its result asks for.
+
+    The ACTION line comes right before the RESULT line. The action names
+    the cause that the script can tell from the run, such as a second
+    failure of one task, and the command that the orchestrator runs.
+    """
+
+    # The action that syncs the task.
+    SYNC = (
+        f"Sync the task: relaunch it with ultraclose.py args {REF} --sync"
+        " '<reason and failing output>', and land it again after its Workflow"
+        " ends approved or landable."
+    )
+    # The commands that an action names for a task that must not land again.
+    SYNC_COMMAND = f"ultraclose.py args {REF} --sync '<reason and failing output>'"
+    NOTE_COMMAND = f"ultraclose.py set {REF} noted --note '<reason>'"
+    # The action for a main checkout that an agent or a hook changed. The
+    # format argument is the main checkout.
+    CHECKOUT = (
+        "An agent or a hook changed the main checkout {}. Stop landing, find"
+        " the cause, and repair the checkout before the next landing."
+    )
+
+    def worktree(self, repo):
+        """The worktree of the task of start_task."""
+        return Path(repo, ".claude", "worktrees", f"t-{REF}")
+
+    def failures(self, tmp):
+        """The count of the failed landings of the task, by reason."""
+        return state_of(Path(tmp, "run"))["tasks"][REF].get("failures", {})
+
+    def failed(self, repo, env, result):
+        """Land the task, which must fail with the result. Return the lines."""
+        status, lines = self.land(repo, env, timeout=60)
+        self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} {result}"), lines)
+        return lines
+
+    def test_each_result_has_action(self):
+        self.assertEqual(sorted(load_script().ACTIONS), sorted(land_results()))
+
+    def test_action_of_landed_task(self):
+        launch = (
+            "Launch one Workflow per object of the list that follows the RESULT line"
+        )
+        run_next = (
+            "Run ultraclose.py next, which starts each task that this landing"
+            " lets start."
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            _, lines = self.land(repo, env, "--next")
+            action = self.action(lines)
+            self.assertTrue(action.startswith(launch), action)
+            self.assertIn("run ultraclose.py next", action)
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            _, lines = self.land(repo, env)
+            self.assertEqual(self.action(lines), run_next)
+        # The action of a proposed task also names the push.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--target", "pr")
+            _, lines = self.land(repo, env)
+            push = (
+                f" Then push the branch {HEAD} and open its pull request, as the"
+                " Pull requests section of SKILL.md says."
+            )
+            self.assertEqual(self.action(lines), run_next + push)
+            # The relaunch of the proposed task lands with the pull
+            # request that the task records.
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            ultraclose("args", REF, "--sync", "a conflict", cwd=repo, env=env)
+            _, lines = self.land(repo, env, "--next")
+            action = self.action(lines)
+            self.assertTrue(action.startswith(launch), action)
+            self.assertIn(
+                f"The task records the pull request {URL}. Read its state before"
+                " you push",
+                action,
+            )
+            self.assertNotIn("open its pull request", action)
+
+    def test_action_repairs_each_failed_command_in_order_of_reports(self):
+        # A landing that commits reports each failed command in the order
+        # in which the commands ran. The action gives the repairs in the
+        # same order, before the rest of the action of the result.
+        act = load_script().ACTIONS["OK"]
+        facts = {
+            **landing_facts("OK"),
+            "next": False,
+            "unremoved": "worktree",
+            "undeleted": True,
+            "open": True,
+        }
+        self.assertEqual(
+            act(facts),
+            KEPT_WORKTREE.format("WT", "REPO")
+            + KEPT_BRANCH.format(FIRST_REMOVE, "REPO")
+            + STILL_OPEN
+            + RUN_NEXT,
+        )
+        # git deleted its record of the worktree, so no worktree keeps
+        # the branch.
+        facts["unremoved"] = "directory"
+        self.assertEqual(
+            act(facts),
+            KEPT_DIRECTORY.format("WT")
+            + KEPT_BRANCH.format(FIRST_REPAIR, "REPO")
+            + STILL_OPEN
+            + RUN_NEXT,
+        )
+
+    def test_action_of_fault_before_check(self):
+        def left_file(repo, env, wt, msg):
+            Path(wt, "probe.txt").write_text("probe\n")
+
+        def no_message(repo, env, wt, msg):
+            msg.write_text("\n")
+
+        def ref_in_message(repo, env, wt, msg):
+            msg.write_text(f"feat: add a file for {REF}\n")
+
+        def ref_in_change(repo, env, wt, msg):
+            Path(wt, "b.txt").write_text(f"see {REF}\n")
+            git("add", "-A", cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "wip", cwd=wt, env=env)
+
+        def moved_base(repo, env, wt, msg):
+            Path(repo, self.FILE).write_text("other\n")
+            git("add", "-A", cwd=repo, env=env)
+            git("commit", "-q", "--no-verify", "-m", "other", cwd=repo, env=env)
+
+        def changed_checkout(repo, env, wt, msg):
+            Path(repo, "left.txt").write_text("left\n")
+
+        def other_branch(repo, env, wt, msg):
+            git("switch", "-q", "-c", "work", cwd=repo, env=env)
+
+        # name: (the fault, the result, the action). WT stands for the
+        # worktree, MSG for the file of the commit message, and REPO for
+        # the main checkout.
+        cases = {
+            "a file that an agent left": (
+                left_file,
+                "WTDIRTY",
+                "The worktree WT holds changes that the task branch lacks. Delete"
+                " probe files and built binaries there, commit real changes with"
+                " git add -A and git commit --no-verify, and land again.",
+            ),
+            "no commit message": (
+                no_message,
+                "NOMSG",
+                "MSG does not exist or holds no text. Relaunch the task with"
+                f" ultraclose.py args {REF} --sync '<a reason that asks for the"
+                " commit message of the whole change>'. The sync agent then"
+                " writes the message, and a reviewer checks it. Land the task"
+                " again after its Workflow ends approved or landable.",
+            ),
+            "a task ref in the commit message": (
+                ref_in_message,
+                "MSGHASREF",
+                "Remove each task ref from MSG, and land again.",
+            ),
+            "a task ref in the change": (
+                ref_in_change,
+                "REFINDIFF",
+                "Remove each task ref from the lines that the change adds in WT,"
+                " commit with git add -A and git commit --no-verify, and land"
+                " again.",
+            ),
+            "a base branch that moved": (
+                moved_base,
+                "CONFLICT",
+                f"The base branch main moved under the task. {self.SYNC}",
+            ),
+            "a changed main checkout": (
+                changed_checkout,
+                "DIRTY",
+                self.CHECKOUT.format("REPO"),
+            ),
+            "a main checkout on another branch": (
+                other_branch,
+                "NOTBASE",
+                self.CHECKOUT.format("REPO"),
+            ),
+        }
+        for name, (fault, result, action) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                wt = self.worktree(repo)
+                msg = Path(tmp, "run", "tasks", REF, "msg.txt").resolve()
+                fault(repo, env, wt, msg)
+                lines = self.failed(repo, env, result)
+                want = action.replace("WT", str(wt)).replace("MSG", str(msg))
+                self.assertEqual(self.action(lines), want.replace("REPO", str(repo)))
+                self.assertEqual(self.failures(tmp), {result: 1})
+
+    def test_action_of_commit_that_did_not_record_staged_tree(self):
+        # Each run of the hook drops the file of the task from the index.
+        # So the second commit of the landing fails as the first one did.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, hook="git rm -q --cached a.txt")
+            landing = self.land(repo, env)
+            self.assert_failed(repo, env, landing, "TREEMISMATCH")
+            self.assertEqual(self.action(landing[1]), self.CHECKOUT.format(repo))
+
+    def test_note_after_second_sync_that_fails_for_same_reason(self):
+        # The base branch holds another content of the file of the task,
+        # so each landing ends in CONFLICT.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            Path(repo, self.FILE).write_text("other\n")
+            git("add", "-A", cwd=repo, env=env)
+            git("commit", "-q", "--no-verify", "-m", "other", cwd=repo, env=env)
+            moved = f"The base branch main moved under the task. {self.SYNC}"
+            # A sync follows the first failure and the second failure.
+            for _ in range(2):
+                self.assertEqual(self.action(self.failed(repo, env, "CONFLICT")), moved)
+            self.assertEqual(
+                self.action(self.failed(repo, env, "CONFLICT")),
+                f"{moved} The task has ended in CONFLICT 3 times. When the last"
+                " two syncs of the task failed for the same reason, note the"
+                f" task in place of another sync: {self.NOTE_COMMAND}.",
+            )
+            self.assertEqual(self.failures(tmp), {"CONFLICT": 3})
+
+    def test_action_of_down_service(self):
+        repair = " Repair the service and land again. Do not sync the task."
+        with tempfile.TemporaryDirectory() as tmp:
+            # The service is down before the landing starts.
+            repo, env = self.start_task(tmp, "--health", self.HEALTH)
+            for _ in range(2):
+                self.assertEqual(
+                    self.action(self.failed(repo, env, "HEALTHFAIL")),
+                    "The health command failed before the merge, so a service"
+                    f" that the check or a commit hook requires is down.{repair}",
+                )
+            # The run counts no landing that the service kept from its start.
+            self.assertEqual(self.failures(tmp), {})
+        with tempfile.TemporaryDirectory() as tmp:
+            # Each check stops the service.
+            repo, env = self.start_task(
+                tmp, "--check", self.STOP, "--health", self.HEALTH
+            )
+            Path(env["ENGINE"]).touch()
+            self.assertEqual(
+                self.action(self.failed(repo, env, "HEALTHFAIL")),
+                "The health command failed after the check failed, so a service"
+                f" stopped during the check.{repair}",
+            )
+            Path(env["ENGINE"]).touch()
+            log = Path(tmp, "run").resolve() / "logs" / f"{REF}.check.log"
+            self.assertEqual(
+                self.action(self.failed(repo, env, "HEALTHFAIL")),
+                "The health command failed after a failed step of this task 2"
+                f" times. Do not land the task again. Read {log}. When the log"
+                " shows that the change causes the failure, such as with a test"
+                " that stops the service, sync the task with that log as the"
+                f" reason: {self.SYNC_COMMAND}. Otherwise note the task:"
+                f" {self.NOTE_COMMAND}.",
+            )
+            self.assertEqual(self.failures(tmp), {"HEALTHFAIL": 2})
+
+    def test_landing_names_failure_of_environment(self):
+        # name: (the step whose log holds the line, the line, the cause)
+        cases = {
+            "a test that the kernel killed": (
+                "check",
+                "signal: killed",
+                "a lack of memory",
+            ),
+            "a process that the shell reports as killed": (
+                "check",
+                "sh: line 1: 4242 Killed go test ./...",
+                "a lack of memory",
+            ),
+            "the exit status of a killed process": (
+                "commit",
+                "FAIL app/store [exit status 137]",
+                "a lack of memory",
+            ),
+            "a full disk": (
+                "commit",
+                "write /tmp/go-build/b001: No space left on device",
+                "a full disk",
+            ),
+            # The line is only part of the output of a failed test. So the
+            # action also says what to do for a fault in the change.
+            "a failed test that reports a killed process": (
+                "check",
+                'run_test.go:42: got error "signal: killed", want "deadline"',
+                "a lack of memory",
+            ),
+        }
+        for name, (step, line, cause) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                fails = f"echo 'ok app/api'; echo '{line}'; echo 'FAIL'; exit 1"
+                if step == "check":
+                    repo, env = self.start_task(tmp, "--check", fails)
+                else:
+                    repo, env = self.start_task(tmp, hook=fails)
+                result = f"{step.upper()}FAIL"
+                landing = self.land(repo, env)
+                self.assert_failed(repo, env, landing, result)
+                # The output names the line after the end of the log.
+                named = f"the log of the {step} names {cause}: {line}"
+                self.assertEqual(self.detail(landing[1])[-2:], ["FAIL", named])
+                log = Path(tmp, "run").resolve() / "logs" / f"{REF}.{step}.log"
+                self.assertEqual(
+                    self.action(landing[1]),
+                    f"A line of {log} names {cause}, and the output quotes that"
+                    " line before this ACTION line. When that line shows why the"
+                    f" {step} failed, the environment stopped the {step}. In that"
+                    " case, repair the environment and land again, and do not"
+                    " sync the task. When that line is only part of the output of"
+                    " a failed test, such as a test that reports a killed process,"
+                    " find the cause in the failing output, and act on it as the"
+                    f" Landing section of SKILL.md says for {result}.",
+                )
+                # The second failure of the task with the same cause.
+                self.assertEqual(
+                    self.action(self.failed(repo, env, result)),
+                    f"The log of the {step} names {cause}, and this is failed"
+                    " landing 2 of the task with that cause. Do not land the task"
+                    f" again. Read {log}. When the log shows that the change"
+                    " causes the failure, such as with a test that fills the"
+                    " memory or the disk, or with a failed test whose output only"
+                    " quotes such a line, sync the task with that log as the"
+                    f" reason: {self.SYNC_COMMAND}. Otherwise note the task:"
+                    f" {self.NOTE_COMMAND}.",
+                )
+                self.assertEqual(self.failures(tmp), {cause: 2})
+
+    def test_failed_step_whose_log_names_no_failure_of_environment(self):
+        # The log holds words that look like a killed process.
+        fails = "echo 'FAIL: TestKilledWorker (exit status 1)'; exit 1"
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--check", fails)
+            log = Path(tmp, "run").resolve() / "logs" / f"{REF}.check.log"
+            action = (
+                "The check failed, which does not show that the task must change."
+                f" Find the cause in the failing output and in {log}. Act on that"
+                " cause as the Landing section of SKILL.md says for CHECKFAIL."
+            )
+            lines = self.failed(repo, env, "CHECKFAIL")
+            self.assertEqual(self.action(lines), action)
+            self.assertEqual(
+                self.detail(lines), ["FAIL: TestKilledWorker (exit status 1)"]
+            )
+            self.assertEqual(
+                self.action(self.failed(repo, env, "CHECKFAIL")),
+                f"{action} The task has ended in CHECKFAIL 2 times.",
+            )
+            self.assertEqual(self.failures(tmp), {"CHECKFAIL": 2})
+
+    def test_environment_failure_reads_whole_log(self):
+        script = load_script()
+        # name: (the lines of the log, what the function returns)
+        cases = {
+            "no line names a failure": (["ok", "FAIL app", "exit status 1"], None),
+            "a line far from the end of the log": (
+                ["signal: killed", *["ok"] * 100],
+                ("a lack of memory", "signal: killed"),
+            ),
+            "the first line that names a failure": (
+                ["cp: No space left on device", "Killed"],
+                ("a full disk", "cp: No space left on device"),
+            ),
+            "a failed allocation": (
+                ["fork: Cannot allocate memory"],
+                ("a lack of memory", "fork: Cannot allocate memory"),
+            ),
+            "the status of make": (
+                ["make: *** [Makefile:4: test] Error 137"],
+                ("a lack of memory", "make: *** [Makefile:4: test] Error 137"),
+            ),
+            "a word that holds the marker": (["TestKilledWorker", "Error 1375"], None),
+        }
+        for name, (lines, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                log = Path(tmp, "step.log")
+                log.write_text("\n".join(lines) + "\n")
+                self.assertEqual(script.environment_failure(log), want)
+
+    def test_action_of_stopped_step(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(
+                tmp, "--check", self.HANG, "--step-timeout", "2"
+            )
+            log = Path(tmp, "run").resolve() / "logs" / f"{REF}.check.log"
+            action = (
+                "The landing stopped the check, which does not show that the task"
+                f" must change. Find the cause in the last lines of {log}. Act on"
+                " that cause as the Landing section of SKILL.md says for"
+                " CHECKTIMEOUT, before you start another landing."
+            )
+            self.assertEqual(
+                self.action(self.failed(repo, env, "CHECKTIMEOUT")), action
+            )
+            self.assert_ended(self.hung_process(env))
+            Path(env["PROCESS"]).unlink()
+            self.assertEqual(
+                self.action(self.failed(repo, env, "CHECKTIMEOUT")),
+                f"{action} The task has ended in CHECKTIMEOUT 2 times. When the"
+                " log ends at the same place as in the earlier landing, do not"
+                " land the task again. Sync the task with the log when the log"
+                f" shows that the change causes the wait: {self.SYNC_COMMAND}."
+                f" Otherwise note the task: {self.NOTE_COMMAND}.",
+            )
+            self.assert_ended(self.hung_process(env))
+
+    def test_action_of_missing_worktree(self):
+        # The worktree of the task goes missing after its review.
+        # name: whether the branch of the task stays
+        cases = {"the branch stays": True, "the branch is gone as well": False}
+        for name, keeps in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                wt, branch = self.worktree(repo), f"task/{REF}"
+                git("worktree", "remove", "--force", str(wt), cwd=repo, env=env)
+                if not keeps:
+                    git("branch", "-q", "-D", branch, cwd=repo, env=env)
+                landing = self.land(repo, env)
+                self.assert_failed(repo, env, landing, "NOWORKTREE")
+                action = self.action(landing[1])
+                lost = (
+                    "The worktree of the task went missing after its review, and"
+                    " the run records no commit of the task on main. Run git"
+                    f" worktree prune in the main checkout {repo}."
+                )
+                self.assertEqual(self.task_states(tmp), {REF: "approved"})
+                self.assertEqual(self.failures(tmp), {"NOWORKTREE": 1})
+                if keeps:
+                    self.assertEqual(
+                        action,
+                        f"{lost} Then run git worktree add {wt} {branch} there,"
+                        " record the repair in notes.md, and land the task again.",
+                    )
+                    git("worktree", "prune", cwd=repo, env=env)
+                    git("worktree", "add", "-q", str(wt), branch, cwd=repo, env=env)
+                    self.assert_landed(repo, env, self.land(repo, env))
+                else:
+                    self.assertEqual(
+                        action,
+                        f"{lost} The branch {branch} is gone as well, so relaunch"
+                        f" the task with ultraclose.py args {REF}. The relaunch"
+                        " starts from main at the implementer. Land the task after"
+                        " its Workflow ends approved or landable.",
+                    )
+                    git("worktree", "prune", cwd=repo, env=env)
+                    launch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+                    self.assertNotIn("resume", launch["task"])
+
+    def killed_at(self, tmp, env, command):
+        """An environment in which a git command ends the land command.
+
+        A git wrapper comes first on the PATH of the environment. For a
+        git command whose first arguments are the words of the command
+        text, the wrapper sends SIGKILL to the process that runs git, and
+        it exits without running git. So a landing stops at that command,
+        as a landing that a signal ends between two of its steps does.
+        """
+        wrapper = Path(tmp, "wrapper")
+        wrapper.mkdir()
+        real = shutil.which("git", path=env["PATH"])
+        args = " ".join(f"${n}" for n in range(1, len(command.split()) + 1))
+        (wrapper / "git").write_text(
+            "#!/bin/sh\n"
+            f'if [ "{args}" = "{command}" ]; then\n'
+            "  kill -KILL $PPID\n"
+            "  exit 1\n"
+            "fi\n"
+            f'exec "{real}" "$@"\n'
+        )
+        (wrapper / "git").chmod(0o755)
+        return {**env, "PATH": f"{wrapper}{os.pathsep}{env['PATH']}"}
+
+    def test_landing_after_landing_that_stopped_before_task_landed(self):
+        # A signal ends the first landing before it deletes the branch.
+        # So that landing records its commit, removes the worktree, and
+        # then stops, and the task stays approved.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            killed = self.killed_at(tmp, env, "branch -q -D")
+            status, lines = self.land(repo, killed)
+            self.assertEqual(status, -signal.SIGKILL, lines)
+            self.assertEqual(
+                git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
+            )
+            self.assertEqual(self.task_states(tmp), {REF: "approved"})
+            self.assertFalse(self.worktree(repo).exists())
+            commit = git("rev-parse", "--short", "HEAD", cwd=repo, env=env)
+            self.assertEqual(
+                self.action(self.failed(repo, env, "NOWORKTREE")),
+                f"An earlier landing recorded the commit {commit} of the task on"
+                " main, removed the worktree, and then stopped. The task has"
+                f" landed. Run ultraclose.py set {REF} landed, which sets the"
+                " aven task to done.",
+            )
+            # The base branch holds the change of the branch, so the
+            # command deletes the branch.
+            out = ultraclose("set", REF, "landed", cwd=repo, env=env)
+            self.assertEqual(out.splitlines(), [f"{REF} landed"])
+            self.assertEqual(branches(repo, env), ["main"])
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+            self.assertIn(ENDED, ultraclose("status", cwd=repo, env=env).splitlines())
+
+    def test_relaunch_drops_commit_of_earlier_landing(self):
+        # The first landing lands the task and records its commit. The
+        # relaunch starts a new attempt, whose commit the base branch
+        # lacks, and the worktree of that attempt goes missing.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            self.assert_landed(repo, env, self.land(repo, env))
+            self.assertIn("commit", state_of(Path(tmp, "run"))["tasks"][REF])
+            ultraclose("args", REF, cwd=repo, env=env)
+            self.assertNotIn("commit", state_of(Path(tmp, "run"))["tasks"][REF])
+            wt, branch = self.worktree(repo), f"task/{REF}"
+            Path(wt, "b.txt").write_text("b\n")
+            git("add", "-A", cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "wip", cwd=wt, env=env)
+            git("worktree", "remove", "--force", str(wt), cwd=repo, env=env)
+            self.assertEqual(
+                self.action(self.failed(repo, env, "NOWORKTREE")),
+                "The worktree of the task went missing after its review, and the"
+                " run records no commit of the task on main. Run git worktree"
+                f" prune in the main checkout {repo}. Then run git worktree add"
+                f" {wt} {branch} there, record the repair in notes.md, and land"
+                " the task again.",
+            )
+
+    def test_landing_after_landing_that_stopped_before_it_removed_worktree(self):
+        # A signal ends the first landing before it removes the worktree.
+        # So that landing records its commit and then stops, and the task
+        # stays approved with its worktree and its branch.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            killed = self.killed_at(tmp, env, "worktree remove --force")
+            status, lines = self.land(repo, killed)
+            self.assertEqual(status, -signal.SIGKILL, lines)
+            self.assertEqual(
+                git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
+            )
+            self.assertEqual(self.task_states(tmp), {REF: "approved"})
+            self.assertTrue(self.worktree(repo).exists())
+            commit = git("rev-parse", "--short", "HEAD", cwd=repo, env=env)
+            landed = f"ultraclose.py set {REF} landed"
+            # A second landing of the task has nothing to commit.
+            self.assertEqual(
+                self.action(self.failed(repo, env, "EMPTY")),
+                f"An earlier landing of the task recorded the commit {commit} on"
+                " main, and then it stopped before it removed the worktree. The"
+                f" task has landed. Run {landed}, which sets the aven task to"
+                " done and removes the worktree and the branch. Do not sync the"
+                " task.",
+            )
+            out = ultraclose("set", REF, "landed", cwd=repo, env=env)
+            self.assertEqual(out.splitlines(), [f"{REF} landed"])
+            self.assertFalse(self.worktree(repo).exists())
+            self.assertEqual(branches(repo, env), ["main"])
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+            self.assertIn(ENDED, ultraclose("status", cwd=repo, env=env).splitlines())
+
+    def test_action_of_change_that_base_branch_holds(self):
+        close = f"ultraclose.py set {REF} closed --note '<evidence>'"
+        landed = f"ultraclose.py set {REF} landed"
+        found = (
+            "A commit of main made the change of the task. Find that commit,"
+            " such as with git log --oneline main -- <file> for a file of the"
+            " task. When the commit comes from this task, the task has landed,"
+            f" so run {landed}."
+        )
+        other = (
+            " When another commit made the change, such as the commit of a task"
+            f" that covers this task, close the task: {close}."
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            # Another commit of the base branch adds the file of the task.
+            repo, env = self.start_task(tmp)
+            Path(repo, self.FILE).write_text("a\n")
+            git("add", "-A", cwd=repo, env=env)
+            git("commit", "-q", "--no-verify", "-m", "other", cwd=repo, env=env)
+            self.assertEqual(
+                self.action(self.failed(repo, env, "EMPTY")),
+                f"{found}{other} Do not sync the task.",
+            )
+        with tempfile.TemporaryDirectory() as tmp:
+            # The pull request of the task merges during its relaunch.
+            repo, env = self.start_task(tmp, "--target", "pr")
+            self.land(repo, env)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            ultraclose("args", REF, "--sync", "a conflict", cwd=repo, env=env)
+            git("merge", "-q", "--squash", HEAD, cwd=repo, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=repo, env=env)
+            self.assertEqual(
+                self.action(self.failed(repo, env, "EMPTY")),
+                f"{found} The merge of the pull request {URL} of the task is such"
+                " a commit, so read the state of that pull request with"
+                f" mcp__github__pull_request_read.{other} Close the pull request"
+                f" {URL} first when it is open. Do not sync the task.",
+            )
+            # The task has landed, and the base branch holds its change.
+            ultraclose("set", REF, "landed", cwd=repo, env=env)
+            self.assertEqual(branches(repo, env), ["main"])
+            self.assertFalse(self.worktree(repo).exists())
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+
+    def test_action_of_branch_without_change_of_its_own(self):
+        def unchanged(branch):
+            """The start of the action for a branch without a change."""
+            return (
+                f"{branch} holds no change of its own. Read the summary and the"
+                " notes of the Workflow result of the task. When they say that"
+                " the task does not need a change, close the task: ultraclose.py"
+                f" set {REF} closed --note '<evidence>'."
+            )
+
+        def reset(wt):
+            """The part of the action that resets the task branch."""
+            return (
+                f" Otherwise run git -C {wt} reset -q --hard main, and relaunch"
+                f" the task with ultraclose.py args {REF}."
+            )
+
+        # The relaunch of a proposed task removes the file that the commit
+        # of its pull request added. The action closes the pull request
+        # with the task. The push of the reset branch replaces the branch
+        # of the pull request on the remote.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--target", "pr")
+            self.land(repo, env)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            ultraclose("args", REF, "--sync", "a conflict", cwd=repo, env=env)
+            wt = self.worktree(repo)
+            git("rm", "-q", self.FILE, cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "undo", cwd=wt, env=env)
+            self.assertEqual(
+                self.action(self.failed(repo, env, "EMPTY")),
+                f"{unchanged(HEAD)} Close the pull request {URL} first when it is"
+                f" open.{reset(wt)} The remote holds the branch of that pull"
+                " request, so set force_with_lease on the next push. Do not sync"
+                " the task.",
+            )
+        # The second commit of the task branch removes the file that the
+        # first commit added.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            wt = self.worktree(repo)
+            git("rm", "-q", self.FILE, cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "undo", cwd=wt, env=env)
+            self.assertEqual(
+                self.action(self.failed(repo, env, "EMPTY")),
+                f"{unchanged(f'task/{REF}')}{reset(wt)} Do not sync the task.",
+            )
+            # After the reset, the relaunch starts at the implementer.
+            git("reset", "-q", "--hard", "main", cwd=wt, env=env)
+            launch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+            self.assertNotIn("resume", launch["task"])
+            self.assertEqual(
+                self.action(self.failed(repo, env, "EMPTY")),
+                f"{unchanged(f'task/{REF}')} Otherwise note the task, which has"
+                f" ended in EMPTY 2 times: {self.NOTE_COMMAND}. Do not sync the"
+                " task.",
+            )
+
+    def test_slow_steps(self):
+        script = load_script()
+        # name: (the time of each step, the median of each step, the slow
+        # steps)
+        cases = {
+            "more than twice the median and a minute longer": (
+                {"check": 200, "commit": 81},
+                {"check": 90, "commit": 20},
+                ["check", "commit"],
+            ),
+            "twice the median": ({"check": 180}, {"check": 90}, []),
+            "a minute longer than the median": ({"commit": 80}, {"commit": 20}, []),
+            "less than a minute longer than twice the median": (
+                {"commit": 70},
+                {"commit": 20},
+                [],
+            ),
+            "a step without a median": ({"check": 9000}, {"commit": 20}, []),
+        }
+        for name, (times, typical, want) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(script.slow_steps(times, typical), want)
+
+    def test_landing_names_slow_step(self):
+        def landing(**times):
+            return {"ref": "APP-0001", "result": "OK", "times": times}
+
+        # The check and the commit of the test take less than a second.
+        # The median of a recorded step is less than zero, so that such a
+        # step takes more than a minute longer than its median.
+        # name: (the times of the earlier landing, the slow steps)
+        cases = {
+            "a slow check": ({"check": -100, "commit": 20}, ["check"]),
+            "a slow commit": ({"check": 80, "commit": -100}, ["commit"]),
+            "no slow step": ({"check": 80, "commit": 20}, []),
+        }
+        for name, (times, slow) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, "--check", self.RECORD)
+                state = Path(tmp, "run", "state.json")
+                st = json.loads(state.read_text())
+                st["landings"] = [landing(**times)]
+                state.write_text(json.dumps(st))
+                landing_ = self.land(repo, env)
+                self.assert_landed(repo, env, landing_)
+                # Each SLOW line follows the TIMES line.
+                lines = landing_[1]
+                at = [n for n, x in enumerate(lines) if x.startswith("TIMES ")][0]
+                found = lines[at + 1 : -2]
+                self.assertEqual(len(found), len(slow), lines)
+                for line, step in zip(found, slow):
+                    self.assertRegex(
+                        line,
+                        rf"^SLOW the {step} took \d+s, more than twice its median"
+                        r" of -100s\. Find the cause before you start another"
+                        r" landing\.",
+                    )
+
+
 def land_results():
     """Each result that the land command can print.
 
     The cmd_land function of ultraclose.py passes the result of each
-    failed landing to its fail() function. It passes the result of each
-    other landing to its record() function.
+    failed landing to its fail() function or to its failed_step()
+    function. It passes the result of each other landing to its record()
+    function.
     """
     [land] = [
         node
@@ -6829,22 +8405,61 @@ def land_results():
         for call in ast.walk(land)
         if isinstance(call, ast.Call)
         and isinstance(call.func, ast.Name)
-        and call.func.id in ("fail", "record")
+        and call.func.id in ("fail", "failed_step", "record")
         and call.args
         and isinstance(call.args[0], ast.Constant)
     }
 
 
-def landing_table():
-    """The results that each row of the result table of SKILL.md names.
+def skill_section(name):
+    """The text of the section of SKILL.md with the given heading."""
+    _, section = SKILL.read_text().split(f"\n## {name}\n")
+    return section.split("\n## ", 1)[0]
 
-    The Landing section of SKILL.md holds the table. The first cell of
-    each row names the results of the row, each in code font.
+
+def named_sections(source):
+    """Each section of SKILL.md that the source of a script names.
+
+    The scripts name a section as "the NAME section of SKILL.md". A
+    string of a script can break its text between two lines, so the
+    function first joins the parts of each string.
     """
-    _, landing = SKILL.read_text().split("\n## Landing\n")
-    _, table = landing.split("\n| Result | Action |\n| --- | --- |\n", 1)
-    rows = table.split("\n\n", 1)[0].splitlines()
-    return [re.findall(r"`([A-Z]+)`", row.split("|")[1]) for row in rows]
+    joined = re.sub(r"[\"'`]\s*\n\s*f?[\"'`]", "", source)
+    flat = " ".join(joined.split())
+    return set(re.findall(r"the ([A-Z][a-z]+(?: [a-z]+)*) section of SKILL\.md", flat))
+
+
+def landing_facts(code):
+    """Facts of a landing with the given result, for each action of the script.
+
+    The facts hold each key that an action reads. The landing failed
+    for the first time, and the script named no cause for it.
+    """
+    return {
+        "ref": REF,
+        "base": "main",
+        "branch": f"task/{REF}",
+        "wt": "WT",
+        "repo": "REPO",
+        "msg": "MSG",
+        "next": True,
+        "code": code,
+        "n": 1,
+        "step": "check",
+        "log": "LOG",
+        "cause": "",
+        "unrestored": False,
+        "state": "approved",
+        "commit": "",
+        "has_branch": True,
+        "own": True,
+        "url": "",
+        "head": "feat/a",
+        "held": "",
+        "unremoved": "",
+        "undeleted": False,
+        "open": False,
+    }
 
 
 def script_constant(name):
@@ -6868,11 +8483,44 @@ def loop_step_one():
 class SkillTest(unittest.TestCase):
     """What SKILL.md tells the orchestrator about ultraclose.py."""
 
-    def test_landing_table_gives_one_action_for_each_result(self):
-        # The orchestrator finds no action for a result without a row,
-        # and two actions for a result that two rows name.
-        named = [result for row in landing_table() for result in row]
-        self.assertEqual(sorted(named), sorted(land_results()))
+    def test_skill_sends_orchestrator_to_action_of_each_result(self):
+        # The scripts print the action of each result, and SKILL.md holds
+        # no table of those actions. So SKILL.md must name the output
+        # that carries the action.
+        landing = " ".join(skill_section("Landing").split())
+        self.assertIn("Take the action that the `ACTION` line gives.", landing)
+        loop = " ".join(skill_section("Loop").split())
+        self.assertIn(
+            "take the action that the `action` field of the result gives.", loop
+        )
+
+    def test_skill_holds_each_section_that_scripts_name(self):
+        for script in (SCRIPT, WORKFLOW):
+            with self.subTest(script.name):
+                for name in named_sections(script.read_text()):
+                    # The function fails for a heading that SKILL.md lacks.
+                    self.assertTrue(skill_section(name), name)
+        self.assertEqual(
+            named_sections(SCRIPT.read_text()), {"Landing", "Pull requests"}
+        )
+
+    def test_landing_section_covers_each_result_whose_action_names_it(self):
+        # The action of a result names the Landing section when only the
+        # failing output shows the cause. The section then gives the
+        # action for each cause of that result.
+        script = load_script()
+        sent = [
+            code
+            for code, action in script.ACTIONS.items()
+            if "the Landing section of SKILL.md" in action(landing_facts(code))
+        ]
+        self.assertEqual(
+            sorted(sent), ["CHECKFAIL", "CHECKTIMEOUT", "COMMITFAIL", "COMMITTIMEOUT"]
+        )
+        landing = skill_section("Landing")
+        for code in sent:
+            with self.subTest(code):
+                self.assertIn(f"`{code}`", landing)
 
     def test_loop_step_one_runs_next_after_each_set_that_frees_work(self):
         # A task that leaves the locking states frees its files, and an
@@ -7012,7 +8660,14 @@ class WorkflowCase(unittest.TestCase):
         return f"{kind} {REF} {rest}".strip()
 
     def run_workflow(
-        self, agents, rounds=6, resume=None, args=None, models=None, landing=None
+        self,
+        agents,
+        rounds=6,
+        resume=None,
+        args=None,
+        models=None,
+        landing=None,
+        pull=None,
     ):
         """Run close-task.js with scripted agents.
 
@@ -7024,7 +8679,9 @@ class WorkflowCase(unittest.TestCase):
         the given rounds and resume field. That input holds the models
         field only when the models argument is not None. The landing
         argument holds the pr field of that input and the branch of its
-        task, and the input holds neither field without it. Return the
+        task, and the input holds neither field without it. The pull
+        argument holds the pull request that the task of that input
+        records, and the task holds no pr field without it. Return the
         result of the script and each agent call by short label. Each call
         holds the label, the prompt, the schema, and the sorted names of
         the options of the agent. It holds the model only when the call
@@ -7038,6 +8695,8 @@ class WorkflowCase(unittest.TestCase):
         }
         if resume:
             task["resume"] = resume
+        if pull:
+            task["pr"] = pull
         outside = {
             "run": "/run",
             "repo": "/repo",
@@ -7357,6 +9016,232 @@ class WorkflowModelTest(WorkflowCase):
             self.assertEqual(result["status"], "approved")
             self.assertIn(reason, calls["sync"]["prompt"])
             self.assert_models(calls, {"sync": OPUS})
+
+
+class WorkflowActionTest(WorkflowCase):
+    """Each result names the action that the orchestrator takes.
+
+    The action field holds the `ultraclose.py` command of the status. For
+    an agent that returned nothing, it names the model that the run gives
+    the role of that agent.
+    """
+
+    LAND = (
+        f"Land the task: run `ultraclose.py land {REF} --next` in a background"
+        " Bash call."
+    )
+    FILE = (
+        "File each entry of followups as an aven task with `aven add`, and link"
+        f" each new task with `aven related add <new-ref> {REF}`. Then land the"
+        f" task: run `ultraclose.py land {REF} --next` in a background Bash call."
+    )
+    BOUNDED = (
+        " The last review covered only the final fixes, so record the task in notes.md."
+    )
+    CLOSE = (
+        f"lose the task: run `ultraclose.py set {REF} closed --note '<the"
+        " evidence>'` with the evidence that the notes give. The command adds"
+        " the note to the aven task and sets the aven task to done."
+    )
+    NOTE_COMMAND = (
+        f"ultraclose.py set {REF} noted --note '<the reason and the open findings>'"
+    )
+    NOTE = (
+        f"Note the task: run `{NOTE_COMMAND}`. The command adds the note and the"
+        " branch of the task to the aven task, sets the aven task to todo, and"
+        " keeps the branch. Describe the findings in the note, and do not count"
+        " the review rounds there. Do not force the task through."
+    )
+    # The start of the action of an error result, with the command of the
+    # relaunch, and the end of that action.
+    RELAUNCH = "elaunch the task one time: run `{}`, and launch the object"
+    SECOND = (
+        " that it prints from the path in its script field. If that relaunch"
+        f" ends in error as well, note the task with `{NOTE_COMMAND}`."
+    )
+    # What an action says about the model of a role, with the model and
+    # the role.
+    MODEL = (
+        "The run names the model {} for the {} role. Check that Workflow can run"
+        " that model, and correct a wrong model with the --model flag of"
+        " `ultraclose.py config`. "
+    )
+
+    def test_result_names_action_of_its_status(self):
+        first_fix = {"impl": IMPLEMENTED, "review r1": CHANGES, "fix r1": fixed(1)}
+        # name: (run_workflow arguments, status, action)
+        cases = {
+            "the first review approves": (
+                {"agents": {"impl": IMPLEMENTED, "review r1": APPROVE}},
+                "approved",
+                self.LAND,
+            ),
+            "the final cycle approves": (
+                {"agents": {**first_fix, "review final": APPROVE}, "rounds": 1},
+                "approved",
+                self.LAND + self.BOUNDED,
+            ),
+            "the change lands with open findings": (
+                {
+                    "agents": {
+                        **first_fix,
+                        "review final": CHANGES,
+                        "narrow": NARROWED,
+                    },
+                    "rounds": 1,
+                },
+                "landable",
+                self.FILE + self.BOUNDED,
+            ),
+            "the implementer finds the task obsolete": (
+                {"agents": {"impl": {**IMPLEMENTED, "status": "obsolete"}}},
+                "obsolete",
+                "C" + self.CLOSE,
+            ),
+            "the implementer abandons the task": (
+                {"agents": {"impl": {**IMPLEMENTED, "status": "abandoned"}}},
+                "abandoned",
+                self.NOTE,
+            ),
+            "a review rejects the change": (
+                {"agents": {"impl": IMPLEMENTED, "review r1": REJECT}},
+                "rejected",
+                self.NOTE,
+            ),
+            "the final review leaves a change that cannot land": (
+                {"agents": {**first_fix, "review final": REJECT}, "rounds": 1},
+                "unconverged",
+                self.NOTE,
+            ),
+            "the final reviewer returns nothing": (
+                {
+                    "agents": {
+                        **first_fix,
+                        "review final": None,
+                        "review final retry": None,
+                    },
+                    "rounds": 1,
+                    "models": {"reviewer": OPUS},
+                },
+                "unconverged",
+                self.NOTE,
+            ),
+        }
+        for name, (kwargs, status, action) in cases.items():
+            with self.subTest(name):
+                result, _ = self.run_workflow(**kwargs)
+                self.assertEqual((result["status"], result["action"]), (status, action))
+
+    def test_action_names_pull_request_of_task(self):
+        # The relaunch of a proposed task works on the branch of its pull
+        # request.
+        opened = (
+            f" Leave the pull request {URL} open for the user, and record it in"
+            " notes.md."
+        )
+        close = (
+            f"Close the pull request {URL} with mcp__github__update_pull_request"
+            " when it is open, and record it in notes.md. Then c"
+        )
+        # name: (the result of the first reviewer, status, action)
+        cases = {
+            "a relaunch that ends rejected": (REJECT, "rejected", self.NOTE + opened),
+            "a relaunch that ends approved": (APPROVE, "approved", self.LAND),
+        }
+        for name, (review, status, action) in cases.items():
+            with self.subTest(name):
+                result, _ = self.run_workflow(
+                    {"review r2": review}, resume=RELAUNCH, pull=URL
+                )
+                self.assertEqual((result["status"], result["action"]), (status, action))
+        result, _ = self.run_workflow(
+            {"impl": {**IMPLEMENTED, "status": "obsolete"}}, pull=URL
+        )
+        self.assertEqual(result["action"], close + self.CLOSE)
+
+    def test_action_of_agent_that_returned_nothing(self):
+        plain = f"ultraclose.py args {REF}"
+        sync = f"{plain} --sync '<the reason that started the sync agent>'"
+        first_fix = {"impl": IMPLEMENTED, "review r1": CHANGES}
+        # name: (run_workflow arguments, the role of the agent that
+        # returned nothing, the command of the relaunch)
+        cases = {
+            "the implementer": (
+                {"agents": {"impl": None, "impl retry": None}},
+                "implementer",
+                plain,
+            ),
+            "a reviewer": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": None,
+                        "review r1 retry": None,
+                    }
+                },
+                "reviewer",
+                plain,
+            ),
+            "a fixer": (
+                {"agents": {**first_fix, "fix r1": None, "fix r1 retry": None}},
+                "fixer",
+                plain,
+            ),
+            "the sync agent": (
+                {"agents": {"sync": None, "sync retry": None}, "resume": SYNC},
+                "sync",
+                sync,
+            ),
+        }
+        for name, (kwargs, role, relaunch) in cases.items():
+            # The run names a model for the role, of its own or as the
+            # default model, or it names none.
+            for models in ({}, {role: OPUS}, {"implementer": FABLE, "narrow": FABLE}):
+                with self.subTest(name, models=models):
+                    result, _ = self.run_workflow(**kwargs, models=models)
+                    end = self.RELAUNCH.format(relaunch) + self.SECOND
+                    if role in models:
+                        action = self.MODEL.format(models[role], role) + "Then r" + end
+                    else:
+                        action = "R" + end
+                    self.assertEqual(
+                        (result["status"], result["action"]), ("error", action)
+                    )
+
+    def test_action_of_narrowing_agent_that_returned_nothing(self):
+        agents = {
+            "impl": IMPLEMENTED,
+            "review r1": CHANGES,
+            "fix r1": fixed(1),
+            "review final": CHANGES,
+            "narrow": None,
+            "narrow retry": None,
+        }
+        # The note follows only a model that is right, because a relaunch
+        # starts a new Workflow of the task.
+        final = (
+            "When the model was wrong, relaunch the task after you correct it:"
+            f" run `ultraclose.py args {REF} --final`, and do not note the task."
+            " When the model is right, do not relaunch the task, and note it"
+            " instead"
+        )
+        # name: (the models of the run, the action)
+        cases = {
+            "a run without a model": ({}, self.NOTE),
+            "a model for another role": ({"reviewer": OPUS}, self.NOTE),
+            "a model for the narrow role": (
+                {"narrow": FABLE},
+                self.MODEL.format(FABLE, "narrow")
+                + final
+                + self.NOTE.removeprefix("Note the task"),
+            ),
+        }
+        for name, (models, action) in cases.items():
+            with self.subTest(name):
+                result, _ = self.run_workflow(agents, rounds=1, models=models)
+                self.assertEqual(
+                    (result["status"], result["action"]), ("unconverged", action)
+                )
 
 
 class WorkflowRegressionTest(WorkflowCase):
