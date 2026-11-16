@@ -371,10 +371,11 @@ line endings. It fails with one line for each finding that the copy
 drops and one line for each finding that the copy adds. A finding that
 moves to another column therefore prints two lines.
 
-The build also runs `test_check.py`, the unit tests of the comment
-check and the CRLF check in `check.py`. Every rule file follows the
-layout, and every awk rule reads CRLF line endings. Only these tests
-therefore show that a breach or a misread fails the build.
+The build also runs `test_check.py`, the unit tests of `check.py`. They
+cover the comment check, the CRLF check, and the lines that `check.py`
+expects a bad fixture to lint. Every rule file follows the layout, and
+every awk rule reads CRLF line endings. Only these tests therefore show
+that a breach or a misread fails the build.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; in pkgs.callPackage ./pkgs/prose-weirpack.nix { }'

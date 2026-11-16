@@ -44,3 +44,9 @@ When the last attempt fails after three retries with a growing delay between the
 The image pipeline converts every uploaded picture to the smallest format that the browser accepts, such as AVIF, PNG, or WebP, before it stores the result.
 
 Step 3: the importer reads every row of the source table and writes the converted rows in batches of one hundred to the destination table before it exits.
+
+<!-- prettier-ignore -->
+Flag|Effect
+:--|:--
+retry|The proxy retries each failed request once, and then it returns the error
+force|The loader skips the schema check and reads every file in the tree

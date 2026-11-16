@@ -14,7 +14,9 @@ fixtures/common.good.md must produce none. A line that holds only `>`
 marks is a blank line inside a blockquote, so it counts as blank. A bad
 line that ends in an HTML comment that holds `same finding` does not
 need a lint of its own, because a finding on a nearby line covers it,
-such as the heading after it that skips a level.
+such as the heading after it that skips a level. A line that holds only
+a prettier-ignore comment does not need one either, so a fixture can
+keep prettier from adding a blank line between two blocks.
 A rule that reports one line for a span of several lines, such as a run
 of paragraphs, marks every line after the first. An awk rule can also
 have fixtures/<tier>/<Rule>.raw.txt, which it reads with RAW=1 the way
@@ -260,13 +262,17 @@ def check_crlf(rule: Rule, fixtures: Path, lib: Path) -> list[str]:
 
 
 SAME_FINDING = "<!-- same finding -->"
+PRETTIER_IGNORE = re.compile(r"<!--\s*prettier-ignore(-start|-end)?\s*-->")
 
 
 def expected_lines(target: Path) -> set[int]:
+    """Return the number of each line of a bad fixture that needs a lint."""
     return {
         i
         for i, line in enumerate(target.read_text().splitlines(), start=1)
-        if line.replace(">", "").strip() and not line.rstrip().endswith(SAME_FINDING)
+        if line.replace(">", "").strip()
+        and not line.rstrip().endswith(SAME_FINDING)
+        and not PRETTIER_IGNORE.fullmatch(line.strip())
     }
 
 

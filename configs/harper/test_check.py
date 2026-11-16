@@ -1,4 +1,5 @@
-"""Tests for the comment check and the CRLF check in check.py.
+"""Tests for the comment check and the CRLF check in check.py, and for
+the lines that check.py expects a bad fixture to lint.
 
 Run with: python3 test_check.py. The weirpack build runs the tests
 before check.py reads the rule files. Every rule file follows the
@@ -150,6 +151,25 @@ class CrlfTest(unittest.TestCase):
         for label, (code, want) in cases.items():
             with self.subTest(label):
                 self.assertEqual(self.failures(code), want)
+
+
+class ExpectedLinesTest(unittest.TestCase):
+    def test_lines(self):
+        lines = [
+            "<!-- prettier-ignore-start -->",
+            "| Key | Value | <!-- same finding -->",
+            "> The proxy reads the route table and records the choice.",
+            "<!-- prettier-ignore-end -->",
+            "",
+            ">",
+            "  <!-- prettier-ignore -->  ",
+            "The scheduler reads the queue. <!-- prettier-ignore -->",
+            "<!-- a note -->",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ProseAndOr.bad.md"
+            path.write_text("\n".join(lines) + "\n")
+            self.assertEqual(check.expected_lines(path), {3, 8, 9})
 
 
 if __name__ == "__main__":

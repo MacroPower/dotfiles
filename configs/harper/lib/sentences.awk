@@ -22,6 +22,26 @@
 # tag each start a new paragraph. Headings, table rows, and HTML lines
 # hold no sentences, and the marker that opens a list item is not a
 # token.
+#
+# A table row is a line that opens with `|`, or a line of a pipe table
+# whose rows lack leading pipes. Such a table opens at its delimiter
+# row (`:--|:--`), which holds only pipes, colons, and hyphens. The
+# line before the delimiter row is the header row, and its tokens drop
+# out of the sentence that they joined. A header cell that ends in
+# `.`, `?`, or `!` ends its sentence before the delimiter row arrives,
+# so the words up to that cell still reach sentence(). Each later line
+# that holds a pipe is a body row, even one that opens with an HTML
+# tag (`<kbd>|Enter`). A skipped or blank line, a list item, a heading,
+# or a line without a pipe ends the table. So does a line that opens
+# with more or fewer `>` markers than the delimiter row, such as a
+# blockquote after the table.
+#
+# The library differs from GFM at two kinds of line after a table. GFM
+# reads a plain line without a pipe as a body row of one cell. Such a
+# line more often opens a paragraph, so the library splits it into
+# sentences. GFM ends the table at a block-level HTML tag such as
+# `<div>`. The library reads such a line as a body row when it holds a
+# pipe.
 
 @include "markdown.awk"
 
@@ -32,13 +52,32 @@ function end_sentence() {
   tok_n = 0
 }
 
+# Returns the number of `>` markers that open the line.
+function quote_depth(   p) {
+  match($0, /^([ \t]*>)*/)
+  p = substr($0, 1, RLENGTH)
+  return gsub(/>/, "", p)
+}
+
 function prose(text,   rest, pos, t, col) {
-  if (FILENAME != split_file || FNR != split_line + 1 || text ~ /^[ \t]*$/ || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
+  if (FILENAME != split_file || FNR != split_line + 1 || text ~ /^[ \t]*$/ || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || (in_table ? !index(text, "|") || quote_depth() != table_quote : text ~ /^[ \t]*</)) {
+    end_sentence()
+    in_table = 0
+  } else if (index(text, "|") && text ~ /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/) {
+    # A delimiter row makes the line before it the header row, so the
+    # tokens of that line leave the sentence.
+    while (tok_n > 0 && tok_line[tok_n] == split_line) {
+      tok_n--
+    }
+    in_table = 1
+    table_quote = quote_depth()
+  }
+  if (in_table || text ~ /^[ \t]*\|/) {
     end_sentence()
   }
   split_file = FILENAME
   split_line = FNR
-  if (text ~ /^[ \t]*(#+([ \t]|$)|[|<])/) {
+  if (in_table || text ~ /^[ \t]*(#+([ \t]|$)|[|<])/) {
     return
   }
   rest = text
