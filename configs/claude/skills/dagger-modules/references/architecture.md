@@ -433,7 +433,7 @@ func (m *MyModule) Generate() *dagger.Changeset {
 }
 ```
 
-The `// +generate` annotation registers the function with the `dagger generate` command, which runs every generator and merges all of their changesets into the source directory. Each `// +generate` function also gets a matching check automatically, so `dagger check` reports whether generated files are stale (committed output drifted from a fresh run). Use `dagger check --no-generate` to run only the explicit checks, or a toolchain's `ignoreChecks` to suppress its generated checks.
+The `// +generate` annotation registers the function with the `dagger generate` command, which runs every generator and merges all of their changesets into the source directory. Each `// +generate` function also gets a matching check automatically, so `dagger check` reports whether generated files are stale (committed output drifted from a fresh run). Use `dagger check --generated=false` to run only the explicit checks, or a toolchain's `ignoreChecks` to suppress its generated checks.
 
 For changesets returned without `// +generate`, the CLI prompts the user to apply them. Use `-y` / `--auto-apply` to apply automatically (useful in CI). Functions can return an array of changesets for multiple independent sets of changes.
 
@@ -516,8 +516,8 @@ Check functions are the key integration point with `dagger check`:
 - Pattern-based filtering: `dagger check lint-*`, `dagger check golangci-lint:*`
 - List checks: `dagger check -l`
 - `dagger check` (and `dagger generate`) resolve against the entire workspace (all modules and toolchains it contains), not just the current module
-- `--failfast` cancels remaining checks on the first failure
-- `// +generate` functions contribute their own checks; skip those with `dagger check --no-generate` (see [Changesets](#changesets))
+- `--fail-fast` cancels remaining checks on the first failure
+- `// +generate` functions contribute their own checks. Skip those checks with `dagger check --generated=false` (see [Changesets](#changesets))
 
 ### Installation and usage
 

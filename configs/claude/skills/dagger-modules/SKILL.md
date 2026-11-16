@@ -9,7 +9,15 @@ description: >-
 
 This skill covers the full lifecycle of building Dagger modules in Go: initialization, function design, types, caching, services, secrets, LLM integration, testing, dependencies, toolchains, and publishing.
 
-Targets **Dagger v0.21.x**. The Go SDK is versioned in lockstep with the engine and requires **Go 1.26+**.
+The installed Dagger CLI is **v1.0.0-beta.25**. The `dagger check` flags in this skill match that version. The rest of the skill targets **Dagger v0.21.x**, and v1.0.0-beta.25 removed or changed these commands that the skill names:
+
+- `dagger develop` and `dagger toolchain install`: removed.
+- `dagger init`: creates a workspace config and takes no flags of its own, so it rejects the `--sdk`, `--name`, and `--source` flags that the skill passes.
+- `dagger install` and `dagger uninstall`: edit the workspace config `dagger.toml`, not the dependencies of a module.
+- `dagger update`: fails with a message that names `dagger lock update` and `dagger module update`.
+- `dagger` with no arguments: prints usage instead of starting the interactive shell.
+
+Confirm each command of this skill with `dagger <command> --help` before you run it. The Go SDK is versioned in lockstep with the engine and requires **Go 1.26+**.
 
 ## Quick Reference
 
@@ -289,7 +297,7 @@ func (m *MyModule) Build() *dagger.Container {
 }
 ```
 
-Checks from toolchains are namespaced: `dagger check my-toolchain:lint`. Run all checks from a toolchain with `dagger check my-toolchain:*`. List available checks with `dagger check -l`. `dagger check` resolves against the entire workspace (all modules and toolchains it contains), not just the current module. Pass `--failfast` to cancel remaining checks on the first failure.
+Checks from toolchains are namespaced: `dagger check my-toolchain:lint`. Run all checks from a toolchain with `dagger check my-toolchain:*`. List available checks with `dagger check -l`. `dagger check` resolves against the entire workspace (all modules and toolchains it contains), not just the current module. Pass `--fail-fast` to cancel remaining checks on the first failure.
 
 ### Toolchain customization
 
@@ -504,7 +512,7 @@ func (m *MyModule) Generate() *dagger.Changeset {
 }
 ```
 
-`dagger generate` runs every `// +generate` function and merges their changesets into the source directory. Each `// +generate` function also gets a matching check automatically, so `dagger check` flags stale generated files (run only the explicit checks with `dagger check --no-generate`; suppress a toolchain's generated checks with `ignoreChecks`).
+`dagger generate` runs every `// +generate` function and merges their changesets into the source directory. Each `// +generate` function also gets a matching check automatically, so `dagger check` reports stale generated files. To run only the explicit checks, run `dagger check --generated=false`. To suppress the generated checks of a toolchain, set its `ignoreChecks`.
 
 When a function returns a changeset directly (not via `// +generate`), the CLI flag `-y` / `--auto-apply` applies it to the source directory. Functions can also return `[]*dagger.Changeset` for multiple sets of changes.
 
