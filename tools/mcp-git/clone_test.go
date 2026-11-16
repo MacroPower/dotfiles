@@ -264,43 +264,26 @@ func TestCredentialArgs(t *testing.T) {
 	t.Parallel()
 
 	wantArgs := []string{
-		"-c", "credential.helper=",
+		"-c", "credential.https://github.com.helper=",
 		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f`,
 	}
 
 	tests := map[string]struct {
 		token string
-		url   string
 		want  []string
 	}{
-		"no token": {
-			url: "https://github.com/a/b",
-		},
-		"github https": {
+		"token": {
 			token: "ghp_test123",
-			url:   "https://github.com/a/b",
 			want:  wantArgs,
 		},
-		"gitlab https": {
-			token: "ghp_test123",
-			url:   "https://gitlab.com/a/b",
-		},
-		"github ssh": {
-			token: "ghp_test123",
-			url:   "ssh://git@github.com/a/b",
-		},
-		"github scp": {
-			token: "ghp_test123",
-			url:   "git@github.com:a/b",
-		},
+		"no token": {},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			h := &handler{token: tt.token}
-			got := h.credentialArgs(tt.url)
+			got := (&handler{token: tt.token}).credentialArgs()
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -998,35 +981,6 @@ func TestHandleClonePullsRewrittenURL(t *testing.T) { //nolint:paralleltest // t
 	assert.Contains(t, resultText(t, result), "Pulled")
 }
 
-func TestCloneCredentialArgs(t *testing.T) {
-	t.Parallel()
-
-	wantArgs := []string{
-		"-c", "credential.https://github.com.helper=",
-		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f`,
-	}
-
-	tests := map[string]struct {
-		token string
-		want  []string
-	}{
-		"token": {
-			token: "ghp_test123",
-			want:  wantArgs,
-		},
-		"no token": {},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			got := (&handler{token: tt.token}).cloneCredentialArgs()
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 // authProxy is an HTTP proxy that tunnels each CONNECT request to one
 // https server. The server records each credential that it receives,
 // and it passes each request to the backend of [startAuthProxy].
@@ -1058,6 +1012,23 @@ func requireCredential(cred string, next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// requireHostCredential passes each request that carries the
+// credential of its host to next. creds maps the name of each host to
+// that credential, as user:password. It answers every other request
+// with 401.
+func requireHostCredential(creds map[string]string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cred, ok := creds[r.Host]
+		if !ok {
+			unauthorized.ServeHTTP(w, r)
+
+			return
+		}
+
+		requireCredential(cred, next).ServeHTTP(w, r)
 	})
 }
 

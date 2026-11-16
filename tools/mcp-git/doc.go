@@ -15,9 +15,10 @@
 //
 // git_fetch, git_pull, and git_push operate on an existing local
 // repository. They resolve its git directory (worktree-aware), and
-// they take a flock on <gitdir>/mcp-git.lock. They resolve the named
-// remote's URL so the GH_TOKEN credential helper can authenticate it,
-// and they run the corresponding git subcommand with captured output.
+// they take a flock on <gitdir>/mcp-git.lock. They check each URL of
+// the named remote that the call uses, and they run the corresponding
+// git subcommand with captured output. Each call authenticates with
+// the token of GH_TOKEN when git connects to github.com over https.
 // Remote and ref inputs are plain names, never URLs or refspecs, so a
 // caller cannot express a remote delete or a force push (git_push
 // offers force_with_lease explicitly).
@@ -288,12 +289,11 @@
 //   - GH_TOKEN: when set, configures a git credential helper that
 //     authenticates HTTPS requests to github.com using this token.
 //     This enables cloning, fetching, pulling, and pushing private
-//     repositories. A new clone gives the helper to each https
+//     repositories. Every tool gives the helper to each https
 //     connection to github.com after git applies the URL rewrites of
-//     the git config. For a sparse clone without a depth, those
-//     connections include the fetch of the files of the sparse
-//     paths. The credential helpers of the config files still answer
-//     for every other host. Every other call takes the helper when
-//     the first URL of the remote starts with https://github.com/
-//     after those rewrites.
+//     the git config. For a push, those connections include the
+//     connection to each push URL of the remote that names github.com
+//     over https. For a sparse clone without a depth, they include the
+//     fetch of the files of the sparse paths. The credential helpers
+//     of the config files still answer for every other host.
 package main

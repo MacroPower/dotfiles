@@ -438,9 +438,14 @@ func TestGitOptions(t *testing.T) {
 		"-c", "push.pushOption=",
 		"-c", "remote.up.mirror=false",
 	}
+	cred := []string{
+		"-c", "credential.https://github.com.helper=",
+		"-c", "credential.https://github.com.helper=" + githubCredentialHelper,
+	}
 	repo := []string{"-C", "/r"}
 
 	tests := map[string]struct {
+		token    string
 		op       remoteOp
 		workTree string
 		hooks    []string
@@ -448,6 +453,17 @@ func TestGitOptions(t *testing.T) {
 	}{
 		"fetch": {
 			want: slices.Concat(guard, repo),
+		},
+		// The credential options name no URL of the remote, so every
+		// command takes them.
+		"token": {
+			token: "ghp_test123",
+			want:  slices.Concat(cred, guard, repo),
+		},
+		"push with a token": {
+			token: "ghp_test123",
+			op:    remoteOp{remote: "up", push: true},
+			want:  slices.Concat(cred, guard, push, repo),
 		},
 		"push": {
 			op:   remoteOp{remote: "up", push: true},
@@ -486,7 +502,7 @@ func TestGitOptions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := (&handler{}).gitOptions(tt.op, "/r", "https://example.invalid/r.git", tt.workTree, tt.hooks)
+			got := (&handler{token: tt.token}).gitOptions(tt.op, "/r", tt.workTree, tt.hooks)
 			assert.Equal(t, tt.want, got)
 		})
 	}

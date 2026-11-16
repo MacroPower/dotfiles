@@ -901,13 +901,11 @@ func TestPushRefusesLocalTransport(t *testing.T) {
 				),
 			}
 
-			// The check saw an https URL, and the remote names the
-			// bare repository by the time git pushes.
-			const checked = "https://example.invalid/repo.git"
-
-			// push runs the git command of the push as h runs it.
+			// push runs the git command of the push as h runs it after
+			// its checks pass. The remote names the bare repository by
+			// the time git pushes.
 			push := func(h *handler) (string, error) {
-				return h.runGit(t.Context(), slices.Concat(h.gitOptions(op, work, checked, work, nil), op.args)...)
+				return h.runGit(t.Context(), slices.Concat(h.gitOptions(op, work, work, nil), op.args)...)
 			}
 
 			_, err := push(&handler{})
@@ -1343,6 +1341,83 @@ func TestHandlePushNeverSigns(t *testing.T) {
 		gitOut(t, "-C", work, "rev-parse", "HEAD"),
 		gitOut(t, "-C", bare, "rev-parse", currentBranch(t, work)),
 	)
+}
+
+// A push goes to every push URL of the remote. Each push URL must
+// authenticate as the only URL of a remote does, whatever its place
+// among the push URLs is. The token must reach the URL that names
+// github.com. The credential helper of the git config must answer for
+// the URL of the other host.
+func TestHandlePushCredentialOfEachURL(t *testing.T) { //nolint:paralleltest // t.Setenv
+	const (
+		token      = "ghp_test123"
+		tokenCred  = "x-access-token:" + token
+		globalCred = "global:secret"
+		github     = "https://github.com/a/b.git"
+		gitlab     = "https://gitlab.com/c/d.git"
+	)
+
+	tests := map[string]struct {
+		urls  []string
+		hosts []string
+		creds []string
+	}{
+		"GitHub after another host": {
+			urls:  []string{gitlab, github},
+			hosts: []string{"gitlab.com:443", "github.com:443"},
+			creds: []string{globalCred, tokenCred},
+		},
+		"another host after GitHub": {
+			urls:  []string{github, gitlab},
+			hosts: []string{"github.com:443", "gitlab.com:443"},
+			creds: []string{tokenCred, globalCred},
+		},
+	}
+
+	for name, tt := range tests { //nolint:paralleltest // setProxyEnv calls t.Setenv.
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			bares := []string{filepath.Join(root, "a", "b.git"), filepath.Join(root, "c", "d.git")}
+
+			for _, bare := range bares {
+				runGitCmds(t, [][]string{
+					{"git", "init", "-q", "--bare", bare},
+					{"git", "-C", bare, "config", "http.receivepack", "true"},
+				})
+			}
+
+			work := initWorkClone(t, bares[0])
+
+			commitFile(t, work, "pushed.txt", "x", "pushed commit")
+			runGitCmds(t, [][]string{{"git", "-C", work, "remote", "set-url", "origin", tt.urls[0]}})
+
+			for _, url := range tt.urls {
+				runGitCmds(t, [][]string{{"git", "-C", work, "remote", "set-url", "--add", "--push", "origin", url}})
+			}
+
+			backend := requireHostCredential(
+				map[string]string{"github.com": tokenCred, "gitlab.com": globalCred},
+				gitBackend(t, root),
+			)
+			proxy := startAuthProxy(t, backend)
+			setProxyEnv(t, token, proxy.config()+globalHelper)
+
+			result, _, err := (&handler{token: token}).handlePush(t.Context(), nil, PushInput{Repo: work})
+			require.NoError(t, err)
+
+			hosts, creds := proxy.requests()
+			assert.Equal(t, tt.hosts, hosts)
+			assert.Equal(t, tt.creds, slices.Compact(creds))
+			require.False(t, result.IsError, resultText(t, result))
+
+			head := gitOut(t, "-C", work, "rev-parse", "HEAD")
+			ref := "refs/heads/" + currentBranch(t, work)
+
+			for _, bare := range bares {
+				assert.Equal(t, head, gitOut(t, "-C", bare, "rev-parse", ref), bare)
+			}
+		})
+	}
 }
 
 func TestHandlePushTimeout(t *testing.T) {

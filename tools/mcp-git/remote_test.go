@@ -164,9 +164,8 @@ func (rt remoteTool) runGit(t *testing.T, h *handler, work string) (string, erro
 		require.NoError(t, err)
 	}
 
-	// The checks saw an https URL, the working tree at work, and no
-	// hook.
-	opts := h.gitOptions(rt.op, work, "https://example.invalid/repo.git", work, nil)
+	// The checks saw the working tree at work and no hook.
+	opts := h.gitOptions(rt.op, work, work, nil)
 
 	return h.runGit(t.Context(), slices.Concat(opts, args)...)
 }
@@ -776,6 +775,52 @@ func TestGitIgnoresServePrograms(t *testing.T) {
 
 				requireNotRun(t, marker)
 				rt.requireLanded(t, bare, work)
+			})
+		}
+	}
+}
+
+// Each tool gives the token to an https connection to github.com.
+// The credential helper of the git config answers for every other
+// host, also when the token is set.
+func TestRemoteToolsCredential(t *testing.T) { //nolint:paralleltest // t.Setenv
+	const token = "ghp_test123"
+
+	tests := map[string]struct {
+		host string
+		cred string
+	}{
+		"GitHub":       {host: "github.com", cred: "x-access-token:" + token},
+		"another host": {host: "gitlab.com", cred: "global:secret"},
+	}
+
+	for toolName, rt := range remoteTools() { //nolint:paralleltest // setProxyEnv calls t.Setenv.
+		for name, tt := range tests {
+			t.Run(toolName+"/"+name, func(t *testing.T) {
+				bare, work := rt.repos(t)
+				url := "https://" + tt.host + "/" + filepath.Base(bare)
+
+				runGitCmds(t, [][]string{
+					{"git", "-C", bare, "config", "http.receivepack", "true"},
+					{"git", "-C", work, "remote", "set-url", "origin", url},
+				})
+
+				backend := requireHostCredential(
+					map[string]string{tt.host: tt.cred},
+					gitBackend(t, filepath.Dir(bare)),
+				)
+				proxy := startAuthProxy(t, backend)
+				setProxyEnv(t, token, proxy.config()+globalHelper)
+
+				result, _, err := rt.call(t.Context(), &handler{token: token}, work)
+				require.NoError(t, err)
+				require.False(t, result.IsError, resultText(t, result))
+
+				rt.requireLanded(t, bare, work)
+
+				hosts, creds := proxy.requests()
+				assert.Equal(t, []string{tt.host + ":443"}, hosts)
+				assert.Equal(t, []string{tt.cred}, slices.Compact(creds))
 			})
 		}
 	}

@@ -139,9 +139,9 @@ type remoteOp struct {
 }
 
 // runRemote validates the repository, bounds the call by the
-// effective timeout, locks the repository's git directory, resolves
-// the remote's URL so [handler.credentialArgs] can authenticate it,
-// and returns git's combined output.
+// effective timeout, and locks the repository's git directory. It
+// then runs the git command of op, and it returns git's combined
+// output.
 //
 // git runs with the server's privileges, outside the Bash sandbox,
 // and the caller can write the git config of the repository. runRemote
@@ -272,7 +272,7 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 		return "", err
 	}
 
-	opts := h.gitOptions(op, abs, urls[0], workTree, cfg.hooks)
+	opts := h.gitOptions(op, abs, workTree, cfg.hooks)
 
 	out, err := h.runGit(ctx, slices.Concat(opts, args)...)
 	if err != nil && len(op.cleanupArgs) > 0 {
@@ -290,12 +290,15 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 
 // gitOptions returns the options that come before the subcommand in
 // each git command that op runs in the repository at the absolute
-// path abs. url is the first URL of the remote, which
-// [handler.credentialArgs] authenticates. workTree is the working
-// tree that [handler.runRemote] checked, or "" for a repository that
-// has none. hooks names each hook that the git config defines.
-func (h *handler) gitOptions(op remoteOp, abs, url, workTree string, hooks []string) []string {
-	args := slices.Concat(h.credentialArgs(url), guardOptions(), hookOptions(hooks))
+// path abs. workTree is the working tree that [handler.runRemote]
+// checked, or "" for a repository that has none. hooks names each
+// hook that the git config defines.
+//
+// The options of [handler.credentialArgs] name no URL of the remote.
+// A push goes to every push URL, and git chooses the credential
+// helpers for each URL that it connects to.
+func (h *handler) gitOptions(op remoteOp, abs, workTree string, hooks []string) []string {
+	args := slices.Concat(h.credentialArgs(), guardOptions(), hookOptions(hooks))
 
 	if op.push {
 		args = append(args, pushOptions(op.remote)...)
@@ -916,16 +919,28 @@ func timeoutError(ctx context.Context) error {
 //nolint:gosec // G101: the helper holds no credential, because it reads GH_TOKEN.
 const githubCredentialHelper = `!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f`
 
-// credentialArgs returns git -c flags that configure a
-// credential helper for GitHub HTTPS URLs. It returns nil when
-// no token is set or the URL is not an HTTPS GitHub URL.
-func (h *handler) credentialArgs(url string) []string {
-	if h.token == "" || !strings.HasPrefix(url, "https://github.com/") {
+// credentialArgs returns git -c flags that give the credential helper
+// of the token to each https connection to github.com. It returns nil
+// when no token is set.
+//
+// The flags name no URL of the call. One git command can connect to
+// more than one host, as a push to a remote with several push URLs
+// does. git clone connects to the url input after it applies the
+// url.<base>.insteadOf rewrites of the git config. A conditional
+// include of the global config can hold a rewrite for the new clone
+// alone. The server cannot apply that rewrite before the clone.
+//
+// git applies the key credential.https://github.com.helper only to a
+// connection to https://github.com, after every rewrite. The empty
+// value of that key removes the helpers of the config files for that
+// host. Those helpers still answer for every other host.
+func (h *handler) credentialArgs() []string {
+	if h.token == "" {
 		return nil
 	}
 
 	return []string{
-		"-c", "credential.helper=",
+		"-c", "credential.https://github.com.helper=",
 		"-c", "credential.https://github.com.helper=" + githubCredentialHelper,
 	}
 }
