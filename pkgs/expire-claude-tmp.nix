@@ -210,11 +210,16 @@ let
 
       # enter DIR changes into the directory DIR. It fails when DIR is a
       # symbolic link or not a directory, or when another directory took
-      # the place of DIR before the change.
+      # the place of DIR before the change. stat reads the name `-` as
+      # standard input, and cd reads it as the directory that the shell
+      # left. So enter names a relative DIR with a leading `./`.
       enter() {
-        local want
-        want=$(stat -c '%F %d:%i' -- "$1") &&
-          cd -P -- "$1" &&
+        local dir=$1 want
+        if [[ $dir != /* ]]; then
+          dir=./$dir
+        fi
+        want=$(stat -c '%F %d:%i' -- "$dir") &&
+          cd -P -- "$dir" &&
           [ "$want" = "directory $(stat -c %d:%i .)" ]
       }
 
@@ -646,6 +651,13 @@ let
           ln -s "$TMPDIR/outside" "$root/-work-app/link"
           session "$root/-work-lib/only"
           mkdir "$root/-work-empty"
+          # Claude Code names a project directory after the working
+          # directory of the session, with a hyphen for each slash. By
+          # that rule, a session in the root directory gets the project
+          # directory `-`. stat must not read that name as standard
+          # input, and cd must not read it as the directory that the
+          # shell left.
+          session "$root/-/stale"
           mkdir -p "$root/bash-edit-diff/stale/objects" "$root/bash-edit-diff/used/objects"
           echo 'ref: refs/heads/main' >"$root/bash-edit-diff/stale/HEAD"
           echo 'ref: refs/heads/main' >"$root/bash-edit-diff/used/HEAD"
@@ -679,6 +691,7 @@ let
           expire-claude-tmp tmp "@$cutoff" sessions >log ||
             fail 'the first run fails'
           expect_tree "$root" 'the first run does not leave exactly the session directories that changed after the time or that belong to a session that runs' <<'EOF'
+          ./-
           ./-work-app
           ./-work-app/fresh
           ./-work-app/fresh/scratchpad
@@ -709,6 +722,7 @@ let
           ./bash-edit-diff/used/objects
           EOF
           expect_log "$root" 'the first run does not name exactly the session directories that it removed' <<'EOF'
+          -/stale
           -work-app/exited
           -work-app/link
           -work-app/stale
