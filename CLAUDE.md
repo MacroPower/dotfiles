@@ -22,7 +22,7 @@ task switch
 
 ## Architecture
 
-- **`flake.nix`**: Entry point. Declares inputs, flake-parts scaffolding, and host configurations. Each host passes a `hostConfig` attrset to a builder from `lib/`.
+- **`flake.nix`**: Entry point. Declares inputs, flake-parts scaffolding, and host configurations. For each host configuration, `flake.nix` imports a host file under `hosts/` and passes the attrset that the file holds to a builder from `lib/`. Some host files, such as `hosts/linux/container.nix`, hold a function that returns the attrset, and `flake.nix` calls that function with arguments such as `system`. Each builder takes the attributes of the attrset by name. Every builder takes `homeModule`. `mkDarwin` also takes attributes such as `hostname` and `darwinModule`, and `mkNixOS` also takes attributes such as `hostModule`. In the file of each builder, the second argument list names every attribute that the builder takes from the attrset.
 - **`lib/`**: Builder functions (`mkDarwin`, `mkHome`, `mkNixOS`) and shared config (overlays, home-manager modules). `lib/default.nix` is the entry point, each builder lives in its own file.
 - **`lib/stylix.nix`**: Shared stylix theme config (base16 scheme, fonts, cursor) that `mkDarwin`, `mkHome`, and `mkNixOS` import. `home/stylix.nix` turns off the stylix targets of tools that set their own theme.
 - **`hosts/shared.nix`**: Nix settings shared between nix-darwin and NixOS (experimental features, GC, store optimization, flake registry).
