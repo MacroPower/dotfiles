@@ -287,12 +287,23 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 	), nil, nil
 }
 
-// checkOrigin verifies that the existing repo at dest has an
-// origin remote URL matching url. Both sides are normalized by
-// stripping a trailing ".git" suffix before comparison. A repo that
-// has no origin remote fails with [ErrNoOrigin].
+// checkOrigin verifies that url is the URL of the origin remote of the
+// existing repo at dest. A repo that has no origin remote fails with
+// [ErrNoOrigin].
+//
+// git clone stores url as the URL of origin. git applies the
+// url.<base>.insteadOf rewrites of the git config each time it reads
+// the URL of a remote. The URL that it reads for origin can therefore
+// differ from url, and checkOrigin applies the rewrites to url as
+// well. It reads both URLs in dest, so the same config files rewrite
+// each URL. It strips a trailing ".git" suffix from each URL after the
+// rewrites, and then it compares the two URLs.
+//
+// An [ErrOriginMismatch] error names the URL that git reads for
+// origin, and it names url without the rewrites. It names each URL
+// without a trailing ".git" suffix.
 func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
-	out, err := gitValue(ctx, "-C", dest, "remote", "get-url", "origin")
+	origin, err := gitValue(ctx, "-C", dest, "remote", "get-url", "origin")
 	if err != nil {
 		if errors.Is(err, ErrTimeout) {
 			return err
@@ -309,10 +320,35 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 		return fmt.Errorf("reading the origin remote of %s: %w", dest, err)
 	}
 
-	got := strings.TrimSuffix(out, ".git")
+	// git ls-remote --get-url prints url after the rewrites, and it
+	// does not contact the remote. When the git config defines a
+	// remote whose name is url, such as with git config
+	// remote.<url>.url, git ls-remote --get-url prints the URL of that
+	// remote instead. When url holds no '/', such as the SCP-style url
+	// git@host:repo, a file named url under .git/remotes or
+	// .git/branches of dest also defines such a remote. git ls-remote
+	// --get-url then prints the URL of that file, or it fails when git
+	// rejects the file.
+	//
+	// git remote add, git remote rename, and git clone --origin refuse
+	// a name that holds ':', and every url that checkURL accepts
+	// outside tests holds one. git writes a file under .git/remotes or
+	// .git/branches only when it copies one from the template
+	// directory. Only a config or a file that someone writes by hand
+	// therefore defines such a remote.
+	rewritten, err := gitValue(ctx, "-C", dest, "ls-remote", "--get-url", "--", url)
+	if err != nil {
+		if errors.Is(err, ErrTimeout) {
+			return err
+		}
+
+		return fmt.Errorf("applying the URL rewrites of the git config of %s: %w", dest, err)
+	}
+
+	got := strings.TrimSuffix(origin, ".git")
 	want := strings.TrimSuffix(url, ".git")
 
-	if got != want {
+	if got != strings.TrimSuffix(rewritten, ".git") {
 		return fmt.Errorf("%w: got %s, want %s", ErrOriginMismatch, got, want)
 	}
 

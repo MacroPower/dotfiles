@@ -8,7 +8,8 @@
 // git_clone renames the destination to <dest>.corrupt-<timestamp> and
 // clones again. It refuses a destination whose repository has no
 // origin remote, and a destination whose origin remote has a URL
-// other than the url input.
+// other than the url input. It compares the two URLs after git applies
+// the url.<base>.insteadOf rewrites of the git config to each URL.
 // git_fetch, git_pull, and git_push operate on an existing local
 // repository: they resolve its git directory (worktree-aware), take
 // a flock on <gitdir>/mcp-git.lock, resolve the named remote's URL

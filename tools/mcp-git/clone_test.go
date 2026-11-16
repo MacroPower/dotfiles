@@ -756,6 +756,54 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 	}
 }
 
+// aliasPrefix is the URL prefix that the rewrite of [rewriteConfig]
+// replaces.
+const aliasPrefix = "https://example.invalid/"
+
+// aliasURL returns the URL under aliasPrefix that git rewrites to bare
+// when the git config holds the rewrite of [rewriteConfig].
+func aliasURL(bare string) string {
+	return aliasPrefix + filepath.Base(bare)
+}
+
+// rewriteConfig returns git config text with a url.<base>.insteadOf
+// rewrite. The rewrite replaces aliasPrefix in a URL with the
+// directory that holds bare.
+func rewriteConfig(bare string) string {
+	return "[url \"" + filepath.Dir(bare) + "/\"]\n\tinsteadOf = " + aliasPrefix + "\n"
+}
+
+// addRewrite adds the rewrite of [rewriteConfig] to the git config of
+// the repository at dest.
+func addRewrite(t *testing.T, bare, dest string) {
+	t.Helper()
+
+	appendGitConfig(t, dest, rewriteConfig(bare))
+}
+
+// aliasOrigin adds the rewrite of [rewriteConfig] to the git config of
+// the repository at dest. It also stores the URL of [aliasURL] as the
+// URL of origin. git clone stores that URL when the caller clones the
+// alias.
+func aliasOrigin(t *testing.T, bare, dest string) {
+	t.Helper()
+
+	addRewrite(t, bare, dest)
+	runGitCmds(t, [][]string{{"git", "-C", dest, "remote", "set-url", "origin", aliasURL(bare)}})
+}
+
+// setGlobalRewrite points the global git config at a file that holds
+// the rewrite of [rewriteConfig]. It sets an environment variable, so
+// the test must not run in parallel.
+func setGlobalRewrite(t *testing.T, bare string) {
+	t.Helper()
+
+	global := filepath.Join(t.TempDir(), "gitconfig")
+
+	require.NoError(t, os.WriteFile(global, []byte(rewriteConfig(bare)), 0o644))
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+}
+
 func TestCheckOrigin(t *testing.T) {
 	t.Parallel()
 
@@ -773,6 +821,25 @@ func TestCheckOrigin(t *testing.T) {
 		"origin has another URL": {
 			url: func(bare string) string { return bare + "-other" },
 			err: ErrOriginMismatch,
+		},
+		// git clone stores the url input in origin, so a second
+		// git_clone call finds the alias in both places.
+		"alias in the URL and in the origin": {
+			setup: aliasOrigin,
+			url:   aliasURL,
+		},
+		"alias in the URL": {
+			setup: addRewrite,
+			url:   aliasURL,
+		},
+		"alias in the origin": {
+			setup: aliasOrigin,
+			url:   func(bare string) string { return bare },
+		},
+		"alias of another URL": {
+			setup: aliasOrigin,
+			url:   func(bare string) string { return aliasURL(bare + "-other") },
+			err:   ErrOriginMismatch,
 		},
 		"no origin": {
 			setup: func(t *testing.T, _, dest string) {
@@ -808,6 +875,39 @@ func TestCheckOrigin(t *testing.T) {
 	}
 }
 
+// The mismatch error names the URL that git reads for origin, and it
+// names the url input without the rewrites. It names each URL without
+// a trailing ".git" suffix.
+func TestCheckOriginMismatchNamesURLInput(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	dest := initWorkClone(t, bare)
+
+	aliasOrigin(t, bare, dest)
+
+	err := (&handler{}).checkOrigin(t.Context(), aliasPrefix+"other.git", dest)
+	require.ErrorIs(t, err, ErrOriginMismatch)
+
+	want := "origin URL mismatch: got " + strings.TrimSuffix(bare, ".git") + ", want " + aliasPrefix + "other"
+
+	assert.EqualError(t, err, want)
+}
+
+// git rejects an empty URL when checkOrigin applies the rewrites to
+// it. checkOrigin compared no URL then, so the error must not report
+// another URL.
+func TestCheckOriginUnresolvedURL(t *testing.T) {
+	t.Parallel()
+
+	dest := initWorkClone(t, initBareRepo(t))
+
+	err := (&handler{}).checkOrigin(t.Context(), "", dest)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrOriginMismatch)
+	assert.ErrorContains(t, err, "applying the URL rewrites of the git config of "+dest)
+}
+
 // git can open a repository whose config gives the URL of origin no
 // value, but git remote get-url rejects that config. The remote
 // exists, so the error must not report a missing remote or another
@@ -833,14 +933,10 @@ func TestCheckOriginUnreadableRemote(t *testing.T) {
 func TestHandleCloneRefusesRewrittenURL(t *testing.T) { //nolint:paralleltest // t.Setenv
 	bare := initBareRepo(t)
 
-	global := filepath.Join(t.TempDir(), "gitconfig")
-	rewrite := "[url \"" + filepath.Dir(bare) + "/\"]\n\tinsteadOf = https://example.invalid/\n"
-
-	require.NoError(t, os.WriteFile(global, []byte(rewrite), 0o644))
-	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	setGlobalRewrite(t, bare)
 
 	input := CloneInput{
-		URL:  "https://example.invalid/" + filepath.Base(bare),
+		URL:  aliasURL(bare),
 		Dest: filepath.Join(t.TempDir(), "cloned"),
 	}
 
@@ -854,6 +950,35 @@ func TestHandleCloneRefusesRewrittenURL(t *testing.T) { //nolint:paralleltest //
 	result, _, err = (&handler{allowFileURLs: true}).handleClone(t.Context(), nil, input)
 	require.NoError(t, err)
 	require.False(t, result.IsError, resultText(t, result))
+}
+
+// git clone stores the url input as the URL of origin. git applies the
+// rewrite of the global config each time it reads that URL. A second
+// git_clone call with the same inputs must still pull.
+func TestHandleClonePullsRewrittenURL(t *testing.T) { //nolint:paralleltest // t.Setenv
+	bare := initBareRepo(t)
+
+	setGlobalRewrite(t, bare)
+
+	h := &handler{allowFileURLs: true}
+
+	input := CloneInput{
+		URL:  aliasURL(bare),
+		Dest: filepath.Join(t.TempDir(), "cloned"),
+	}
+
+	result, _, err := h.handleClone(t.Context(), nil, input)
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+	assert.Contains(t, resultText(t, result), "Cloned")
+
+	assert.Equal(t, input.URL, gitOut(t, "-C", input.Dest, "config", "--get", "remote.origin.url"),
+		"git clone must store the URL without the rewrite")
+
+	result, _, err = h.handleClone(t.Context(), nil, input)
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+	assert.Contains(t, resultText(t, result), "Pulled")
 }
 
 // A new clone holds the hook files of the template directory, and git
