@@ -340,18 +340,23 @@ session starts with no `current-context` and no sidecar link.
 
 client-go is first-file-wins for both `current-context` and context
 _definitions_, so the guest config (2nd) shadows the sidecar (3rd) on
-a name collision. This is safe because of one invariant the
-implementation holds: **`select` routes by union membership first.** A
-name in `local.yaml` or the guest config takes the local (no-SA) path;
-only a name absent from both takes the external SA path. Given that,
-the _selected_ context name is defined in exactly one effective
-source. Each guest or local selection's name is in the guest config
-and never in the sidecar -- a prior `select` of that name would itself have
-routed local, so `host select` never minted an SA for it. Each external
-selection's name is, by the routing check, absent from the guest
-config, so the sidecar is its only definition. kubectl only resolves
-`current-context`, so merge order never confuses creds for the current
-context; stale entries for other names are inert.
+a name collision. The shadowing is safe because of one invariant that
+the implementation holds: **`select` routes by union membership
+first.** A name in `local.yaml` or the guest config takes the local
+(no-SA) path. Only a name absent from both takes the external SA path.
+
+With that routing, exactly one effective source defines the _selected_
+context name:
+
+- Each guest or local selection's name is in the guest config and never
+  in the sidecar. Every `select` of that name routes local, so
+  `host select` never mints an SA for it.
+- Each external selection's name is, by the routing check, absent from
+  the guest config, so the sidecar is its only definition.
+
+kubectl resolves only `current-context`, so merge order never confuses
+creds for the current context. Stale entries for other names are
+inert.
 
 The union is _required_ for routing, not merely an optimization: a
 guest context's apiserver is unreachable from the macOS host, so the
