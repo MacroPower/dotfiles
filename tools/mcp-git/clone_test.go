@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -128,6 +129,145 @@ func TestAcquireLock(t *testing.T) {
 
 	_, statErr = os.Stat(lockPath)
 	require.ErrorIs(t, statErr, os.ErrNotExist, "lock file should be removed after cleanup")
+}
+
+// lockCall holds what one call of [acquireLock] returns.
+type lockCall struct {
+	release func()
+	err     error
+}
+
+// startAcquireLock calls [acquireLock] for path in a new goroutine.
+// The channel that it returns carries the result of the call when the
+// call returns.
+func startAcquireLock(path string) <-chan lockCall {
+	done := make(chan lockCall, 1)
+
+	go func() {
+		release, err := acquireLock(path)
+
+		done <- lockCall{release: release, err: err}
+	}()
+
+	return done
+}
+
+// requireLockWait fails the test when the call of done returns before
+// the wait ends. The wait also gives the call the time to open the
+// lock file and to block in flock.
+func requireLockWait(t *testing.T, done <-chan lockCall, msg string) {
+	t.Helper()
+
+	select {
+	case <-done:
+		require.FailNow(t, msg)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// requireLock waits for the call of done to take the lock, and it
+// returns the function that releases the lock.
+func requireLock(t *testing.T, done <-chan lockCall, msg string) func() {
+	t.Helper()
+
+	var call lockCall
+
+	select {
+	case call = <-done:
+	case <-time.After(30 * time.Second):
+		require.FailNow(t, msg)
+	}
+
+	require.NoError(t, call.err)
+
+	return call.release
+}
+
+// A call that waits for the lock opened the lock file of the call that
+// holds the lock, and the holder removes that file. A third call then
+// creates a new lock file. The waiting call must therefore take the
+// lock on a file that the path names, so that the third call waits for
+// it.
+func TestAcquireLockAfterWaitingCall(t *testing.T) {
+	t.Parallel()
+
+	dest := filepath.Join(t.TempDir(), "repo")
+
+	releaseFirst, err := acquireLock(dest)
+	require.NoError(t, err)
+
+	second := startAcquireLock(dest)
+	requireLockWait(t, second, "the second call takes the lock that the first call holds")
+
+	releaseFirst()
+
+	releaseSecond := requireLock(t, second, "the second call does not take the lock that the first call released")
+
+	third := startAcquireLock(dest)
+	requireLockWait(t, third, "the third call takes the lock that the second call holds")
+
+	releaseSecond()
+
+	releaseThird := requireLock(t, third, "the third call does not take the lock that the second call released")
+	releaseThird()
+
+	_, statErr := os.Stat(dest + ".lock")
+	require.ErrorIs(t, statErr, os.ErrNotExist, "the last call should remove the lock file")
+}
+
+// Calls for one path hold the lock one at a time. The calls open the
+// lock file, wait for its flock, and remove the file in any order.
+func TestAcquireLockExcludesOverlappingCalls(t *testing.T) {
+	t.Parallel()
+
+	const (
+		callers = 4
+		rounds  = 25
+	)
+
+	dest := filepath.Join(t.TempDir(), "repo")
+	errs := make([]error, callers)
+
+	var (
+		wg       sync.WaitGroup
+		holders  atomic.Int32
+		overlaps atomic.Int32
+	)
+
+	for i := range callers {
+		wg.Go(func() {
+			for range rounds {
+				release, err := acquireLock(dest)
+				if err != nil {
+					errs[i] = err
+
+					return
+				}
+
+				if holders.Add(1) > 1 {
+					overlaps.Add(1)
+				}
+
+				// A second holder takes its lock within this time, so
+				// one of the two holders counts the other.
+				time.Sleep(time.Millisecond)
+
+				holders.Add(-1)
+				release()
+			}
+		})
+	}
+
+	wg.Wait()
+
+	for _, err := range errs {
+		require.NoError(t, err)
+	}
+
+	assert.Zero(t, overlaps.Load(), "two calls held the lock at the same time")
+
+	_, statErr := os.Stat(dest + ".lock")
+	require.ErrorIs(t, statErr, os.ErrNotExist, "the last call should remove the lock file")
 }
 
 func TestCheckDest(t *testing.T) {

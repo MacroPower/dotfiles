@@ -1090,40 +1090,93 @@ func resolveExistingPrefix(path string) string {
 	return filepath.Join(resolveExistingPrefix(dir), base)
 }
 
-// acquireLock takes an exclusive flock on path.lock and returns a cleanup
-// function that releases the lock and removes the file.
+// acquireLock takes an exclusive flock on the file at path.lock, and
+// it creates that file when the path names none. It returns a function
+// that removes the file and releases the lock.
+//
+// A call that waits for the flock opened the file of the call that
+// holds the lock. The holder removes that file when it releases the
+// lock. The waiting call then takes the flock of a file that the path
+// does not name. That flock excludes no later call, because a later
+// call creates a new file at the path and locks the new file.
+// acquireLock therefore compares the file that it locked with the file
+// at the path, and it opens the path again when they differ.
 func acquireLock(path string) (func(), error) {
 	lockPath := path + ".lock"
 
-	lockFile, err := os.Create(lockPath) //nolint:gosec // G301: lock path is derived from validated input.
+	for {
+		lockFile, err := os.Create(lockPath) //nolint:gosec // G301: lock path is derived from validated input.
+		if err != nil {
+			return nil, fmt.Errorf("creating lock file: %w", err)
+		}
+
+		//nolint:gosec // G115: Fd fits in int on all supported platforms.
+		err = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX)
+		if err != nil {
+			closeLockFile(lockFile)
+
+			return nil, fmt.Errorf("acquiring lock: %w", err)
+		}
+
+		current, err := namesFile(lockPath, lockFile)
+		if err != nil {
+			closeLockFile(lockFile)
+
+			return nil, fmt.Errorf("checking lock file: %w", err)
+		}
+
+		if current {
+			return func() { releaseLock(lockPath, lockFile) }, nil
+		}
+
+		closeLockFile(lockFile)
+	}
+}
+
+// releaseLock removes the lock file at lockPath, and then it closes
+// lockFile. The close releases the flock. The removal comes first, so
+// the caller holds the flock for as long as lockPath names the file. A
+// call that waited for the flock then finds that lockPath does not
+// name the file that it locked. It opens the path again, as
+// [acquireLock] describes. With the other order, a waiting call can
+// take the flock and compare the files before the removal. It then
+// holds the flock of a file that the path does not name.
+func releaseLock(lockPath string, lockFile *os.File) {
+	err := os.Remove(lockPath)
 	if err != nil {
-		return nil, fmt.Errorf("creating lock file: %w", err)
+		slog.Warn("removing lock file", slog.Any("error", err))
 	}
 
-	//nolint:gosec // G115: Fd fits in int on all supported platforms.
-	err = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX)
+	closeLockFile(lockFile)
+}
+
+// closeLockFile closes lockFile, and it logs the error of a close that
+// fails.
+func closeLockFile(lockFile *os.File) {
+	err := lockFile.Close()
 	if err != nil {
-		closeErr := lockFile.Close()
-		if closeErr != nil {
-			slog.Warn("closing lock file after flock failure", slog.Any("error", closeErr))
-		}
+		slog.Warn("closing lock file", slog.Any("error", err))
+	}
+}
 
-		return nil, fmt.Errorf("acquiring lock: %w", err)
+// namesFile reports whether path names the open file f. It reports
+// false when path names no file.
+func namesFile(path string, f *os.File) (bool, error) {
+	opened, err := f.Stat()
+	if err != nil {
+		return false, fmt.Errorf("reading open file: %w", err)
 	}
 
-	cleanup := func() {
-		closeErr := lockFile.Close()
-		if closeErr != nil {
-			slog.Warn("closing lock file", slog.Any("error", closeErr))
-		}
-
-		removeErr := os.Remove(lockPath)
-		if removeErr != nil {
-			slog.Warn("removing lock file", slog.Any("error", removeErr))
-		}
+	named, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
 	}
 
-	return cleanup, nil
+	if err != nil {
+		return false, fmt.Errorf("reading file at path: %w", err)
+	}
+
+	return os.SameFile(opened, named), nil
 }
 
 // toolError wraps err as an MCP tool-level error result.
