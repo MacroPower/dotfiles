@@ -60,6 +60,14 @@ func (m *Nix) TwiceChecked() {}
 	// each list the characters that can follow the name in a command.
 	commandEnd = "'\"`;&|()"
 
+	// wordGap matches the text between two words of a dagger command
+	// before its subcommand, as daggerCommandRe reads it. The text holds
+	// spaces, tabs, newlines, and backslashes. It can also hold a
+	// comment that ends in a backslash, with the newline after the
+	// backslash. The shell of Task goes on with the command on the next
+	// line after such a comment.
+	wordGap = `(?:[\s\\]|#[^\n]*\\\n)+`
+
 	// runnableProbeCmds holds entries of the cmds list of a task. Each
 	// command of the entries names a function of taskfileProbeGo that
 	// the command runs. A pattern of [checkTaskfileCommands] that ends a
@@ -75,10 +83,26 @@ func (m *Nix) TwiceChecked() {}
 	// reads the first character of that command into the match of the
 	// command before the & fails the entry.
 	//
-	// The literal block holds a shell comment that names Plain, which
-	// lacks the pragma, so a checker that reads comment lines fails the
-	// probe. Its last command passes a flag to the function after its
-	// name, which a `dagger call` command allows.
+	// The first literal block holds two shell comments that name Plain,
+	// which lacks the pragma, so a checker that reads comment lines
+	// fails the probe. The first comment ends in a backslash, and the
+	// line after it is still a comment. The command of the block passes
+	// a flag to the function after its name, which a `dagger call`
+	// command allows.
+	//
+	// In the other literal blocks, a backslash at the end of a line
+	// splits a command. Two of those blocks split a command between
+	// each two of its words, and the last block splits the name
+	// twice-checked. The shell joins the lines and drops the backslash
+	// and the newline. So a checker that does not join the lines, or
+	// that joins them with a space, fails the probe.
+	//
+	// Another block ends the name plain with a backslash and indents
+	// the next line. It ends with a comment line that names Plain. The
+	// shell reads that indent as a space between plain and the flag,
+	// and it reads the last line as a comment. So a checker that drops
+	// the indent of a joined line fails the probe. A checker that reads
+	// a comment line after the end of a split command fails it too.
 	runnableProbeCmds = "- dagger check nix:checked\n" +
 		"- cmd: dagger check nix:twice-checked\n" +
 		"- dagger call nix plain\n" +
@@ -88,8 +112,27 @@ func (m *Nix) TwiceChecked() {}
 		"- echo \"$(dagger check nix:checked)\" \"$(dagger call nix plain)\"\n" +
 		"- dagger check nix:checked &dagger check nix:twice-checked\n" +
 		"- |\n" +
+		"  # dagger check nix:plain \\\n" +
 		"  # dagger check nix:plain\n" +
-		"  dagger call nix twice-checked --flag"
+		"  dagger call nix twice-checked --flag\n" +
+		"- |\n" +
+		"  dagger \\\n" +
+		"    check \\\n" +
+		"    nix:checked \\\n" +
+		"    && echo ok\n" +
+		"- |\n" +
+		"  dagger \\\n" +
+		"    call \\\n" +
+		"    nix \\\n" +
+		"    plain \\\n" +
+		"    --flag\n" +
+		"- |\n" +
+		"  dagger call nix plain\\\n" +
+		"    --flag\n" +
+		"  # dagger check nix:plain\n" +
+		"- |\n" +
+		"  dagger call nix twice-\\\n" +
+		"  checked"
 )
 
 // taskfileProbe is a probe of [checkTaskfileProbes] that the nix
@@ -98,8 +141,9 @@ type taskfileProbe struct {
 	// cmds holds the YAML of an entry of the cmds list of a task.
 	cmds string
 
-	// command holds a command of cmds as Task runs it. The error of
-	// [checkTaskfileCommands] for cmds must quote the command.
+	// command holds a command of cmds as [checkTaskfileCommands] reads
+	// it. The error of checkTaskfileCommands for cmds must quote the
+	// command.
 	command string
 }
 
@@ -134,13 +178,118 @@ var (
 		// checkCommandRe does not read the alias.
 		{"- dagger checks nix:plain", "dagger checks nix:plain"},
 		// The shell joins a line that ends in a backslash to the next
-		// line. So each of these literal blocks runs one command, which
-		// checkCommandRe does not read.
-		{"- |\n  dagger \\\n    check nix:plain", "dagger \\\n  check nix:plain"},
+		// line. So each of these literal blocks runs one command.
+		{"- |\n  dagger \\\n    check nix:plain", "dagger check nix:plain"},
+		{"- |\n  dagger check nix:checked \\\n  nix:plain", "dagger check nix:checked nix:plain"},
+		{"- |\n  dagger call nix \\\n    missing", "dagger call nix missing"},
+		// The shell also joins the two parts of a word that a backslash
+		// splits. So the first block runs dagger, and the second block
+		// calls plainx.
+		{"- |\n  dag\\\n  ger check nix:plain", "dagger check nix:plain"},
+		{"- |\n  dagger call nix plain\\\n  x", "dagger call nix plainx"},
+		// A comment line ends at its newline, even after a backslash.
+		// So the shell runs the line after the comment.
+		{"- |\n  # note \\\n  dagger check nix:plain", "dagger check nix:plain"},
+		// After a line that ends in a backslash, a line that starts
+		// with # can hold a command. The # can end a word or sit in a
+		// quote that an earlier line opens. In each of these blocks, the
+		// shell reads #y as the end of a word and runs the command after
+		// the semicolon. In the second block, the first two backslashes
+		// are one literal backslash. In the third block, the line before
+		// #y holds a # in a quoted string. That # does not start a
+		// comment, so both shells join the two lines.
 		{
-			"- |\n  dagger \\\n    --progress \\\n    plain \\\n    check nix:plain",
-			"dagger \\\n  --progress \\\n  plain \\\n  check nix:plain",
+			"- |\n  dagger call nix plain --arg=x\\\n  #y; dagger check nix:plain",
+			"dagger check nix:plain",
 		},
+		{
+			"- |\n  dagger call nix plain --arg \\\\\\\n  #y; dagger check nix:plain",
+			"dagger check nix:plain",
+		},
+		{
+			"- |\n  dagger call nix plain --arg=\"#\"x\\\n  #y; dagger check nix:plain",
+			"dagger check nix:plain",
+		},
+		// The # of this block sits in a double-quoted string that the
+		// line before opens, and a space stands before the #. So the
+		// shell reads the # as text and runs the command after the
+		// semicolon.
+		{
+			"- |\n  echo \"a \\\n    #\"; dagger check nix:plain",
+			"dagger check nix:plain",
+		},
+		// After a comment that ends in a backslash, the shell of Task
+		// goes on with the command on the next line. So Task passes
+		// nix:plain to this command as a second pattern.
+		{
+			"- |\n  dagger check nix:checked \\\n  # note \\\n  nix:plain",
+			"dagger check nix:checked # note \\",
+		},
+		// bash ends a command at the newline of a comment, even after
+		// a backslash. So bash runs the second line of this block as
+		// a command.
+		{
+			"- |\n  dagger call nix plain # note \\\n  dagger check nix:plain",
+			"dagger check nix:plain",
+		},
+		// shellText does not join a line that holds a #, and both
+		// shells join the lines of each of these blocks. daggerCommandRe
+		// still finds each command, which neither checkCommandRe nor
+		// callCommandRe reads. The backslash stands before the
+		// subcommand, before a flag, and before the value of a flag.
+		{
+			"- |\n  echo \"a # b\"; dagger \\\n    check nix:plain",
+			"dagger \\\n  check nix:plain",
+		},
+		{
+			"- |\n  echo \"a # b\"; dagger \\\n    --progress plain call nix missing",
+			"dagger \\\n  --progress plain call nix missing",
+		},
+		{
+			"- |\n  echo \"a # b\"; dagger --progress \\\n    plain call nix missing",
+			"dagger --progress \\\n  plain call nix missing",
+		},
+		// After a comment that ends in a backslash, the shell of Task
+		// goes on with the command on the next line. So Task runs each
+		// of these blocks as one dagger command, with the comment
+		// between two words before the subcommand. daggerCommandRe
+		// reads the comment as a gap between the words, and neither
+		// checkCommandRe nor callCommandRe reads a comment.
+		{"- |\n  dagger \\\n    # x \\\n    check nix:plain", "dagger   # x \\\n  check nix:plain"},
+		{"- |\n  dagger # x \\\n  check nix:plain", "dagger # x \\\ncheck nix:plain"},
+		{
+			"- |\n  dagger --progress plain \\\n    # x \\\n    call nix missing",
+			"dagger --progress plain   # x \\\n  call nix missing",
+		},
+		{
+			"- |\n  dagger \\\n    # x \\\n    --progress plain check nix:plain",
+			"dagger   # x \\\n  --progress plain check nix:plain",
+		},
+		{
+			"- |\n  dagger --progress \\\n    # x \\\n    plain check nix:plain",
+			"dagger --progress   # x \\\n  plain check nix:plain",
+		},
+		// The shell reads two backslashes as one literal backslash, so
+		// it runs the second line of this block as a command.
+		{
+			"- |\n  dagger call nix plain --arg \\\\\n  dagger check nix:plain",
+			"dagger check nix:plain",
+		},
+		// In each of these blocks, the literal backslash is a word of
+		// the dagger command, such as the name of a function or a
+		// second pattern. The shell runs the second line as a command
+		// of its own. Neither checkCommandRe nor callCommandRe reads a
+		// backslash between words.
+		{"- |\n  dagger \\\\\n  call nix plain", "dagger \\\\\ncall nix plain"},
+		{"- |\n  dagger call \\\\\n  nix plain", "dagger call \\\\"},
+		{"- |\n  dagger call nix \\\\\n  plain", "dagger call nix \\\\"},
+		{"- |\n  dagger check \\\\\n  nix:checked", "dagger check \\\\"},
+		{"- |\n  dagger check nix:checked \\\\\n  nix:checked", "dagger check nix:checked \\\\"},
+		// A backslash at the end of an entry does not join the next
+		// entry to it. With no newline after it, the backslash is a
+		// literal character, so the last command names no check.
+		{"- dagger call nix plain \\\n- dagger check nix:plain", "dagger check nix:plain"},
+		{"- dagger check nix:checked\\", "dagger check nix:checked\\"},
 		// The shell also runs a second command on the line of a first
 		// command. The second command follows a shell operator, or it
 		// sits in a command substitution.
@@ -184,25 +333,31 @@ var (
 		{"- dagger call nix plain'x'", "dagger call nix plain"},
 	}
 
-	// commentLineRe matches each line whose first character other than
-	// a space or a tab is #. The shell reads such a line of a literal
-	// block scalar as a comment. The YAML decoder drops the comments of
-	// the YAML itself.
-	commentLineRe = regexp.MustCompile(`(?m)^[ \t]*#.*$`)
+	// commentLineRe matches a line whose first character other than a
+	// space or a tab is #. The shell reads such a line of a literal
+	// block scalar as a comment when the line before it does not end
+	// in a backslash. The YAML decoder drops the comments of the YAML
+	// itself.
+	commentLineRe = regexp.MustCompile(`^[ \t]*#`)
 
 	// daggerCommandRe matches each `dagger check` and `dagger call`
 	// command, with any flags of dagger before the subcommand. It also
 	// matches `dagger checks`, which Dagger runs as an alias of
-	// `dagger check`. The shell joins a line that ends in a backslash to
-	// the next line. So between the words before the subcommand, a match
-	// reads a backslash and a newline as a space. A match ends at the
-	// end of its line or at a character of commandEnd. So each command
-	// of a line gets a match of its own.
+	// `dagger check`. [shellText] keeps a backslash and its newline
+	// where it cannot tell whether the shell joins the two lines. So
+	// between the words before the subcommand, a match reads a backslash
+	// and a newline as a space. A command that such a backslash splits
+	// there then still gets a match. Between those words, a match also
+	// reads a comment that ends in a backslash, as wordGap describes. A
+	// match ends at the end of its line or at a character of
+	// commandEnd. So each command of a line gets a match of its own.
 	// [checkTaskfileCommands] fails each match at whose start neither
-	// checkCommandRe nor callCommandRe matches. Neither of them reads the
-	// alias or a backslash between words.
+	// checkCommandRe nor callCommandRe matches. Neither of them reads
+	// the alias, or a backslash or a comment between two words that it
+	// matches.
 	daggerCommandRe = regexp.MustCompile(
-		`\bdagger(?:[\s\\]+-\S+(?:[\s\\]+[^\s-]\S*)?)*[\s\\]+(?:checks?|call)\b[^\n` + commandEnd + `]*`,
+		`\bdagger(?:` + wordGap + `-\S+(?:` + wordGap + `[^\s-]\S*)?)*` + wordGap +
+			`(?:checks?|call)\b[^\n` + commandEnd + `]*`,
 	)
 
 	// checkCommandRe matches a command that selects one check of the nix
@@ -262,10 +417,42 @@ var (
 // as YAML, which joins the lines of each plain or folded scalar. Then it
 // reads every string of the result, such as the desc of a task. A
 // command ends at the end of its line or at a shell operator, such as
-// && or a pipe. The test skips each line that starts with # after any
-// spaces and tabs, because the shell reads such a line as a comment. It
-// reads the Taskfile and the Go files of the root module of the nix
-// toolchain from the default source of [Nix].
+// && or a pipe. The test reads the Taskfile and the Go files of the
+// root module of the nix toolchain from the default source of [Nix].
+//
+// The shell joins a line that ends in a backslash to the next line, so
+// a backslash can split a command at any place. The test joins those
+// lines with [shellText] before it reads a command. So a split command
+// passes or fails as the command that the shell runs.
+//
+// The test skips each line that starts with # after any spaces and
+// tabs, because the shell reads such a line as a comment. It reads
+// such a line as part of a command when the line before it ends in a
+// backslash. The # of that line can then end a word or sit in a quote
+// that an earlier line opens. The test cannot tell either case from a
+// comment. So the test can fail a wrong dagger command in a comment
+// that starts such a line, though the shell does not run that command.
+//
+// The test reads no command in such a comment when each of these
+// conditions holds:
+//
+//   - The test joins the comment to the line before it. It does not
+//     join the two lines when the line before holds a # or ends in two
+//     backslashes.
+//   - A dagger command comes before the comment on the joined line.
+//   - No shell operator, quote, or backtick stands between that dagger
+//     command and the dagger command in the comment.
+//
+// The test then reads the earlier command up to the end of the line,
+// comment included.
+//
+// The test does not join a line that holds a # to the next line,
+// because it cannot tell whether a comment ends that line. It reads
+// the next line as the start of a command, and the backslash stays in
+// the command of the line with the #. The test fails a `dagger check`
+// command with such a backslash. It also fails a `dagger call` command
+// when such a backslash comes before the space or the shell operator
+// that follows the name of the function.
 //
 // Before it reads the Taskfile, the test runs [checkTaskfileProbes] on
 // fixed probe commands. That self-check fails when the test passes a
@@ -274,8 +461,9 @@ var (
 // error, so it cannot show that fault. The probes include commands that
 // YAML joins onto one line and commands that share a line with another
 // command. They also include commands that go on after a quote, a
-// backtick, or &>. The self-check also fails when the test fails a
-// right command or misreads a name of two words.
+// backtick, or &>, and commands that a backslash splits. The self-check
+// also fails when the test fails a right command or misreads a name of
+// two words.
 //
 // +check
 func (m *Tests) TestTaskfileCommands(ctx context.Context) error {
@@ -316,9 +504,9 @@ func (m *Tests) TestTaskfileCommands(ctx context.Context) error {
 // checkTaskfileCommands returns an error that names each dagger command
 // of taskfile that the nix toolchain cannot run as written. goFiles maps
 // the path of each Go file of the root module of the toolchain to its
-// contents. The function reads the strings that [taskfileText] returns
-// for taskfile, and it skips each line that commentLineRe matches. It
-// finds each command with daggerCommandRe. Then it matches
+// contents. The function reads the text that [taskfileText] returns for
+// taskfile, which holds each string of taskfile as the shell reads its
+// lines. It finds each command with daggerCommandRe. Then it matches
 // checkCommandRe and callCommandRe at the start of each command, not
 // across the whole text. A match of checkCommandRe that ends at & holds
 // the first character of the next command. So a scan of the whole text
@@ -340,8 +528,6 @@ func checkTaskfileCommands(taskfile string, goFiles map[string]string) error {
 	if err != nil {
 		return err
 	}
-
-	text = commentLineRe.ReplaceAllString(text, "")
 
 	commands := daggerCommandRe.FindAllStringIndex(text, -1)
 	if len(commands) == 0 {
@@ -403,6 +589,11 @@ func checkTaskfileCommands(taskfile string, goFiles map[string]string) error {
 // task name. YAML joins the lines of a plain or a folded scalar, so
 // each string holds a command as Task runs it. The function skips each
 // alias, because it reads the node of the alias at its anchor.
+//
+// The function passes each string through [shellText] before it joins
+// the strings. Task runs each command of the Taskfile as a script of
+// its own. So a backslash at the end of one string does not join the
+// next string to it.
 func taskfileText(taskfile string) (string, error) {
 	var root yaml.Node
 
@@ -411,7 +602,71 @@ func taskfileText(taskfile string) (string, error) {
 		return "", fmt.Errorf("decoding the Taskfile: %w", err)
 	}
 
-	return strings.Join(scalarValues(&root), "\n"), nil
+	scripts := scalarValues(&root)
+	for i, script := range scripts {
+		scripts[i] = shellText(script)
+	}
+
+	return strings.Join(scripts, "\n"), nil
+}
+
+// shellText returns script, a string of the Taskfile, as the shell
+// reads its lines. The shell joins a line that ends in a backslash to
+// the next line, and it drops the backslash and the newline. So
+// shellText drops them too, at any place in a command, which includes
+// the middle of a word. It keeps a backslash that no newline follows,
+// which the shell reads as a literal character at the end of script.
+//
+// The shell reads a line that commentLineRe matches as a comment, and
+// the comment ends at its newline, even after a backslash. So shellText
+// drops each such line. It keeps the line when the line before it ends
+// in a backslash. The # of that line can then end a word, as the shell
+// reads x\ on one line and #y on the next line as the word x#y. The #
+// can also sit in a quoted string that an earlier line opens.
+// shellText cannot tell either case from a comment, so it reads the
+// line as command text. [checkTaskfileCommands] can then fail a wrong
+// dagger command in a comment on such a line, though the shell does not
+// run that command.
+//
+// shellText keeps a backslash and its newline in each of these cases.
+//
+//   - A second backslash stands right before the backslash. The shell
+//     reads two backslashes as one literal backslash, so the line ends
+//     at its newline. shellText does not count the backslashes. So it
+//     also keeps the two lines apart after three backslashes, where
+//     the shell goes on with the command.
+//   - The line holds a #. A # can start a comment that ends in the
+//     backslash. bash ends the command at the newline of such a
+//     comment. The shell of Task, mvdan.cc/sh, goes on with the
+//     command on the next line. When the # is part of a word, both
+//     shells join the two lines. shellText cannot tell which case
+//     holds.
+//
+// [checkTaskfileCommands] reads the line after a kept backslash as the
+// start of a command, and the backslash stays in the command before it.
+// That reading hides a command from daggerCommandRe when the kept
+// backslash of a line that holds a # splits the word dagger or the
+// subcommand, as in dag\ and ger on two lines.
+func shellText(script string) string {
+	var text strings.Builder
+
+	// continued reports whether the line before ends in a backslash.
+	continued := false
+
+	for line := range strings.SplitAfterSeq(script, "\n") {
+		if !continued && commentLineRe.MatchString(line) {
+			continue
+		}
+
+		continued = strings.HasSuffix(line, "\\\n")
+		if continued && !strings.HasSuffix(line, "\\\\\n") && !strings.Contains(line, "#") {
+			line = strings.TrimSuffix(line, "\\\n")
+		}
+
+		text.WriteString(line)
+	}
+
+	return text.String()
 }
 
 // scalarValues returns the value of each scalar of the YAML tree at
