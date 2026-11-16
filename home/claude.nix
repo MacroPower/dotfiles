@@ -264,6 +264,34 @@ let
           read, such as `git remote`.
         '';
       };
+      onlyRemoteURL = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Whether the rule matches only a call that names a remote URL
+          after `args`. A remote URL is a word with a `:` before its
+          first `/`, such as `https://host/repo` or `git@host:repo`. A
+          `file://` URL is not a remote URL, and neither is an option.
+          Only the text before the first expansion of a word counts, so
+          `"$url"` is not a remote URL. Set the option for a command
+          that always names its repository, such as `git clone`. A
+          call between local paths then runs.
+        '';
+      };
+      exceptLocalPath = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Whether a call that names a local path after `args` is
+          exempt. A local path is a word that starts with `/`, `./`,
+          `../`, `~`, or `file://`, or the word `.` or `..`. Only the
+          text before the first expansion of a word counts, so
+          `"$dir/repo"` is not a local path. Set the option for a
+          command that reads a plain word as the name of a remote, such
+          as `git fetch`. A call that names a local repository by its
+          path then runs.
+        '';
+      };
       reason = mkOption {
         type = types.nonEmptyStr;
         description = "Message shown when the rule denies a command or asks for confirmation.";
@@ -3362,24 +3390,39 @@ in
           }
         ];
         sandbox.allowWrite = [ cloneRoot ];
-        # Mirrored by canonicalRules in
-        # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go;
-        # update together.
+        # mcp-git refuses a repository on the local file system as the
+        # source of a clone and as the remote of a fetch or a pull. The
+        # rules for those three commands therefore leave a call that
+        # reads such a repository to Bash. A clone always names its
+        # source, so the clone rule matches only a call that names a
+        # remote URL. A fetch or a pull that names no repository
+        # reaches the default remote, and a plain word names a remote.
+        # The fetch rule and the pull rule therefore exempt only a call
+        # that names a local path. Each of the two reasons tells the
+        # agent to name that path.
+        #
+        # canonicalRules mirrors these rules in
+        # `tools/hook-router/helpers_test.go` and in
+        # `tools/hook-router/cmdrules/cmdrules_test.go`, so update the
+        # three lists together.
         commandRules.deny = [
           {
             command = "git";
             args = [ "clone" ];
-            reason = "Direct git clone usage is blocked. Use mcp__git__git_clone instead.";
+            onlyRemoteURL = true;
+            reason = "Direct git clone of a remote URL is blocked. Use mcp__git__git_clone instead. A clone from a local path runs in Bash.";
           }
           {
             command = "git";
             args = [ "fetch" ];
-            reason = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead.";
+            exceptLocalPath = true;
+            reason = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git fetch ../other main`.";
           }
           {
             command = "git";
             args = [ "pull" ];
-            reason = "Direct git pull usage is blocked. Use mcp__git__git_pull instead.";
+            exceptLocalPath = true;
+            reason = "Direct git pull usage is blocked. Use mcp__git__git_pull instead. That tool refuses a remote on the local file system. Pull from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git pull ../other main`.";
           }
           {
             command = "git";

@@ -23,9 +23,9 @@ const testPID = "12345"
 // assert against the same decisions production emits.
 const (
 	stashDeniedReason        = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
-	cloneDeniedReason        = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
-	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead."
-	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead."
+	cloneDeniedReason        = "Direct git clone of a remote URL is blocked. Use mcp__git__git_clone instead. A clone from a local path runs in Bash."
+	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git fetch ../other main`."
+	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead. That tool refuses a remote on the local file system. Pull from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git pull ../other main`."
 	pushDeniedReason         = "Direct git push usage is blocked. Use mcp__git__git_push instead."
 	remoteUpdateDeniedReason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead."
 	kubectxReason            = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
@@ -42,19 +42,22 @@ const (
 func canonicalRules() *cmdrules.Engine {
 	return cmdrules.New([]cmdrules.Rule{
 		{
-			Command: "git",
-			Args:    []string{"clone"},
-			Reason:  cloneDeniedReason,
+			Command:       "git",
+			Args:          []string{"clone"},
+			OnlyRemoteURL: true,
+			Reason:        cloneDeniedReason,
 		},
 		{
-			Command: "git",
-			Args:    []string{"fetch"},
-			Reason:  fetchDeniedReason,
+			Command:         "git",
+			Args:            []string{"fetch"},
+			ExceptLocalPath: true,
+			Reason:          fetchDeniedReason,
 		},
 		{
-			Command: "git",
-			Args:    []string{"pull"},
-			Reason:  pullDeniedReason,
+			Command:         "git",
+			Args:            []string{"pull"},
+			ExceptLocalPath: true,
+			Reason:          pullDeniedReason,
 		},
 		{
 			Command: "git",

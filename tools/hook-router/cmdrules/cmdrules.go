@@ -3,6 +3,7 @@ package cmdrules
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -47,13 +48,40 @@ const (
 // [gitFlagsTakingValue]. The value is skipped whether it is a literal,
 // quoted, or expanded word, so `git -C "$dir" clone` matches a clone
 // rule. Other commands match strictly from position 1.
+//
+// OnlyRemoteURL and ExceptLocalPath serve a rule that sends a command
+// to a tool for remote repositories. With them, the rule leaves alone
+// a call that reads only the local file system. Both fields read each
+// word of the call after Args.
+//
+// With OnlyRemoteURL, the rule matches only when one of those words is
+// a remote URL. A remote URL is a word with a `:` before its first
+// `/`, such as https://host/repo or git@host:repo. A file:// URL is
+// not a remote URL. Set OnlyRemoteURL for a command that always names
+// its repository, such as `git clone`. That command reads a repository
+// that is not a remote URL as a local path.
+//
+// ExceptLocalPath exempts a call when one of those words is a local
+// path. A local path is a word that starts with `/`, `./`, `../`, `~`,
+// or file://, or the word `.` or `..`. Set ExceptLocalPath for a
+// command that reads a plain word as the name of a remote, such as
+// `git fetch`. A call of that command that names no repository reaches
+// a default remote, so only a path shows that the call reads a local
+// repository.
+//
+// A word that starts with `-` is an option, and it is neither a remote
+// URL nor a local path. In a word that holds an expansion, only the
+// text before the first expansion counts. "$url" is therefore not a
+// remote URL, and "$dir/repo" is not a local path.
 type Rule struct {
-	Command    string   `json:"command"`
-	Args       []string `json:"args,omitempty"`
-	Except     []string `json:"except,omitempty"`
-	ExceptBare bool     `json:"exceptBare,omitempty"`
-	Action     string   `json:"action,omitempty"`
-	Reason     string   `json:"reason"`
+	Command         string   `json:"command"`
+	Args            []string `json:"args,omitempty"`
+	Except          []string `json:"except,omitempty"`
+	ExceptBare      bool     `json:"exceptBare,omitempty"`
+	OnlyRemoteURL   bool     `json:"onlyRemoteURL,omitempty"`
+	ExceptLocalPath bool     `json:"exceptLocalPath,omitempty"`
+	Action          string   `json:"action,omitempty"`
+	Reason          string   `json:"reason"`
 }
 
 // Ask reports whether the rule resolves to an "ask" decision rather
@@ -217,32 +245,161 @@ func matchRule(call *syntax.CallExpr, rule Rule) bool {
 		return false
 	}
 
-	if len(rule.Except) == 0 {
-		return true
-	}
-
 	// idx points at the slot after the last args literal
-	// (idx == len(call.Args)-1 means we exhausted the call). Bare
-	// `command + args` (no further args) ignores Except by default,
-	// since a bare `git stash` is still a save form; ExceptBare
-	// exempts it for groups whose bare form is a read.
-	candidateIdx := idx + 1
-	if candidateIdx >= len(call.Args) {
-		return !rule.ExceptBare
+	// (idx == len(call.Args)-1 means we exhausted the call), so rest
+	// holds every word after Args.
+	rest := call.Args[idx+1:]
+
+	if excepted(rest, rule) {
+		return false
 	}
 
-	cand := call.Args[candidateIdx]
-	if len(cand.Parts) != 1 {
+	if !rule.OnlyRemoteURL && !rule.ExceptLocalPath {
 		return true
+	}
+
+	var remoteURL, localPath bool
+
+	for _, word := range rest {
+		switch classify(word) {
+		case wordRemoteURL:
+			remoteURL = true
+		case wordLocalPath:
+			localPath = true
+		case wordOther:
+		}
+	}
+
+	if rule.OnlyRemoteURL && !remoteURL {
+		return false
+	}
+
+	return !rule.ExceptLocalPath || !localPath
+}
+
+// excepted reports whether [Rule.Except] exempts a call from rule.
+// rest holds the words of the call after [Rule.Args], and its first
+// word is the Except candidate. A bare `command + args` call has no
+// candidate. Except does not exempt that call, because a bare
+// `git stash` is still a save form. [Rule.ExceptBare] exempts it for
+// groups whose bare form is a read.
+func excepted(rest []*syntax.Word, rule Rule) bool {
+	if len(rule.Except) == 0 {
+		return false
+	}
+
+	if len(rest) == 0 {
+		return rule.ExceptBare
+	}
+
+	cand := rest[0]
+	if len(cand.Parts) != 1 {
+		return false
 	}
 
 	candLit, ok := cand.Parts[0].(*syntax.Lit)
 	if !ok {
-		return true
+		return false
 	}
 
-	for _, exempt := range rule.Except {
-		if candLit.Value == exempt {
+	return slices.Contains(rule.Except, candLit.Value)
+}
+
+// wordKind tells how [classify] reads a word of a call.
+type wordKind int
+
+const (
+	// wordOther is a word that is neither a remote URL nor a local
+	// path, such as an option, a plain name, or a word that starts
+	// with an expansion.
+	wordOther wordKind = iota
+	// wordRemoteURL is a word that names a repository on another
+	// host.
+	wordRemoteURL
+	// wordLocalPath is a word that names a path on the local file
+	// system.
+	wordLocalPath
+)
+
+// classify tells whether word is a remote URL, a local path, or
+// neither, for [Rule.OnlyRemoteURL] and [Rule.ExceptLocalPath]. It
+// reads the text of [literalStart], and it applies the first of these
+// rules that fits:
+//
+//   - A word that starts with `-` is an option, and it is neither.
+//   - A word that starts with file:// is a local path.
+//   - A word with a `:` before its first `/` is a remote URL. git reads
+//     such a word as a URL with a scheme, such as https://host/repo, or
+//     as the SCP-style host:repo.
+//   - A word that starts with `/`, `./`, `../`, or `~` is a local
+//     path, and so are the words `.` and `..`.
+//
+// Every other word is neither. A plain name such as origin or repo.git
+// is one of them. git reads such a name as a path in one command and
+// as the name of a remote in another. A word that starts with an
+// expansion, such as "$url" or "$dir/repo", is neither as well,
+// because classify cannot read the value of the expansion.
+//
+// classify knows no option of a command. It therefore reads an option
+// value that stands in a word of its own like every other word.
+func classify(word *syntax.Word) wordKind {
+	text, whole := literalStart(word)
+
+	switch {
+	case strings.HasPrefix(text, "-"):
+		return wordOther
+	case strings.HasPrefix(text, "file://"):
+		return wordLocalPath
+	}
+
+	colon := strings.IndexByte(text, ':')
+	slash := strings.IndexByte(text, '/')
+
+	if colon >= 0 && (slash < 0 || colon < slash) {
+		return wordRemoteURL
+	}
+
+	for _, prefix := range []string{"/", "./", "../", "~"} {
+		if strings.HasPrefix(text, prefix) {
+			return wordLocalPath
+		}
+	}
+
+	if whole && (text == "." || text == "..") {
+		return wordLocalPath
+	}
+
+	return wordOther
+}
+
+// literalStart returns the text of word before its first expansion,
+// and it reports whether that text is the whole word. It reads through
+// quotes. For "https://host/$repo", it returns https://host/ and
+// false. An expansion is every part of a word that is not literal
+// text, such as a parameter expansion or a command substitution.
+func literalStart(word *syntax.Word) (string, bool) {
+	var b strings.Builder
+
+	whole := writeLiteral(&b, word.Parts)
+
+	return b.String(), whole
+}
+
+// writeLiteral writes to b the literal text of parts before the first
+// expansion, and it reports whether parts holds no expansion.
+func writeLiteral(b *strings.Builder, parts []syntax.WordPart) bool {
+	for _, part := range parts {
+		switch p := part.(type) {
+		case *syntax.Lit:
+			b.WriteString(p.Value)
+		case *syntax.SglQuoted:
+			b.WriteString(p.Value)
+		case *syntax.DblQuoted:
+			if !writeLiteral(b, p.Parts) {
+				return false
+			}
+
+		default:
 			return false
 		}
 	}

@@ -159,6 +159,76 @@ func TestHandleBashAutoAllow(t *testing.T) {
 		assert.Equal(t, fetchDeniedReason, hso["permissionDecisionReason"])
 	})
 
+	t.Run("autoAllow=true, git clone of a remote URL: deny redirects to the MCP tool", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: canonicalRules(),
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(
+			bashInput(t, "git clone --depth 1 https://example.com/repo.git /tmp/dst", nil),
+			&stdout,
+			cfg,
+			logger,
+		)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Equal(t, cloneDeniedReason, hso["permissionDecisionReason"])
+	})
+
+	// mcp-git refuses a repository on the local file system, so the
+	// deny rules of the git bundle leave these commands to Bash.
+	local := map[string]struct {
+		command string
+	}{
+		"git clone between local directories": {
+			command: `git init -q --bare "$S/bare.git" && git clone -q "$S/bare.git" "$S/work"`,
+		},
+		"git clone between relative names": {
+			command: "git clone -q bare.git a",
+		},
+		"git fetch from a local path": {
+			command: "git init -q work && git -C work fetch ../bare.git main",
+		},
+		"git pull from a local path": {
+			command: "git pull -q /tmp/scratch/bare.git main",
+		},
+	}
+
+	for name, tc := range local {
+		t.Run("autoAllow=true, "+name+": falls through to auto-allow", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config{
+				commandRules: canonicalRules(),
+				autoAllow:    true,
+			}
+
+			var stdout bytes.Buffer
+
+			err := handleBash(bashInput(t, tc.command, nil), &stdout, cfg, logger)
+			require.NoError(t, err)
+
+			var result map[string]any
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+			hso, ok := result["hookSpecificOutput"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "allow", hso["permissionDecision"])
+			assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+		})
+	}
+
 	t.Run("autoAllow=true, ask match: ask emitted instead of auto-allow", func(t *testing.T) {
 		t.Parallel()
 

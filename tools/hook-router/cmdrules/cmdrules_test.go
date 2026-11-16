@@ -24,9 +24,9 @@ func mustParse(t *testing.T, command string) *syntax.File {
 
 const (
 	stashDeniedReason        = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
-	cloneDeniedReason        = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
-	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead."
-	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead."
+	cloneDeniedReason        = "Direct git clone of a remote URL is blocked. Use mcp__git__git_clone instead. A clone from a local path runs in Bash."
+	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git fetch ../other main`."
+	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead. That tool refuses a remote on the local file system. Pull from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git pull ../other main`."
 	pushDeniedReason         = "Direct git push usage is blocked. Use mcp__git__git_push instead."
 	remoteUpdateDeniedReason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead."
 	kubectxReason            = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
@@ -44,19 +44,22 @@ const (
 func canonicalRules() *cmdrules.Engine {
 	return cmdrules.New([]cmdrules.Rule{
 		{
-			Command: "git",
-			Args:    []string{"clone"},
-			Reason:  cloneDeniedReason,
+			Command:       "git",
+			Args:          []string{"clone"},
+			OnlyRemoteURL: true,
+			Reason:        cloneDeniedReason,
 		},
 		{
-			Command: "git",
-			Args:    []string{"fetch"},
-			Reason:  fetchDeniedReason,
+			Command:         "git",
+			Args:            []string{"fetch"},
+			ExceptLocalPath: true,
+			Reason:          fetchDeniedReason,
 		},
 		{
-			Command: "git",
-			Args:    []string{"pull"},
-			Reason:  pullDeniedReason,
+			Command:         "git",
+			Args:            []string{"pull"},
+			ExceptLocalPath: true,
+			Reason:          pullDeniedReason,
 		},
 		{
 			Command: "git",
@@ -149,6 +152,18 @@ func TestParseCommandRules(t *testing.T) {
 					Action:     "ask",
 					Reason:     "r",
 				},
+			},
+		},
+		"onlyRemoteURL round-trips": {
+			in: `[{"command":"git","args":["clone"],"onlyRemoteURL":true,"reason":"r"}]`,
+			want: []cmdrules.Rule{
+				{Command: "git", Args: []string{"clone"}, OnlyRemoteURL: true, Reason: "r"},
+			},
+		},
+		"exceptLocalPath round-trips": {
+			in: `[{"command":"git","args":["fetch"],"exceptLocalPath":true,"reason":"r"}]`,
+			want: []cmdrules.Rule{
+				{Command: "git", Args: []string{"fetch"}, ExceptLocalPath: true, Reason: "r"},
 			},
 		},
 		"unknown action returns error": {
@@ -354,6 +369,42 @@ func TestCommandRulesCheck_GitClone(t *testing.T) {
 			input: `git -c "k=v" clone https://example.com/repo.git`,
 			want:  cloneDeniedReason,
 		},
+		"git clone ssh url": {
+			input: "git clone ssh://git@example.com/org/repo.git",
+			want:  cloneDeniedReason,
+		},
+		"git clone scp-style url": {
+			input: "git clone git@example.com:org/repo.git",
+			want:  cloneDeniedReason,
+		},
+		"git clone host alias": {
+			input: "git clone gh:org/repo dst",
+			want:  cloneDeniedReason,
+		},
+		"git clone double-quoted url": {
+			input: `git clone "https://example.com/repo.git" dst`,
+			want:  cloneDeniedReason,
+		},
+		"git clone single-quoted url": {
+			input: "git clone 'https://example.com/repo.git' dst",
+			want:  cloneDeniedReason,
+		},
+		"git clone url with expansions after the host": {
+			input: `git clone "https://example.com/$org/$repo.git"`,
+			want:  cloneDeniedReason,
+		},
+		"git clone url with a token expansion": {
+			input: `git clone "https://x-access-token:${TOKEN}@example.com/org/repo.git"`,
+			want:  cloneDeniedReason,
+		},
+		"git clone url after option values": {
+			input: "git clone --branch main --depth 1 https://example.com/repo.git dst",
+			want:  cloneDeniedReason,
+		},
+		"git clone url with a local reference": {
+			input: "git clone --reference /tmp/ref https://example.com/repo.git",
+			want:  cloneDeniedReason,
+		},
 		"no match: git status": {
 			input: "git status",
 		},
@@ -371,6 +422,52 @@ func TestCommandRulesCheck_GitClone(t *testing.T) {
 		},
 		"no match: git -C dir status": {
 			input: "git -C /tmp status",
+		},
+		// A clone that names no remote URL reads a local repository.
+		"no match: clone between relative names": {
+			input: "git clone -q bare.git a",
+		},
+		"no match: clone between absolute paths": {
+			input: "git clone /tmp/scratch/bare.git /tmp/scratch/work",
+		},
+		"no match: clone from a dot path": {
+			input: "git clone ./bare.git work",
+		},
+		"no match: clone from a parent path": {
+			input: "git clone ../bare.git",
+		},
+		"no match: clone from a home path": {
+			input: "git clone ~/src/repo /tmp/scratch/work",
+		},
+		"no match: clone from a file url": {
+			input: "git clone file:///tmp/scratch/bare.git work",
+		},
+		"no match: clone from a file url with an expansion": {
+			input: `git clone "file://$S/bare.git" work`,
+		},
+		"no match: clone from a path with a colon after a slash": {
+			input: "git clone ./a:b work",
+		},
+		"no match: clone between quoted variable paths": {
+			input: `git clone -q "$S/bare.git" "$S/work"`,
+		},
+		"no match: clone from a variable": {
+			input: `git clone "$src" "$dst"`,
+		},
+		"no match: init then clone": {
+			input: `git init -q --bare "$S/bare.git" && git clone -q "$S/bare.git" "$S/work"`,
+		},
+		"no match: git -C dir clone between relative names": {
+			input: "git -C /tmp/scratch clone bare.git work",
+		},
+		"no match: local clone with option values": {
+			input: "git clone --bare --branch main --depth 1 file:///tmp/scratch/a b",
+		},
+		"no match: local clone with attached option values": {
+			input: "git clone --filter=blob:none --config=core.sshCommand=ssh:x ./a b",
+		},
+		"no match: git clone without a repository": {
+			input: "git clone",
 		},
 	}
 
@@ -422,8 +519,62 @@ func TestCommandRulesCheck_GitRemoteOps(t *testing.T) {
 			input: "cd x && git fetch -q | tail -2",
 			want:  fetchDeniedReason,
 		},
+		"git fetch from a named remote with a branch": {
+			input: "git fetch upstream main",
+			want:  fetchDeniedReason,
+		},
+		// git reads a plain name as the name of a remote. It reads the
+		// name as a path only when the repository has no such remote.
+		"git fetch from a plain name": {
+			input: "git fetch bare.git",
+			want:  fetchDeniedReason,
+		},
+		"git fetch a branch with a slash": {
+			input: "git fetch origin feature/topic",
+			want:  fetchDeniedReason,
+		},
+		"git fetch with a refspec": {
+			input: "git fetch origin refs/heads/main:refs/remotes/origin/main",
+			want:  fetchDeniedReason,
+		},
+		"git fetch from a url": {
+			input: "git fetch https://example.com/repo.git main",
+			want:  fetchDeniedReason,
+		},
+		"git fetch from a variable": {
+			input: `git fetch "$remote" main`,
+			want:  fetchDeniedReason,
+		},
+		// Only the text before the first expansion counts, and the
+		// variable can hold a URL.
+		"git fetch from a path that starts with a variable": {
+			input: `git fetch "$S/bare.git" main`,
+			want:  fetchDeniedReason,
+		},
+		"git fetch a branch that starts with a variable": {
+			input: `git fetch origin "$USER/topic"`,
+			want:  fetchDeniedReason,
+		},
+		"git fetch all": {
+			input: "git fetch --all --prune",
+			want:  fetchDeniedReason,
+		},
+		// The path of -C names the repository that fetches, not the
+		// repository that it fetches from.
+		"git -C relative dir fetch": {
+			input: "git -C ../other fetch",
+			want:  fetchDeniedReason,
+		},
 		"git pull": {
 			input: "git pull --rebase",
+			want:  pullDeniedReason,
+		},
+		"git pull without arguments": {
+			input: "git pull",
+			want:  pullDeniedReason,
+		},
+		"git pull from a named remote": {
+			input: "git pull --rebase origin main",
 			want:  pullDeniedReason,
 		},
 		"git push": {
@@ -434,9 +585,52 @@ func TestCommandRulesCheck_GitRemoteOps(t *testing.T) {
 			input: "git push --force-with-lease",
 			want:  pushDeniedReason,
 		},
+		// The push rule sets no ExceptLocalPath.
+		"git push to a local path": {
+			input: "git push ../bare.git main",
+			want:  pushDeniedReason,
+		},
 		"git remote update": {
 			input: "git remote update",
 			want:  remoteUpdateDeniedReason,
+		},
+		// A fetch or a pull that names a local path reads a local
+		// repository.
+		"no match: fetch from a parent path": {
+			input: "git fetch ../bare.git main",
+		},
+		"no match: fetch from an absolute path": {
+			input: "git fetch /tmp/scratch/bare.git",
+		},
+		"no match: fetch from a dot path with a refspec": {
+			input: "git fetch -q ./bare.git main:main",
+		},
+		"no match: fetch from a file url": {
+			input: "git fetch file:///tmp/scratch/bare.git main",
+		},
+		"no match: fetch from the repository itself": {
+			input: "git fetch . main:topic",
+		},
+		"no match: fetch from a home path": {
+			input: "git fetch ~/src/repo main",
+		},
+		"no match: fetch from a path with an expansion": {
+			input: `git fetch "/tmp/scratch/$name" main`,
+		},
+		"no match: fetch from a path after an option value": {
+			input: "git fetch --depth 1 ../bare.git",
+		},
+		"no match: pull from a parent path": {
+			input: "git pull ../bare.git main",
+		},
+		"no match: pull from an absolute path with flags": {
+			input: "git pull -q --ff-only /tmp/scratch/bare.git main",
+		},
+		"no match: pull a branch of the repository itself": {
+			input: "git pull . topic",
+		},
+		"no match: git -C dir pull from a parent path": {
+			input: "git -C /tmp/scratch/work pull ../bare.git main",
 		},
 		// The remote deny carries two positionals, so the local-only
 		// git remote leaves fall through.
@@ -578,6 +772,243 @@ func TestCommandRulesCheck_ExceptBare(t *testing.T) {
 			if matched {
 				assert.Equal(t, tt.want, got)
 				assert.True(t, rule.Ask())
+			}
+		})
+	}
+}
+
+// TestCommandRulesCheck_RemoteURLAndLocalPath pins how OnlyRemoteURL
+// and ExceptLocalPath read the words after the args of a rule. The
+// test builds its own engine, so each case names the word that
+// decides it and no git option stands in the way.
+func TestCommandRulesCheck_RemoteURLAndLocalPath(t *testing.T) {
+	t.Parallel()
+
+	const (
+		remoteReason = "the call names a remote URL"
+		pathReason   = "the call names no local path"
+		bothReason   = "the call names a remote URL and no local path"
+		exceptReason = "the call names a remote URL after no exempt word"
+	)
+
+	rules := cmdrules.New([]cmdrules.Rule{
+		{Command: "sync", Args: []string{"copy"}, OnlyRemoteURL: true, Reason: remoteReason},
+		{Command: "sync", Args: []string{"read"}, ExceptLocalPath: true, Reason: pathReason},
+		{
+			Command:         "sync",
+			Args:            []string{"both"},
+			OnlyRemoteURL:   true,
+			ExceptLocalPath: true,
+			Reason:          bothReason,
+		},
+		{
+			Command:       "sync",
+			Args:          []string{"group"},
+			Except:        []string{"list"},
+			OnlyRemoteURL: true,
+			Reason:        exceptReason,
+		},
+	})
+
+	tests := map[string]struct {
+		input string
+		want  string
+	}{
+		"remote url: scheme": {
+			input: "sync copy https://example.com/x",
+			want:  remoteReason,
+		},
+		"remote url: host and path": {
+			input: "sync copy example.com:x/y",
+			want:  remoteReason,
+		},
+		"remote url: user, host, and path": {
+			input: "sync copy user@example.com:x",
+			want:  remoteReason,
+		},
+		"remote url: colon without a slash": {
+			input: "sync copy host:x",
+			want:  remoteReason,
+		},
+		"remote url: after other words": {
+			input: "sync copy --fast name ./dir https://example.com/x",
+			want:  remoteReason,
+		},
+		"remote url: single quotes": {
+			input: "sync copy 'https://example.com/x'",
+			want:  remoteReason,
+		},
+		"remote url: double quotes": {
+			input: `sync copy "https://example.com/x"`,
+			want:  remoteReason,
+		},
+		"remote url: quotes around a part": {
+			input: `sync copy "https:"//example.com/x`,
+			want:  remoteReason,
+		},
+		"remote url: expansion after the colon": {
+			input: `sync copy "host:$dir"`,
+			want:  remoteReason,
+		},
+		"remote url: command substitution after the scheme": {
+			input: "sync copy https://$(hostname)/x",
+			want:  remoteReason,
+		},
+		"no remote url: no words": {
+			input: "sync copy",
+		},
+		"no remote url: plain name": {
+			input: "sync copy name",
+		},
+		"no remote url: name with a slash": {
+			input: "sync copy dir/name",
+		},
+		"no remote url: file url": {
+			input: "sync copy file:///tmp/x",
+		},
+		"no remote url: colon after a slash": {
+			input: "sync copy dir/a:b",
+		},
+		"no remote url: absolute path with a colon": {
+			input: "sync copy /tmp/a:b",
+		},
+		"no remote url: option with a url": {
+			input: "sync copy --from=https://example.com/x ./dir",
+		},
+		"no remote url: expansion before the colon": {
+			input: `sync copy "$host:x"`,
+		},
+		"no remote url: expansion alone": {
+			input: "sync copy $src",
+		},
+		"no remote url: command substitution alone": {
+			input: `sync copy "$(pwd)"`,
+		},
+		"no remote url: empty word": {
+			input: `sync copy ""`,
+		},
+		"no local path: no words": {
+			input: "sync read",
+			want:  pathReason,
+		},
+		"no local path: plain name": {
+			input: "sync read name",
+			want:  pathReason,
+		},
+		"no local path: name with a slash": {
+			input: "sync read dir/name",
+			want:  pathReason,
+		},
+		"no local path: remote url": {
+			input: "sync read https://example.com/x",
+			want:  pathReason,
+		},
+		"no local path: option with a path": {
+			input: "sync read --from=/tmp/x name",
+			want:  pathReason,
+		},
+		"no local path: expansion alone": {
+			input: `sync read "$dir"`,
+			want:  pathReason,
+		},
+		"no local path: expansion before a slash": {
+			input: `sync read "$dir/x"`,
+			want:  pathReason,
+		},
+		"no local path: unquoted expansion before a slash": {
+			input: "sync read $dir/x",
+			want:  pathReason,
+		},
+		"no local path: quoted expansion before an unquoted slash": {
+			input: `sync read "$dir"/x`,
+			want:  pathReason,
+		},
+		"no local path: command substitution before a slash": {
+			input: `sync read "$(pwd)/x"`,
+			want:  pathReason,
+		},
+		"no local path: dot before an expansion": {
+			input: `sync read ."$x"`,
+			want:  pathReason,
+		},
+		"no local path: name that starts with a dot": {
+			input: "sync read .hidden",
+			want:  pathReason,
+		},
+		"local path: absolute": {
+			input: "sync read /tmp/x",
+		},
+		"local path: dot slash": {
+			input: "sync read ./x",
+		},
+		"local path: dot dot slash": {
+			input: "sync read ../x",
+		},
+		"local path: dot": {
+			input: "sync read .",
+		},
+		"local path: dot dot": {
+			input: "sync read ..",
+		},
+		"local path: home": {
+			input: "sync read ~/x",
+		},
+		"local path: file url": {
+			input: "sync read file:///tmp/x",
+		},
+		"local path: single quotes": {
+			input: "sync read '/tmp/a b'",
+		},
+		"local path: double quotes": {
+			input: `sync read "/tmp/a b"`,
+		},
+		"local path: expansion after the start": {
+			input: `sync read "/tmp/$name"`,
+		},
+		"local path: quotes around a part": {
+			input: `sync read ."/"x`,
+		},
+		"local path: empty quotes before the start": {
+			input: `sync read ""/tmp/x`,
+		},
+		"local path: after other words": {
+			input: "sync read --fast name host:x ./dir",
+		},
+		"both: remote url alone": {
+			input: "sync both host:x",
+			want:  bothReason,
+		},
+		"both: remote url and local path": {
+			input: "sync both host:x ./dir",
+		},
+		"both: local path alone": {
+			input: "sync both ./dir",
+		},
+		"both: plain name": {
+			input: "sync both name",
+		},
+		"except: remote url after another word": {
+			input: "sync group add host:x",
+			want:  exceptReason,
+		},
+		"except: exempt word before a remote url": {
+			input: "sync group list host:x",
+		},
+		"except: no remote url": {
+			input: "sync group add name",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			_, got, matched := rules.Check(prog)
+			assert.Equal(t, tt.want != "", matched)
+
+			if matched {
+				assert.Equal(t, tt.want, got)
 			}
 		})
 	}
