@@ -1,8 +1,10 @@
-"""Tests for the comment check in check.py.
+"""Tests for the comment check and the CRLF check in check.py.
 
 Run with: python3 test_check.py. The weirpack build runs the tests
 before check.py reads the rule files. Every rule file follows the
-comment layout, so only these tests show that a breach fails.
+comment layout, and every awk rule reads a file with CRLF line endings
+the way it reads the file with LF endings. Only these tests therefore
+show that a breach or a misread fails.
 """
 
 import sys
@@ -94,6 +96,60 @@ class RequiredSectionsTest(unittest.TestCase):
         for label, (text, want) in cases.items():
             with self.subTest(label):
                 self.assertEqual(self.failures("ProseAndOr.awk", text + AWK_CODE), want)
+
+
+# An awk check that reports each line that ends in a period.
+PERIOD_CHECK = r'/\.$/ { printf "%s:%d:1: Style::ProsePeriod: Period.\n", FILENAME, FNR }' "\n"
+
+
+class CrlfTest(unittest.TestCase):
+    def failures(self, check_code: str) -> list[str]:
+        """Return the CRLF failures of an awk check, with each path cut below the fixtures."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tier = root / "fixtures" / "required"
+            tier.mkdir(parents=True)
+            (tier / "ProsePeriod.bad.md").write_text("One sentence.\n")
+            script = root / "ProsePeriod.awk"
+            script.write_text(check_code)
+            rule = check.Rule("ProsePeriod", "required", "awk", script)
+            found = check.check_crlf(rule, root / "fixtures", root)
+            return [f.removeprefix(f"{tmp}/fixtures/") for f in found]
+
+    def test_crlf(self):
+        cases = {
+            "a check that keeps the \\r fails": (
+                PERIOD_CHECK,
+                [
+                    "required/ProsePeriod.bad.md:1:1: Style::ProsePeriod: Period."
+                    " (missing when the lines end in CRLF)"
+                ],
+            ),
+            "a check that drops the \\r passes": (
+                r'BEGIN { RS = "\r?\n" }' "\n" + PERIOD_CHECK,
+                [],
+            ),
+            "a check that fires on the \\r fails": (
+                r'/\r$/ { printf "%s:%d:1: Style::ProsePeriod: Period.\n", FILENAME, FNR }' "\n",
+                [
+                    "required/ProsePeriod.bad.md:1:1: Style::ProsePeriod: Period."
+                    " (reported only when the lines end in CRLF)"
+                ],
+            ),
+            "a check whose column moves fails on both sides": (
+                r'{ printf "%s:%d:%d: Style::ProsePeriod: Period.\n", FILENAME, FNR, length($0) }'
+                "\n",
+                [
+                    "required/ProsePeriod.bad.md:1:13: Style::ProsePeriod: Period."
+                    " (missing when the lines end in CRLF)",
+                    "required/ProsePeriod.bad.md:1:14: Style::ProsePeriod: Period."
+                    " (reported only when the lines end in CRLF)",
+                ],
+            ),
+        }
+        for label, (code, want) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(self.failures(code), want)
 
 
 if __name__ == "__main__":

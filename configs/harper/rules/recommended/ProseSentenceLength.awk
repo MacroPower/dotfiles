@@ -46,12 +46,12 @@
 #
 # Measurement
 #
-# The rule hit 1,890 lines in the measure.py corpus, and 18 of 20
+# The rule hit 1,880 lines in the measure.py corpus, and 18 of 20
 # sampled hits read better as two sentences. The first step named a
-# split point on 140 lines, and 15 of 20 sampled points were the right
+# split point on 138 lines, and 15 of 20 sampled points were the right
 # place to split. Its misfires were serial lists with long items, a `so`
 # that states a purpose, and errors of lib/sentences.awk at Hugo
-# shortcodes and curly quotes. The second step named a clause on 157
+# shortcodes and curly quotes. The second step named a clause on 154
 # lines, and 19 of 20 sampled clauses read well as a sentence of their
 # own.
 #

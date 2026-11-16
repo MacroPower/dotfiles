@@ -16,6 +16,12 @@
 # `:name: value` option lines under it, because ProseEmoji's shortcode
 # pattern matches an option such as `:class: tip`.
 #
+# The reader drops the `\r` from each line that ends in `\r\n`. A file
+# with CRLF line endings therefore draws the same findings as its copy
+# with LF endings. The reader sets RS in BEGIN, and gawk runs BEGIN
+# before it reads the first line. A rule that a check puts ahead of the
+# include therefore reads the same lines.
+#
 # gawk counts an offset in characters under a UTF-8 locale and in bytes
 # under the C locale that the nix build sandbox uses. Blanking writes
 # one space for each character or each byte that it removes. An offset
@@ -38,6 +44,7 @@
 # is often indented under its marker.
 
 BEGIN {
+  RS = "\r?\n"
   front_matter = 0
   fence_char = ""
   fence_len = 0

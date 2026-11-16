@@ -59,7 +59,7 @@
 #
 # Measurement
 #
-# The rule hit 1,572 lines in the measure.py corpus, and 14 of 20
+# The rule hit 1,573 lines in the measure.py corpus, and 14 of 20
 # sampled hits read better as two sentences. The misfires were serial
 # lists, a single fact with its condition or reason, and a colon inside
 # parentheses (`(for example: ...)`). The first step named a split point

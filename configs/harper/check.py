@@ -23,6 +23,11 @@ non-blank line. The shared file holds
 ordinary technical prose that every rule must pass, so a line added
 there covers all the rules.
 
+Each awk rule also reads a copy of each of its fixtures and of the
+shared file, with every line ending in CRLF. It must print the same
+findings there, at the same lines and columns. A file with CRLF line
+endings then draws the findings of its copy with LF endings.
+
 Each plain phrase a Weir rule lists in its main expression, directly
 or through a referenced list, must also fire on its own in a probe
 sentence. List entries that a guard or a typo has broken therefore
@@ -197,25 +202,61 @@ def awk_lines(awk: Path, lib: Path, target: Path, raw: bool = False) -> set[int]
     return {line for line, _ in awk_findings(awk, lib, target, raw)}
 
 
+def awk_report(awk: Path, lib: Path, target: Path, raw: bool = False) -> list[str]:
+    """Return each finding the check prints, without the file name before its line."""
+    env = {**os.environ, "AWKPATH": str(lib)}
+    if raw:
+        env["RAW"] = "1"
+    # A finding can quote a `\r` from the line, so the output splits at
+    # `\n` alone. Text mode and splitlines() also split at `\r`.
+    proc = subprocess.run(
+        ["awk", "-f", str(awk), str(target)],
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    lines = proc.stdout.decode().split("\n")
+    return [line.split(":", 1)[1] for line in lines if line]
+
+
 def awk_findings(
     awk: Path, lib: Path, target: Path, raw: bool = False
 ) -> set[tuple[int, str]]:
     """Return the line and message of each finding the check prints."""
-    env = {**os.environ, "AWKPATH": str(lib)}
-    if raw:
-        env["RAW"] = "1"
-    proc = subprocess.run(
-        ["awk", "-f", str(awk), str(target)],
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    )
     found: set[tuple[int, str]] = set()
-    for line in proc.stdout.splitlines():
-        _, number, _, rest = line.split(":", 3)
+    for line in awk_report(awk, lib, target, raw):
+        number, _, rest = line.split(":", 2)
         found.add((int(number), rest.split(": ", 1)[1]))
     return found
+
+
+def check_crlf(rule: Rule, fixtures: Path, lib: Path) -> list[str]:
+    """Fail each finding of an awk rule that a fixture with CRLF line endings changes.
+
+    The rule reads a copy of each fixture whose lines end in CRLF, and
+    it must print the findings of the fixture at the same lines and
+    columns.
+    """
+    targets = (
+        (fixtures / rule.tier / f"{rule.name}.bad.md", False),
+        (fixtures / rule.tier / f"{rule.name}.good.md", False),
+        (fixtures / COMMON, False),
+        (fixtures / rule.tier / f"{rule.name}.raw.txt", True),
+    )
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for target, raw in targets:
+            if not target.is_file():
+                continue
+            copy = Path(tmp) / target.name
+            copy.write_bytes(target.read_bytes().replace(b"\n", b"\r\n"))
+            lf = set(awk_report(rule.path, lib, target, raw))
+            crlf = set(awk_report(rule.path, lib, copy, raw))
+            for finding in sorted(lf - crlf):
+                failures.append(f"{target}:{finding} (missing when the lines end in CRLF)")
+            for finding in sorted(crlf - lf):
+                failures.append(f"{target}:{finding} (reported only when the lines end in CRLF)")
+    return failures
 
 
 SAME_FINDING = "<!-- same finding -->"
@@ -489,6 +530,8 @@ def main(argv: list[str]) -> int:
         if rule.path is not None:
             failures += check_comment(rule.path)
         failures += check_rule(rule, pack, fixtures, lib)
+        if rule.kind == "awk":
+            failures += check_crlf(rule, fixtures, lib)
         if rule.kind == "weir":
             failures += check_entries(rule, pack)
 

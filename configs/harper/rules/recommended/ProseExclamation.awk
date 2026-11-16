@@ -23,7 +23,7 @@
 #
 # Measurement
 #
-# The rule hit 395 lines in the measure.py docs corpus, and 18 of 20
+# The rule hit 396 lines in the measure.py docs corpus, and 18 of 20
 # sampled hits ended a sentence with the mark. The two misfires were
 # configuration values (`files = ['! docs/*']`) inside a Hugo
 # `code-toggle` shortcode, which lib/markdown.awk reads as prose.

@@ -52,11 +52,10 @@
 #
 # Measurement
 #
-# The rule hit 71 lines in the measure.py docs corpus, and 13 of 20
+# The rule hit 69 lines in the measure.py docs corpus, and 13 of 19
 # sampled hits carried a second topic or a hidden list. Five misfires
-# kept to one topic. One counted the closing tag of a Hugo shortcode
-# (`{{< /note >}}`) as a sentence, and one ran past blank lines in a
-# file with CRLF line endings.
+# kept to one topic, and one counted the closing tag of a Hugo
+# shortcode (`{{< /note >}}`) as a sentence.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseParagraphLength: <message>

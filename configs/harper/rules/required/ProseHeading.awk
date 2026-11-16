@@ -1,10 +1,10 @@
 # Overview
 #
-# Reports markdown headings below the title that name no topic: a
-# wrap-up (`Conclusion`, `Final Thoughts`, `Key Takeaways`, `TL;DR`), or
-# a heading that ends in a colon (`Setup:`). A wrap-up announces where
-# the document ends, not what the section holds, so a reader who scans
-# the headings learns nothing from it. The fix names the topic as a
+# Reports markdown headings below the title that do not name a topic:
+# a wrap-up (`Conclusion`, `Final Thoughts`, `Key Takeaways`, `TL;DR`),
+# or a heading that ends in a colon (`Setup:`). A wrap-up announces
+# where the document ends, not what the section holds, so a reader who
+# scans the headings learns nothing from it. The fix names the topic as a
 # short noun phrase, a noun and the words attached to it. A heading
 # already sets its section apart from the text, so a colon at its end
 # adds nothing, and the fix deletes it. The rule sits at Required,
@@ -13,12 +13,16 @@
 #
 # Expression
 #
-# The check reads the file line by line and includes no lib/ file.
-# prose-lint and check.py both run this file, so the hook and the
+# The check reads the file line by line and does not include a lib/
+# file. prose-lint and check.py both run this file, so the hook and the
 # build-time fixture check agree on every heading. The check skips YAML
 # front matter, fenced code blocks, and indented code blocks. It does
 # not examine Setext headings (text underlined with = or -), because the
 # formatter rewrites them to # headings.
+#
+# The check drops the `\r` from each line that ends in `\r\n`, the way
+# lib/markdown.awk does. A file with CRLF line endings therefore draws
+# the same findings as its copy with LF endings.
 #
 # The check compares the whole heading with a list of wrap-ups, in any
 # letter case. A trailing attribute list (`{#linux-security}`) is
@@ -51,13 +55,14 @@
 #
 # Measurement
 #
-# The rule hit 15 lines in the measure.py docs corpus, and 15 of 15 were
+# The rule hit 16 lines in the measure.py docs corpus, and 16 of 16 were
 # wrap-ups or trailing colons (`Conclusion`, `Linux:`).
 #
 # Output format, one line per finding:
 #   <file>:<line>:1: Style::ProseHeading: <message>
 
 BEGIN {
+  RS = "\r?\n"
   front_matter = 0
   fence_char = ""
   fence_len = 0

@@ -366,9 +366,15 @@ against its fixtures and fails with one line for each rule that misses
 a fixture. It also fails with one line for each breach of the comment
 layout in Comments.
 
+The build also runs each awk rule on a copy of its fixtures with CRLF
+line endings. It fails with one line for each finding that the copy
+drops and one line for each finding that the copy adds. A finding that
+moves to another column therefore prints two lines.
+
 The build also runs `test_check.py`, the unit tests of the comment
-check in `check.py`. Every rule file follows the layout, so only these
-tests show that a breach fails the build.
+check and the CRLF check in `check.py`. Every rule file follows the
+layout, and every awk rule reads CRLF line endings. Only these tests
+therefore show that a breach or a misread fails the build.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; in pkgs.callPackage ./pkgs/prose-weirpack.nix { }'
@@ -388,8 +394,9 @@ on a set of files.
   finding. The character sits inside text that an awk check blanks, or
   earlier in the word that holds the finding. The test expects the
   character column of each finding under the C locale and under a
-  UTF-8 locale. `check.py` compares only the line of each finding, so
-  only this test reads the columns.
+  UTF-8 locale. `check.py` compares the column of a finding only with
+  its column in the copy with CRLF line endings. Only this test checks
+  a column against the character that holds the finding.
 - `transcripts` lints two transcripts. One marks each speaker with a
   bold label, and the test lints it as a `.md` file, as a `.markdown`
   file, and as a commit message. The other names each speaker in

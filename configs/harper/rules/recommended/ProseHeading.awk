@@ -12,12 +12,16 @@
 #
 # Expression
 #
-# The check reads the file line by line and includes no lib/ file.
-# prose-lint and check.py both run this file, so the hook and the
+# The check reads the file line by line and does not include a lib/
+# file. prose-lint and check.py both run this file, so the hook and the
 # build-time fixture check agree on every heading. The check skips YAML
 # front matter, fenced code blocks, and indented code blocks. It does
 # not examine Setext headings (text underlined with = or -), because the
 # formatter rewrites them to # headings.
+#
+# The check drops the `\r` from each line that ends in `\r\n`, the way
+# lib/markdown.awk does. A file with CRLF line endings therefore draws
+# the same findings as its copy with LF endings.
 #
 # At any level from two down, the check reports a heading that ends with
 # a question mark or starts with a question word. It also reports one
@@ -82,6 +86,7 @@
 #   <file>:<line>:1: Style::ProseHeading: <message>
 
 BEGIN {
+  RS = "\r?\n"
   front_matter = 0
   fence_char = ""
   fence_len = 0
