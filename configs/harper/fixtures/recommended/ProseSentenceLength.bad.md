@@ -36,3 +36,6 @@ The proxy keeps one open connection to each upstream host that it contacted duri
 
 The proxy lets the browser load every script and every image of the site that the pattern
 https://example.com/* covers, and it blocks every request to the other hosts of the network in the default policy. <!-- same finding -->
+
+The scheduler reads the queue and then starts one worker for each job that it finds in the queue, and the guide at
+*https://example.com/guide* covers the rest of the steps that the worker runs after it starts the job. <!-- same finding -->

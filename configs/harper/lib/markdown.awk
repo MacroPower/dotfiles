@@ -191,12 +191,15 @@ function clean(s,   t) {
   # the URL. awk picks the longest match, so the URL keeps the marks
   # inside its path (`https://example.com/v1.2/guide`).
   t = blank(s, "https?://([^ \t<>)]*[^ \t<>).,:;?!*_~\"'\\]])?")
-  # A `*` or a `:` that the URL leaves at the start of the line, as on a
+  # Each `*` or `:` that the URL leaves at the start of the line, as on a
   # wrapped line that opens `https://example.com/* covers`, becomes a
-  # space too. Otherwise the checks read the line as a list item or as a
-  # definition (`: text`).
-  if (s !~ /^[ \t]*[*:]([ \t]|$)/ && match(t, /^[ \t]*[*:]([ \t]|$)/)) {
-    t = spaces(RLENGTH) substr(t, RLENGTH + 1)
+  # space too. An emphasized URL leaves two `*` marks there
+  # (`*https://example.com* covers`). Otherwise the checks read the line
+  # as a list item or as a definition (`: text`).
+  if (s !~ /^[ \t]*[*:]([ \t]|$)/) {
+    while (match(t, /^[ \t]*[*:]([ \t]|$)/)) {
+      t = spaces(RLENGTH) substr(t, RLENGTH + 1)
+    }
   }
   # The trimmed URL can leave a line with only `-`, `*`, and `_` marks,
   # such as `- *https://example.com*`. lib/runs.awk reads that line as a

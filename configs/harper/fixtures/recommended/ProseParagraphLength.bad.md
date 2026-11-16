@@ -15,3 +15,6 @@ The guide is at https://example.com/guide. Is the mirror at https://example.com/
 The guide is at https://example.com/guide. **The mirror is at https://example.com/mirror.** The page says 'see https://example.com/faq.' The notes [are at https://example.com/notes.] It waits 5 seconds. It logs the error. It stops after attempt 3.
 
 The launch page is at https://example.com/launch! _The guide is at https://example.com/guide._ The worker reads its file. It waits 5 seconds. It logs the error. It retries once. It stops after attempt 3.
+
+The scheduler reads the queue. It picks the oldest job. The guide at
+*https://example.com/guide* covers the lease. It starts the worker. The worker runs the job. The worker writes the result. The scheduler marks the job done. <!-- same finding -->
