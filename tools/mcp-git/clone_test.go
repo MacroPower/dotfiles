@@ -1273,7 +1273,10 @@ func TestCheckOrigin(t *testing.T) {
 				tc.setup(t, bare, dest)
 			}
 
-			err := (&handler{}).checkOrigin(t.Context(), tc.url(bare), dest)
+			// git reads a local path as the URL of origin in each
+			// case, and checkOrigin compares that URL only when
+			// checkURL accepts it.
+			err := (&handler{allowFileURLs: true}).checkOrigin(t.Context(), tc.url(bare), dest)
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
 
@@ -1848,6 +1851,181 @@ func TestHandleCloneMismatchSkipsRefusedStoredURL(t *testing.T) {
 	}
 }
 
+// insecureRewrite is git config text with a url.<base>.insteadOf
+// rewrite that turns each https URL under aliasPrefix into an http
+// URL.
+const insecureRewrite = "[url \"http://example.invalid/\"]\n\tinsteadOf = " + aliasPrefix + "\n"
+
+// A destination can hold a repository whose origin remote has a URL
+// that git_clone refuses as the url input. git_clone does not pull
+// from such a URL, also when a rewrite changes the url input to that
+// URL. The error must therefore say that git_clone refuses the URL of
+// origin, whatever the url input holds. It must not name the URL, and
+// git_clone must leave the destination in place.
+func TestHandleCloneDeniedOriginURL(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		h      *handler
+		config string
+		origin string
+		url    string
+	}{
+		"http URL": {
+			h:      &handler{},
+			origin: "http://example.invalid/a.git",
+			url:    aliasPrefix + "b.git",
+		},
+		"http URL that differs from the url input only in the scheme": {
+			h:      &handler{},
+			origin: "http://example.invalid/a.git",
+			url:    aliasPrefix + "a.git",
+		},
+		"http URL with a credential": {
+			h:      &handler{},
+			origin: "http://user:s3cret@example.invalid/a.git",
+			url:    aliasPrefix + "b.git",
+		},
+		"git URL": {
+			h:      &handler{},
+			origin: "git://example.invalid/a.git",
+			url:    aliasPrefix + "b.git",
+		},
+		"local path": {
+			h:      &handler{},
+			origin: "/srv/a.git",
+			url:    aliasPrefix + "b.git",
+		},
+		"file URL": {
+			h:      &handler{},
+			origin: "file:///srv/a.git",
+			url:    aliasPrefix + "b.git",
+		},
+		"local path when the server accepts http URLs": {
+			h:      &handler{allowInsecure: true},
+			origin: "/srv/a.git",
+			url:    aliasPrefix + "b.git",
+		},
+		// checkURL refuses the alias, and no rewrite expands it.
+		"alias that no rewrite expands": {
+			h:      &handler{},
+			origin: "gh:org/repo.git",
+			url:    aliasPrefix + "org/repo.git",
+		},
+		// The two URLs that checkOrigin compares are equal after the
+		// rewrite. git_clone refuses to pull from an http URL, so the
+		// url input does not make it pull the destination.
+		"rewrite turns the url input into the http URL of origin": {
+			h:      &handler{},
+			config: insecureRewrite,
+			origin: "http://example.invalid/a.git",
+			url:    aliasPrefix + "a.git",
+		},
+		"rewrite turns the url input into another http URL": {
+			h:      &handler{},
+			config: insecureRewrite,
+			origin: "http://example.invalid/a.git",
+			url:    aliasPrefix + "b.git",
+		},
+		// The git config stores a URL that git_clone accepts as the
+		// url input. git reads an http URL for origin, and git_clone
+		// refuses to pull from it.
+		"rewrite turns the stored URL into an http URL": {
+			h:      &handler{},
+			config: insecureRewrite,
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+		},
+		"rewrite turns the stored URL and the url input into one http URL": {
+			h:      &handler{},
+			config: insecureRewrite,
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "a.git",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dest := initOriginRepo(t, tc.origin, tc.config)
+
+			result, _, err := tc.h.handleClone(t.Context(), nil, CloneInput{URL: tc.url, Dest: dest})
+			require.NoError(t, err)
+			require.True(t, result.IsError)
+
+			assert.Equal(t,
+				"dest holds a repository whose origin remote has a URL that git_clone refuses: "+dest+
+					": choose another dest, or delete the directory and retry",
+				resultText(t, result),
+			)
+
+			assert.DirExists(t, filepath.Join(dest, ".git"))
+
+			asides, err := filepath.Glob(dest + ".corrupt-*")
+			require.NoError(t, err)
+			assert.Empty(t, asides)
+		})
+	}
+}
+
+// checkOrigin refuses the URL of origin only when checkURL refuses it.
+// With --allow-insecure, the server accepts an http URL and a git URL
+// as the url input. checkOrigin must then compare the URL of origin
+// with the url input. A call that passes the URL that the error names
+// for origin must match the checkout.
+func TestCheckOriginComparesInsecureURL(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		origin string
+		got    string
+	}{
+		"http URL": {
+			origin: "http://example.invalid/a.git",
+			got:    "http://example.invalid/a",
+		},
+		"git URL": {
+			origin: "git://example.invalid/a.git",
+			got:    "git://example.invalid/a",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dest := initOriginRepo(t, tc.origin, "")
+			h := &handler{allowInsecure: true}
+
+			err := h.checkOrigin(t.Context(), aliasPrefix+"b.git", dest)
+			require.ErrorIs(t, err, ErrOriginMismatch)
+			require.EqualError(t, err, "origin URL mismatch: got "+tc.got+", want https://example.invalid/b")
+
+			require.NoError(t, h.checkURL(tc.got))
+			require.NoError(t, h.checkOrigin(t.Context(), tc.got, dest))
+		})
+	}
+}
+
+// The error for a URL of origin that checkURL refuses does not depend
+// on the url input. checkOrigin must return it for a url input that
+// equals the URL of origin, which handleClone refuses before it calls
+// checkOrigin.
+func TestCheckOriginDeniedURLIgnoresURLInput(t *testing.T) {
+	t.Parallel()
+
+	const origin = "http://example.invalid/a.git"
+
+	dest := initOriginRepo(t, origin, "")
+
+	for _, url := range []string{origin, aliasPrefix + "b.git"} {
+		err := (&handler{}).checkOrigin(t.Context(), url, dest)
+		require.ErrorIs(t, err, ErrDeniedOriginURL)
+		require.NotErrorIs(t, err, ErrOriginMismatch)
+	}
+}
+
 func TestStripCredential(t *testing.T) {
 	t.Parallel()
 
@@ -1975,7 +2153,10 @@ func TestCheckOriginUnresolvedURL(t *testing.T) {
 
 	dest := initWorkClone(t, initBareRepo(t))
 
-	err := (&handler{}).checkOrigin(t.Context(), "", dest)
+	// The URL of origin is a local path, and checkOrigin applies the
+	// rewrites to the url input only when checkURL accepts the URL of
+	// origin.
+	err := (&handler{allowFileURLs: true}).checkOrigin(t.Context(), "", dest)
 	require.Error(t, err)
 	require.NotErrorIs(t, err, ErrOriginMismatch)
 	assert.ErrorContains(t, err, "applying the URL rewrites of the git config of "+dest)

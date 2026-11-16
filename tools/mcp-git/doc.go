@@ -27,16 +27,25 @@
 // such a remote when it sets another key of the remote, such as
 // remote.origin.pushurl, and stores no URL in remote.origin.url.
 //
+// git_clone also refuses a destination whose origin remote has a URL
+// that git_clone refuses as the url input, and the error says so. An
+// http URL is such a URL when the server runs without
+// --allow-insecure, and so are a local path and a file:// URL.
+// git_clone checks the URL after the rewrites. It does not pull from
+// such a URL, whatever the url input holds, so the error does not
+// name the URL. The error tells the caller to choose another dest, or
+// to delete the directory and retry.
+//
 // When the origin remote has another URL, the error names both URLs
 // before the rewrites. For the origin remote, it names the URL that
 // the git config of the destination stores, when git_clone accepts
 // that URL as the url input. A call that passes that URL as the url
 // input matches the destination. The git config does not always store
 // such a URL. For example, a file under .git/remotes can define the
-// origin remote. The git config can also store for it an alias such as
-// gh:org/repo that a rewrite expands, or an http URL when the server
-// runs without --allow-insecure. The error then names both URLs after
-// the rewrites, and it says so.
+// origin remote. The git config can also store for it a URL that
+// git_clone refuses as the url input, such as an alias gh:org/repo
+// that a rewrite expands. The error then names both URLs after the
+// rewrites, and it says so.
 //
 // The git config can store a credential in a URL, such as in the base
 // of a rewrite. The tool result must not hold that credential, so the

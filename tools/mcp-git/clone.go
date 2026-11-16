@@ -58,6 +58,10 @@ var (
 	// repo at dest has no URL.
 	ErrNoOriginURL = errors.New("dest holds a repository whose origin remote has no URL")
 
+	// ErrDeniedOriginURL is returned when the origin remote of the
+	// existing repo at dest has a URL that [handler.checkURL] refuses.
+	ErrDeniedOriginURL = errors.New("dest holds a repository whose origin remote has a URL that git_clone refuses")
+
 	// ErrCorruptDest is returned when dest holds a .git directory that
 	// [checkGitDir] rejects and the handler cannot move dest aside.
 	ErrCorruptDest = errors.New("dest holds a corrupt git directory")
@@ -312,8 +316,18 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 // checkOrigin verifies that url is the URL of the origin remote of the
 // existing repo at dest. A repo that has no origin remote fails with
 // [ErrNoOrigin]. A repo whose origin remote has no URL fails with
-// [ErrNoOriginURL], as [originLacksURL] decides. Neither error depends
-// on url.
+// [ErrNoOriginURL], as [originLacksURL] decides. A repo whose origin
+// remote has a URL that [handler.checkURL] refuses fails with
+// [ErrDeniedOriginURL]. None of these errors depends on url, and
+// [unusableDest] gives each of them the same advice.
+//
+// checkOrigin passes to checkURL the URL that git reads for origin,
+// after the url.<base>.insteadOf rewrites of the git config. When
+// checkURL refuses that URL, no url makes git_clone pull the repo.
+// [handler.handleClone] refuses the URL itself as url. A rewrite can
+// change another url to that URL, and [handler.runRemote] then refuses
+// to pull from origin. The [ErrDeniedOriginURL] error therefore does
+// not name the URL.
 //
 // git clone stores url as the URL of origin. git applies the
 // url.<base>.insteadOf rewrites of the git config each time it reads
@@ -364,7 +378,7 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 		// status for a remote that git cannot find.
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
-			return fmt.Errorf("%w: %s: choose another dest, or delete the directory and retry", ErrNoOrigin, dest)
+			return unusableDest(ErrNoOrigin, dest)
 		}
 
 		return fmt.Errorf("reading the origin remote of %s: %w", dest, err)
@@ -376,7 +390,14 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	}
 
 	if lacksURL {
-		return fmt.Errorf("%w: %s: choose another dest, or delete the directory and retry", ErrNoOriginURL, dest)
+		return unusableDest(ErrNoOriginURL, dest)
+	}
+
+	// The check comes before the comparison. A rewrite can change a
+	// url to the URL of origin. That url passes the comparison, and
+	// runRemote then refuses to pull from origin.
+	if h.checkURL(origin) != nil {
+		return unusableDest(ErrDeniedOriginURL, dest)
 	}
 
 	rewritten, err := rewriteURL(ctx, dest, url)
@@ -431,6 +452,14 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	return fmt.Errorf("%w: got %s, want %s%s", ErrOriginMismatch, shownGot, shownWant, note)
 }
 
+// unusableDest returns reason as an error that names dest and tells
+// the caller how to continue. reason is a fault of the repository at
+// dest that keeps git_clone from pulling it, whatever the url input
+// holds.
+func unusableDest(reason error, dest string) error {
+	return fmt.Errorf("%w: %s: choose another dest, or delete the directory and retry", reason, dest)
+}
+
 // originLacksURL reports whether the origin remote of the repository
 // at dest has no URL. origin is the URL that git reads for that
 // remote.
@@ -451,7 +480,8 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 // git applies the url.<base>.insteadOf rewrites to the name as well.
 // When a rewrite changes the name, git reads another URL for the
 // remote than its name, and originLacksURL returns false.
-// [handler.checkOrigin] then compares that URL with its url input.
+// [handler.checkOrigin] then checks that URL as it checks every other
+// URL of origin.
 //
 // A file under .git/remotes or .git/branches can also store the word
 // origin as the URL of the remote. git reads the same URL for that
