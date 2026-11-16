@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-## What This Is
+## Overview
 
-Declarative system configuration using **nix-darwin** + **home-manager**, managed as a Nix flake. macOS hosts use [Lix](https://lix.systems/) (a Nix implementation) as the package manager. Configures system packages, Homebrew casks/brews, shell (fish), dev tools, and app settings across macOS and NixOS hosts. We also support a generic "Linux" host that is used for e2e testing via Dagger.
+Declarative system configuration using **nix-darwin** + **home-manager**, managed as a Nix flake. macOS hosts use [Lix](https://lix.systems/) (a Nix implementation) as the package manager. Configures system packages, Homebrew casks and brews, shell (fish), dev tools, and app settings across macOS and NixOS hosts. We also support a generic "Linux" host that is used for e2e testing via Dagger.
 
 ## Key Commands
 
@@ -29,7 +29,7 @@ task switch
 - **`hosts/darwin/`**: Per-host metadata for macOS machines. `hosts/darwin/default.nix` has system-level nix-darwin config (Homebrew, PAM/Touch ID, user accounts).
 - **`hosts/nixos/`**: NixOS system configs. Each host has its own file, which imports `default.nix`: `orbstack.nix` (OrbStack container), `truenas.nix` (TrueNAS server), and `terrarium.nix` (Lima sandbox VM). `default.nix` holds the shared NixOS settings and imports `../shared.nix`, `../options.nix` (the `dotfiles.system` options), `claude-tmp.nix`, and `clones.nix`, so every NixOS host gets those modules. `claude-tmp.nix` keeps each session directory of Claude Code under `/tmp/claude-<uid>` whole, and `clones.nix` keeps each clone under `/tmp/git` whole. `tmpfiles-check.nix` holds the function that builds a system check for `claude-tmp.nix` and for `clones.nix`. The check fails the system build when the daily cleanup of `/tmp` deletes a file under `/tmp/claude-<uid>` or under `/tmp/git`. `orbstack.nix` also imports `orbstack-hardware.nix` (OrbStack guest settings), and `terrarium.nix` also imports `lima-hardware.nix` (Lima guest settings).
 - **`hosts/linux/`**: Non-NixOS Linux hosts using standalone home-manager (`mkHome`). `container.nix` is the Dagger dev container config.
-- **`home/`**: Home-manager modules imported from `home/default.nix`. Each `.nix` file is a self-contained module for a tool domain (shell, git, editors, k8s, etc.).
+- **`home/`**: Home-manager modules imported from `home/default.nix`. Each `.nix` file is a self-contained module for a tool domain, such as shell, git, editors, or Kubernetes.
 - **`configs/`**: Raw config files, normally symlinked into `~/.config/` via `xdg.configFile` and `home.file`.
 - **`pkgs/`**: Custom Nix package derivations. The `pkg:update` task in `taskfiles/nix/Taskfile.yaml` runs each `pkgs/<name>-update.sh` script as a command of its own. Each script updates the derivations of one upstream project. `CheckPkgUpdate` of the `nix` toolchain fails the commit hook when the commands of that task and the scripts disagree, or when the tree does not hold a package file that the check requires. For `pkgs/<name>-update.sh`, the check requires `pkgs/<name>.nix` and each file that the script names as `$DIRNAME/<file>.nix`, so name each package file in a script in that form. When you delete a package file, delete the lines of each update script that update it, and delete the script and its command when the file carries the name of the script.
 - **`toolchains/`**: Dagger-based dev toolchains.
@@ -37,7 +37,7 @@ task switch
 
 ## Code Style
 
-- Prefer explicit configuration (e.g. named imports, spelled-out lists) over automatic file discovery or convention-based loading.
+- Prefer explicit configuration, such as named imports and spelled-out lists, over automatic file discovery or convention-based loading.
 
 ## Claude Code Configuration
 
@@ -53,4 +53,4 @@ Claude Code config lives in this repo and is symlinked into `~/.claude/` by `hom
 
 Permission rules, hook-router command rules, and fetch rules steer model behavior, such as pointing Claude at an MCP tool or prompting before a remote write. They are not a security boundary. The sandbox provides security by limiting access to credentials and the filesystem. Write and review these rules for the behavior they produce, and never add a rule or keep a prompt only to close an escape path.
 
-After editing, run `task switch` to re-link. Never edit files under `~/.claude/` directly -- the next `home-manager` activation will overwrite them.
+After editing, run `task switch` to re-link. Never edit files under `~/.claude/` directly. The next `home-manager` activation overwrites them.
