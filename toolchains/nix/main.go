@@ -355,14 +355,6 @@ func (m *Nix) Format() *dagger.Changeset {
 	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
 }
 
-// sbomnixRef pins the upstream sbomnix flake. nixpkgs ships 1.7.4,
-// which cannot parse the JSON format that `nix derivation show` prints
-// in Nix 2.33 and later, and in the Lix 2.94 release that [nixImage]
-// pins. sbomnix 1.7.4 fails with "Deriver does not exist" on every
-// closure path. v1.7.6 normalizes the new wrapped payload.
-// https://github.com/tiiuae/sbomnix/issues/267
-const sbomnixRef = "github:tiiuae/sbomnix/v1.7.6"
-
 // Sbom generates a CycloneDX SBOM for the home-manager closure.
 func (m *Nix) Sbom(ctx context.Context) (*dagger.File, error) {
 	base := m.base()
@@ -384,7 +376,7 @@ func (m *Nix) Sbom(ctx context.Context) (*dagger.File, error) {
 
 	return base.
 		WithExec([]string{
-			"nix", "run", sbomnixRef + "#sbomnix", "--",
+			"nix", "run", "nixpkgs#sbomnix", "--",
 			storePath, "--cdx", "/tmp/sbom.cdx.json",
 		}).
 		File("/tmp/sbom.cdx.json"), nil

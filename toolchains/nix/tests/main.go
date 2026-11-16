@@ -650,7 +650,8 @@ func (m *Tests) TestDependencySnapshot(ctx context.Context) error {
 	return nil
 }
 
-// TestSbom verifies that [Nix.Sbom] produces valid CycloneDX JSON.
+// TestSbom verifies that [Nix.Sbom] produces valid CycloneDX JSON, and
+// that the glibc component of the SBOM carries a version.
 //
 // +check
 func (m *Tests) TestSbom(ctx context.Context) error {
@@ -663,8 +664,9 @@ func (m *Tests) TestSbom(ctx context.Context) error {
 		BOMFormat   string `json:"bomFormat"`
 		SpecVersion string `json:"specVersion"`
 		Components  []struct {
-			Name string `json:"name"`
-			Purl string `json:"purl"`
+			Name    string `json:"name"`
+			Version string `json:"version"`
+			Purl    string `json:"purl"`
 		} `json:"components"`
 	}
 
@@ -683,14 +685,29 @@ func (m *Tests) TestSbom(ctx context.Context) error {
 
 	// Verify at least some components have purls (sbomnix should produce them).
 	purlCount := 0
+	glibcHasVersion := false
+
 	for _, c := range bom.Components {
 		if c.Purl != "" {
 			purlCount++
+		}
+
+		if c.Name == "glibc" && c.Version != "" {
+			glibcHasVersion = true
 		}
 	}
 
 	if purlCount == 0 {
 		return fmt.Errorf("no components have purls")
+	}
+
+	// The closure that [Nix.Sbom] scans holds glibc. The derivation of
+	// glibc sets its pname and its version only as structured
+	// attributes, which sbomnix reads in 1.8.0 and later. sbomnix 1.7.6
+	// names the component glibc-<version> and leaves the version empty,
+	// and grype then matches no CVE to the component.
+	if !glibcHasVersion {
+		return fmt.Errorf("no component has the name glibc and a version")
 	}
 
 	return nil
