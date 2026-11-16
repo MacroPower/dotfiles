@@ -31,7 +31,7 @@ task switch
 - **`hosts/linux/`**: Non-NixOS Linux hosts using standalone home-manager (`mkHome`). `container.nix` is the Dagger dev container config.
 - **`home/`**: Home-manager modules imported from `home/default.nix`. Each `.nix` file is a self-contained module for a tool domain (shell, git, editors, k8s, etc.).
 - **`configs/`**: Raw config files, normally symlinked into `~/.config/` via `xdg.configFile` and `home.file`.
-- **`pkgs/`**: Custom Nix package derivations.
+- **`pkgs/`**: Custom Nix package derivations. The `pkg:update` task in `taskfiles/nix/Taskfile.yaml` runs each `pkgs/<name>-update.sh` script as a command of its own. Each script updates the derivations of one upstream project. `CheckPkgUpdate` of the `nix` toolchain fails the commit hook when the commands of that task and the scripts disagree.
 - **`toolchains/`**: Dagger-based dev toolchains.
 - **`Taskfile.yaml`**: Task runner for common operations (`task switch` auto-detects platform and uses `nh`).
 

@@ -31,6 +31,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestBuild(ctx) })
 	eg.Go(func() error { return m.TestCheckLintRootModule(ctx) })
 	eg.Go(func() error { return m.TestCheckLintTestModule(ctx) })
+	eg.Go(func() error { return m.TestCheckPkgUpdate(ctx) })
 	eg.Go(func() error { return m.TestDependencySnapshot(ctx) })
 	eg.Go(func() error { return m.TestEditorconfigDaggerLock(ctx) })
 	eg.Go(func() error { return m.TestEditorconfigToolchains(ctx) })

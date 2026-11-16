@@ -61,6 +61,12 @@ tasks:
     cmds:
       - dagger call nix vulnscan
 
+  # The task spells out one command for each update script, which is a
+  # file that matches pkgs/*-update.sh. In the commit hook,
+  # CheckPkgUpdate of the nix toolchain fails when a script has no
+  # command here, or when a command names a script that does not exist.
+  # Write each command as `bash pkgs/<name>-update.sh`, because the
+  # check fails on an entry of another form.
   pkg:update:
     desc: Update custom package derivations in pkgs/
     cmds:

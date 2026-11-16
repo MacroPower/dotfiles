@@ -2,7 +2,8 @@
 //
 // Validates the nix-darwin, NixOS, and home-manager configurations of
 // the flake through evaluation, static analysis, and formatting checks.
-// The checks run in Linux containers and do not build a darwin
+// It also verifies that the pkg:update task runs each update script in
+// pkgs/. The checks run in Linux containers and do not build a darwin
 // derivation.
 
 package main
@@ -806,6 +807,7 @@ func (m *Nix) All(ctx context.Context) error {
 	eg.Go(func() error { return m.Lint(ctx) })
 	eg.Go(func() error { return m.Editorconfig(ctx) })
 	eg.Go(func() error { return m.CheckLint(ctx) })
+	eg.Go(func() error { return m.CheckPkgUpdate(ctx) })
 
 	err := eg.Wait()
 	if err != nil {
