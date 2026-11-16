@@ -108,6 +108,24 @@ func (h *handler) handleClone(
 		return toolError(ErrDeniedDestPrefix), nil, nil
 	}
 
+	// Each later step reads the absolute path. Every spelling of one
+	// destination, such as a path with a trailing slash, therefore
+	// names the same parent directory and the same lock file.
+	//
+	// [handler.checkDest] checks the absolute path, and git must write
+	// that path. The OS resolves a symbolic link before the ".."
+	// segment that follows it, so a path with such a segment can name
+	// another directory for git. The OS also resolves a relative path
+	// against the physical working directory. [os.Getwd] returns $PWD
+	// when $PWD names that directory, and $PWD can pass through a
+	// symbolic link.
+	dest, absErr := filepath.Abs(input.Dest)
+	if absErr != nil {
+		return nil, nil, fmt.Errorf("resolving dest path: %w", absErr)
+	}
+
+	input.Dest = dest
+
 	urlErr := h.checkURL(input.URL)
 	if urlErr != nil {
 		return toolError(urlErr), nil, nil
@@ -214,7 +232,7 @@ func checkGitDir(ctx context.Context, gitDir string) error {
 // renames the checkout and deletes nothing, because the working tree
 // can hold files that exist nowhere else.
 func (h *handler) moveAside(dest string) (string, error) {
-	aside := fmt.Sprintf("%s.corrupt-%s", filepath.Clean(dest), time.Now().UTC().Format("20060102T150405.000000000Z"))
+	aside := fmt.Sprintf("%s.corrupt-%s", dest, time.Now().UTC().Format("20060102T150405.000000000Z"))
 
 	destErr := h.checkDest(aside)
 	if destErr != nil {
@@ -355,9 +373,10 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	return nil
 }
 
-// clone runs git clone for input. A non-empty aside names the path
-// that a corrupt checkout at the destination moved to, and the
-// result message reports it.
+// clone runs git clone for input. input.Dest holds the absolute path
+// that [handler.handleClone] makes from the dest input. A non-empty
+// aside names the path that a corrupt checkout at the destination
+// moved to, and the result message reports it.
 //
 // Each git command takes the options of [guardOptions] and
 // [hookOptions]. A new clone holds the hook files of the template
@@ -390,12 +409,7 @@ func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*m
 	}
 
 	if len(input.SparsePaths) > 0 {
-		dest, absErr := filepath.Abs(input.Dest)
-		if absErr != nil {
-			return nil, nil, fmt.Errorf("resolving dest path: %w", absErr)
-		}
-
-		_, scErr := h.runGit(ctx, sparseCheckoutArgs(opts, dest, input.SparsePaths)...)
+		_, scErr := h.runGit(ctx, sparseCheckoutArgs(opts, input.Dest, input.SparsePaths)...)
 		if scErr != nil {
 			return toolError(fmt.Errorf("setting sparse checkout: %w", scErr)), nil, nil
 		}

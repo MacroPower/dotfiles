@@ -3,15 +3,20 @@
 //
 // git_clone clones a repository if the destination does not already
 // exist, or pulls (fast-forward only) if it does, holding a flock on
-// <dest>.lock beside the destination. When the destination holds a
-// .git directory that git cannot open or that has no config file,
-// git_clone renames the destination to <dest>.corrupt-<timestamp> and
-// clones again. It refuses a destination whose repository has no
-// origin remote, and a destination whose origin remote has a URL
-// other than the url input. It compares the two URLs after git applies
-// the url.<base>.insteadOf rewrites of the git config to each URL. A
-// new clone authenticates with the token of GH_TOKEN when git connects
-// to github.com over https after those rewrites.
+// <dest>.lock beside the destination. It makes the dest input absolute
+// first, as filepath.Abs does. Every spelling of one path, such as a
+// relative path or a path with a trailing slash, therefore names the
+// same destination and the same lock file.
+//
+// When the destination holds a .git directory that git cannot open or
+// that has no config file, git_clone renames the destination to
+// <dest>.corrupt-<timestamp> and clones again. It refuses a
+// destination whose repository has no origin remote, and a destination
+// whose origin remote has a URL other than the url input. It compares
+// the two URLs after git applies the url.<base>.insteadOf rewrites of
+// the git config to each URL. A new clone authenticates with the token
+// of GH_TOKEN when git connects to github.com over https after those
+// rewrites.
 //
 // git_fetch, git_pull, and git_push operate on an existing local
 // repository. They resolve its git directory (worktree-aware), and

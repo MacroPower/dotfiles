@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -502,6 +503,165 @@ func TestHandleClone(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 	assert.Contains(t, resultText(t, result), "Pulled")
+}
+
+// Each case names one destination with another spelling, and
+// [filepath.Abs] returns the plain path for every spelling.
+func TestHandleCloneDestSpelling(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		suffix string
+	}{
+		"plain":            {},
+		"trailing slash":   {suffix: "/"},
+		"repeated slashes": {suffix: "//"},
+		"dot segment":      {suffix: "/."},
+		"dot dot segment":  {suffix: "/sub/.."},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bare := initBareRepo(t)
+			h := &handler{allowFileURLs: true}
+
+			parent := t.TempDir()
+			dest := filepath.Join(parent, "cloned")
+			lockPath := dest + ".lock"
+			input := CloneInput{URL: bare, Dest: dest + tc.suffix}
+
+			// Two calls exclude each other only when they lock the
+			// same file. A directory at the path of the lock file
+			// makes the lock fail, and the error names the path that
+			// the call locks.
+			require.NoError(t, os.Mkdir(lockPath, 0o755))
+
+			_, _, err := h.handleClone(t.Context(), nil, input)
+			require.ErrorContains(t, err, "creating lock file: open "+lockPath+":")
+
+			require.NoError(t, os.Remove(lockPath))
+
+			result, _, err := h.handleClone(t.Context(), nil, input)
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+			assert.Equal(t, "Cloned "+bare+" into "+dest, resultText(t, result))
+
+			// The call leaves no lock file beside the clone or
+			// inside it.
+			assert.Equal(t, []string{"cloned"}, dirEntries(t, parent))
+			assert.Equal(t, []string{".git", "README"}, dirEntries(t, dest))
+
+			result, _, err = h.handleClone(t.Context(), nil, input)
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+			assert.Contains(t, resultText(t, result), "Pulled latest changes in "+dest)
+
+			assert.Equal(t, []string{"cloned"}, dirEntries(t, parent))
+			assert.Equal(t, []string{".git", "README"}, dirEntries(t, dest))
+		})
+	}
+}
+
+// [handler.checkDest] removes a ".." segment and the segment before
+// it. The OS resolves a symbolic link in that earlier segment first,
+// so the uncleaned path names a directory beside the target of the
+// link. The clone must take the path that checkDest allows.
+func TestHandleCloneDotDotAfterSymlink(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+
+	root := t.TempDir()
+	allowDir := filepath.Join(root, "allowed")
+	outside := filepath.Join(root, "outside")
+
+	require.NoError(t, os.Mkdir(allowDir, 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(outside, "target"), 0o755))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "target"), filepath.Join(allowDir, "link")))
+
+	h := &handler{allowFileURLs: true, allowDirs: resolveAllowDirs([]string{allowDir})}
+
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
+		URL:  bare,
+		Dest: allowDir + "/link/../cloned",
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	_, statErr := os.Stat(filepath.Join(allowDir, "cloned", ".git"))
+	require.NoError(t, statErr, "the clone must take the path that checkDest allows")
+
+	assert.Equal(t, []string{"target"}, dirEntries(t, outside))
+}
+
+// [handler.checkDest] reads a relative dest against the working
+// directory that [os.Getwd] reports. Getwd returns $PWD when $PWD
+// names the working directory, and $PWD can pass through a symbolic
+// link. The OS resolves a relative path against the physical working
+// directory instead. The clone must take the path that checkDest
+// allows.
+func TestHandleCloneRelativeDestThroughSymlink(t *testing.T) { //nolint:paralleltest // t.Chdir, t.Setenv
+	bare := initBareRepo(t)
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	allowDir := filepath.Join(root, "allowed")
+	outside := filepath.Join(root, "outside")
+	target := filepath.Join(outside, "target")
+	link := filepath.Join(allowDir, "link")
+
+	require.NoError(t, os.Mkdir(allowDir, 0o755))
+	require.NoError(t, os.MkdirAll(target, 0o755))
+	require.NoError(t, os.Symlink(target, link))
+
+	t.Chdir(target)
+	t.Setenv("PWD", link)
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.Equal(t, link, wd, "Getwd must report the working directory through the link")
+
+	h := &handler{allowFileURLs: true, allowDirs: resolveAllowDirs([]string{allowDir})}
+
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: "../cloned"})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	dest := filepath.Join(allowDir, "cloned")
+	assert.Equal(t, "Cloned "+bare+" into "+dest, resultText(t, result))
+	assert.Equal(t, []string{".git", "README"}, dirEntries(t, dest))
+
+	// The call leaves no lock file in either directory.
+	assert.Equal(t, []string{"cloned", "link"}, dirEntries(t, allowDir))
+	assert.Equal(t, []string{"target"}, dirEntries(t, outside))
+	assert.Empty(t, dirEntries(t, target))
+}
+
+// [filepath.Abs] reads the working directory for a relative dest, and
+// [os.Getwd] fails when someone deleted that directory. git_clone then
+// returns the error of Getwd.
+func TestHandleCloneDestWithoutWorkingDirectory(t *testing.T) { //nolint:paralleltest // t.Chdir
+	if runtime.GOOS != "linux" {
+		t.Skip("the getcwd of Linux fails with ENOENT for a deleted working directory")
+	}
+
+	bare := initBareRepo(t)
+
+	dir := filepath.Join(t.TempDir(), "gone")
+	require.NoError(t, os.Mkdir(dir, 0o755))
+
+	t.Chdir(dir)
+	require.NoError(t, os.Remove(dir))
+
+	h := &handler{allowFileURLs: true}
+
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: "cloned"})
+	require.ErrorContains(t, err, "resolving dest path: ")
+	require.ErrorIs(t, err, os.ErrNotExist)
+	assert.Nil(t, result)
 }
 
 func TestHandleCloneWithToken(t *testing.T) {
