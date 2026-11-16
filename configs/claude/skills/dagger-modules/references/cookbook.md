@@ -696,21 +696,34 @@ dir.Terminal(dagger.DirectoryTerminalOpts{
 
 ## Custom Telemetry Spans
 
-Add named spans to the Dagger UI for better observability:
+A custom span shows one step of a function under a name of its own, in the terminal UI of Dagger and in the traces of Dagger Cloud. This example gets the tracer from the `Tracer` function of the module package, and it ends the span with `EndWithCause` of `github.com/dagger/otel-go`:
 
 ```go
-import "dagger/my-module/internal/telemetry"
+import (
+    "context"
 
-func (m *MyModule) Deploy(ctx context.Context) (rerr error) {
-    ctx, span := telemetry.Tracer().Start(ctx, "deploying to production")
-    defer telemetry.End(span, func() error { return rerr })
+    telemetry "github.com/dagger/otel-go"
 
-    // ... deployment logic
-    return nil
+    "dagger/my-module/internal/dagger"
+)
+
+// Deploy publishes an image in a span of its own
+func (m *MyModule) Deploy(ctx context.Context, image *dagger.Container) (rerr error) {
+    ctx, span := Tracer().Start(ctx, "deploying to production")
+    defer telemetry.EndWithCause(span, &rerr)
+
+    _, err := image.Publish(ctx, "registry.example.com/my-app:latest")
+    return err
 }
 ```
 
-Named return values (`rerr`) are used with the deferred telemetry end to capture errors.
+The example compiles in each layout. The generated `dagger.gen.go` of the module package declares `Tracer`. The generated code also imports `github.com/dagger/otel-go`, so the `go.mod` of the module already requires it. The import names the package `telemetry`, because the package declares the name `otel`.
+
+Pass the `ctx` that `Start` returns to each Dagger call of the step, so that Dagger shows the call under the span.
+
+`EndWithCause` ends the span, and it reads the error of the function through the pointer to the named return value `rerr`. When the error is not nil, `EndWithCause` marks the span as failed. The message of the returned error then holds a `[traceparent:<trace-id>-<span-id>]` marker, which names the span where the error began.
+
+Do not import `dagger/my-module/internal/telemetry`, which the cookbook of the Dagger 0.21 docs imports. Dagger v1.0.0-beta.25 and Go SDK v1.6.0 do not generate that package. So a module that imports it does not compile, and the `go` command reports `package dagger/my-module/internal/telemetry is not in std`.
 
 ---
 

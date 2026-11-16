@@ -751,5 +751,5 @@ Dagger pipelines run identically locally and in CI. Write pipeline logic in Dagg
 | Minimal images | `WithRootfs` for scratch-like containers | [cookbook.md](references/cookbook.md) |
 | Interactive debug | `Terminal()` for shell access mid-pipeline | [cookbook.md](references/cookbook.md) |
 | Registry auth | `WithRegistryAuth` for private registries | [cookbook.md](references/cookbook.md) |
-| Custom telemetry | `telemetry.Tracer()` for named spans in UI | [cookbook.md](references/cookbook.md) |
+| Custom telemetry | `Tracer()` for named spans in UI | [cookbook.md](references/cookbook.md) |
 | MCP servers | Expose modules to Claude/Cursor or connect external MCP | [architecture.md](references/architecture.md) |
