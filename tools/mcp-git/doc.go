@@ -22,6 +22,13 @@
 // of GH_TOKEN when git connects to github.com over https after those
 // rewrites.
 //
+// When the origin remote has another URL, the error names both URLs.
+// The git config can store a credential in a URL, such as in the base
+// of a rewrite. The tool result must not hold that credential, so the
+// error names each URL without its password. It also names each URL
+// without its user. An ssh URL and an SCP-style URL such as
+// git@host:path keep the user, which is a login name.
+//
 // git_fetch, git_pull, and git_push operate on an existing local
 // repository. They resolve its git directory (worktree-aware), and
 // they take a flock on <gitdir>/mcp-git.lock. They check each URL of

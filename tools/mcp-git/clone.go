@@ -320,6 +320,13 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 // An [ErrOriginMismatch] error names the URL that git reads for
 // origin, and it names url without the rewrites. It names each URL
 // without a trailing ".git" suffix.
+//
+// The tool result holds the error, so the error names each URL as
+// [stripCredential] returns it. The base of a rewrite can add a user
+// and a password to the URL that git reads for origin. The git config
+// of dest can also store both in the URL of origin. When the two URLs
+// differ only in a part that stripCredential removes, the error names
+// two equal URLs. It then says that a user or a password differs.
 func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	origin, err := gitValue(ctx, "-C", dest, "remote", "get-url", "origin")
 	if err != nil {
@@ -366,11 +373,79 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	got := strings.TrimSuffix(origin, ".git")
 	want := strings.TrimSuffix(url, ".git")
 
-	if got != strings.TrimSuffix(rewritten, ".git") {
-		return fmt.Errorf("%w: got %s, want %s", ErrOriginMismatch, got, want)
+	if got == strings.TrimSuffix(rewritten, ".git") {
+		return nil
 	}
 
-	return nil
+	shownGot := stripCredential(got)
+	shownWant := stripCredential(want)
+
+	if shownGot == shownWant && got != want {
+		return fmt.Errorf(
+			"%w: got %s, want %s: the URLs differ only in a user or a password that this message leaves out",
+			ErrOriginMismatch, shownGot, shownWant,
+		)
+	}
+
+	return fmt.Errorf("%w: got %s, want %s", ErrOriginMismatch, shownGot, shownWant)
+}
+
+// stripCredential returns url without the credential that it embeds,
+// so that a message can name the URL. It removes the password of every
+// URL. It removes the user as well, because the user of an https URL
+// can be a token. A URL of the ssh scheme and an SCP-style URL keep
+// the user. That user is a login name, and a caller must pass it to
+// name the same remote.
+//
+// In a URL that has a scheme, the user and the password come before
+// the last '@' of the host part, and a ':' separates them. The host
+// part ends at the first '/', '?', or '#' after "://".
+//
+// git reads a URL that has no scheme as the SCP-style user@host:path
+// when the URL holds a ':' and no '/' comes before that ':'. git reads
+// no password in that URL, but a person can write one after the user.
+// stripCredential therefore reads the text before the first '@' that
+// a ':' follows as the user and the password. Every other URL that has
+// no scheme is a local path, and stripCredential returns it unchanged.
+func stripCredential(url string) string {
+	scheme, rest, found := strings.Cut(url, "://")
+	if found {
+		host := rest
+
+		end := strings.IndexAny(rest, "/?#")
+		if end >= 0 {
+			host = rest[:end]
+		}
+
+		at := strings.LastIndex(host, "@")
+		if at < 0 {
+			return url
+		}
+
+		if scheme != "ssh" {
+			return scheme + "://" + rest[at+1:]
+		}
+
+		user, _, _ := strings.Cut(rest[:at], ":")
+
+		return scheme + "://" + user + rest[at:]
+	}
+
+	colon := strings.Index(url, ":")
+	slash := strings.Index(url, "/")
+
+	if colon < 0 || (slash >= 0 && slash < colon) {
+		return url
+	}
+
+	userinfo, hostPath, found := strings.Cut(url, "@")
+	if !found || !strings.Contains(hostPath, ":") {
+		return url
+	}
+
+	user, _, _ := strings.Cut(userinfo, ":")
+
+	return user + "@" + hostPath
 }
 
 // clone runs git clone for input. input.Dest holds the absolute path

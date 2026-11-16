@@ -1107,6 +1107,243 @@ func TestCheckOriginMismatchNamesURLInput(t *testing.T) {
 	assert.EqualError(t, err, want)
 }
 
+// credentialPrefix is aliasPrefix with a user and a password.
+const credentialPrefix = "https://user:s3cret@example.invalid/"
+
+// credentialRewrite is git config text with a url.<base>.insteadOf
+// rewrite. The rewrite adds the user and the password of
+// credentialPrefix to each URL under aliasPrefix.
+const credentialRewrite = "[url \"" + credentialPrefix + "\"]\n\tinsteadOf = " + aliasPrefix + "\n"
+
+// initOriginRepo creates a repository whose origin remote has the URL
+// origin, and returns its path. It adds config to the git config of
+// the repository.
+func initOriginRepo(t *testing.T, origin, config string) string {
+	t.Helper()
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	runGitCmds(t, [][]string{
+		{"git", "init", "-q", dest},
+		{"git", "-C", dest, "remote", "add", "origin", origin},
+	})
+
+	appendGitConfig(t, dest, config)
+
+	return dest
+}
+
+// The tool result holds the mismatch error, so the error must name
+// each URL without the credential that the URL embeds.
+func TestCheckOriginMismatchOmitsCredential(t *testing.T) {
+	t.Parallel()
+
+	const differ = ": the URLs differ only in a user or a password that this message leaves out"
+
+	tcs := map[string]struct {
+		config string
+		origin string
+		url    string
+		want   string
+	}{
+		"rewrite adds a credential to the origin": {
+			config: credentialRewrite,
+			origin: aliasPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+			want:   "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/b",
+		},
+		"origin stores a credential": {
+			origin: credentialPrefix + "a.git",
+			url:    aliasPrefix + "b.git",
+			want:   "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/b",
+		},
+		"url input holds a credential": {
+			origin: aliasPrefix + "a.git",
+			url:    credentialPrefix + "b.git",
+			want:   "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/b",
+		},
+		"origin stores a credential that the url input lacks": {
+			origin: credentialPrefix + "a.git",
+			url:    aliasPrefix + "a.git",
+			want:   "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/a" + differ,
+		},
+		"rewrite adds another credential than the one of the url input": {
+			config: credentialRewrite,
+			origin: aliasPrefix + "a.git",
+			url:    "https://other@example.invalid/a.git",
+			want:   "origin URL mismatch: got https://example.invalid/a, want https://example.invalid/a" + differ,
+		},
+		"ssh URLs differ only in the password": {
+			origin: "ssh://git:s3cret@example.invalid/a.git",
+			url:    "ssh://git@example.invalid/a.git",
+			want:   "origin URL mismatch: got ssh://git@example.invalid/a, want ssh://git@example.invalid/a" + differ,
+		},
+		// The user of an ssh URL is a login name, and the caller needs
+		// it to see how the two URLs differ.
+		"ssh URLs differ only in the user": {
+			origin: "ssh://git@example.invalid/a.git",
+			url:    "ssh://other@example.invalid/a.git",
+			want:   "origin URL mismatch: got ssh://git@example.invalid/a, want ssh://other@example.invalid/a",
+		},
+		"SCP-style URLs": {
+			origin: "git@example.invalid:org/a.git",
+			url:    "git@example.invalid:org/b.git",
+			want:   "origin URL mismatch: got git@example.invalid:org/a, want git@example.invalid:org/b",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dest := initOriginRepo(t, tc.origin, tc.config)
+
+			err := (&handler{}).checkOrigin(t.Context(), tc.url, dest)
+			require.ErrorIs(t, err, ErrOriginMismatch)
+			assert.EqualError(t, err, tc.want)
+		})
+	}
+}
+
+// The global git config can hold a rewrite whose base embeds a
+// credential. git applies the rewrite to the URL of origin, and the
+// result of git_clone must not hold that credential.
+func TestHandleCloneMismatchOmitsCredential(t *testing.T) { //nolint:paralleltest // t.Setenv
+	setGlobalConfig(t, credentialRewrite)
+
+	dest := initOriginRepo(t, aliasPrefix+"a.git", "")
+
+	result, _, err := (&handler{}).handleClone(t.Context(), nil, CloneInput{
+		URL:  aliasPrefix + "b.git",
+		Dest: dest,
+	})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	assert.Equal(t,
+		"origin URL mismatch: got https://example.invalid/a, want https://example.invalid/b",
+		resultText(t, result),
+	)
+}
+
+func TestStripCredential(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		url  string
+		want string
+	}{
+		"https with a user and a password": {
+			url:  "https://user:s3cret@example.invalid/org/repo",
+			want: "https://example.invalid/org/repo",
+		},
+		"https with a token as the user": {
+			url:  "https://s3cret@example.invalid/org/repo",
+			want: "https://example.invalid/org/repo",
+		},
+		"https with a port": {
+			url:  "https://user:s3cret@example.invalid:8443/org/repo",
+			want: "https://example.invalid:8443/org/repo",
+		},
+		"https with an at sign in the password": {
+			url:  "https://user:s3@cret@example.invalid/org/repo",
+			want: "https://example.invalid/org/repo",
+		},
+		"https with a user and an at sign in the path": {
+			url:  "https://user:s3cret@example.invalid/org/repo@v2",
+			want: "https://example.invalid/org/repo@v2",
+		},
+		"https without a path": {
+			url:  "https://user:s3cret@example.invalid",
+			want: "https://example.invalid",
+		},
+		"https without a user": {
+			url:  "https://example.invalid/org/repo",
+			want: "https://example.invalid/org/repo",
+		},
+		"https with an at sign in the path": {
+			url:  "https://example.invalid/org/repo@v2",
+			want: "https://example.invalid/org/repo@v2",
+		},
+		"https with an at sign in the query": {
+			url:  "https://example.invalid?ref=a@b",
+			want: "https://example.invalid?ref=a@b",
+		},
+		"https with an at sign in the fragment": {
+			url:  "https://example.invalid#a@b",
+			want: "https://example.invalid#a@b",
+		},
+		"http with a user and a password": {
+			url:  "http://user:s3cret@example.invalid/org/repo",
+			want: "http://example.invalid/org/repo",
+		},
+		"ssh with a user": {
+			url:  "ssh://git@example.invalid:2222/org/repo",
+			want: "ssh://git@example.invalid:2222/org/repo",
+		},
+		"ssh with a user and a password": {
+			url:  "ssh://git:s3cret@example.invalid:2222/org/repo",
+			want: "ssh://git@example.invalid:2222/org/repo",
+		},
+		"ssh with an at sign in the password": {
+			url:  "ssh://git:s3@cret@example.invalid/org/repo",
+			want: "ssh://git@example.invalid/org/repo",
+		},
+		"ssh without a user": {
+			url:  "ssh://example.invalid/org/repo",
+			want: "ssh://example.invalid/org/repo",
+		},
+		"file with an at sign in the path": {
+			url:  "file:///srv/user@host/repo",
+			want: "file:///srv/user@host/repo",
+		},
+		"SCP-style with a user": {
+			url:  "git@example.invalid:org/repo",
+			want: "git@example.invalid:org/repo",
+		},
+		"SCP-style with a user and a password": {
+			url:  "git:s3cret@example.invalid:org/repo",
+			want: "git@example.invalid:org/repo",
+		},
+		"SCP-style with a user and an IPv6 host": {
+			url:  "git@[::1]:org/repo",
+			want: "git@[::1]:org/repo",
+		},
+		"SCP-style with a user and an at sign in the path": {
+			url:  "git@example.invalid:org/repo@v2",
+			want: "git@example.invalid:org/repo@v2",
+		},
+		"SCP-style without a user": {
+			url:  "example.invalid:org/repo",
+			want: "example.invalid:org/repo",
+		},
+		"SCP-style with an at sign in the path": {
+			url:  "example.invalid:org/repo@v2",
+			want: "example.invalid:org/repo@v2",
+		},
+		"local path": {
+			url:  "/srv/git/repo",
+			want: "/srv/git/repo",
+		},
+		"local path with a colon on each side of an at sign": {
+			url:  "/srv/a:b@host:git/repo",
+			want: "/srv/a:b@host:git/repo",
+		},
+		"relative path with an at sign": {
+			url:  "user@host/repo",
+			want: "user@host/repo",
+		},
+		"empty": {},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, stripCredential(tc.url))
+		})
+	}
+}
+
 // git rejects an empty URL when checkOrigin applies the rewrites to
 // it. checkOrigin compared no URL then, so the error must not report
 // another URL.
