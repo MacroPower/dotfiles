@@ -1,5 +1,7 @@
 # Architecture & Design Patterns
 
+Before you copy an example, match its calls to the layout of your module. A module with a generated entrypoint calls the constructors of `dagger.io/dagger/core`, such as `core.NewContainer()`. A module on the Go runtime calls the methods of the global `dag` client, such as `dag.Container()`. [Module Layouts](../SKILL.md#module-layouts) in SKILL.md maps each constructor to its `dag` method.
+
 ## Table of Contents
 
 1. [Core Types](#core-types)
@@ -24,24 +26,24 @@
 
 | Type | Purpose | Example |
 | --- | --- | --- |
-| `Container` | OCI container image, chainable | `dag.Container().From("alpine")` |
-| `Directory` | Filesystem directory reference | `dag.Directory()`, function args |
+| `Container` | OCI container image, chainable | `core.NewContainer().From("alpine")` |
+| `Directory` | Filesystem directory reference | `core.NewDirectory()`, function args |
 | `File` | Single file reference | `container.File("/app/binary")` |
 | `Service` | Long-running network service | `container.AsService()` |
-| `Secret` | Confidential data (never logged) | `dag.SetSecret("key", "value")` |
-| `CacheVolume` | Persistent filesystem cache | `dag.CacheVolume("go-mod")` |
-| `GitRepository` | Git repo reference | `dag.Git("https://github.com/...")` |
+| `Secret` | Confidential data (never logged) | `core.SetSecret("key", "value")` |
+| `CacheVolume` | Persistent filesystem cache | `core.NewCacheVolume("go-mod")` |
+| `GitRepository` | Git repo reference | `core.Git("https://github.com/...")` |
 | `Socket` | Unix/TCP socket | SSH auth sockets |
-| `LLM` | Large Language Model interface | `dag.LLM()` |
+| `LLM` | Large Language Model interface | `core.NewLLM()` |
 | `Env` | LLM environment with I/O | `dag.Env()` |
 | `Changeset` | File modifications to apply to source | `dir.Changes(baseDir)` |
 
 All types are immutable and content-addressed. Operations on them produce new instances rather than mutating state.
 
 Additional utilities:
-- `dag.HTTP(url)` — fetch a file via HTTP, returns `*dagger.File`
-- `dag.Directory()` — create an empty directory to build up incrementally
-- `dag.SetSecret(name, value)` — create a secret programmatically
+- `core.HTTP(url)`: fetches a file over HTTP and returns a `*dagger.File`
+- `core.NewDirectory()`: creates an empty directory to build up incrementally
+- `core.SetSecret(name, value)`: creates a secret programmatically
 
 Options structs follow the naming convention `dagger.TypeMethodOpts` (for example, `dagger.ContainerAsServiceOpts`, `dagger.ContainerWithExecOpts`, and `dagger.ServiceEndpointOpts`).
 
@@ -62,7 +64,7 @@ Dagger represents workflows as a Directed Acyclic Graph (DAG). Each operation is
 ```go
 // Good: single pipeline, engine optimizes execution
 func (m *MyModule) Build(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -71,7 +73,7 @@ func (m *MyModule) Build(src *dagger.Directory) *dagger.Container {
 
 // Avoid: unnecessary intermediate resolution
 func (m *MyModule) Build(ctx context.Context, src *dagger.Directory) (*dagger.Container, error) {
-    ctr := dag.Container().From("golang:1.22")
+    ctr := core.NewContainer().From("golang:1.22")
     _, err := ctr.Stdout(ctx) // forces execution prematurely
     // ...
 }
@@ -108,7 +110,7 @@ Independent of function caching. Each `WithExec`, `WithFile`, `WithDirectory` et
 
 ### Secrets and caching
 
-Secrets are never cached on disk. Functions returning values that reference secrets created via `dag.SetSecret()` behave as "session" caching regardless of configured TTL.
+Secrets are never cached on disk. Functions returning values that reference secrets created via `core.SetSecret()` behave as "session" caching regardless of configured TTL.
 
 By default, layer cache entries are keyed on the secret's plaintext value — different values invalidate cache. For rotating secrets that should share cache (such as frequently rotated tokens that are functionally equivalent), callers can set a stable `cacheKey`:
 
@@ -123,13 +125,13 @@ Persist filesystem state across runs. Package managers use cache volumes to reus
 ```go
 // Go module + build cache
 func (m *MyModule) buildEnv(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
-        WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
+        WithMountedCache("/go/pkg/mod", core.NewCacheVolume("go-mod")).
         WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-        WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build")).
+        WithMountedCache("/root/.cache/go-build", core.NewCacheVolume("go-build")).
         WithEnvVariable("GOCACHE", "/root/.cache/go-build")
 }
 ```
@@ -153,7 +155,7 @@ To bust a specific step's cache, inject a changing input:
 
 ```go
 func (m *MyModule) FreshBuild(ctx context.Context, src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -164,13 +166,15 @@ func (m *MyModule) FreshBuild(ctx context.Context, src *dagger.Directory) *dagge
 
 ### Backwards compatibility (pre-v0.19.4)
 
-Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching for all functions. To keep that default, add a flag to the module config before a manual edit or a generation raises the `engineVersion` to v0.19.4 or a later version. Neither the Dagger v1.0.0-beta.25 CLI nor Go SDK v1.6.0 adds the flag. [dagger-module.toml](#dagger-moduletoml) covers how to raise the `engineVersion` and when generation raises it. `dagger-module.toml` holds the flag in this form, and a 0.x `dagger.json` holds it as `"disableDefaultFunctionCaching": true`:
+Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching for all functions. To keep that default, add a flag to the module config before a manual edit or a generation raises the `engineVersion` to v0.19.4 or a later version. Neither the Dagger v1.0.0-beta.25 CLI nor Go SDK v1.6.0 adds the flag. [dagger-module.toml](#dagger-moduletoml) covers how to raise the `engineVersion` and when generation raises it. The `dagger-module.toml` of a module on the Go runtime holds the flag in this form, and a 0.x `dagger.json` holds it as `"disableDefaultFunctionCaching": true`:
 
 ```toml
 disableDefaultFunctionCaching = true
 ```
 
 The flag preserves the session default. After you review the caching of each function and add the `// +cache` annotations that the functions need, remove the flag to opt in to the 7-day default TTL.
+
+Do not add the flag to the manifest of a module with a generated entrypoint. Such a manifest declares no `engineVersion`, and Go SDK v1.6.0 refuses to generate a module whose entrypoint manifest holds the flag.
 
 ---
 
@@ -183,7 +187,7 @@ Any container with exposed ports can become a service. Use `AsService()` options
 ```go
 // Using the container's default entrypoint
 func (m *MyModule) Database() *dagger.Service {
-    return dag.Container().
+    return core.NewContainer().
         From("postgres:16").
         WithEnvVariable("POSTGRES_PASSWORD", "test").
         WithEnvVariable("POSTGRES_DB", "testdb").
@@ -193,7 +197,7 @@ func (m *MyModule) Database() *dagger.Service {
 
 // Using a custom command
 func (m *MyModule) HttpServer() *dagger.Service {
-    return dag.Container().
+    return core.NewContainer().
         From("python").
         WithWorkdir("/srv").
         WithNewFile("index.html", "Hello, world!").
@@ -211,7 +215,7 @@ Use `WithServiceBinding` to make a service accessible from another container:
 ```go
 func (m *MyModule) Test(ctx context.Context, src *dagger.Directory) (string, error) {
     db := m.Database()
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -236,7 +240,7 @@ func (m *MyModule) Fetch(ctx context.Context) (string, error) {
     if err != nil {
         return "", err
     }
-    return dag.HTTP(endpoint).Contents(ctx)
+    return core.HTTP(endpoint).Contents(ctx)
 }
 ```
 
@@ -301,7 +305,7 @@ Functions can receive services already running on the host as arguments:
 
 ```go
 func (m *MyModule) UserList(ctx context.Context, svc *dagger.Service) (string, error) {
-    return dag.Container().
+    return core.NewContainer().
         From("mariadb:10.11.2").
         WithServiceBinding("db", svc).
         WithExec([]string{"mysql", "--user=root", "--password=secret", "--host=db", "-e", "SELECT Host, User FROM mysql.user"}).
@@ -320,12 +324,12 @@ Assign custom hostnames for service-to-service communication:
 
 ```go
 func (m *MyModule) Services(ctx context.Context) (*dagger.Service, error) {
-    svcA := dag.Container().From("nginx").
+    svcA := core.NewContainer().From("nginx").
         WithExposedPort(80).
         AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true}).
         WithHostname("svca")
 
-    svcB := dag.Container().From("nginx").
+    svcB := core.NewContainer().From("nginx").
         WithServiceBinding("svca", svcA).
         WithExposedPort(80).
         AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true}).
@@ -361,9 +365,9 @@ Use cache volumes for service data that should survive restarts:
 
 ```go
 func (m *MyModule) Redis() *dagger.Service {
-    return dag.Container().
+    return core.NewContainer().
         From("redis:7").
-        WithMountedCache("/data", dag.CacheVolume("redis-data")).
+        WithMountedCache("/data", core.NewCacheVolume("redis-data")).
         WithExposedPort(6379).
         AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 }
@@ -391,21 +395,21 @@ func (m *MyModule) Publish(
 ### Secret as environment variable
 
 ```go
-dag.Container().
+core.NewContainer().
     WithSecretVariable("API_TOKEN", token)
 ```
 
 ### Secret as mounted file
 
 ```go
-dag.Container().
+core.NewContainer().
     WithMountedSecret("/run/secrets/key", keyFile)
 ```
 
 ### Creating secrets programmatically
 
 ```go
-secret := dag.SetSecret("my-secret", "the-value")
+secret := core.SetSecret("my-secret", "the-value")
 ```
 
 ### How users pass secrets
@@ -445,7 +449,7 @@ func (m *MyModule) Publish(
 func (m *MyModule) Build(ctx context.Context, src *dagger.Directory, token *dagger.Secret) *dagger.Container {
     // Create a named secret for the Dockerfile RUN --mount=type=secret,id=gh-token
     val, _ := token.Plaintext(ctx)
-    buildSecret := dag.SetSecret("gh-token", val)
+    buildSecret := core.SetSecret("gh-token", val)
     return src.DockerBuild(dagger.DirectoryDockerBuildOpts{
         Secrets: []*dagger.Secret{buildSecret},
     })
@@ -470,7 +474,7 @@ Functions can return `*dagger.Changeset` (or `[]*dagger.Changeset`) to represent
 // Generate runs go generate and returns changes to apply
 // +generate
 func (m *MyModule) Generate() *dagger.Changeset {
-    generated := dag.Container().
+    generated := core.NewContainer().
         From("golang:1.22").
         WithDirectory("/app", m.Source).
         WithWorkdir("/app").
@@ -547,11 +551,11 @@ func (m *GolangciLint) Lint(
     // +default="v1.57.2"
     version string,
 ) error {
-    _, err := dag.Container().
+    _, err := core.NewContainer().
         From("golangci/golangci-lint:" + version).
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
-        WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
+        WithMountedCache("/root/.cache/golangci-lint", core.NewCacheVolume("golangci-lint")).
         WithExec([]string{"golangci-lint", "run"}).
         Sync(ctx)
     return err
@@ -648,17 +652,28 @@ Run the `dagger module client` commands from the directory of the module that ta
 dagger module client add github.com/user/module@v1.0.0 --sdk=go -y
 ```
 
-The command records the dependency in `dagger.toml`, and the SDK writes the matching `[[dependencies]]` entry of `dagger-module.toml`. The next `dagger generate` replaces a manual edit of that entry, so do not edit it by hand.
+The command records the dependency in the `clients` list of the module in `dagger.toml`. What the SDK then generates depends on the layout of the module:
+
+- **Generated entrypoint**: the SDK generates a client package in `internal/dagger/clients/<name>/`, where `<name>` is the module name of the dependency. It does not write the dependency to `dagger-module.toml`.
+- **Go runtime**: the SDK writes the matching `[[dependencies]]` entry of `dagger-module.toml`, and it generates the bindings of the dependency in `internal/dagger/`. The next `dagger generate` replaces a manual edit of that entry, so do not edit it by hand.
 
 ### Using in code
 
-Dependencies are accessed via `dag`:
+A module with a generated entrypoint calls a dependency through its client package. The `New` function of the package takes the constructor arguments of the dependency and returns its main object:
 
 ```go
+import "dagger/my-module/internal/dagger/clients/golang"
+
 func (m *MyModule) Build(ctx context.Context, src *dagger.Directory) *dagger.Directory {
-    return dag.Golang().Build(src)
+    return golang.New().Build(src)
 }
 ```
+
+The name of a client package is the name of its directory in lowercase without the hyphens, such as `mydep` for `clients/my-dep/`. So import such a package under that name, as in `import mydep "dagger/my-module/internal/dagger/clients/my-dep"`.
+
+The optional arguments of a constructor go in an options struct that the package names after the dependency, as in `mydep.New(mydep.MyDepOpts{Source: src})`. The optional arguments of a function go in a struct such as `mydep.MyDepBuildOpts`.
+
+A module on the Go runtime calls a dependency through the global `dag` client, as in `dag.Golang().Build(src)`. Its options structs live in the `internal/dagger` package, as in `dagger.MyDepOpts`.
 
 ### Local dependencies
 
@@ -824,7 +839,7 @@ work := dag.LLM().
 
 ### Test module pattern
 
-Create a `tests/` subdirectory with its own `dagger-module.toml` that depends on the parent module:
+Create a `tests/` subdirectory that holds a module of its own, and add the parent module as its dependency:
 
 ```shell
 cd my-module
@@ -833,22 +848,25 @@ cd tests
 dagger module client add .. --sdk=go -y
 ```
 
-`--path` creates the test module without installing it in the workspace, so each command that calls it loads it with `-m`.
+`--path` creates the test module without installing it in the workspace, so each command that calls it loads it with `-m`. The test module calls the parent module through the client package that `dagger module client add` generates:
 
 ```go
 // tests/main.go
-package main
+package tests
 
 import (
     "context"
-    "dagger/tests/internal/dagger"
+
+    "dagger.io/dagger/core"
+
+    mymodule "dagger/tests/internal/dagger/clients/my-module"
 )
 
 type Tests struct{}
 
 func (t *Tests) TestBuild(ctx context.Context) error {
-    src := dag.CurrentModule().Source()
-    _, err := dag.MyModule(dagger.MyModuleOpts{Source: src}).
+    src := core.NewCurrentModule().Source()
+    _, err := mymodule.New(mymodule.MyModuleOpts{Source: src}).
         Build().
         Sync(ctx)
     return err
@@ -862,6 +880,8 @@ func (t *Tests) All(ctx context.Context) error {
     return nil
 }
 ```
+
+A test module on the Go runtime declares `package main` and imports `dagger/tests/internal/dagger`. It calls `dag.MyModule(dagger.MyModuleOpts{Source: src})` in place of `mymodule.New`.
 
 ### Running tests
 
@@ -877,14 +897,14 @@ cd tests && dagger call -m . all
 
 ```go
 func (t *Tests) TestWithDB(ctx context.Context) error {
-    db := dag.Container().
+    db := core.NewContainer().
         From("postgres:16").
         WithEnvVariable("POSTGRES_PASSWORD", "test").
         WithExposedPort(5432).
         AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
-    _, err := dag.MyModule().
-        Test(dagger.MyModuleTestOpts{Db: db}).
+    _, err := mymodule.New().
+        Test(mymodule.MyModuleTestOpts{Db: db}).
         Sync(ctx)
     return err
 }
@@ -933,10 +953,12 @@ dagger module client add ../.. --sdk=go -y
 
 ```go
 // examples/go/main.go
+import mymodule "dagger/examples/internal/dagger/clients/my-module"
+
 type Examples struct{}
 
 func (e *Examples) MyModuleBuild(ctx context.Context) error {
-    _, err := dag.MyModule().Build().Sync(ctx)
+    _, err := mymodule.New().Build().Sync(ctx)
     return err
 }
 ```
@@ -976,12 +998,12 @@ Extract common build logic into a shared module that other modules depend on:
 type Shared struct{}
 
 func (s *Shared) GolangBuildEnv(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
-        WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
-        WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build"))
+        WithMountedCache("/go/pkg/mod", core.NewCacheVolume("go-mod")).
+        WithMountedCache("/root/.cache/go-build", core.NewCacheVolume("go-build"))
 }
 ```
 
@@ -991,7 +1013,7 @@ Even if unnecessary CI jobs trigger in a monorepo, Dagger's layer cache means mo
 
 ## Publishing & Versioning
 
-1. **Describe the module** in the comment that opens `main.go`, above `package main`:
+1. **Describe the module** in the comment that opens `main.go`, above the `package` clause. Dagger publishes the comment as the description of a module on the Go runtime, as in this example. Go SDK v1.6.0 publishes no description for a module with a generated entrypoint.
    ```go
    // Build and test Go applications
 
@@ -1050,7 +1072,31 @@ Write your pipeline logic in Dagger Functions, not in CI YAML. The CI config sho
 
 ### dagger-module.toml
 
-`dagger-module.toml` is the manifest of one module. `dagger module init` creates it. This example is the manifest of a module on the Go runtime:
+`dagger-module.toml` is the manifest of one module. `dagger module init` creates it, and Go SDK v1.6.0 writes one of two manifests. The manifest of a module with a generated entrypoint holds an `[entrypoint]` table. The manifest of a module on the Go runtime holds a `[runtime]` table. [Module Layouts](../SKILL.md#module-layouts) in SKILL.md lists what else differs between the two layouts.
+
+#### Generated entrypoint
+
+A module that `dagger module init go` creates loads through an entrypoint that the SDK generates in `internal/dagger/entrypoint/`. Go SDK v1.6.0 writes this manifest for such a module:
+
+```toml
+name = "my-module"
+include = []
+
+[entrypoint]
+kind = "dang"
+source = "./internal/dagger/entrypoint"
+```
+
+At each generation, the SDK writes the whole manifest again from the name of the module and its entrypoint. So do not edit the manifest of a module with a generated entrypoint. These keys do not work there as they do in the manifest of a module on the Go runtime:
+
+- `engineVersion`: the manifest declares none. Dagger v1.0.0-beta.25 ignores the field there and loads the module at the version of the engine. The SDK removes the field when it generates the module again.
+- `disableDefaultFunctionCaching`: Go SDK v1.6.0 refuses to generate a module whose manifest holds the flag, and the error says that `dagger-module.toml has settings a Dang entrypoint cannot carry`. Dagger v1.0.0-beta.25 ignores the flag in that manifest, so each function without a `+cache` annotation takes the 7-day default.
+- `include`: the SDK writes the list, and the next `dagger generate` replaces a manual edit. [File/directory filters](#filedirectory-filters) covers the files that such a module loads.
+- `[[dependencies]]`: the manifest lists no dependency that `dagger module client add` records. The SDK generates a client package for each one, and [Module Dependencies](#module-dependencies) covers those packages.
+
+#### Go runtime
+
+This example is the manifest of a module on the Go runtime:
 
 ```toml
 name = "my-module"
@@ -1078,34 +1124,46 @@ Dagger loads a module whose `engineVersion` is `latest` at the version of the ru
 
 Dagger loads a module on the Go runtime at v0.9.9 when its manifest declares no `engineVersion`, and at v0.11.9 when the manifest declares `current`. So when the SDK generates such a module, it raises the field to the version of the running engine, such as v1.0.0-beta.25. Before you generate such a module, add `disableDefaultFunctionCaching = true` to keep the session caching default. Also make each check function return only `error`. A module that Dagger loads at a 1.0 beta or a later version fails to load when one of its check functions returns a value. [Check functions](#check-functions) covers the rule.
 
-Go SDK v1.6.0 puts a new module on the Go runtime only when the `dangEntrypoint` setting of the module is `false`. To create such a module, pass the setting to `dagger module init go` as a flag:
+The `dagger.json` of a 0.x module holds the fields of the Go runtime example as JSON, with the `runtime` table under the name `sdk`. The `dagger.json` of a 0.x project also lists its `toolchains`.
+
+#### Layout settings
+
+The settings of the Go SDK select the layout of a module, and they go in a `settings` table of `dagger.toml`. An existing module keeps its layout when these settings are unset. This table gives the effect of each value in Go SDK v1.6.0:
+
+| Setting | Unset | `true` | `false` |
+| --- | --- | --- | --- |
+| `dangEntrypoint` | A new module gets a generated entrypoint | Moves a module on the Go runtime to a generated entrypoint, and keeps its embedded bindings unless `unifiedClients` is `true` | Creates a new module on the Go runtime, and keeps one there |
+| `globalClient` | A module with a generated entrypoint has no `dag` | Generates `dag` in a module with a generated entrypoint | Refused for a module on the Go runtime, which always has `dag` |
+| `unifiedClients` | A new module with a generated entrypoint takes its types from `dagger.io/dagger/core` | Moves a module with a generated entrypoint to the types of `dagger.io/dagger/core`, and the SDK refuses it on the Go runtime | Keeps embedded bindings in each layout |
+
+Embedded bindings declare their own types, so the core constructors do not return those types. The SDK also refuses to generate a module with a generated entrypoint and embedded bindings when the module uses another module. The error names the `unifiedClients` setting. So leave `unifiedClients` unset in a new module, and set it to `true` in a module that moves from the Go runtime.
+
+To move a module from the Go runtime to a generated entrypoint, set `dangEntrypoint` and `unifiedClients` to `true` in the settings table of its scope. When the code of the module calls `dag`, also set `globalClient = true`:
+
+```toml
+[sdks.go.scopes."path/to/module".settings]
+dangEntrypoint = true
+unifiedClients = true
+globalClient = true
+```
+
+Before you move a module, keep the caching that its functions need. A module with a generated entrypoint declares no `engineVersion`, so each function without a `+cache` annotation takes the 7-day default. Go SDK v1.6.0 also refuses to generate the module while its manifest holds `disableDefaultFunctionCaching`. So when the module keeps the session default through that flag or through an `engineVersion` lower than v0.19.4, review the caching of each function, as [Backwards compatibility (pre-v0.19.4)](#backwards-compatibility-pre-v0194) describes. Add `// +cache="session"` to each function that needs the session default, and remove the flag from `dagger-module.toml`.
+
+Before you move a module, also make each check function return only `error`. Dagger loads a module with a generated entrypoint at the version of the engine, such as v1.0.0-beta.25. So when one of its check functions returns a value, such as a `*dagger.Container`, Dagger fails to load the moved module with `check <Object>.<function> must return Void`. [Check functions](#check-functions) covers the rule.
+
+Then run `dagger generate -y`. The SDK does not move a module back to the Go runtime. It marks the `dag` that it generates as deprecated, and that `dag` also reaches each dependency, as in `dag.MyDep()`. In new code, call the core constructors.
+
+To create a module on the Go runtime, pass `--dang-entrypoint=false` to `dagger module init go`:
 
 ```shell
 dagger module init go --name my-module --dang-entrypoint=false -y
 ```
 
-The command records the setting under `[sdks.go.scopes."<path>".settings]` in `dagger.toml`, where `<path>` is the directory of the module, relative to the directory of `dagger.toml`. So each later generation keeps the module on the Go runtime.
+The command records the setting under `[sdks.go.scopes."<path>".settings]` in `dagger.toml`, where `<path>` is the directory of the module, relative to the directory of `dagger.toml`. So each later generation keeps the module on the Go runtime. To keep an existing module on the Go runtime, set `dangEntrypoint = false` and `unifiedClients = false` in the settings table of its scope.
 
 To set `dangEntrypoint = false` for every Go module of the workspace, put the key under `[modules.<sdk>.settings]`, where `<sdk>` is the module that the `module` key of `[sdks.go]` names. That module is `go-sdk` after `dagger module install dagger.io/sdk/go`, and `dagger-go-sdk` after `dagger workspace migrate`. The SDK then refuses to generate each module of the workspace that already loads through a generated entrypoint. The settings table of a scope overrides `[modules.<sdk>.settings]`. So to keep such a module, set `dangEntrypoint = true` in the settings table of its scope.
 
 Dagger v1.0.0-beta.25 rejects the key outside a `settings` table, such as directly under `[sdks.go]` or in the scope table itself. Dagger then fails to load the workspace, and the error names the key, such as `unknown field sdks.go.dangEntrypoint`.
-
-Without the setting, a new module loads through an entrypoint that the SDK generates in `internal/dagger/entrypoint/`. Go SDK v1.6.0 writes this manifest for such a module:
-
-```toml
-name = "my-module"
-include = []
-
-[entrypoint]
-kind = "dang"
-source = "./internal/dagger/entrypoint"
-```
-
-The manifest of a module with a generated entrypoint holds an `[entrypoint]` table in place of the `[runtime]` table, and it declares no `engineVersion`. Do not add the field to such a manifest. Dagger v1.0.0-beta.25 ignores the field there and loads the module at the version of the engine. The SDK removes the field when it generates the module again.
-
-Do not add `disableDefaultFunctionCaching` to the manifest of a module with a generated entrypoint. Go SDK v1.6.0 refuses to generate such a module, and the error says that `dagger-module.toml has settings a Dang entrypoint cannot carry`. Dagger v1.0.0-beta.25 ignores the flag in that manifest, so each function without a `+cache` annotation takes the 7-day default.
-
-The `dagger.json` of a 0.x module holds the fields of the Go runtime example as JSON, with the `runtime` table under the name `sdk`. The `dagger.json` of a 0.x project also lists its `toolchains`.
 
 ### dagger.toml
 
@@ -1127,7 +1185,7 @@ name = "my-module"
 clients = ["github.com/user/golang@v1.0.0"]
 ```
 
-`[modules.<name>]` records an installed module: its `source`, its `settings`, and `main = true` for the workspace main. `[sdks.<name>]` records an installed SDK and its scopes. Each scope is a directory where the SDK generates code, and its `clients` list holds the dependencies that `dagger module client add` records.
+`[modules.<name>]` records an installed module: its `source`, its `settings`, and `main = true` for the workspace main. `[sdks.<name>]` records an installed SDK and its scopes. Each scope is a directory where the SDK generates code, and its `clients` list holds the dependencies that `dagger module client add` records. The `settings` table of a scope holds the SDK settings of its module, which [Layout settings](#layout-settings) covers.
 
 ### Lockfiles
 
@@ -1141,13 +1199,15 @@ dagger lock update 'node:lts*'   # refresh the entries that match a selector
 
 ### File/directory filters
 
-The `include` field of `dagger-module.toml` lists more files and directories to include or exclude when Dagger loads the module itself. It does not filter function arguments, which use `+ignore`. By default, Dagger includes only the module config file and the files under the source directory. Patterns with a `!` prefix exclude the paths that they match. Put the field above the first table of the file:
+In a module on the Go runtime, the `include` field of `dagger-module.toml` lists more files and directories to include or exclude when Dagger loads the module itself. It does not filter function arguments, which use `+ignore`. By default, Dagger includes only the module config file and the files under the source directory. Patterns with a `!` prefix exclude the paths that they match. Put the field above the first table of the file:
 
 ```toml
 include = ["**/*.go", "go.mod", "go.sum", "!**/*_test.go"]
 ```
 
-Adding `!` exclusion patterns is useful to avoid uploading large cache or generated files that the Dagger Engine doesn't need.
+Adding `!` exclusion patterns is useful to avoid uploading large cache or generated files that the Dagger Engine does not need.
+
+A module with a generated entrypoint takes no such list, because the SDK writes the `include` field of its manifest. Dagger loads the directory of that module without its `.git` directory and without the files that `.gitignore` ignores. It also loads the files outside the directory that the build reads through a local `replace` directive of `go.mod`.
 
 ### Go workspaces
 

@@ -1,4 +1,6 @@
-# Cookbook — Common Recipes (Go SDK)
+# Cookbook: Common Recipes (Go SDK)
+
+Before you copy an example, match its calls to the layout of your module. A module with a generated entrypoint calls the constructors of `dagger.io/dagger/core`, such as `core.NewContainer()`. A module on the Go runtime calls the methods of the global `dag` client, such as `dag.Container()`. [Module Layouts](../SKILL.md#module-layouts) in SKILL.md maps each constructor to its `dag` method.
 
 ## Table of Contents
 
@@ -33,7 +35,7 @@ Compile in a full-featured container, run in a minimal image:
 ```go
 func (m *MyModule) Build(ctx context.Context, src *dagger.Directory) (string, error) {
     // Build stage
-    builder := dag.Container().
+    builder := core.NewContainer().
         From("golang:latest").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -41,7 +43,7 @@ func (m *MyModule) Build(ctx context.Context, src *dagger.Directory) (string, er
         WithExec([]string{"go", "build", "-o", "myapp"})
 
     // Production stage — minimal image
-    prodImage := dag.Container().
+    prodImage := core.NewContainer().
         From("alpine").
         WithFile("/bin/myapp", builder.File("/src/myapp")).
         WithEntrypoint([]string{"/bin/myapp"})
@@ -62,7 +64,7 @@ func (m *MyModule) BuildMultiPlatform(ctx context.Context, src *dagger.Directory
     var variants []*dagger.Container
 
     for _, platform := range platforms {
-        builder := dag.Container(dagger.ContainerOpts{Platform: platform}).
+        builder := core.NewContainer(dagger.ContainerOpts{Platform: platform}).
             From("golang:latest").
             WithDirectory("/src", src).
             WithWorkdir("/src").
@@ -70,7 +72,7 @@ func (m *MyModule) BuildMultiPlatform(ctx context.Context, src *dagger.Directory
             WithExec([]string{"go", "build", "-o", "app"})
 
         // Minimal production image per platform
-        prod := dag.Container(dagger.ContainerOpts{Platform: platform}).
+        prod := core.NewContainer(dagger.ContainerOpts{Platform: platform}).
             From("alpine").
             WithFile("/bin/app", builder.File("/src/app")).
             WithEntrypoint([]string{"/bin/app"})
@@ -78,7 +80,7 @@ func (m *MyModule) BuildMultiPlatform(ctx context.Context, src *dagger.Directory
         variants = append(variants, prod)
     }
 
-    return dag.Container().
+    return core.NewContainer().
         Publish(ctx, "ttl.sh/my-app:latest", dagger.ContainerPublishOpts{
             PlatformVariants: variants,
         })
@@ -91,7 +93,7 @@ For the smallest possible images (scratch-like), use `WithRootfs` instead of a b
 
 ```go
 outputDir := builder.Directory("/output")
-prod := dag.Container(dagger.ContainerOpts{Platform: platform}).
+prod := core.NewContainer(dagger.ContainerOpts{Platform: platform}).
     WithRootfs(outputDir).
     WithEntrypoint([]string{"/app"})
 ```
@@ -109,9 +111,9 @@ func (m *MyModule) Build(ctx context.Context, src *dagger.Directory) *dagger.Dir
     gooses := []string{"linux", "darwin"}
     goarches := []string{"amd64", "arm64"}
 
-    outputs := dag.Directory()
+    outputs := core.NewDirectory()
 
-    golang := dag.Container().
+    golang := core.NewContainer().
         From("golang:latest").
         WithDirectory("/src", src).
         WithWorkdir("/src")
@@ -138,13 +140,13 @@ Mount cache volumes for package managers to avoid re-downloading:
 
 ```go
 func (m *MyModule) Build(source *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", source).
         WithWorkdir("/src").
-        WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
+        WithMountedCache("/go/pkg/mod", core.NewCacheVolume("go-mod")).
         WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-        WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build")).
+        WithMountedCache("/root/.cache/go-build", core.NewCacheVolume("go-build")).
         WithEnvVariable("GOCACHE", "/root/.cache/go-build").
         WithExec([]string{"go", "build"})
 }
@@ -154,11 +156,11 @@ func (m *MyModule) Build(source *dagger.Directory) *dagger.Container {
 
 ```go
 func (m *MyModule) Build(source *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("node:21-slim").
         WithDirectory("/src", source).
         WithWorkdir("/src").
-        WithMountedCache("/root/.npm", dag.CacheVolume("npm-cache")).
+        WithMountedCache("/root/.npm", core.NewCacheVolume("npm-cache")).
         WithExec([]string{"npm", "install"}).
         WithExec([]string{"npm", "run", "build"})
 }
@@ -211,11 +213,11 @@ func (m *MyModule) RunAll(ctx context.Context) error {
 }
 
 func (m *MyModule) buildEnv() *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
-        WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod"))
+        WithMountedCache("/go/pkg/mod", core.NewCacheVolume("go-mod"))
 }
 ```
 
@@ -252,7 +254,7 @@ func (m *MyModule) Build(src *dagger.Directory) *dagger.Container {
 
 ```go
 func (m *MyModule) Clone(ctx context.Context) *dagger.Directory {
-    return dag.Git("https://github.com/dagger/dagger").
+    return core.Git("https://github.com/dagger/dagger").
         Ref("main").
         Tree()
 }
@@ -266,7 +268,7 @@ func (m *MyModule) ClonePrivate(
     // SSH socket for authentication
     sshSocket *dagger.Socket,
 ) *dagger.Directory {
-    return dag.Git("git@github.com:user/private-repo.git",
+    return core.Git("git@github.com:user/private-repo.git",
         dagger.GitOpts{SSHAuthSocket: sshSocket}).
         Ref("main").
         Tree()
@@ -285,7 +287,7 @@ Mounts are fast, resource-efficient references. Changes made inside the containe
 
 ```go
 func (m *MyModule) Build(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithMountedDirectory("/src", src).  // mount (reference, not persisted)
         WithWorkdir("/src").
@@ -299,7 +301,7 @@ Copies are persisted in the container layer. Use when the content should be part
 
 ```go
 func (m *MyModule) Build(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).  // copy (persisted in container layer)
         WithWorkdir("/src").
@@ -366,7 +368,7 @@ func (m *MyModule) Source(src *dagger.Directory) *dagger.Directory {
 
 ```go
 func (m *MyModule) GoFiles(src *dagger.Directory) *dagger.Directory {
-    return dag.Directory().
+    return core.NewDirectory().
         WithDirectory("/", src, dagger.DirectoryWithDirectoryOpts{
             Include: []string{"**/*.go", "go.mod", "go.sum"},
         })
@@ -381,7 +383,7 @@ func (m *MyModule) Build(
     // +optional
     exclude []string,
 ) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src, dagger.ContainerWithDirectoryOpts{
             Exclude: exclude,
@@ -406,7 +408,7 @@ func (m *MyModule) WithScript(ctr *dagger.Container) *dagger.Container {
 
 // Start from an empty directory and build up
 func (m *MyModule) Assets() *dagger.Directory {
-    return dag.Directory().
+    return core.NewDirectory().
         WithNewFile("config.json", `{"version": "1.0"}`).
         WithNewFile("README.md", "# My Project")
 }
@@ -418,13 +420,13 @@ func (m *MyModule) Assets() *dagger.Directory {
 
 ```go
 func (m *MyModule) Download(ctx context.Context, url string) *dagger.File {
-    return dag.HTTP(url)
+    return core.HTTP(url)
 }
 
 // Use in a pipeline
 func (m *MyModule) Install(ctx context.Context) *dagger.Container {
-    binary := dag.HTTP("https://example.com/tool-v1.0")
-    return dag.Container().
+    binary := core.HTTP("https://example.com/tool-v1.0")
+    return core.NewContainer().
         From("alpine").
         WithFile("/usr/local/bin/tool", binary)
 }
@@ -506,7 +508,7 @@ func (m *MyModule) Label(ctr *dagger.Container) *dagger.Container {
 
 ```go
 func (m *MyModule) Deploy(ctx context.Context, token *dagger.Secret) (string, error) {
-    return dag.Container().
+    return core.NewContainer().
         From("alpine").
         WithSecretVariable("API_TOKEN", token).
         WithExec([]string{"sh", "-c", "curl -H \"Authorization: Bearer $API_TOKEN\" https://api.example.com/deploy"}).
@@ -518,7 +520,7 @@ func (m *MyModule) Deploy(ctx context.Context, token *dagger.Secret) (string, er
 
 ```go
 func (m *MyModule) Deploy(ctx context.Context, keyFile *dagger.Secret) (string, error) {
-    return dag.Container().
+    return core.NewContainer().
         From("alpine").
         WithMountedSecret("/run/secrets/key", keyFile).
         WithExec([]string{"deploy", "--key-file=/run/secrets/key"}).
@@ -528,12 +530,12 @@ func (m *MyModule) Deploy(ctx context.Context, keyFile *dagger.Secret) (string, 
 
 ### Secret in Dockerfile build
 
-The secret name passed to `dag.SetSecret` must match the `--mount=type=secret,id=...` in the Dockerfile:
+The secret name passed to `core.SetSecret` must match the `--mount=type=secret,id=...` in the Dockerfile:
 
 ```go
 func (m *MyModule) Build(ctx context.Context, src *dagger.Directory, token *dagger.Secret) *dagger.Container {
     val, _ := token.Plaintext(ctx)
-    buildSecret := dag.SetSecret("gh-token", val)  // matches id=gh-token in Dockerfile
+    buildSecret := core.SetSecret("gh-token", val)  // matches id=gh-token in Dockerfile
     return src.DockerBuild(dagger.DirectoryDockerBuildOpts{
         Secrets: []*dagger.Secret{buildSecret},
     })
@@ -546,7 +548,7 @@ func (m *MyModule) Build(ctx context.Context, src *dagger.Directory, token *dagg
 
 ```go
 func (m *MyModule) Build(ctx context.Context, src *dagger.Directory) (string, error) {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -572,7 +574,7 @@ Alternatively, return `*dagger.File` or `*dagger.Directory` from the function an
 
 ```go
 func (m *MyModule) Build(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithEnvVariable("CGO_ENABLED", "0").
         WithEnvVariable("GOOS", "linux").
@@ -606,7 +608,7 @@ ctr.With(EnvVariables(map[string]string{"KEY": "value", "KEY2": "value2"}))
 ```go
 func (m *MyModule) Test(ctx context.Context, src *dagger.Directory) (string, error) {
     // Start a PostgreSQL service
-    db := dag.Container().
+    db := core.NewContainer().
         From("postgres:16").
         WithEnvVariable("POSTGRES_PASSWORD", "test").
         WithEnvVariable("POSTGRES_DB", "testdb").
@@ -614,7 +616,7 @@ func (m *MyModule) Test(ctx context.Context, src *dagger.Directory) (string, err
         AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
     // Run tests with the database service bound
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -633,7 +635,7 @@ Use `Expect: dagger.ReturnTypeAny` to allow non-zero exit codes:
 
 ```go
 func (m *MyModule) Test(ctx context.Context) (*TestResult, error) {
-    ctr, err := dag.Container().
+    ctr, err := core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
@@ -666,7 +668,7 @@ Open a terminal session in any container for debugging:
 
 ```go
 func (m *MyModule) Debug(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -685,7 +687,7 @@ dagger call build --src=. terminal
 For directories, specify a container and shell:
 ```go
 dir.Terminal(dagger.DirectoryTerminalOpts{
-    Container: dag.Container().From("ubuntu"),
+    Container: core.NewContainer().From("ubuntu"),
     Cmd:       []string{"/bin/bash"},
 })
 ```

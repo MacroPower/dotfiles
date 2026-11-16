@@ -14,7 +14,7 @@ This skill targets the Dagger **v1.0.0-beta.25** CLI, and each command in it is 
 | File | Role |
 | --- | --- |
 | `dagger.toml` | Workspace config: the modules that a repository installs, their settings, and its SDKs |
-| `dagger-module.toml` | Manifest of one module: its name, engine version, runtime, and dependencies |
+| `dagger-module.toml` | Manifest of one module: its name, and the generated entrypoint or the runtime that Dagger loads it through |
 
 Dagger 1.0 also runs a project that keeps its 0.x `dagger.json`. But in that project, the commands that install or remove modules, change the dependencies of a module, or create a module fail until `dagger workspace migrate` converts the project. Read [Dagger 0.x](#dagger-0x) before you change a project that holds a `dagger.json`.
 
@@ -39,6 +39,38 @@ The Go SDK is a Dagger module, `dagger.io/sdk/go`, that a workspace installs. Th
 
 Read these reference files when you need detailed code examples or deeper guidance on a specific topic.
 
+## Module Layouts
+
+Go SDK v1.6.0 generates a module in one of two layouts. Find the layout of a module before you edit it, because the layout sets its manifest, its package clause, and its API client.
+
+`dagger module init go` creates a module with a generated entrypoint. The `dagger.json` modules of a 0.x project are on the Go runtime, and they stay there after `dagger workspace migrate` or `dagger module migrate` converts them. [Layout settings](references/architecture.md#layout-settings) in architecture.md covers the settings that create a new module on the Go runtime and that move a module from the Go runtime to a generated entrypoint.
+
+| Attribute | Generated entrypoint | Go runtime |
+| --- | --- | --- |
+| `dagger-module.toml` | Holds an `[entrypoint]` table | Holds a `[runtime]` table |
+| Package clause | `package my_module`, after the module name | `package main` |
+| Dagger API | The constructors of `dagger.io/dagger/core`, such as `core.NewContainer()` | The methods of the global `dag` client, such as `dag.Container()` |
+| Dependencies | One client package for each dependency, as in `mydep.New()` | The methods of `dag`, as in `dag.MyDep()` |
+
+A module with a generated entrypoint has no `dag`. When its code calls `dag`, `dagger generate` fails with `undefined: dag`, and the error names the `globalClient` setting. That setting serves code that moves from the Go runtime, and [Layout settings](references/architecture.md#layout-settings) covers it. In new code, call the constructors of the `dagger.io/dagger/core` package. Each constructor carries the name of its `dag` method, and it takes the prefix `New` when a type of the Dagger API has that name, as `Container` does.
+
+| Generated entrypoint | Go runtime |
+| --- | --- |
+| `core.NewContainer()` | `dag.Container()` |
+| `core.NewDirectory()` | `dag.Directory()` |
+| `core.NewCacheVolume("go-mod")` | `dag.CacheVolume("go-mod")` |
+| `core.NewCurrentModule()` | `dag.CurrentModule()` |
+| `core.Git(url)` | `dag.Git(url)` |
+| `core.HTTP(url)` | `dag.HTTP(url)` |
+| `core.SetSecret(name, value)` | `dag.SetSecret(name, value)` |
+| `mydep.New()` | `dag.MyDep()` |
+
+Both layouts name the types of the Dagger API through the `internal/dagger` package of the module, as in `*dagger.Container` and `dagger.ContainerWithExecOpts`. In a module that takes its types from `dagger.io/dagger/core`, such as a new module with a generated entrypoint, that package declares only the types that the module used when `dagger generate` last ran. So when your code names a `dagger.` type that the module did not use before, the module fails to compile with an error such as `undefined: dagger.ContainerAsServiceOpts` until you run `dagger generate -y`.
+
+Match each call to the layout of the module that you edit. Where an example of this skill calls the client of the other layout, translate the call with the table. In a module on the Go runtime, do not import `dagger.io/dagger/core`. The bindings of that module declare their own types, so a `*core.Container` is not a `*dagger.Container` there.
+
+A module that moved from the Go runtime to a generated entrypoint keeps `package main`. It also keeps `dag` when its `globalClient` setting is `true`, so leave the existing calls of `dag` as they are. Call the core constructors in such a module only when its scope in `dagger.toml` sets `unifiedClients = true`. Without that setting, the module keeps the bindings of the Go runtime, which declare their own types, and it cannot use other modules.
+
 ## Module Creation Workflow
 
 ### 1. Initialize
@@ -57,9 +89,9 @@ dagger module init go --name my-module -y
 
 `dagger module init` creates the module in `.dagger/modules/my-module`, beside `dagger.toml`, and installs it in the workspace under the name `my-module`. It writes these files:
 - `dagger-module.toml`: the module manifest
-- `main.go`: entry point with the main object
+- `main.go`: a starter main object, in a package that the SDK names after the module, such as `my_module`
 - `go.mod` and `go.sum`: standard Go module files
-- `dagger.gen.go` and `internal/`: generated bindings
+- `dagger.gen.go`, `.dagger-generated.json`, `cmd/my-module-dispatch/`, and `internal/dagger/`: generated code
 
 With `--path <dir>`, the command creates the module in `<dir>`, relative to the current directory, and does not install it in the workspace. Add `--install` to install it, or `--main` to install it as the workspace main.
 
@@ -69,35 +101,49 @@ The main object name must match the module name in PascalCase. For `my-module`, 
 
 ```
 .dagger/modules/my-module/
-├── dagger-module.toml
+├── dagger-module.toml        # Manifest (generated)
 ├── go.mod
 ├── go.sum
-├── main.go          # Main object + functions
-├── build.go         # Additional functions (same package)
-├── dagger.gen.go    # Generated code (do not edit)
-└── internal/        # Generated code (do not edit)
-    └── dagger/      # dagger.gen.go, core/, and one <dep>.gen.go per dependency
+├── main.go                   # Main object + functions
+├── build.go                  # Additional functions (same package)
+├── dagger.gen.go             # Generated code (do not edit)
+├── .dagger-generated.json    # Record of the generated files (do not edit)
+├── cmd/
+│   └── my-module-dispatch/   # Generated code (do not edit)
+└── internal/
+    └── dagger/               # Generated code (do not edit)
+        ├── dagger.gen.go     # Types of the Dagger API
+        ├── clients/          # One client package per dependency
+        └── entrypoint/       # main.dang and dang.toml, which Dagger loads the module through
 ```
 
-Commit the generated code. Dagger loads a module that has a `dagger-module.toml` from its committed bindings, so the module fails to load without them.
+Commit the generated code. Dagger loads a module that has a `dagger-module.toml` from its committed generated code, so the module fails to load without that code.
 
-Each installed dependency gets its own kebab-cased bindings file in `internal/dagger/` (for example, `my-dep.gen.go`), which keeps the diff of `dagger generate` small when dependencies change.
+The SDK generates the client package of each dependency in `internal/dagger/clients/<name>/`, where `<name>` is the module name of the dependency.
 
-Split across multiple files in the same package freely. Only the top-level package is part of the public API.
+A module on the Go runtime has no `cmd/` directory and no `internal/dagger/entrypoint/` directory. Its `internal/dagger/` directory holds `dagger.gen.go`, `core/`, and one bindings file for each dependency, such as `my-dep.gen.go`.
+
+Split across multiple files in the same package freely. Only the top-level package is part of the public API. Give each Go file of the module directory the package clause of `main.go`, because the SDK refuses to generate a module directory that declares two packages.
 
 If a `go.work` file exists in the repository root, Dagger automatically adds new modules to it.
 
-For sub-packages, import `dagger/<module>/internal/dagger` to access Dagger types. Since `dag` is only available in the main package, pass `*dagger.Client` as a parameter:
+For sub-packages, import `dagger/<module>/internal/dagger` to access Dagger types, and call the core constructors there as in the module package:
 
 ```go
 package utils
 
-import "dagger/my-module/internal/dagger"
+import (
+    "dagger.io/dagger/core"
 
-func DoThing(client *dagger.Client) *dagger.Directory {
-    return client.Container().From("golang:1.22").Directory("/src")
+    "dagger/my-module/internal/dagger"
+)
+
+func DoThing() *dagger.Directory {
+    return core.NewContainer().From("golang:1.22").Directory("/src")
 }
 ```
+
+In a module on the Go runtime, `dag` exists only in the main package. Pass `dag` to the sub-package as a `*dagger.Client` parameter, and call the methods of that parameter there, as in `client.Container()`.
 
 ### 3. Write Functions
 
@@ -106,10 +152,20 @@ Every exported method on the main object becomes a Dagger Function. Read [go-pat
 A minimal module:
 
 ```go
+package my_module
+
+import (
+    "context"
+
+    "dagger.io/dagger/core"
+
+    "dagger/my-module/internal/dagger"
+)
+
 type MyModule struct{}
 
 func (m *MyModule) Build(ctx context.Context, src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -136,7 +192,7 @@ dagger call -m tests all
 dagger call my-module build --src=. terminal
 ```
 
-Run `dagger generate -y` after you add a function or change a signature. Commit the regenerated bindings with the change.
+Run `dagger generate -y` after you add a function or change a signature. In a module with a generated entrypoint, also run it after your code names a `dagger.` type that the module did not use before. Commit the regenerated bindings with the change.
 
 `dagger call` and `dagger functions` take the install name of a module before the function name. The functions of the workspace main module take no module name, and the functions of a module that `-m <path>` loads take none either. The other examples in this skill leave the module name out.
 
@@ -156,12 +212,19 @@ dagger module client update --sdk=go -y
 
 # Remove a dependency
 dagger module client rm <TARGET> --sdk=go -y
-
-# Access via dag in code
-dag.ModuleName().FunctionName(ctx)
 ```
 
-Each `add`, `update`, and `rm` regenerates the module, and the SDK then writes the `[[dependencies]]` entries of `dagger-module.toml`. The next `dagger generate` replaces a manual edit of those entries, so do not edit them by hand.
+`add` and `rm` change the `clients` list of the module in `dagger.toml`, and each `add`, `update`, and `rm` regenerates the module. The SDK then generates one client package for each dependency in `internal/dagger/clients/<name>/`, where `<name>` is the module name of the dependency. The name of the package is `<name>` in lowercase without its hyphens, so import the package under that name. Its `New` function takes the constructor arguments of the dependency and returns the main object of the dependency:
+
+```go
+import mydep "dagger/my-module/internal/dagger/clients/my-dep"
+
+func (m *MyModule) Greet(ctx context.Context) (string, error) {
+    return mydep.New().Hello(ctx)
+}
+```
+
+A module on the Go runtime has no client packages. The SDK writes the `[[dependencies]]` entries of its `dagger-module.toml`, and its code calls a dependency through `dag`, as in `dag.MyDep().Hello(ctx)`. The next `dagger generate` replaces a manual edit of those entries, so do not edit them by hand.
 
 `dagger install <ref>` and `dagger uninstall <name>` do not change a module. They add a module to the workspace and remove one, in `dagger.toml`. `dagger module update <name>` refreshes the version of an installed module, and `dagger lock update` refreshes the pins in `dagger.lock`.
 
@@ -309,14 +372,16 @@ Function caching and layer caching are independent — even with `cache="never"`
 
 Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching. To keep that default, add `disableDefaultFunctionCaching = true` to the module config before a manual edit or a generation raises the `engineVersion` to v0.19.4 or a later version. Neither the Dagger v1.0.0-beta.25 CLI nor Go SDK v1.6.0 adds the flag. [dagger-module.toml](references/architecture.md#dagger-moduletoml) in architecture.md covers how to raise the `engineVersion` and when generation raises it. Remove the flag after you review the caching of each function, and the functions take the 7-day default.
 
+Only the manifest of a module on the Go runtime declares an `engineVersion` and takes the flag. Do not add the flag to the manifest of a module with a generated entrypoint, because Go SDK v1.6.0 then refuses to generate the module.
+
 ### Cache volumes (filesystem-level)
 Mount persistent caches for package managers and build caches:
 
 ```go
-dag.Container().
-    WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
+core.NewContainer().
+    WithMountedCache("/go/pkg/mod", core.NewCacheVolume("go-mod")).
     WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-    WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build")).
+    WithMountedCache("/root/.cache/go-build", core.NewCacheVolume("go-build")).
     WithEnvVariable("GOCACHE", "/root/.cache/go-build")
 ```
 
@@ -363,7 +428,7 @@ Annotate each check function with `// +check`. A check function takes no require
 // Lint runs golangci-lint on the source code
 // +check
 func (m *MyModule) Lint(ctx context.Context) error {
-    _, err := dag.Container().
+    _, err := core.NewContainer().
         From("golangci/golangci-lint:latest").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
@@ -375,7 +440,7 @@ func (m *MyModule) Lint(ctx context.Context) error {
 // Build verifies the project compiles
 // +check
 func (m *MyModule) Build(ctx context.Context) error {
-    _, err := dag.Container().
+    _, err := core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
@@ -425,13 +490,13 @@ Turn any container with exposed ports into a service with `AsService()`, then bi
 
 ```go
 func (m *MyModule) Test(ctx context.Context) (string, error) {
-    db := dag.Container().
+    db := core.NewContainer().
         From("postgres:16").
         WithEnvVariable("POSTGRES_PASSWORD", "test").
         WithExposedPort(5432).
         AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithServiceBinding("db", db).
         WithExec([]string{"go", "test", "./..."}).
@@ -479,7 +544,7 @@ By default, secrets with identical plaintext share cache entries. For rotating s
 dagger call deploy --token=env://API_TOKEN?cacheKey=my-stable-key
 ```
 
-Functions that return values referencing secrets created via `dag.SetSecret()` behave as session-scoped caching regardless of configured TTL.
+Functions that return values referencing secrets created via `core.SetSecret()` behave as session-scoped caching regardless of configured TTL.
 
 See [architecture.md](references/architecture.md) and [cookbook.md](references/cookbook.md) for secret code patterns.
 
@@ -537,7 +602,7 @@ my-module/
 ├── dagger-module.toml
 ├── tests/
 │   ├── main.go
-│   └── dagger-module.toml    # depends on parent module
+│   └── dagger-module.toml    # manifest of the test module
 └── examples/
     └── go/
         ├── main.go
@@ -552,14 +617,22 @@ cd tests && dagger module client add .. --sdk=go -y
 
 `--path` creates the test module without installing it in the workspace, so load it with `-m`. Run tests from the parent directory with `dagger call -m tests all`, or from within the tests directory with `dagger call -m . all`.
 
-Test functions are Dagger Functions that exercise the module under test:
+Test functions are Dagger Functions that exercise the module under test. They call it through the client package that `dagger module client add` generates:
 
 ```go
+import (
+    "context"
+
+    "dagger.io/dagger/core"
+
+    mymodule "dagger/tests/internal/dagger/clients/my-module"
+)
+
 type Tests struct{}
 
 func (t *Tests) TestBuild(ctx context.Context) error {
-    src := dag.CurrentModule().Source()
-    _, err := dag.MyModule(dagger.MyModuleOpts{Source: src}).
+    src := core.NewCurrentModule().Source()
+    _, err := mymodule.New(mymodule.MyModuleOpts{Source: src}).
         Build().
         Sync(ctx)
     return err
@@ -571,6 +644,8 @@ func (t *Tests) All(ctx context.Context) error {
     return nil
 }
 ```
+
+`MyModuleOpts` holds the optional arguments of the constructor of `my-module`. A test module on the Go runtime calls `dag.MyModule(dagger.MyModuleOpts{Source: src})` in place of `mymodule.New`.
 
 For parallel test execution, use `github.com/sourcegraph/conc/pool` or `golang.org/x/sync/errgroup`:
 
@@ -590,7 +665,7 @@ func (t *Tests) All(ctx context.Context) error {
 
 ## Publishing
 
-1. Describe the module in the comment that opens `main.go`, above `package main`
+1. Describe the module in the comment that opens `main.go`, above the `package` clause. Dagger publishes the comment as the description of a module on the Go runtime. Go SDK v1.6.0 publishes no description for a module with a generated entrypoint
 2. Document functions with Go comments (they become API docs)
 3. Run `dagger generate -y` and commit the generated code, because Dagger loads a published module from its committed bindings
 4. Tag with semver: `git tag v1.0.0 && git push --tags`
@@ -604,7 +679,7 @@ Functions can return a `*dagger.Changeset` to represent file modifications that 
 // Generate runs go generate and returns changes to apply
 // +generate
 func (m *MyModule) Generate() *dagger.Changeset {
-    generated := dag.Container().
+    generated := core.NewContainer().
         From("golang:1.22").
         WithDirectory("/app", m.Source).
         WithWorkdir("/app").

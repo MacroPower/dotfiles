@@ -1,5 +1,7 @@
 # Go SDK Patterns
 
+Before you copy an example, match its calls to the layout of your module. A module with a generated entrypoint calls the constructors of `dagger.io/dagger/core`, such as `core.NewContainer()`. A module on the Go runtime calls the methods of the global `dag` client, such as `dag.Container()`. [Module Layouts](../SKILL.md#module-layouts) in SKILL.md maps each constructor to its `dag` method.
+
 ## Table of Contents
 
 1. [Module Structure](#module-structure)
@@ -26,26 +28,29 @@
 ### Minimal module
 
 ```go
-package main
+package my_module
 
 import (
     "context"
-    "dagger/my-module/internal/dagger"
+
+    "dagger.io/dagger/core"
 )
 
 type MyModule struct{}
 
 func (m *MyModule) Hello(ctx context.Context) (string, error) {
-    return dag.Container().
+    return core.NewContainer().
         From("alpine").
         WithExec([]string{"echo", "hello"}).
         Stdout(ctx)
 }
 ```
 
+`dagger module init go` names the package after the module, with an underscore in place of each hyphen. A module on the Go runtime declares `package main` and calls `dag.Container()`, without the `dagger.io/dagger/core` import.
+
 ### Multi-file module
 
-All files share the same package. Only the top-level package is public API:
+All files share the same package, so give each file the package clause of `main.go`. Only the top-level package is public API:
 
 ```
 main.go     — MyModule struct + core functions
@@ -55,14 +60,26 @@ test.go     — test-related functions
 
 ### Sub-packages
 
-Access Dagger types from sub-packages by importing the generated package. Since `dag` is only available in the main package, sub-packages must receive a `*dagger.Client` parameter:
+Access Dagger types from sub-packages by importing the generated package, and call the core constructors there as in the module package:
 
 ```go
 // utils/utils.go
 package utils
 
-import "dagger/my-module/internal/dagger"
+import (
+    "dagger.io/dagger/core"
 
+    "dagger/my-module/internal/dagger"
+)
+
+func DoThing() *dagger.Directory {
+    return core.NewContainer().From("golang:1.22").Directory("/src")
+}
+```
+
+In a module on the Go runtime, `dag` exists only in the main package. So a sub-package of such a module takes a `*dagger.Client` parameter, and the main package passes `dag` to it:
+
+```go
 func DoThing(client *dagger.Client) *dagger.Directory {
     return client.Container().From("golang:1.22").Directory("/src")
 }
@@ -105,7 +122,7 @@ func New(
     ctr *dagger.Container,
 ) *MyModule {
     if ctr == nil {
-        ctr = dag.Container().From("alpine:3.14.0")
+        ctr = core.NewContainer().From("alpine:3.14.0")
     }
     return &MyModule{Ctr: *ctr}
 }
@@ -171,7 +188,7 @@ Annotate functions with `// +check` to register them as checks that run with `da
 // Lint runs the linter
 // +check
 func (m *MyModule) Lint(ctx context.Context) error {
-    _, err := dag.Container().
+    _, err := core.NewContainer().
         From("golangci/golangci-lint:latest").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
@@ -183,7 +200,7 @@ func (m *MyModule) Lint(ctx context.Context) error {
 // Build verifies the project compiles
 // +check
 func (m *MyModule) Build(ctx context.Context) error {
-    _, err := dag.Container().
+    _, err := core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
@@ -296,7 +313,7 @@ func (m *MyModule) ClonePrivate(
     // SSH socket for authentication
     sshSocket *dagger.Socket,
 ) *dagger.Directory {
-    return dag.Git("git@github.com:user/repo.git",
+    return core.Git("git@github.com:user/repo.git",
         dagger.GitOpts{SSHAuthSocket: sshSocket}).
         Ref("main").Tree()
 }
@@ -317,7 +334,7 @@ func (m *MyModule) Divide(a float64, b float64) float64 { return a / b }
 
 ```go
 func (m *MyModule) Build(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -331,7 +348,7 @@ Callers can chain: `dagger call build --src=. publish --address=...`
 
 ```go
 func (m *MyModule) Build(src *dagger.Directory) *dagger.Directory {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -346,7 +363,7 @@ Callers can export: `dagger call build --src=. export --path=./out`
 
 ```go
 func (m *MyModule) Version(ctx context.Context) (string, error) {
-    return dag.Container().
+    return core.NewContainer().
         From("alpine").
         WithExec([]string{"cat", "/etc/os-release"}).
         Stdout(ctx)
@@ -418,7 +435,7 @@ func EnvVariables(envs map[string]string) dagger.WithContainerFunc {
 }
 
 func (m *MyModule) Build(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         With(EnvVariables(map[string]string{
@@ -439,7 +456,11 @@ This pattern keeps container modification logic modular and testable.
 Define additional types alongside the main object. They are accessible only through chaining from the main object:
 
 ```go
-import "dagger/my-module/internal/dagger"
+import (
+    "dagger.io/dagger/core"
+
+    "dagger/my-module/internal/dagger"
+)
 
 type MyModule struct{}
 
@@ -447,7 +468,7 @@ func (m *MyModule) DaggerOrganization() *Organization {
     url := "https://github.com/dagger"
     return &Organization{
         URL:          url,
-        Repositories: []*dagger.GitRepository{dag.Git(url + "/dagger")},
+        Repositories: []*dagger.GitRepository{core.Git(url + "/dagger")},
         Members: []*Account{
             {"jane", "jane@example.com"},
             {"john", "john@example.com"},
@@ -553,7 +574,7 @@ Interface function signature rules:
 
 ```go
 func (m *MyModule) Build(ctx context.Context) (string, error) {
-    out, err := dag.Container().
+    out, err := core.NewContainer().
         From("golang:1.22").
         WithExec([]string{"go", "build", "./..."}).
         Stdout(ctx)
@@ -570,7 +591,7 @@ Use `*dagger.ExecError` to access stderr from failed commands:
 
 ```go
 func (m *MyModule) Test(ctx context.Context) (string, error) {
-    out, err := dag.Container().
+    out, err := core.NewContainer().
         From("golang:1.22").
         WithExec([]string{"go", "test", "./..."}).
         Stdout(ctx)
@@ -591,7 +612,7 @@ Use `Expect: dagger.ReturnTypeAny` to allow non-zero exit codes instead of treat
 
 ```go
 func (m *MyModule) Test(ctx context.Context) (*TestResult, error) {
-    ctr, err := dag.Container().
+    ctr, err := core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
@@ -631,7 +652,7 @@ Dagger operations are lazy — nothing executes until a scalar value (string, in
 ```go
 // Force execution: Sync returns the object after executing the pipeline
 func (m *MyModule) Deploy(ctx context.Context) error {
-    _, err := dag.Container().
+    _, err := core.NewContainer().
         From("alpine").
         WithExec([]string{"deploy.sh"}).
         Sync(ctx)
@@ -640,7 +661,7 @@ func (m *MyModule) Deploy(ctx context.Context) error {
 
 // Lazy: just builds the pipeline, nothing executes yet
 func (m *MyModule) BuildEnv(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src")
@@ -659,7 +680,7 @@ Drop into a container's shell at any point in the pipeline using `Terminal()`:
 
 ```go
 func (m *MyModule) Debug(src *dagger.Directory) *dagger.Container {
-    return dag.Container().
+    return core.NewContainer().
         From("golang:1.22").
         WithDirectory("/src", src).
         WithWorkdir("/src").
@@ -678,7 +699,7 @@ For directories, specify a container and shell:
 
 ```go
 dir.Terminal(dagger.DirectoryTerminalOpts{
-    Container: dag.Container().From("ubuntu"),
+    Container: core.NewContainer().From("ubuntu"),
     Cmd:       []string{"/bin/bash"},
 })
 ```
@@ -722,7 +743,7 @@ func (m *MyModule) Build(
 ) *dagger.Container {
 ```
 
-Module-level description (comment before `package main`). The first comment block becomes the short description; subsequent blocks are extended documentation:
+Write the description of a module in the comment before the `package` clause. Dagger publishes that comment for a module on the Go runtime, and Go SDK v1.6.0 publishes no description for a module with a generated entrypoint. The first comment block becomes the short description, and the blocks after it become the extended documentation:
 
 ```go
 // A simple example module to say hello.
