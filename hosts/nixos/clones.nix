@@ -18,8 +18,9 @@
 let
   inherit (config.dotfiles.system) username;
   user = config.home-manager.users.${username};
-  # home/claude.nix names this directory in the instructions and the
-  # settings of the git MCP server.
+  # On a Linux host, the cloneRoot of home/claude.nix names this
+  # directory in the instructions and the settings of the git MCP
+  # server.
   cloneRoot = "/tmp/git";
   # expire-clones.service removes a clone that nothing changed for this
   # long. The span equals the age at which the daily cleanup deletes a

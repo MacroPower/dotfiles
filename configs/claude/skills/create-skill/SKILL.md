@@ -46,8 +46,9 @@ If the source matches none of the above, abort and ask the user for a clearer UR
 
 ## Step 2: Acquire the source
 
-- **Repo:** call `mcp__git__git_clone` with `dest=/tmp/git/<owner>/<repo>`.
-  Set `REPO_ROOT=/tmp/git/<owner>/<repo>`.
+- **Repo:** call `mcp__git__git_clone`. For `dest`, use the path that your
+  instructions name for a clone of `<owner>/<repo>`. Set `REPO_ROOT` to that
+  path.
 - **Docsite:** keep the base URL exactly as given (strip a trailing `/`). Set
   `BASE_URL=<that URL>`.
 

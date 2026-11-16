@@ -142,8 +142,9 @@ edit any files. Your final message is a report consumed by another agent.
 The input was bumped from <old_rev> (<old_date>) to <new_rev> (<new_date>).
 Upstream is <repo> (compare view: <compare_url>).
 
-1. Clone upstream with mcp__git__git_clone into /tmp/git/<owner>/<repo>, then run:
-   git -C /tmp/git/<owner>/<repo> log --oneline --no-merges <old_rev>..<new_rev>
+1. Clone upstream with mcp__git__git_clone into the directory that your
+   instructions name for clones, then run:
+   git -C <clone> log --oneline --no-merges <old_rev>..<new_rev>
    If most commits in the range bump versions of other packages, this input is
    a package carrier. Do not summarize those bumps as its changelog. List
    every bumped package this repo installs under CARRIED, with old and new

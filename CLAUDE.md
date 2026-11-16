@@ -48,6 +48,7 @@ Claude Code config lives in this repo and is symlinked into `~/.claude/` by `hom
 - **Settings, hooks, slash commands, status line, MCP servers, env**: defined in `home/claude.nix` (the home-manager module that generates `settings.json` and writes files into `~/.claude/`).
 - **Global instructions (`~/.claude/CLAUDE.md`)**: also rendered by `home/claude.nix`.
 - **Host-specific instructions**: `dotfiles.claude.hostContext` in the host's file under `hosts/`. `home/claude.nix` appends it to that host's `~/.claude/CLAUDE.md` as the `## Host Environment` section. Put guidance that holds on only one host there, so that the other hosts do not render it.
+- **Clone directory**: `cloneRoot` in `home/claude.nix`. Agents clone other repositories into `/tmp/git` on a Linux host and into `~/Library/Caches/git-clones` on a Darwin host. In a skill, send agents to the directory that their instructions name, never to a fixed path.
 
 Permission rules, hook-router command rules, and fetch rules steer model behavior, such as pointing Claude at an MCP tool or prompting before a remote write. They are not a security boundary. The sandbox provides security by limiting access to credentials and the filesystem. Write and review these rules for the behavior they produce, and never add a rule or keep a prompt only to close an escape path.
 

@@ -314,7 +314,7 @@ Every NixOS host removes a clone under `/tmp/git` as a whole, so an agent finds 
 - A `systemd-tmpfiles` rule keeps the daily cleanup of `/tmp` out of `/tmp/git`. That cleanup checks each file on its own and deletes a file that nothing read or changed in the last 10 days. Without the rule, a clone loses each file that no agent read and no fetch wrote in that time. The sandbox VM mounts the root filesystem with `noatime`, so a read leaves no trace on a file there. Without the rule, a clone in the VM keeps only the files of its last fetch.
 - `expire-clones.service` runs every day and removes each clone that nothing changed in the last 10 days. `cloneMaxAge` sets that span. Every fetch changes its clone, so each `mcp__git__git_clone` call that pulls a clone keeps it for 10 more days. Reads do not change a clone. The service leaves a clone alone while a clone, fetch, pull, or push call of the git MCP server works on it.
 
-The settings apply only on a host that keeps the `git` bundle of `dotfiles.claude.toolBundles` on, and the bundle is on by default. That bundle tells agents to clone into `/tmp/git`.
+The settings apply only on a host that keeps the `git` bundle of `dotfiles.claude.toolBundles` on, and the bundle is on by default. On a Linux host, that bundle tells agents to clone into `/tmp/git`.
 
 `pkgs/expire-clones.nix` describes what counts as a clone and as a change. The build of each configuration runs the cleanup of `/tmp` on a sample clone, and it fails when the cleanup deletes a file of that clone. The evaluation of a NixOS host fails when the bundle is on and the host lacks the rule. To list the clones that the service removed, run this command on the host:
 
@@ -392,6 +392,24 @@ task displays
 ```sh
 task update
 sudo task switch
+```
+
+### Clones
+
+Each Darwin host keeps the clones of agents outside `/tmp`, so an agent finds every file of a clone or no clone at all. Agents clone other repositories into `~/Library/Caches/git-clones/<owner>/<repo>` and read them there. `cloneRoot` in `home/claude.nix` sets that directory.
+
+macOS 14 and later clean `/tmp` every day with `/usr/libexec/tmp_cleaner`. The script checks each file on its own and deletes a file that nothing read or changed in the last three days. A clone in `/tmp` then loses each file that no agent read and no fetch wrote in that time. The script reads no setting, so a Darwin host cannot keep the script out of a directory. The evaluation of a Darwin host fails when the `git` bundle of `dotfiles.claude.toolBundles` is on and `cloneRoot` lies in `/tmp`.
+
+The script does not clean `~/Library/Caches`, so a launchd agent bounds the clone directory. The `expire-clones` agent runs every day at 04:00 and at each login, and it removes each clone that nothing changed in the last 10 days. It runs the tool that `expire-clones.service` runs on the NixOS hosts, so `pkgs/expire-clones.nix` describes what counts as a clone and as a change. The agent runs only on a host that keeps the `git` bundle on. To list the clones that the agent removed, run this command on the Mac:
+
+```sh
+grep removed ~/Library/Logs/expire-clones.log
+```
+
+To apply the settings, run `sudo task switch` on the Mac. Then restart each Claude Code session that started before the switch, because such a session still clones into `/tmp/git`. The switch leaves the clones in `/tmp/git` where they are. macOS deletes their files, and it empties `/tmp` at each restart. To remove them now, run this command on the Mac:
+
+```sh
+rm -rf /tmp/git
 ```
 
 ## Sandbox VM

@@ -1120,6 +1120,42 @@ let
     exec ${pkgs.mcp-git}/bin/mcp-git "$@"
   '';
 
+  # Agents clone other repositories under this directory and read them
+  # there. The git tool bundle takes the directory from this value for
+  # its instructions, for the git MCP server, and for the sandbox.
+  #
+  # A Linux host clones into /tmp/git. On a NixOS host,
+  # hosts/nixos/clones.nix keeps the daily cleanup of /tmp out of that
+  # directory and removes each old clone as a whole.
+  #
+  # A Darwin host cannot keep its cleanup of /tmp out of a directory.
+  # macOS 14 and later clean /tmp every day with
+  # /usr/libexec/tmp_cleaner. The script checks each file on its own,
+  # and it deletes a file that nothing read or changed in the last
+  # three days. It names /tmp and the age in its own text, and it
+  # reads no setting. A clone in /tmp then loses each file that no
+  # agent read and no fetch wrote in that time, and it keeps the other
+  # files. An agent that reads such a clone finds only a part of the
+  # upstream tree and gets no error.
+  #
+  # So a Darwin host clones into a directory that the script does not
+  # clean. The expire-clones agent of this module removes each old
+  # clone there as a whole. Time Machine leaves ~/Library/Caches out
+  # of its backups.
+  cloneRoot =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      "${config.home.homeDirectory}/Library/Caches/git-clones"
+    else
+      "/tmp/git";
+
+  # A Darwin host runs the expire-clones agent when the git tool bundle
+  # is on, because that bundle tells agents to clone into cloneRoot.
+  expireClonesEnabled = pkgs.stdenv.hostPlatform.isDarwin && cfg.toolBundles.git.enable;
+
+  # The expire-clones agent writes one line here for each clone that it
+  # removes.
+  expireClonesLog = "${config.home.homeDirectory}/Library/Logs/expire-clones.log";
+
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''
     ${exportSecret "KAGI_API_KEY" "kagi_api_key"}
     exec ${pkgs.mcp-kagi}/bin/kagimcp "$@"
@@ -2963,23 +2999,44 @@ in
           ${lib.concatMapStrings (fault: "  - ${fault}\n") conditionalRuleOperandFaults}'';
       }
       {
-        # The git bundle tells agents to clone into /tmp/git. A NixOS
-        # host cleans /tmp every day, and the cleanup deletes single
-        # files of those clones. The tmpfiles rule of
+        # On a Linux host, the git bundle tells agents to clone into
+        # /tmp/git. A NixOS host cleans /tmp every day, and the cleanup
+        # deletes single files of those clones. The tmpfiles rule of
         # hosts/nixos/clones.nix keeps the cleanup out of the
         # directory. This assertion fails the evaluation of a NixOS
         # host that has the bundle and lacks the rule. osConfig holds
         # the tmpfiles rules only on a NixOS host.
         assertion =
           !(cfg.toolBundles.git.enable && osConfig ? systemd.tmpfiles.rules)
-          || lib.elem "x /tmp/git" osConfig.systemd.tmpfiles.rules;
+          || lib.elem "x ${cloneRoot}" osConfig.systemd.tmpfiles.rules;
         message = ''
           dotfiles.claude: toolBundles.git tells agents to clone into
-          /tmp/git, and this NixOS host has no systemd-tmpfiles rule
-          `x /tmp/git`. The daily cleanup of /tmp then deletes single
+          ${cloneRoot}, and this NixOS host has no systemd-tmpfiles rule
+          `x ${cloneRoot}`. The daily cleanup of /tmp then deletes single
           files of the clones. hosts/nixos/clones.nix sets the rule, and
           hosts/nixos/default.nix imports that module. Import one of the
           two files in the host module.
+        '';
+      }
+      {
+        # macOS deletes single files of a clone under /tmp, and no
+        # setting keeps that cleanup out of a directory. The comment on
+        # cloneRoot describes the cleanup. This assertion fails the
+        # evaluation of a Darwin host that has the git bundle and
+        # clones into /tmp. /tmp is a link to /private/tmp on macOS.
+        assertion =
+          !(pkgs.stdenv.hostPlatform.isDarwin && cfg.toolBundles.git.enable)
+          || !(lib.any (tmp: lib.hasPrefix "${tmp}/" "${cloneRoot}/") [
+            "/tmp"
+            "/private/tmp"
+          ]);
+        message = ''
+          dotfiles.claude: toolBundles.git tells agents to clone into
+          ${cloneRoot} on this Darwin host. macOS deletes each file
+          under /tmp that nothing read or changed in the last three
+          days, so a clone there loses single files. Set cloneRoot in
+          home/claude.nix to a directory outside /tmp for a Darwin
+          host.
         '';
       }
     ];
@@ -3097,16 +3154,13 @@ in
           type = "stdio";
           command = "${gitWrapper}";
           args = [
-            # mcp-git resolves the symbolic links of each --allow-dir,
-            # so on macOS this entry also allows the paths under
-            # /private/tmp/git.
             "--allow-dir"
-            "/tmp/git"
-            # git_fetch / git_pull / git_push operate on working
-            # checkouts, which live here. The allowlist is shared
-            # with git_clone's dest check, so clones into this tree
-            # are also allowed; the instruction below still points
-            # clone at /tmp/git.
+            cloneRoot
+            # git_fetch, git_pull, and git_push work on the checkouts
+            # that live here. git_clone checks its dest against the
+            # same list, so it also accepts a dest in this tree. The
+            # instruction of this bundle still sends each clone to
+            # cloneRoot.
             "--allow-dir"
             "${config.home.homeDirectory}/Documents/repos"
             # Linux VMs (lima/terrarium) mount the macOS repos tree
@@ -3181,10 +3235,7 @@ in
             ];
           }
         ];
-        sandbox.allowWrite = [
-          "/tmp/git"
-          "/private/tmp/git"
-        ];
+        sandbox.allowWrite = [ cloneRoot ];
         # Mirrored by canonicalRules in
         # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go;
         # update together.
@@ -3225,27 +3276,27 @@ in
           {
             host = "raw\\.githubusercontent\\.com";
             except = [ { path = ".*\\.md"; } ];
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching raw GitHub files.";
+            reason = "Use mcp__git__git_clone to clone the repo to ${cloneRoot}/<owner>/<repo> and read files locally instead of fetching raw GitHub files.";
           }
           {
             host = "github\\.com";
             path = "/[^/]+/[^/]+/(blob|tree)(/.*)?";
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitHub file pages.";
+            reason = "Use mcp__git__git_clone to clone the repo to ${cloneRoot}/<owner>/<repo> and read files locally instead of fetching GitHub file pages.";
           }
           {
             host = "gitlab\\.com";
             path = "/.+/-/(blob|tree)(/.*)?";
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitLab file pages.";
+            reason = "Use mcp__git__git_clone to clone the repo to ${cloneRoot}/<owner>/<repo> and read files locally instead of fetching GitLab file pages.";
           }
           {
             host = "codeberg\\.org";
             path = "/[^/]+/[^/]+/src/(branch|commit|tag)/.*";
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching Codeberg file pages.";
+            reason = "Use mcp__git__git_clone to clone the repo to ${cloneRoot}/<owner>/<repo> and read files locally instead of fetching Codeberg file pages.";
           }
         ];
         instructions = {
           items = [
-            "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
+            "Use `mcp__git__git_clone` to clone repositories into `${cloneRoot}/<owner>/<repo>` and read from there."
             "Use `mcp__git__git_fetch`, `mcp__git__git_pull`, and `mcp__git__git_push` for git operations that contact a remote; plain `git` in Bash handles local work (add, commit, branch, rebase)."
             "`mcp__git__git_push` runs without a prompt when the pushed branch is named `<type>/<name>` and the call does not set `tags`. `<type>` is one of ${conventionalBranchTypeList}. Every other push prompts, so give each branch that you create for a push a name of that form, such as `fix/retry-timeout`."
           ];
@@ -4954,6 +5005,43 @@ in
       "workmux/config.yaml".source = workmuxConfig;
     };
 
+    # The daily cleanup of /tmp does not reach the clone directory of a
+    # Darwin host, so this agent bounds the directory. The agent removes
+    # each clone that nothing changed in the last 10 days, and it
+    # removes the clone as a whole. A fetch changes its clone, and a
+    # read does not.
+    # pkgs/expire-clones.nix describes what counts as a clone.
+    # expire-clones.service of hosts/nixos/clones.nix removes the clones
+    # of a NixOS host at the same age.
+    #
+    # The agent runs every day at 04:00. When the Mac sleeps at that
+    # time, launchd runs the agent after the Mac wakes. launchd skips
+    # the run when the Mac is off at that time. So the agent also runs
+    # each time that launchd loads it, which launchd does at each login.
+    #
+    # The tool passes its last argument to `date -d`, so the argument
+    # must be a time that date reads.
+    launchd.agents.expire-clones = lib.mkIf expireClonesEnabled {
+      enable = true;
+      config = {
+        ProgramArguments = [
+          (lib.getExe pkgs.expire-clones)
+          cloneRoot
+          "10 days ago"
+        ];
+        StartCalendarInterval = [
+          {
+            Hour = 4;
+            Minute = 0;
+          }
+        ];
+        RunAtLoad = true;
+        LowPriorityIO = true;
+        StandardOutPath = expireClonesLog;
+        StandardErrorPath = expireClonesLog;
+      };
+    };
+
     dotfiles.extraInventoryPackages = [
       pkgs.hook-router
       pkgs.mcp-git
@@ -5116,6 +5204,15 @@ in
       activation.ensureMcpKubectxRunDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         run install -d -m 700 "${config.xdg.stateHome}/mcp-kubectx-run"
       '';
+
+      # launchd does not create the parent directory of a log path, so
+      # the directory must exist before setupLaunchAgents loads the
+      # expire-clones agent.
+      activation.ensureExpireClonesLogDir = lib.mkIf expireClonesEnabled (
+        lib.hm.dag.entryBetween [ "setupLaunchAgents" ] [ "writeBoundary" ] ''
+          run mkdir -p ${lib.escapeShellArg (dirOf expireClonesLog)}
+        ''
+      );
 
       # Sync the declared parts of the mutable ~/.claude.json: the MCP
       # servers of ~/.config/mcp/mcp.json and the settings in --merge.

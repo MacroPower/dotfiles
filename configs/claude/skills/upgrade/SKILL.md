@@ -151,9 +151,10 @@ do not edit any files. Your final message is a report consumed by another agent.
 The dependency moved from <old version or rev> to <new version or rev>.
 Upstream is <repo URL>. <compare URL, if any>
 
-1. Clone upstream with mcp__git__git_clone into /tmp/git/<owner>/<repo>
-   (plain `git clone` if that tool is unavailable), then list the range:
-   git -C /tmp/git/<owner>/<repo> log --oneline --no-merges <old>..<new>
+1. Clone upstream with mcp__git__git_clone into the directory that your
+   instructions name for clones. If that tool is unavailable, run plain
+   `git clone` into a temporary directory. Then list the range:
+   git -C <clone> log --oneline --no-merges <old>..<new>
    Versions map to tags; try both `v1.2.3` and `1.2.3` forms.
    If most commits in the range bump versions of other packages, this
    dependency is a carrier. Do not summarize those bumps as its changelog.
