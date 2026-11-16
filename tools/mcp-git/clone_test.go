@@ -687,6 +687,146 @@ func TestHandleOriginMismatch(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "origin URL mismatch")
 }
 
+// A destination can hold a repository that has no origin remote, such
+// as the repository that git init creates. The error must name the
+// destination and the missing remote, and git_clone must leave the
+// destination in place.
+func TestHandleCloneDestWithoutOrigin(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		setup func(t *testing.T, bare, dest string)
+	}{
+		"repository of git init": {
+			setup: func(t *testing.T, _, dest string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{{"git", "init", "-q", dest}})
+			},
+		},
+		"clone that lost its origin": {
+			setup: func(t *testing.T, bare, dest string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{
+					{"git", "clone", "-q", bare, dest},
+					{"git", "-C", dest, "remote", "remove", "origin"},
+				})
+			},
+		},
+		"repository with another remote": {
+			setup: func(t *testing.T, bare, dest string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{
+					{"git", "init", "-q", dest},
+					{"git", "-C", dest, "remote", "add", "upstream", bare},
+				})
+			},
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bare := initBareRepo(t)
+			dest := filepath.Join(t.TempDir(), "cloned")
+
+			tc.setup(t, bare, dest)
+
+			result, _, err := (&handler{allowFileURLs: true}).handleClone(t.Context(), nil, CloneInput{
+				URL:  bare,
+				Dest: dest,
+			})
+			require.NoError(t, err)
+			require.True(t, result.IsError)
+
+			text := resultText(t, result)
+			assert.Contains(t, text, ErrNoOrigin.Error()+": "+dest)
+			assert.NotContains(t, text, ErrOriginMismatch.Error())
+			assert.NotContains(t, text, "exit status")
+
+			assert.DirExists(t, filepath.Join(dest, ".git"))
+
+			asides, err := filepath.Glob(dest + ".corrupt-*")
+			require.NoError(t, err)
+			assert.Empty(t, asides)
+		})
+	}
+}
+
+func TestCheckOrigin(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		setup func(t *testing.T, bare, dest string)
+		url   func(bare string) string
+		err   error
+	}{
+		"origin has the URL": {
+			url: func(bare string) string { return bare },
+		},
+		"URL without the .git suffix": {
+			url: func(bare string) string { return strings.TrimSuffix(bare, ".git") },
+		},
+		"origin has another URL": {
+			url: func(bare string) string { return bare + "-other" },
+			err: ErrOriginMismatch,
+		},
+		"no origin": {
+			setup: func(t *testing.T, _, dest string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{{"git", "-C", dest, "remote", "remove", "origin"}})
+			},
+			url: func(bare string) string { return bare },
+			err: ErrNoOrigin,
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bare := initBareRepo(t)
+			dest := initWorkClone(t, bare)
+
+			if tc.setup != nil {
+				tc.setup(t, bare, dest)
+			}
+
+			err := (&handler{}).checkOrigin(t.Context(), tc.url(bare), dest)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+// git can open a repository whose config gives the URL of origin no
+// value, but git remote get-url rejects that config. The remote
+// exists, so the error must not report a missing remote or another
+// URL.
+func TestCheckOriginUnreadableRemote(t *testing.T) {
+	t.Parallel()
+
+	dest := initWorkClone(t, initBareRepo(t))
+
+	runGitCmds(t, [][]string{{"git", "-C", dest, "remote", "remove", "origin"}})
+	appendGitConfig(t, dest, "[remote \"origin\"]\n\turl\n")
+
+	err := (&handler{}).checkOrigin(t.Context(), "https://example.invalid/r.git", dest)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrNoOrigin)
+	require.NotErrorIs(t, err, ErrOriginMismatch)
+	assert.ErrorContains(t, err, "reading the origin remote of "+dest)
+}
+
 // The git config can rewrite the URL of a clone to a transport that
 // the server denies, after checkURL accepts the URL. git itself must
 // refuse the transport.

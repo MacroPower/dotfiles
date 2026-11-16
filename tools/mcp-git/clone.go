@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -48,6 +49,10 @@ var (
 	// ErrOriginMismatch is returned when the existing repo's
 	// origin URL does not match the requested URL.
 	ErrOriginMismatch = errors.New("origin URL mismatch")
+
+	// ErrNoOrigin is returned when the existing repo at dest has no
+	// origin remote.
+	ErrNoOrigin = errors.New("dest holds a repository that has no origin remote")
 
 	// ErrCorruptDest is returned when dest holds a .git directory that
 	// [checkGitDir] rejects and the handler cannot move dest aside.
@@ -284,7 +289,8 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 
 // checkOrigin verifies that the existing repo at dest has an
 // origin remote URL matching url. Both sides are normalized by
-// stripping a trailing ".git" suffix before comparison.
+// stripping a trailing ".git" suffix before comparison. A repo that
+// has no origin remote fails with [ErrNoOrigin].
 func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	out, err := gitValue(ctx, "-C", dest, "remote", "get-url", "origin")
 	if err != nil {
@@ -292,7 +298,15 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 			return err
 		}
 
-		return fmt.Errorf("%w: reading origin: %w", ErrOriginMismatch, err)
+		// git remote get-url exits 2 when the repository does not
+		// configure the remote. The manual of git remote keeps that
+		// status for a remote that git cannot find.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+			return fmt.Errorf("%w: %s: choose another dest, or delete the directory and retry", ErrNoOrigin, dest)
+		}
+
+		return fmt.Errorf("reading the origin remote of %s: %w", dest, err)
 	}
 
 	got := strings.TrimSuffix(out, ".git")
