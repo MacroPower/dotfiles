@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -133,6 +134,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestAtuinDaemon(ctx) })
 	eg.Go(func() error { return m.TestCheckLintTestModule(ctx) })
 	eg.Go(func() error { return m.TestFormatTestModule(ctx) })
+	eg.Go(func() error { return m.TestFormatExitStatus(ctx) })
 
 	err := eg.Wait()
 	if err != nil {
@@ -2103,15 +2105,33 @@ const (
 	lintProbeSource = "package main\n\nvar _ = []int{1,2}\n"
 
 	// lintProbeFixed is the content of the file at [lintProbePath] after
-	// golangci-lint --fix rewrites it.
+	// golangci-lint --fix rewrites [lintProbeSource].
 	lintProbeFixed = "package main\n\nvar _ = []int{1, 2}\n"
+
+	// unfixableProbeSource is the content of a file at [lintProbePath]
+	// that golangci-lint --fix cannot fix in full. It holds the fault
+	// of [lintProbeSource] and a function that no code calls.
+	// golangci-lint reports that function and does not remove it. So
+	// golangci-lint --fix exits with status 1 on the file, unless a
+	// flag sets another status for a run that leaves an issue.
+	unfixableProbeSource = "package main\n\nvar _ = []int{1,2}\n\nfunc lintProbeUnused() {}\n"
+
+	// unfixableProbeFixed is the content of the file at [lintProbePath]
+	// after golangci-lint --fix rewrites [unfixableProbeSource].
+	unfixableProbeFixed = "package main\n\nvar _ = []int{1, 2}\n\nfunc lintProbeUnused() {}\n"
+
+	// rejectedLintConfig is a .golangci.yaml file that golangci-lint
+	// rejects, because the file enables a linter that golangci-lint
+	// does not have. golangci-lint then exits with status 3 and reads
+	// no Go file.
+	rejectedLintConfig = "version: \"2\"\nlinters:\n  enable:\n    - nosuchlinter\n"
 )
 
 // lintProbeToolchain returns the source directory of the dev toolchain
-// with one more Go file in its test module. The file holds
-// [lintProbeSource] at [lintProbePath].
-func lintProbeToolchain() *dagger.Directory {
-	return dag.Dev().Toolchain().WithNewFile(lintProbePath, lintProbeSource)
+// with one more Go file in its test module. The file holds source at
+// [lintProbePath].
+func lintProbeToolchain(source string) *dagger.Directory {
+	return dag.Dev().Toolchain().WithNewFile(lintProbePath, source)
 }
 
 // changesetPaths holds the paths that a changeset adds, modifies, and
@@ -2164,7 +2184,7 @@ func (m *Tests) TestCheckLintTestModule(ctx context.Context) error {
 		return fmt.Errorf("linting the toolchain: %w", err)
 	}
 
-	err = dag.Dev().CheckLint(ctx, dagger.DevCheckLintOpts{Toolchain: lintProbeToolchain()})
+	err = dag.Dev().CheckLint(ctx, dagger.DevCheckLintOpts{Toolchain: lintProbeToolchain(lintProbeSource)})
 	if err == nil {
 		return fmt.Errorf("CheckLint passed with a finding in %s", lintProbePath)
 	}
@@ -2174,6 +2194,39 @@ func (m *Tests) TestCheckLintTestModule(ctx context.Context) error {
 	want := "linting toolchains/dev/tests:"
 	if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "linting toolchains/dev:") {
 		return fmt.Errorf("expected only the lint of the test module to fail, got: %w", err)
+	}
+
+	return nil
+}
+
+// checkProbeFix returns nil when [Dev.Format] fixes only the probe file
+// of a toolchain. The toolchain is the source of the dev toolchain with
+// source at [lintProbePath]. checkProbeFix returns an error unless the
+// changeset of Format modifies only that file and names it by its path
+// from the root of the repository. It also returns an error unless the
+// fixed file holds want.
+func checkProbeFix(ctx context.Context, source, want string) error {
+	changes := dag.Dev().Format(dagger.DevFormatOpts{Toolchain: lintProbeToolchain(source)})
+
+	got, err := readChangesetPaths(ctx, changes)
+	if err != nil {
+		return fmt.Errorf("formatting the toolchain with %s: %w", lintProbePath, err)
+	}
+
+	probe := "toolchains/dev/" + lintProbePath
+
+	wantPaths := changesetPaths{modified: []string{probe}}
+	if !got.equal(wantPaths) {
+		return fmt.Errorf("expected changes %+v, got %+v", wantPaths, got)
+	}
+
+	content, err := changes.After().File(probe).Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading the fixed %s: %w", probe, err)
+	}
+
+	if content != want {
+		return fmt.Errorf("fixed %s: expected %q, got %q", probe, want, content)
 	}
 
 	return nil
@@ -2198,27 +2251,40 @@ func (m *Tests) TestFormatTestModule(ctx context.Context) error {
 		return fmt.Errorf("expected no changes to the toolchain, got %+v", clean)
 	}
 
-	changes := dag.Dev().Format(dagger.DevFormatOpts{Toolchain: lintProbeToolchain()})
+	return checkProbeFix(ctx, lintProbeSource, lintProbeFixed)
+}
 
-	got, err := readChangesetPaths(ctx, changes)
+// TestFormatExitStatus verifies that [Dev.Format] passes a run of
+// golangci-lint that leaves an issue and fails when golangci-lint
+// cannot run. First the test adds a file to the test module that holds
+// a fault that golangci-lint fixes and an issue that it cannot fix.
+// Format returns the fix of that file. Then the test passes Format a
+// .golangci.yaml file that golangci-lint rejects. golangci-lint fixes
+// nothing with that file, and the changeset of Format fails with the
+// error of the golangci-lint command. The test fails when Format
+// returns an empty changeset for that run.
+//
+// +check
+func (m *Tests) TestFormatExitStatus(ctx context.Context) error {
+	err := checkProbeFix(ctx, unfixableProbeSource, unfixableProbeFixed)
 	if err != nil {
-		return fmt.Errorf("formatting the toolchain with %s: %w", lintProbePath, err)
+		return fmt.Errorf("formatting a file with an issue that golangci-lint cannot fix: %w", err)
 	}
 
-	probe := "toolchains/dev/" + lintProbePath
+	rejected := dag.Dev(dagger.DevOpts{
+		Source: dag.Directory().WithNewFile(".golangci.yaml", rejectedLintConfig),
+	})
 
-	want := changesetPaths{modified: []string{probe}}
-	if !got.equal(want) {
-		return fmt.Errorf("expected changes %+v, got %+v", want, got)
+	_, err = readChangesetPaths(ctx, rejected.Format())
+	if err == nil {
+		return errors.New("expected Format to fail on a .golangci.yaml file that golangci-lint rejects")
 	}
 
-	content, err := changes.After().File(probe).Contents(ctx)
-	if err != nil {
-		return fmt.Errorf("reading the fixed %s: %w", probe, err)
-	}
-
-	if content != lintProbeFixed {
-		return fmt.Errorf("fixed %s: expected %q, got %q", probe, lintProbeFixed, content)
+	// Dagger returns a dagger.ExecError for a step whose command exits
+	// with a status that the step does not accept.
+	var execErr *dagger.ExecError
+	if !errors.As(err, &execErr) || len(execErr.Cmd) == 0 || execErr.Cmd[0] != "golangci-lint" {
+		return fmt.Errorf("expected the error of a golangci-lint command, got: %w", err)
 	}
 
 	return nil

@@ -173,6 +173,12 @@ func (m *Dev) CheckLint(
 // starts at the root of the repository, so that dagger generate writes
 // each fix to its file (see dagger/dagger#11160).
 //
+// Format fails when a run of golangci-lint fails, such as on a
+// .golangci.yaml file that golangci-lint rejects. An issue that
+// golangci-lint cannot fix does not fail the run. The changeset then
+// holds the other fixes of the run, and [Dev.CheckLint] reports the
+// issue.
+//
 // +generate
 func (m *Dev) Format(
 	// Source directory of the toolchain to fix. The default is the
@@ -187,18 +193,24 @@ func (m *Dev) Format(
 	src := lintSource(toolchain)
 	ctr := m.lintBase(src)
 
-	// golangci-lint exits with an error when it finds an issue that it
-	// cannot fix. ReturnTypeAny accepts that exit, so the container
-	// keeps the fixes of that run and fixes the next module. The linter
-	// configuration turns off the newexpr pass of modernize, because
-	// that pass panics under --fix.
+	// By default, golangci-lint exits with status 1 when it finds an
+	// issue that it cannot fix. --issues-exit-code=0 makes it exit with
+	// status 0 after such a run. So the container keeps the fixes of
+	// that run and fixes the next module.
+	//
+	// With the flag, golangci-lint still exits with status 3 and fixes
+	// nothing when it cannot run, such as on a .golangci.yaml file that
+	// it rejects. It exits with status 7 after a run in which a linter
+	// logged an error, whether or not an issue remains. Each status
+	// other than 0 fails the step, so each read of the changeset
+	// returns the error of the step, not an empty changeset.
+	//
+	// The linter configuration turns off the newexpr pass of modernize,
+	// because that pass panics under --fix.
 	for _, mod := range goModules {
 		ctr = ctr.
 			WithWorkdir(path.Join(lintDir, mod)).
-			WithExec(
-				[]string{"golangci-lint", "run", "--fix"},
-				dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
-			)
+			WithExec([]string{"golangci-lint", "run", "--fix", "--issues-exit-code=0"})
 	}
 
 	// lintBase copies .golangci.yaml into lintDir. Without this step,
