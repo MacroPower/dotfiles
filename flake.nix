@@ -123,6 +123,12 @@
             gofmt.enable = true;
           };
 
+          # The format function of the dev toolchain formats the Go files
+          # of that toolchain. `dagger generate` fails when two generators
+          # change the same file, so gofmt leaves those files to it. The
+          # glob matches the test module too, because `*` matches `/`.
+          treefmt.settings.formatter.gofmt.excludes = [ "toolchains/dev/*" ];
+
           checks =
             let
               inherit (nixpkgs) lib;

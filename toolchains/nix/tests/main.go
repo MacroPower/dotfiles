@@ -9,8 +9,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	"golang.org/x/sync/errgroup"
+
+	"dagger/tests/internal/dagger"
 )
 
 // Tests provides integration tests for the [Nix] module.
@@ -24,7 +28,12 @@ func (m *Tests) All(ctx context.Context) error {
 
 	eg.Go(m.TestAggregates)
 	eg.Go(func() error { return m.TestDependencySnapshot(ctx) })
+	eg.Go(func() error { return m.TestEditorconfigToolchains(ctx) })
+	eg.Go(func() error { return m.TestFormatSkipsDevGo(ctx) })
+	eg.Go(func() error { return m.TestFormatToolchains(ctx) })
+	eg.Go(func() error { return m.TestLintToolchains(ctx) })
 	eg.Go(func() error { return m.TestSbom(ctx) })
+	eg.Go(func() error { return m.TestSourceToolchains(ctx) })
 	eg.Go(func() error { return m.TestVulnscanSarif(ctx) })
 
 	return eg.Wait()
@@ -38,6 +47,245 @@ func (m *Tests) All(ctx context.Context) error {
 // a test is missing here.
 func (m *Tests) AllFull(ctx context.Context) error {
 	return m.All(ctx)
+}
+
+const (
+	// toolchainGoPath is the path, in the project source, of a Go file
+	// under toolchains/.
+	toolchainGoPath = "toolchains/nix/main.go"
+
+	// devGoPath is the path, in the project source, of a Go file of the
+	// dev toolchain.
+	devGoPath = "toolchains/dev/main.go"
+
+	// devTestsGoPath is the path, in the project source, of a Go file of
+	// the test module of the dev toolchain.
+	devTestsGoPath = "toolchains/dev/tests/main.go"
+
+	// unformattedFunc is a function declaration that gofmt changes,
+	// because two spaces follow the func keyword.
+	unformattedFunc = "\nfunc  unformatted() {}\n"
+
+	// formattedFunc is unformattedFunc as gofmt writes it.
+	formattedFunc = "\nfunc unformatted() {}\n"
+
+	// trailingSpaceLine is a comment line that breaks the .editorconfig
+	// rules of the repository, because it ends with a space.
+	trailingSpaceLine = "// trailing space \n"
+)
+
+// sourceFile returns the contents of the file at path in the default
+// source of [Nix]. It returns an error when the default source leaves
+// out toolchains/ and path is under toolchains/. Each test that reads
+// such a path with it therefore fails in that case. Dagger applies the
+// ignore list of the source argument only to the default source. A
+// source that a test passes to [Nix] therefore cannot show that fault.
+func sourceFile(ctx context.Context, path string) (string, error) {
+	contents, err := dag.Nix().Source().File(path).Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("reading %s from the project source: %w", path, err)
+	}
+
+	return contents, nil
+}
+
+// nixWithToolchainGo returns the [Nix] module whose source is the default
+// source with contents in the file at toolchainGoPath.
+func nixWithToolchainGo(contents string) *dagger.Nix {
+	return dag.Nix(dagger.NixOpts{
+		Source: dag.Nix().Source().WithNewFile(toolchainGoPath, contents),
+	})
+}
+
+// editorconfigSource returns a directory that holds the .editorconfig
+// file of the default source of [Nix] and contents in the file at
+// toolchainGoPath. The directory holds no other file, so a file outside
+// toolchains/ cannot fail a check of it.
+func editorconfigSource(contents string) *dagger.Directory {
+	return dag.Directory().
+		WithFile(".editorconfig", dag.Nix().Source().File(".editorconfig")).
+		WithNewFile(toolchainGoPath, contents)
+}
+
+// TestSourceToolchains verifies that the default source of [Nix] holds
+// the Dagger modules under toolchains/ and leaves out the files that
+// Dagger generates in them. A checkout holds the generated files only
+// after Dagger wrote them there, such as when `dagger develop` ran. In
+// another checkout, the test proves only the first claim.
+//
+// +check
+func (m *Tests) TestSourceToolchains(ctx context.Context) error {
+	src := dag.Nix().Source()
+
+	got, err := src.Glob(ctx, "toolchains/**/main.go")
+	if err != nil {
+		return fmt.Errorf("listing main.go files: %w", err)
+	}
+
+	for _, want := range []string{
+		"toolchains/dev/main.go",
+		"toolchains/dev/tests/main.go",
+		"toolchains/nix/main.go",
+		"toolchains/nix/tests/main.go",
+	} {
+		if !slices.Contains(got, want) {
+			return fmt.Errorf("main.go files = %q, want them to hold %q", got, want)
+		}
+	}
+
+	for _, pattern := range []string{
+		"toolchains/**/dagger.gen.go",
+		"toolchains/**/internal/dagger",
+		"toolchains/**/internal/querybuilder",
+		"toolchains/**/internal/telemetry",
+		"toolchains/**/.env",
+	} {
+		got, err := src.Glob(ctx, pattern)
+		if err != nil {
+			return fmt.Errorf("listing %s: %w", pattern, err)
+		}
+
+		if len(got) > 0 {
+			return fmt.Errorf("source holds generated paths %q, want none that match %s", got, pattern)
+		}
+	}
+
+	return nil
+}
+
+// TestLintToolchains verifies that [Nix.Lint] checks the Go files under
+// toolchains/. Lint passes when the source holds the unchanged file at
+// toolchainGoPath. It fails when that file also holds a function that
+// gofmt changes.
+//
+// +check
+func (m *Tests) TestLintToolchains(ctx context.Context) error {
+	formatted, err := sourceFile(ctx, toolchainGoPath)
+	if err != nil {
+		return err
+	}
+
+	err = nixWithToolchainGo(formatted).Lint(ctx)
+	if err != nil {
+		return fmt.Errorf("linting the unchanged %s: %w", toolchainGoPath, err)
+	}
+
+	err = nixWithToolchainGo(formatted + unformattedFunc).Lint(ctx)
+	if err == nil {
+		return fmt.Errorf("lint passed %s with a function that gofmt changes", toolchainGoPath)
+	}
+
+	return nil
+}
+
+// TestFormatToolchains verifies that [Nix.Format] formats the Go files
+// under toolchains/. When the file at toolchainGoPath also holds a
+// function that gofmt changes, the changeset lists the file as modified.
+// The changeset holds the function as gofmt writes it and leaves the
+// other contents of the file unchanged.
+//
+// +check
+func (m *Tests) TestFormatToolchains(ctx context.Context) error {
+	formatted, err := sourceFile(ctx, toolchainGoPath)
+	if err != nil {
+		return err
+	}
+
+	changes := nixWithToolchainGo(formatted + unformattedFunc).Format()
+
+	modified, err := changes.ModifiedPaths(ctx)
+	if err != nil {
+		return fmt.Errorf("reading modified paths: %w", err)
+	}
+
+	if !slices.Contains(modified, toolchainGoPath) {
+		return fmt.Errorf("modified paths = %q, want them to hold %q", modified, toolchainGoPath)
+	}
+
+	contents, err := changes.After().File(toolchainGoPath).Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading %s after format: %w", toolchainGoPath, err)
+	}
+
+	got, ok := strings.CutPrefix(contents, formatted)
+	if !ok {
+		return fmt.Errorf("format changed the formatted part of %s", toolchainGoPath)
+	}
+
+	if want := formattedFunc; got != want {
+		return fmt.Errorf("function after format = %q, want %q", got, want)
+	}
+
+	return nil
+}
+
+// TestFormatSkipsDevGo verifies that [Nix.Format] leaves the Go files of
+// the dev toolchain and of its test module to the format function of
+// that toolchain. Both format functions are generators, and
+// `dagger generate` fails when two generators change the same file. The
+// test adds a function that gofmt changes to the files at
+// toolchainGoPath, devGoPath, and devTestsGoPath. It fails when the
+// changeset of Format lists the file at devGoPath or the file at
+// devTestsGoPath as modified. It also fails when the changeset leaves
+// out the file at toolchainGoPath, because then Format did not run
+// gofmt.
+//
+// +check
+func (m *Tests) TestFormatSkipsDevGo(ctx context.Context) error {
+	devFiles := []string{devGoPath, devTestsGoPath}
+	src := dag.Nix().Source()
+
+	for _, file := range append([]string{toolchainGoPath}, devFiles...) {
+		contents, err := sourceFile(ctx, file)
+		if err != nil {
+			return err
+		}
+
+		src = src.WithNewFile(file, contents+unformattedFunc)
+	}
+
+	modified, err := dag.Nix(dagger.NixOpts{Source: src}).Format().ModifiedPaths(ctx)
+	if err != nil {
+		return fmt.Errorf("reading modified paths: %w", err)
+	}
+
+	if !slices.Contains(modified, toolchainGoPath) {
+		return fmt.Errorf("modified paths = %q, want them to hold %q", modified, toolchainGoPath)
+	}
+
+	for _, file := range devFiles {
+		if slices.Contains(modified, file) {
+			return fmt.Errorf("modified paths = %q, want them to leave out %q", modified, file)
+		}
+	}
+
+	return nil
+}
+
+// TestEditorconfigToolchains verifies that [Nix.Editorconfig] checks the
+// files under toolchains/. The test runs Editorconfig on the source that
+// [editorconfigSource] returns, so that the result depends only on the
+// file at toolchainGoPath. Editorconfig passes when that file is
+// unchanged. It fails when a line of that file ends with a space.
+//
+// +check
+func (m *Tests) TestEditorconfigToolchains(ctx context.Context) error {
+	clean, err := sourceFile(ctx, toolchainGoPath)
+	if err != nil {
+		return err
+	}
+
+	err = dag.Nix(dagger.NixOpts{Source: editorconfigSource(clean)}).Editorconfig(ctx)
+	if err != nil {
+		return fmt.Errorf("checking the unchanged %s: %w", toolchainGoPath, err)
+	}
+
+	err = dag.Nix(dagger.NixOpts{Source: editorconfigSource(clean + trailingSpaceLine)}).Editorconfig(ctx)
+	if err == nil {
+		return fmt.Errorf("editorconfig passed %s with a line that ends with a space", toolchainGoPath)
+	}
+
+	return nil
 }
 
 // ghSnapshot is the subset of the GitHub dependency snapshot format

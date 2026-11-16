@@ -185,10 +185,13 @@ tasks:
     cmds:
       - scripts/staged-tree.sh sh -c 'git init -q . && dagger check'
 
+  # treefmt leaves the Go files of the dev toolchain to the format
+  # function of that toolchain, so the task runs both format functions.
   format:
-    desc: Apply all auto-fixes (formatting and lint via treefmt)
+    desc: Apply all auto-fixes (formatting and lint via treefmt, and golangci-lint --fix on the dev toolchain)
     cmds:
       - task: nix:format
+      - dagger call dev format -y
 
   lint:
     desc: Check formatting and lint (nixfmt, deadnix, statix, shfmt, prettier, gofmt via treefmt)

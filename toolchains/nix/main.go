@@ -25,10 +25,16 @@ type Nix struct {
 	Source *dagger.Directory
 }
 
+// New creates a [Nix] module with the project source directory.
+//
+// The source holds the Dagger modules under toolchains/, so that
+// [Nix.Lint], [Nix.Format], and [Nix.Editorconfig] check their files.
+// The ignore list of source leaves out the files that Dagger generates
+// in those modules, which the .gitignore file of each module lists.
 func New(
 	// Project source directory
 	// +defaultPath="/"
-	// +ignore=["**/.git", "result", "toolchains/", "lima/", ".devbox/", ".worktrees/", ".claude/worktrees/", "**/.claude/scheduled_tasks.lock", "**/.ruff_cache"]
+	// +ignore=["**/.git", "result", "lima/", ".devbox/", ".worktrees/", ".claude/worktrees/", "**/.claude/scheduled_tasks.lock", "**/.ruff_cache", "toolchains/**/dagger.gen.go", "toolchains/**/internal/dagger", "toolchains/**/internal/querybuilder", "toolchains/**/internal/telemetry", "toolchains/**/.env"]
 	source *dagger.Directory,
 ) *Nix {
 	return &Nix{Source: source}
@@ -293,6 +299,9 @@ func (m *Nix) Editorconfig(ctx context.Context) error {
 // Format applies all auto-fixes via treefmt.
 //
 // treefmt runs nixfmt, deadnix, statix, shfmt, prettier, and gofmt.
+// The treefmt config in flake.nix keeps gofmt off the Go files of the
+// dev toolchain, because the format function of that toolchain formats
+// them. `dagger generate` fails when two generators change one file.
 // +generate
 func (m *Nix) Format() *dagger.Changeset {
 	fixed := m.base().
