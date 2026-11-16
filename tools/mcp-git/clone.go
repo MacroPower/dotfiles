@@ -933,46 +933,26 @@ func stripCredential(url string) string {
 	return user + "@" + hostPath
 }
 
-// clone runs git clone for input. input.Dest holds the absolute path
-// that [handler.handleClone] makes from the dest input. A non-empty
-// aside names the path that a corrupt checkout at the destination
-// moved to, and the result message reports it.
+// clone clones input.URL into input.Dest and returns the result of the
+// git_clone tool. input.Dest holds the absolute path that
+// [handler.handleClone] makes from the dest input.
 //
-// Each git command takes the options of [guardOptions] and
-// [hookOptions]. A new clone holds the hook files of the template
-// directory, and git runs them when it checks out the clone. git also
-// runs each hook of the global config in the clone, where the remote
-// chose every file. [handler.runRemote] reads the git config of an
-// existing repository before it runs git. The config of a new clone
-// does not exist before the clone, so clone disables the hooks of
-// [readUserHooks]. The command of [sparseCheckoutArgs] runs after the
-// clone, and it names the working tree itself.
-//
-// Each git command also takes the options of
-// [handler.credentialArgs], which authenticate a clone from GitHub
-// over https. A sparse clone without a depth leaves out each blob
-// that its checkout does not hold. The command of [sparseCheckoutArgs]
-// then fetches the blobs of the sparse paths from origin.
+// A non-empty aside names the path that a corrupt checkout at the
+// destination moved to. The result ends with the sentence of
+// [asideNote], which names that path, both when the clone succeeds and
+// when it fails. After a failure, the destination does not hold the
+// old checkout, and only the error tells the caller where its files
+// are.
 //
 //nolint:unparam // signature matches mcp.AddTool handler contract.
 func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*mcp.CallToolResult, any, error) {
-	hooks, err := readUserHooks(ctx)
+	err := h.runClone(ctx, input)
 	if err != nil {
-		return toolError(err), nil, nil
-	}
-
-	opts := slices.Concat(h.credentialArgs(), guardOptions(), hookOptions(hooks))
-
-	_, err = h.runGit(ctx, slices.Concat(opts, buildCloneArgs(input))...)
-	if err != nil {
-		return toolError(fmt.Errorf("%w: %w", ErrClone, err)), nil, nil
-	}
-
-	if len(input.SparsePaths) > 0 {
-		_, scErr := h.runGit(ctx, sparseCheckoutArgs(opts, input.Dest, input.SparsePaths)...)
-		if scErr != nil {
-			return toolError(fmt.Errorf("setting sparse checkout: %w", scErr)), nil, nil
+		if aside != "" {
+			err = fmt.Errorf("%w\n\n%s", err, asideNote(aside))
 		}
+
+		return toolError(err), nil, nil
 	}
 
 	msg := fmt.Sprintf("Cloned %s into %s", input.URL, input.Dest)
@@ -981,12 +961,61 @@ func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*m
 	}
 
 	if aside != "" {
-		msg += fmt.Sprintf(". The previous checkout had a corrupt .git directory and moved to %s", aside)
+		msg += ". " + asideNote(aside)
 	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: msg}},
 	}, nil, nil
+}
+
+// asideNote returns the sentence that tells the caller of git_clone
+// where the corrupt checkout of the destination moved to. aside is the
+// path of [handler.moveAside]. The sentence ends with the path and has
+// no final period, so that the caller can read where the path ends.
+func asideNote(aside string) string {
+	return "The previous checkout had a corrupt .git directory and moved to " + aside
+}
+
+// runClone runs git clone for input. When input names sparse paths, it
+// then sets them as the sparse checkout of the clone.
+//
+// Each git command takes the options of [guardOptions] and
+// [hookOptions]. A new clone holds the hook files of the template
+// directory, and git runs them when it checks out the clone. git also
+// runs each hook of the global config in the clone, where the remote
+// chose every file. [handler.runRemote] reads the git config of an
+// existing repository before it runs git. The config of a new clone
+// does not exist before the clone, so runClone disables the hooks of
+// [readUserHooks]. The command of [sparseCheckoutArgs] runs after the
+// clone, and it names the working tree itself.
+//
+// Each git command also takes the options of
+// [handler.credentialArgs], which authenticate a clone from GitHub
+// over https. A sparse clone without a depth leaves out each blob
+// that its checkout does not hold. The command of [sparseCheckoutArgs]
+// then fetches the blobs of the sparse paths from origin.
+func (h *handler) runClone(ctx context.Context, input CloneInput) error {
+	hooks, err := readUserHooks(ctx)
+	if err != nil {
+		return err
+	}
+
+	opts := slices.Concat(h.credentialArgs(), guardOptions(), hookOptions(hooks))
+
+	_, err = h.runGit(ctx, slices.Concat(opts, buildCloneArgs(input))...)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrClone, err)
+	}
+
+	if len(input.SparsePaths) > 0 {
+		_, err = h.runGit(ctx, sparseCheckoutArgs(opts, input.Dest, input.SparsePaths)...)
+		if err != nil {
+			return fmt.Errorf("setting sparse checkout: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // sparseCheckoutArgs returns the arguments of the git command that

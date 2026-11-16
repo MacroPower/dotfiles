@@ -28,6 +28,10 @@
 // corrupt. A repository that a later git made with a new extension
 // moves aside too.
 //
+// The result of git_clone names the path that the old checkout moved
+// to. When the clone after the move fails, the error ends with that
+// path, because the destination then does not hold the old checkout.
+//
 // git can also fail for another reason when git_clone checks the .git
 // directory. For example, the server cannot start git, a signal kills
 // git, or git cannot parse another config file than those of the .git

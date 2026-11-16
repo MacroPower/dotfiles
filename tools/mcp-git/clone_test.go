@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -3180,6 +3181,125 @@ func TestHandleCloneCorruptDest(t *testing.T) {
 			// [TestHandleClone] covers that pull.
 			require.NoError(t, checkGitDir(t.Context(), filepath.Join(dest, ".git")))
 			assert.FileExists(t, filepath.Join(dest, "README"))
+		})
+	}
+}
+
+// The clone that follows a move aside can fail, such as when git
+// cannot read the remote. The destination then does not hold the old
+// checkout, so the error must name the path that holds it.
+func TestHandleCloneCorruptDestCloneFails(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		// removeRemote deletes the bare repository before the call
+		// that moves the checkout aside, so git clone fails.
+		removeRemote bool
+
+		// sparsePaths, when set, makes that call a sparse clone of
+		// these paths.
+		sparsePaths []string
+
+		// want is the failure that the error starts with.
+		want string
+	}{
+		"git clone fails": {
+			removeRemote: true,
+			want:         "git clone failed: running git: exit status 128: ",
+		},
+		// git refuses a sparse path that holds a pattern character,
+		// so the clone succeeds and the sparse checkout then fails.
+		"sparse checkout fails after the clone": {
+			sparsePaths: []string{"do*cs"},
+			want:        "setting sparse checkout: running git: exit status 128: ",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bare := initBareRepo(t)
+			h := &handler{allowFileURLs: true}
+			dest := filepath.Join(t.TempDir(), "cloned")
+
+			initCloneAt(t, bare, dest)
+			require.NoError(t, os.Remove(filepath.Join(dest, ".git", "HEAD")))
+			require.NoError(t, os.WriteFile(filepath.Join(dest, "local.txt"), []byte("keep"), 0o644))
+
+			if tc.removeRemote {
+				require.NoError(t, os.RemoveAll(bare))
+			}
+
+			result, _, err := h.handleClone(t.Context(), nil, CloneInput{
+				URL:         bare,
+				Dest:        dest,
+				SparsePaths: tc.sparsePaths,
+			})
+			require.NoError(t, err)
+			require.True(t, result.IsError, resultText(t, result))
+
+			asides, err := filepath.Glob(dest + ".corrupt-*")
+			require.NoError(t, err)
+			require.Len(t, asides, 1)
+
+			// The path ends the text, so that no other text follows
+			// it.
+			text := resultText(t, result)
+			note := "\n\nThe previous checkout had a corrupt .git directory and moved to " + asides[0]
+
+			assert.True(t, strings.HasPrefix(text, tc.want), text)
+			assert.True(t, strings.HasSuffix(text, note), text)
+
+			kept, err := os.ReadFile(filepath.Join(asides[0], "local.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, "keep", string(kept))
+
+			assert.NoFileExists(t, filepath.Join(dest, "local.txt"))
+		})
+	}
+}
+
+// A failure before git clone starts, such as a timeout, also comes
+// after the move aside. The error of clone names the path of the old
+// checkout for that failure too, and it adds nothing when no checkout
+// moved aside.
+func TestCloneFailureNamesAside(t *testing.T) {
+	t.Parallel()
+
+	const (
+		failure = "git operation timed out: context canceled"
+		aside   = "/tmp/cloned.corrupt-20060102T150405.000000000Z"
+	)
+
+	tcs := map[string]struct {
+		aside string
+		want  string
+	}{
+		"no checkout moved aside": {want: failure},
+		"checkout moved aside": {
+			aside: aside,
+			want:  failure + "\n\nThe previous checkout had a corrupt .git directory and moved to " + aside,
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			// The server starts no git command in a context that is
+			// done, so the call fails before it writes dest.
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+
+			h := &handler{allowFileURLs: true}
+			input := CloneInput{URL: "/nonexistent/bare.git", Dest: filepath.Join(t.TempDir(), "cloned")}
+
+			result, _, err := h.clone(ctx, input, tc.aside)
+			require.NoError(t, err)
+			require.True(t, result.IsError)
+			assert.Equal(t, tc.want, resultText(t, result))
+			assert.NoDirExists(t, input.Dest)
 		})
 	}
 }
