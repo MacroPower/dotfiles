@@ -400,6 +400,50 @@ func TestRemoteToolsRefuseConfigKeys(t *testing.T) {
 	}
 }
 
+// The environment of the server can set GIT_CONFIG. A git config
+// command then reads only the file that the variable names. A fetch,
+// a pull, and a push still read the config of the repository. Every
+// tool must therefore still refuse a key that the config of the
+// repository sets. It must also still skip a hook that this config
+// defines.
+func TestRemoteToolsSkipConfigFileVariable(t *testing.T) { //nolint:paralleltest // t.Setenv
+	for toolName, rt := range remoteTools() { //nolint:paralleltest // t.Setenv
+		t.Run(toolName+"/refused key", func(t *testing.T) {
+			bare, work := rt.repos(t)
+			script, marker := markerScript(t)
+
+			runGitCmds(t, [][]string{{"git", "-C", work, "config", "credential.helper", script}})
+			setConfigFileEnv(t, "")
+
+			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+			require.NoError(t, err)
+			require.True(t, result.IsError, "the tool must refuse the repository")
+
+			assert.Contains(t,
+				resultText(t, result),
+				ErrDeniedConfig.Error()+": the repository sets credential.helper.",
+			)
+			requireNotRun(t, marker)
+			rt.requireNotLanded(t, bare, work)
+		})
+
+		t.Run(toolName+"/config hook", func(t *testing.T) {
+			bare, work := rt.repos(t)
+			script, marker := markerScript(t)
+
+			appendGitConfig(t, work, hookConfig(script, "check"))
+			setConfigFileEnv(t, "")
+
+			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			requireNotRun(t, marker)
+			rt.requireLanded(t, bare, work)
+		})
+	}
+}
+
 // core.worktree in the config of a repository names its working tree,
 // and git writes there. Every tool therefore refuses a repository
 // whose working tree lies outside the allowed directories.

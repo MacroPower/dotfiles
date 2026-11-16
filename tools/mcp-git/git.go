@@ -1032,23 +1032,38 @@ func (h *handler) credentialArgs() []string {
 }
 
 // gitEnv returns the environment for git subprocesses. It preserves
-// the inherited environment and forces non-interactive behavior: no
-// credential prompt, no editor for merge or rebase messages, and no
-// SSH passphrase prompt. GIT_SSH_COMMAND is only set when the caller
-// has not configured one.
+// the inherited environment except GIT_CONFIG. It forces
+// non-interactive behavior: no credential prompt, no editor for merge
+// or rebase messages, and no SSH passphrase prompt. GIT_SSH_COMMAND is
+// only set when the caller has not configured one.
 //
-// Each variable also keeps git from running a command that the git
-// config names. git reads the editor, the SSH command, the program
-// that asks for a password, and the proxy command of the git://
-// transport from the environment first. It reads core.editor,
-// sequence.editor, core.sshCommand, core.askPass, and core.gitProxy
-// only when the variable is not set. gitEnv therefore sets
-// GIT_ASKPASS and GIT_PROXY_COMMAND when the inherited environment
-// does not. GIT_ASKPASS takes the value of SSH_ASKPASS, which git
-// reads after core.askPass. GIT_PROXY_COMMAND is empty, which runs no
-// proxy.
+// Each variable that gitEnv sets also keeps git from running a
+// command that the git config names. git reads the editor, the SSH
+// command, the program that asks for a password, and the proxy
+// command of the git:// transport from the environment first. It
+// reads core.editor, sequence.editor, core.sshCommand, core.askPass,
+// and core.gitProxy only when the variable is not set. gitEnv
+// therefore sets GIT_ASKPASS and GIT_PROXY_COMMAND when the inherited
+// environment does not. GIT_ASKPASS takes the value of SSH_ASKPASS,
+// which git reads after core.askPass. GIT_PROXY_COMMAND is empty,
+// which runs no proxy.
+//
+// gitEnv removes GIT_CONFIG. With that variable set, a git config
+// command without a file option reads and writes only the file that
+// the variable names. Every other git command ignores the variable.
+// The server reads the config of a repository with git config, as
+// [readRepoConfig] and [configValue] do. It then runs git commands
+// that read the config files of the repository. Without the variable,
+// git config reads the same files.
 func gitEnv() []string {
-	env := append(os.Environ(),
+	// git reads an empty GIT_CONFIG as the name of a file, and git
+	// config then fails. gitEnv therefore removes the variable, and it
+	// does not give the variable an empty value.
+	env := slices.DeleteFunc(os.Environ(), func(entry string) bool {
+		return strings.HasPrefix(entry, "GIT_CONFIG=")
+	})
+
+	env = append(env,
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_EDITOR=true",
 		"GIT_SEQUENCE_EDITOR=true",

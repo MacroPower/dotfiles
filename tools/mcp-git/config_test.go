@@ -443,6 +443,57 @@ func TestReadRepoConfig(t *testing.T) {
 	}
 }
 
+// The environment of the server can set GIT_CONFIG. A git config
+// command then lists only the file that the variable names. The other
+// git commands of the server still read the config of the repository.
+// readRepoConfig must therefore list the config of the repository,
+// whatever the variable holds, and [repoConfig.check] must refuse the
+// keys of that config. The listing must leave out the file that the
+// variable names, because those git commands do not read it.
+func TestReadRepoConfigSkipsConfigFileVariable(t *testing.T) { //nolint:paralleltest // t.Setenv
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+
+	runGitCmds(t, [][]string{
+		{"git", "init", "-q", repo},
+		{"git", "-C", repo, "config", "credential.helper", "store"},
+		{"git", "-C", repo, "config", "hook.check.command", "check"},
+	})
+
+	keys := filepath.Join(dir, "keys")
+	require.NoError(t, os.WriteFile(
+		keys,
+		[]byte("[hook \"other\"]\n\tcommand = other\n[http]\n\tproxy = http://proxy.invalid\n"),
+		0o644,
+	))
+
+	empty := filepath.Join(dir, "empty")
+	require.NoError(t, os.WriteFile(empty, nil, 0o644))
+
+	// values maps the name of a case to the value of GIT_CONFIG.
+	values := map[string]string{
+		"file that sets keys":      keys,
+		"empty file":               empty,
+		"file that does not exist": filepath.Join(dir, "nosuch"),
+		"empty value":              "",
+	}
+
+	for name, value := range values { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("GIT_CONFIG", value)
+
+			got, err := readRepoConfig(t.Context(), repo)
+			require.NoError(t, err)
+			assert.Equal(t, repoConfig{
+				hooks:      []string{"check"},
+				remoteKeys: []string{"credential.helper"},
+			}, got)
+
+			require.ErrorIs(t, got.check(false), ErrDeniedConfig)
+		})
+	}
+}
+
 // git lists the global config and the config of the command line
 // outside every repository.
 func TestReadUserHooks(t *testing.T) { //nolint:paralleltest // t.Setenv

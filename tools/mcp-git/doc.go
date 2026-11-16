@@ -374,4 +374,11 @@
 //     over https. For a sparse clone without a depth, they include the
 //     fetch of the files of the sparse paths. The credential helpers
 //     of the config files still answer for every other host.
+//   - GIT_CONFIG: the server removes this variable from the
+//     environment of each git command that it runs. With the variable
+//     set, a git config command without a file option reads only the
+//     file that the variable names. Every other git command ignores
+//     the variable. The tools read the git config of a repository
+//     with git config. Without the variable, they read the config
+//     files that a fetch, a pull, and a push read.
 package main

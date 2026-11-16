@@ -1101,6 +1101,76 @@ func TestGitEnvPreservesEmptyConfigCommands(t *testing.T) { //nolint:paralleltes
 	assert.Equal(t, "GIT_PROXY_COMMAND=", lastEnv(env, "GIT_PROXY_COMMAND"))
 }
 
+// setConfigFileEnv points GIT_CONFIG at a new file that holds text,
+// for the rest of the test. A git config command without a file
+// option then reads and writes only that file, and so do the git
+// config commands of the helpers. A test therefore calls
+// setConfigFileEnv after it creates and configures its repositories.
+func setConfigFileEnv(t *testing.T, text string) {
+	t.Helper()
+
+	file := filepath.Join(t.TempDir(), "config")
+
+	require.NoError(t, os.WriteFile(file, []byte(text), 0o644))
+	t.Setenv("GIT_CONFIG", file)
+}
+
+// git config reads only the file that GIT_CONFIG names, and every
+// other git command ignores the variable. gitEnv therefore removes
+// the variable, whatever its value is. It keeps the variables that
+// every git command reads, whose names start with GIT_CONFIG_.
+func TestGitEnvRemovesConfigFile(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// values maps the name of a case to the value of GIT_CONFIG.
+	values := map[string]string{
+		"file": filepath.Join(t.TempDir(), "config"),
+		// git reads an empty value as the name of a file, so git
+		// config fails with it.
+		"empty value": "",
+	}
+
+	for name, value := range values { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("GIT_CONFIG", value)
+			t.Setenv("GIT_CONFIG_GLOBAL", "/custom/gitconfig")
+			t.Setenv("GIT_CONFIG_COUNT", "1")
+
+			envs := map[string][]string{
+				"gitEnv":     gitEnv(),
+				"commandEnv": (&handler{}).commandEnv(),
+			}
+
+			// lastEnv returns one entry, so a failure does not print
+			// the whole environment and its secrets.
+			for source, env := range envs {
+				assert.Empty(t, lastEnv(env, "GIT_CONFIG"), source)
+				assert.Equal(t, "GIT_CONFIG_GLOBAL=/custom/gitconfig", lastEnv(env, "GIT_CONFIG_GLOBAL"), source)
+				assert.Equal(t, "GIT_CONFIG_COUNT=1", lastEnv(env, "GIT_CONFIG_COUNT"), source)
+			}
+		})
+	}
+}
+
+// The environment of the server can set GIT_CONFIG. configValue must
+// still read the config of the repository, which the git commands of
+// the server read. It must not read the file that the variable names.
+func TestConfigValueSkipsConfigFileVariable(t *testing.T) { //nolint:paralleltest // t.Setenv
+	repo := filepath.Join(t.TempDir(), "repo")
+	runGitCmds(t, [][]string{
+		{"git", "init", "-q", repo},
+		{"git", "-C", repo, "config", "mcp-git.name", "value"},
+	})
+
+	setConfigFileEnv(t, "[mcp-git]\n\tname = other\n\textra = other\n")
+
+	got, err := configValue(t.Context(), repo, "mcp-git.name")
+	require.NoError(t, err)
+	assert.Equal(t, "value", got)
+
+	got, err = configValue(t.Context(), repo, "mcp-git.extra")
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
 func TestRemoteOrDefault(t *testing.T) {
 	t.Parallel()
 
