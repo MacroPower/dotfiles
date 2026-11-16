@@ -1774,10 +1774,17 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 	})
 }
 
-// TestCommandRulesCheck_GrepFind covers the top-level
-// extraCommandRules.deny rules wired in home/claude.nix that steer Bash
-// toward rg/fd (and the Grep/Glob tools) over grep/find. Both are bare
-// deny rules keyed on the command head literal.
+// TestCommandRulesCheck_GrepFind pins how bare deny rules match the
+// head literal of a command. Bare rules set Command and leave Args,
+// Except, and every other match field empty. They match that literal
+// as the command word of any pipeline stage. They do not match the
+// literal as a subcommand or as an argument of another command.
+//
+// The grep and find rules are fixtures of this test. The rules of
+// home/claude.nix do not deny grep or find. The searchrewrite package
+// rewrites grep into rg and find into bfs. The Bash handler of
+// hook-router checks the rules before that rewrite, so a deny rule for
+// either command stops the rewrite.
 func TestCommandRulesCheck_GrepFind(t *testing.T) {
 	t.Parallel()
 
