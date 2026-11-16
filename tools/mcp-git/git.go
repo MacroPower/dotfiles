@@ -1021,6 +1021,10 @@ func (h *handler) protocols() []string {
 // directories. If no directories are configured, all paths
 // are accepted. Symlinks along the path are resolved to
 // prevent directory escapes.
+//
+// checkDest compares the absolute path of dest with each allowed
+// directory. Each allowed directory must therefore be an absolute
+// path, as [resolveAllowDirs] returns it.
 func (h *handler) checkDest(dest string) error {
 	if len(h.allowDirs) == 0 {
 		return nil

@@ -409,7 +409,7 @@ func TestRemoteToolsRefuseWorkTreeOutsideAllowDir(t *testing.T) {
 			runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", outside}})
 
 			h := &handler{
-				allowDirs:     resolveAllowDirs([]string{filepath.Dir(work)}),
+				allowDirs:     mustResolveAllowDirs(t, filepath.Dir(work)),
 				allowFileURLs: true,
 			}
 
@@ -514,7 +514,7 @@ func TestRemoteToolsRefuseForeignWorkTree(t *testing.T) {
 				before := dirEntries(t, dir)
 
 				h := &handler{
-					allowDirs:     resolveAllowDirs([]string{filepath.Dir(work), other}),
+					allowDirs:     mustResolveAllowDirs(t, filepath.Dir(work), other),
 					allowFileURLs: true,
 				}
 

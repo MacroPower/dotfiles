@@ -2,16 +2,21 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const version = "0.2.0"
+
+// ErrEmptyAllowDir reports an --allow-dir flag with an empty value.
+var ErrEmptyAllowDir = errors.New("--allow-dir must not be empty")
 
 // stringSlice implements [flag.Value] for repeatable string
 // flags.
@@ -24,20 +29,51 @@ func (s *stringSlice) Set(v string) error {
 	return nil
 }
 
-// resolveAllowDirs resolves the symbolic links of each allowed
-// directory, so that [handler.checkDest] compares two resolved paths.
-// Both functions resolve a path with [resolveExistingPrefix]. The two
-// paths therefore also match for an allowed directory that does not
-// exist when the server starts and that has a symbolic link on its
-// path.
-func resolveAllowDirs(dirs []string) []string {
+// resolveAllowDirs makes each allowed directory absolute and resolves
+// its symbolic links, so that [handler.checkDest] compares two
+// absolute, resolved paths. Both functions resolve a path with
+// [resolveExistingPrefix]. The two paths therefore also match for an
+// allowed directory that does not exist when the server starts and
+// that has a symbolic link on its path.
+//
+// resolveAllowDirs reads a relative directory with [filepath.Abs], as
+// [handler.checkDest] reads a relative path. [filepath.Abs] joins the
+// directory to the working directory that [os.Getwd] reports, which
+// is $PWD when $PWD names the working directory. It then cleans the
+// path as text, so each ".." drops the element before it, also when
+// that element is a symbolic link. A ".." at the start of the
+// directory therefore leads to the parent of $PWD. resolveAllowDirs
+// returns an error when [filepath.Abs] fails for a relative directory.
+//
+// resolveAllowDirs returns [ErrEmptyAllowDir] for an empty directory.
+// A shell passes an empty value when it expands an unset variable in
+// quotes, as in --allow-dir "$DIR", or after an equals sign, as in
+// --allow-dir=$DIR. resolveAllowDirs therefore does not read an empty
+// value as the working directory.
+func resolveAllowDirs(dirs []string) ([]string, error) {
 	resolved := make([]string, 0, len(dirs))
 
 	for _, dir := range dirs {
+		if dir == "" {
+			return nil, ErrEmptyAllowDir
+		}
+
+		// checkDest makes a relative path absolute with filepath.Abs.
+		// A relative dir takes the same step, so that checkDest allows
+		// a relative path that starts with dir, such as dir/repo.
+		if !filepath.IsAbs(dir) {
+			abs, err := filepath.Abs(dir)
+			if err != nil {
+				return nil, fmt.Errorf("resolving --allow-dir %q: %w", dir, err)
+			}
+
+			dir = abs
+		}
+
 		resolved = append(resolved, resolveExistingPrefix(dir))
 	}
 
-	return resolved
+	return resolved, nil
 }
 
 func main() {
@@ -60,8 +96,14 @@ func main() {
 
 	flag.Parse()
 
+	dirs, err := resolveAllowDirs(allowDirs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-git: %v\n", err)
+		os.Exit(1)
+	}
+
 	h := &handler{
-		allowDirs:     resolveAllowDirs(allowDirs),
+		allowDirs:     dirs,
 		allowInsecure: *allowInsecure,
 		timeout:       *timeout,
 		token:         os.Getenv("GH_TOKEN"),
@@ -94,7 +136,7 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 
-	err := srv.Run(ctx, &mcp.StdioTransport{})
+	err = srv.Run(ctx, &mcp.StdioTransport{})
 
 	cancel()
 

@@ -301,6 +301,19 @@
 // link leads to. The --allow-dir can name a directory that does not
 // exist when the server starts.
 //
+// The server reads a relative --allow-dir, such as repos or a single
+// dot, against its working directory when it starts. It reads the
+// value as the tools read a relative path, with the rules of
+// filepath.Abs in the Go standard library. The value therefore starts
+// from $PWD when $PWD names the working directory. Each .. in the
+// value drops the element before it as text, also when that element
+// is a symbolic link.
+//
+// The server exits with an error when it starts with an empty
+// --allow-dir. It also exits when it cannot find its working
+// directory for a relative --allow-dir, as happens after someone
+// deletes that directory.
+//
 // The flock acquired before the main git invocation is not
 // context-aware, so a repository contended by another caller can
 // extend the wall-clock duration past --timeout. The deadline then

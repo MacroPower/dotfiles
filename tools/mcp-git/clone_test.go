@@ -402,7 +402,7 @@ func TestCheckDestSymlink(t *testing.T) {
 	link := filepath.Join(allowDir, "escape")
 	require.NoError(t, os.Symlink(outside, link))
 
-	h := &handler{allowDirs: resolveAllowDirs([]string{allowDir})}
+	h := &handler{allowDirs: mustResolveAllowDirs(t, allowDir)}
 
 	// A path through the symlink should be denied.
 	err := h.checkDest(filepath.Join(link, "repo"))
@@ -600,7 +600,7 @@ func TestHandleCloneDestNameStartsWithTwoDots(t *testing.T) {
 	bare := initBareRepo(t)
 	allowDir := t.TempDir()
 
-	h := &handler{allowFileURLs: true, allowDirs: resolveAllowDirs([]string{allowDir})}
+	h := &handler{allowFileURLs: true, allowDirs: mustResolveAllowDirs(t, allowDir)}
 
 	dest := filepath.Join(allowDir, "..owner", "repo")
 	input := CloneInput{URL: bare, Dest: dest}
@@ -634,7 +634,7 @@ func TestHandleCloneDotDotAfterSymlink(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(outside, "target"), 0o755))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "target"), filepath.Join(allowDir, "link")))
 
-	h := &handler{allowFileURLs: true, allowDirs: resolveAllowDirs([]string{allowDir})}
+	h := &handler{allowFileURLs: true, allowDirs: mustResolveAllowDirs(t, allowDir)}
 
 	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
@@ -677,7 +677,7 @@ func TestHandleCloneRelativeDestThroughSymlink(t *testing.T) { //nolint:parallel
 	require.NoError(t, err)
 	require.Equal(t, link, wd, "Getwd must report the working directory through the link")
 
-	h := &handler{allowFileURLs: true, allowDirs: resolveAllowDirs([]string{allowDir})}
+	h := &handler{allowFileURLs: true, allowDirs: mustResolveAllowDirs(t, allowDir)}
 
 	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: "../cloned"})
 	require.NoError(t, err)
@@ -2036,7 +2036,7 @@ func TestHandleCloneCorruptDestOutsideAllowDir(t *testing.T) {
 
 	// dest is the allowed directory itself, so its sibling is not
 	// an allowed path and the checkout must stay in place.
-	h := &handler{allowFileURLs: true, allowDirs: resolveAllowDirs([]string{dest})}
+	h := &handler{allowFileURLs: true, allowDirs: mustResolveAllowDirs(t, dest)}
 
 	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
 	require.NoError(t, err)

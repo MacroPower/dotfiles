@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,6 +73,17 @@ func TestGitSkipsDeveloperConfig(t *testing.T) { //nolint:paralleltest // t.Sete
 			assert.Equal(t, defaultRemote, gitOut(t, "-C", work, "remote"))
 		})
 	}
+}
+
+// mustResolveAllowDirs resolves dirs as the server does when it
+// starts.
+func mustResolveAllowDirs(t *testing.T, dirs ...string) []string {
+	t.Helper()
+
+	resolved, err := resolveAllowDirs(dirs)
+	require.NoError(t, err)
+
+	return resolved
 }
 
 func TestResolveAllowDirs(t *testing.T) {
@@ -144,7 +156,7 @@ func TestResolveAllowDirs(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := resolveAllowDirs([]string{tt.dir})
+			got := mustResolveAllowDirs(t, tt.dir)
 			require.Equal(t, []string{tt.want}, got)
 
 			if tt.skipDest {
@@ -155,6 +167,219 @@ func TestResolveAllowDirs(t *testing.T) {
 			// through the directory as the flag gave it.
 			h := &handler{allowDirs: got}
 			require.NoError(t, h.checkDest(filepath.Join(tt.dir, "repo")))
+		})
+	}
+}
+
+// The server reads a relative --allow-dir against its working
+// directory, as [handler.checkDest] reads a relative path. The handler
+// then allows a path under the directory by its relative spelling and
+// by its absolute spelling.
+func TestResolveAllowDirsRelative(t *testing.T) { //nolint:paralleltest // t.Chdir
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	wd := filepath.Join(root, "wd")
+	target := filepath.Join(root, "target")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "allowed"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(target, "existing"), 0o755))
+	require.NoError(t, os.Symlink(target, filepath.Join(wd, "link")))
+	require.NoError(t, os.Symlink(filepath.Join(target, "existing"), filepath.Join(wd, "deep")))
+
+	t.Chdir(wd)
+
+	sep := string(filepath.Separator)
+
+	tests := map[string]struct {
+		dir  string
+		want string
+	}{
+		"directory": {
+			dir:  "allowed",
+			want: filepath.Join(wd, "allowed"),
+		},
+		"directory after a dot": {
+			dir:  "." + sep + "allowed",
+			want: filepath.Join(wd, "allowed"),
+		},
+		"directory with a final separator": {
+			dir:  "allowed" + sep,
+			want: filepath.Join(wd, "allowed"),
+		},
+		"working directory": {
+			dir:  ".",
+			want: wd,
+		},
+		"parent of the working directory": {
+			dir:  "..",
+			want: root,
+		},
+		"sibling of the working directory": {
+			dir:  filepath.Join("..", "target"),
+			want: target,
+		},
+		"missing directory": {
+			dir:  "missing",
+			want: filepath.Join(wd, "missing"),
+		},
+		"missing nested directory": {
+			dir:  filepath.Join("missing", "nested"),
+			want: filepath.Join(wd, "missing", "nested"),
+		},
+		"missing sibling of the working directory": {
+			dir:  filepath.Join("..", "missing"),
+			want: filepath.Join(root, "missing"),
+		},
+		"link": {
+			dir:  "link",
+			want: target,
+		},
+		"missing directory behind a link": {
+			dir:  filepath.Join("link", "missing"),
+			want: filepath.Join(target, "missing"),
+		},
+		"parent of a link": {
+			// filepath.Join cleans the path, so a concatenation
+			// keeps the "..". The server cleans a relative
+			// --allow-dir as text before it resolves the links, as
+			// checkDest cleans a relative path. The ".." therefore
+			// drops the link and leads back to the working directory.
+			dir:  "deep" + sep + ".." + sep + "existing",
+			want: filepath.Join(wd, "existing"),
+		},
+	}
+
+	for name, tt := range tests { //nolint:paralleltest // t.Chdir
+		t.Run(name, func(t *testing.T) {
+			got := mustResolveAllowDirs(t, tt.dir)
+			require.Equal(t, []string{tt.want}, got)
+
+			h := &handler{allowDirs: got}
+
+			require.NoError(t, h.checkDest(filepath.Join(tt.want, "repo")))
+			require.NoError(t, h.checkDest(tt.dir+sep+"repo"))
+			require.ErrorIs(t, h.checkDest(filepath.Join(outside, "repo")), ErrDeniedDest)
+		})
+	}
+}
+
+// [os.Getwd] returns $PWD when $PWD names the working directory, and
+// $PWD can pass through a symbolic link. [handler.checkDest] reads a
+// relative path against $PWD with [filepath.Abs], and the server reads
+// a relative --allow-dir the same way. A ".." at the start of the
+// directory therefore leads to the parent of $PWD, which is not the
+// parent of the physical working directory.
+func TestResolveAllowDirsRelativeThroughSymlink(t *testing.T) { //nolint:paralleltest // t.Chdir, t.Setenv
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	// The physical working directory is root/parent/target, and $PWD
+	// is root/link. Both parents hold a directory named existing, so
+	// each case tells the two parents apart.
+	parent := filepath.Join(root, "parent")
+	target := filepath.Join(parent, "target")
+	link := filepath.Join(root, "link")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(parent, "existing"), 0o755))
+	require.NoError(t, os.Mkdir(filepath.Join(root, "existing"), 0o755))
+	require.NoError(t, os.Mkdir(target, 0o755))
+	require.NoError(t, os.Symlink(target, link))
+
+	t.Chdir(target)
+	t.Setenv("PWD", link)
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.Equal(t, link, wd, "Getwd must report the working directory through the link")
+
+	tests := map[string]struct {
+		dir  string
+		want string
+	}{
+		"working directory": {
+			dir:  ".",
+			want: target,
+		},
+		"missing directory": {
+			dir:  "missing",
+			want: filepath.Join(target, "missing"),
+		},
+		"parent of the working directory": {
+			dir:  "..",
+			want: root,
+		},
+		"sibling of the working directory": {
+			dir:  filepath.Join("..", "existing"),
+			want: filepath.Join(root, "existing"),
+		},
+		"missing sibling of the working directory": {
+			dir:  filepath.Join("..", "missing"),
+			want: filepath.Join(root, "missing"),
+		},
+	}
+
+	for name, tt := range tests { //nolint:paralleltest // t.Chdir
+		t.Run(name, func(t *testing.T) {
+			got := mustResolveAllowDirs(t, tt.dir)
+			require.Equal(t, []string{tt.want}, got)
+
+			h := &handler{allowDirs: got}
+			require.NoError(t, h.checkDest(filepath.Join(tt.dir, "repo")))
+		})
+	}
+}
+
+// [os.Getwd] fails when someone deleted the working directory. The
+// server then cannot read a relative --allow-dir, and the error names
+// the value of the flag.
+func TestResolveAllowDirsWithoutWorkingDirectory(t *testing.T) { //nolint:paralleltest // t.Chdir
+	if runtime.GOOS != "linux" {
+		t.Skip("the getcwd of Linux fails with ENOENT for a deleted working directory")
+	}
+
+	abs, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	dir := filepath.Join(t.TempDir(), "gone")
+	require.NoError(t, os.Mkdir(dir, 0o755))
+
+	t.Chdir(dir)
+	require.NoError(t, os.Remove(dir))
+
+	got, err := resolveAllowDirs([]string{abs, "repos"})
+	require.ErrorContains(t, err, `resolving --allow-dir "repos": `)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	require.Nil(t, got)
+
+	// An absolute directory does not depend on the working directory.
+	require.Equal(t, []string{abs}, mustResolveAllowDirs(t, abs))
+}
+
+func TestResolveAllowDirsEmpty(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		dirs []string
+	}{
+		"only value": {
+			dirs: []string{""},
+		},
+		"value after a directory": {
+			dirs: []string{t.TempDir(), ""},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := resolveAllowDirs(tt.dirs)
+			require.ErrorIs(t, err, ErrEmptyAllowDir)
+			require.Nil(t, got)
 		})
 	}
 }

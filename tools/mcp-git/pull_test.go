@@ -389,7 +389,7 @@ func TestHandlePullWorkTrees(t *testing.T) {
 			runGitCmds(t, [][]string{{"git", "-C", other, "push"}})
 
 			h := &handler{
-				allowDirs:     resolveAllowDirs([]string{filepath.Dir(work)}),
+				allowDirs:     mustResolveAllowDirs(t, filepath.Dir(work)),
 				allowFileURLs: true,
 			}
 
@@ -414,7 +414,7 @@ func TestHandlePullInSubmodule(t *testing.T) {
 	require.NotEmpty(t, gitOut(t, "-C", s.sub, "config", "core.worktree"))
 
 	h := &handler{
-		allowDirs:     resolveAllowDirs([]string{filepath.Dir(s.work)}),
+		allowDirs:     mustResolveAllowDirs(t, filepath.Dir(s.work)),
 		allowFileURLs: true,
 	}
 
