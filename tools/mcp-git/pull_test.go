@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -165,18 +166,67 @@ func TestHandlePullRebase(t *testing.T) {
 		gitOut(t, "-C", a, "log", "-1", "--format=%s", "HEAD~1"))
 }
 
-func TestHandlePullRebaseConflictAborts(t *testing.T) {
-	t.Parallel()
+// initRebaseConflict returns a clone whose rebase pull conflicts. The
+// clone and its remote each hold a commit of their own that edits
+// README, the file that [initBareRepo] commits.
+func initRebaseConflict(t *testing.T) string {
+	t.Helper()
 
 	bare := initBareRepo(t)
 	a := initWorkClone(t, bare)
 	b := initWorkClone(t, bare)
 
-	// Both sides edit README (created by initBareRepo), so the
-	// rebase pull conflicts.
 	commitFile(t, a, "README", "local edit", "local edit")
 	commitFile(t, b, "README", "remote edit", "remote edit")
 	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
+
+	return a
+}
+
+// rebaseDir returns the absolute path of the directory where git keeps
+// the state of a rebase of repo. The directory exists only while a
+// rebase is in progress. rebase-merge is the directory of the merge
+// backend, which git pull --rebase uses by default.
+//
+// git rev-parse --git-path prints a path relative to repo unless the
+// command asks for an absolute path. os.Stat reads a relative path
+// against the working directory of the test process, which is not
+// repo.
+func rebaseDir(t *testing.T, repo string) string {
+	t.Helper()
+
+	return gitOut(t, "-C", repo, "rev-parse", "--path-format=absolute", "--git-path", "rebase-merge")
+}
+
+// The tests of a conflicting rebase pull require that the directory of
+// [rebaseDir] is missing after the call. A plain git pull --rebase
+// leaves its rebase in progress at the conflict. The directory must
+// therefore exist until git rebase --abort removes it.
+func TestRebaseDir(t *testing.T) {
+	t.Parallel()
+
+	a := initRebaseConflict(t)
+
+	cmd := exec.CommandContext(t.Context(), "git", "-C", a, "pull", "--rebase")
+
+	var exitErr *exec.ExitError
+
+	out, err := cmd.CombinedOutput()
+	require.ErrorAs(t, err, &exitErr, "git pull printed %q", out)
+
+	dir := rebaseDir(t, a)
+	require.DirExists(t, dir, "a conflicting pull must leave its rebase in progress")
+
+	runGitCmds(t, [][]string{{"git", "-C", a, "rebase", "--abort"}})
+
+	_, statErr := os.Stat(dir)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestHandlePullRebaseConflictAborts(t *testing.T) {
+	t.Parallel()
+
+	a := initRebaseConflict(t)
 
 	h := &handler{allowFileURLs: true}
 
@@ -190,9 +240,7 @@ func TestHandlePullRebaseConflictAborts(t *testing.T) {
 
 	// The cleanup must have aborted the rebase: no rebase state on
 	// disk and a clean working tree at the local commit.
-	rebaseDir := gitOut(t, "-C", a, "rev-parse", "--git-path", "rebase-merge")
-
-	_, statErr := os.Stat(rebaseDir)
+	_, statErr := os.Stat(rebaseDir(t, a))
 	require.ErrorIs(t, statErr, os.ErrNotExist,
 		"no in-progress rebase may remain after a conflicting pull")
 
@@ -232,15 +280,7 @@ func TestHandlePullSkipsHooks(t *testing.T) {
 func TestHandlePullRebaseConflictSkipsHooks(t *testing.T) {
 	t.Parallel()
 
-	bare := initBareRepo(t)
-	a := initWorkClone(t, bare)
-	b := initWorkClone(t, bare)
-
-	// Both sides edit README (created by initBareRepo), so the
-	// rebase pull conflicts.
-	commitFile(t, a, "README", "local edit", "local edit")
-	commitFile(t, b, "README", "remote edit", "remote edit")
-	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
+	a := initRebaseConflict(t)
 
 	script, marker := markerScript(t)
 
@@ -262,9 +302,7 @@ func TestHandlePullRebaseConflictSkipsHooks(t *testing.T) {
 
 	requireNotRun(t, marker)
 
-	rebaseDir := gitOut(t, "-C", a, "rev-parse", "--git-path", "rebase-merge")
-
-	_, statErr := os.Stat(rebaseDir)
+	_, statErr := os.Stat(rebaseDir(t, a))
 	require.ErrorIs(t, statErr, os.ErrNotExist,
 		"no in-progress rebase may remain after a conflicting pull")
 
