@@ -1239,6 +1239,17 @@ Adding `!` exclusion patterns is useful to avoid uploading large cache or genera
 
 A module with a generated entrypoint takes no such list, because the SDK writes the `include` field of its manifest. Dagger loads the directory of that module without its `.git` directory and without the files that `.gitignore` ignores. It also loads the files outside the directory that the build reads through a local `replace` directive of `go.mod`.
 
+### Go version
+
+The `go` line in the `go.mod` of a module names the earliest Go version that builds the module. In a new module, the layout sets that line, because the layout sets which program creates the `go.mod`:
+
+- **Generated entrypoint**: Go SDK v1.6.0 creates the file, and it writes `go 1.27`.
+- **Go runtime**: the Go codegen of the engine creates the file, and it writes the version of the Go release that built the engine. For Dagger v1.0.0-beta.25, the line is `go 1.27.3`.
+
+On the host, a `go` command of an earlier release, such as Go 1.26.1, does not build the module with its own toolchain. It downloads a toolchain of the version that the `go` line names, and it runs that toolchain. `GOTOOLCHAIN=auto`, which the Go distribution sets by default, allows the download. With `GOTOOLCHAIN=local`, the command fails with an error such as `go.mod requires go >= 1.27 (running go 1.26.1; GOTOOLCHAIN=local)`.
+
+Neither the SDK nor the engine writes those versions to an existing `go.mod`. So read the Go version of an existing module from the `go` line of its `go.mod`. The SDK generates a module with a generated entrypoint in a `golang` image of the newest version that the `go` and `toolchain` lines of its `go.mod` name. When that version is earlier than Go 1.26.1, the SDK uses an image of Go 1.26.1.
+
 ### Go workspaces
 
 Go SDK v1.6.0 does not add a module of either layout to a `go.work` file above the module directory, such as a `go.work` file at the repository root. So when the repository has a `go.work` file, add each new module to it. Run `go work use` from the directory of the `go.work` file, and pass the directory of the module:

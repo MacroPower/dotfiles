@@ -27,7 +27,7 @@ Dagger detects a coding agent from its environment. Under an agent, the commands
 
 `dagger call` and `dagger functions` are the 0.x names of `dagger api call` and `dagger api functions`. Dagger 1.0 runs both names, and `dagger --help` lists only the `dagger api` names.
 
-The Go SDK is a Dagger module, `dagger.io/sdk/go`, that a workspace installs. The `go.mod` that the SDK generates requires **Go 1.26+**.
+The Go SDK is a Dagger module, `dagger.io/sdk/go`, that a workspace installs. The `go.mod` of a new module declares **Go 1.27**, or Go 1.27.3 when the module is on the Go runtime. [Go version](references/architecture.md#go-version) in architecture.md covers those versions, the `go.mod` of an existing module, and the `go` command of an earlier release.
 
 ## Quick Reference
 
