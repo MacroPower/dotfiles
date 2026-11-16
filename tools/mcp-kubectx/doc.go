@@ -237,14 +237,29 @@
 // error, [*handler.restoreCleanups] swaps the previous list back so
 // the prior SA still gets released at shutdown.
 //
-// On SIGINT or SIGTERM, the cleanup closure returned by
-// [*handler.sessionDir] runs every registered release with the same
-// 30-second [context.Background] timeout, then unlinks the
-// kubeconfig file with a local [os.Remove] of h.lastOutputPath.
-// On a Lima-guest serve the unlink lands on the host through the
-// writable bind mount of <stateHomeDir> declared in workmux's
-// extra_mounts; the guest's write reach extends only to that
-// directory, which only ever holds mcp-kubectx kubeconfigs.
+// On SIGINT or SIGTERM, the cleanup closure that
+// [*handler.sessionDir] returns runs these steps in order:
+//
+//  1. [*handler.socketShutdown] closes the UDS listener and waits
+//     for each connection handler to return, so each token mint
+//     ends before a later step unlinks a file.
+//  2. [*handler.drainSweep] waits for the background `host sweep`
+//     goroutine to return, for at most 30 seconds. The limit keeps
+//     a hung `host sweep` subprocess from blocking the shutdown.
+//  3. The closure runs every registered release closure with a
+//     30-second [context.Background] timeout.
+//  4. The closure unlinks the socket inode at h.socketPath.
+//  5. The closure unlinks the per-slot sidecar file at
+//     [socket.SidecarPath].
+//  6. The closure unlinks the scoped kubeconfig file with a local
+//     [os.Remove] of h.lastOutputPath.
+//  7. The closure unlinks the hook-router sidecar symlink at
+//     [sidecarSymlinkPath].
+//
+// On a Lima-guest serve the unlink of the kubeconfig file lands on
+// the host through the writable bind mount of <stateHomeDir> declared
+// in workmux's extra_mounts. The guest's write reach extends only to
+// that directory, which only ever holds mcp-kubectx kubeconfigs.
 //
 // SIGKILL ends a serve before the cleanup closure of
 // [*handler.sessionDir] runs. The killed serve then leaves these
