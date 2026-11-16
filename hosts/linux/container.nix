@@ -7,7 +7,6 @@ system: {
         ../../home/development.nix
         ../../home/kubernetes.nix
         ../../home/claude.nix
-        ../../home/files.nix
         ../../home/photo-cli.nix
       ];
       dotfiles = {
