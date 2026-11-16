@@ -413,7 +413,9 @@ dagger check
 
 `dagger install` records the module under `[modules.my-toolchain]` in the `dagger.toml` of the project. Toolchain is the Dagger 0.x name for such a module. 0.x projects list their toolchains under `toolchains` in `dagger.json`, and [Dagger 0.x](#dagger-0x) covers how to add one.
 
-Dagger resolves `+defaultPath` against the Git repository that holds the module that declares it. So in a toolchain from another repository, `/` names the root of the toolchain repository, not the project. Dagger resolves the path against the project that installs the module in two cases only. Either the module is a toolchain or the blueprint of a 0.x project, or its `dagger.toml` entry sets `legacy-default-path = true`. `dagger workspace migrate` writes that key for each toolchain and for the blueprint that it migrates. Toolchains read the project without that key through a `*dagger.Workspace` argument, which Dagger fills from the workspace. [Toolchain Design](references/architecture.md#toolchain-design) shows an example.
+Dagger resolves `+defaultPath` against the Git repository that holds the module that declares it. So in a toolchain from another repository, `/` names the root of the toolchain repository, not the project. Dagger resolves the path against the project that installs the module in two cases only. Either the module is a toolchain or the blueprint of a 0.x project, or its `dagger.toml` entry sets `legacy-default-path = true`. `dagger workspace migrate` writes that key for each toolchain and for the blueprint that it migrates.
+
+Without `legacy-default-path`, a toolchain reads the project through a `*dagger.Workspace` argument, which Dagger fills from the workspace. [Toolchain Design](references/architecture.md#toolchain-design) shows an example.
 
 A good toolchain:
 - Focuses on a single tool (eslint, pytest, golangci-lint) rather than being monolithic

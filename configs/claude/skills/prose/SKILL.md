@@ -258,10 +258,12 @@ before.
 Never write an em dash, an en dash, or a hyphen with a space on each
 side as a dash. End the sentence with a period, or join the clauses
 with `and`, `but`, or `so`. Set an aside in commas, and put a colon
-after the label that opens a list item. Write straight quotes and
-three periods, never curly quotes or the ellipsis character. Never
-write an emoji or an exclamation mark. Never let an arrow stand in for
-a verb (`client → proxy`). Write the verb, or `>` for a menu path.
+after the label that opens a list item.
+
+Write straight quotes and three periods, never curly quotes or the
+ellipsis character. Never write an emoji or an exclamation mark. Never
+let an arrow stand in for a verb (`client → proxy`). Write the verb, or
+`>` for a menu path.
 
 ## Concision
 

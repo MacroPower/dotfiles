@@ -66,23 +66,25 @@ Step 4 expands them through `task nix:pkg-diff`.
 
 Two tiers, because changelog reading only pays off where this repo consumes an API:
 
-**Research tier** -- fan out an agent per input (Step 5). Everything not listed
-below, e.g. home-manager, nix-darwin, stylix, sops-nix, nix-homebrew, krewfile,
-treefmt-nix, flake-parts, dagger, workmux, nixos-lima, nix-index-database.
-These expose modules, options, and functions this repo configures directly, so
-deprecations and new features there are actionable.
+**Research tier:** fan out an agent per input (Step 5). Everything not listed
+below, such as home-manager, nix-darwin, stylix, sops-nix, nix-homebrew,
+krewfile, treefmt-nix, flake-parts, dagger, workmux, nixos-lima,
+nix-index-database. These expose modules, options, and functions this repo
+configures directly, so deprecations and new features there are actionable.
 
-**Package tier -- diff versions, don't read logs**: `nixpkgs`, `llm-agents`,
-the Homebrew taps (`homebrew-core`, `homebrew-cask`, `homebrew-bundle`,
-`homebrew-fuse-t`), and the NURs (`rycee-nur`, `nur-jacobcolvin`). These inputs
-exist to carry other software. Their commit logs are version bumps and
-packaging fixes, never the changelog of anything this repo configures, whether
-that log is thousands of nixpkgs commits or a dozen `claude-code: 2.1.0 ->
-2.2.0` commits in llm-agents.nix. Reading such a log and reporting "package
-bumps, nothing actionable" is the failure this skill exists to prevent. The
-bump to Claude Code is the finding, and its changelog lives in Claude Code's
-own repo. The surface that matters is what these hosts actually install, and
-that is knowable. Narrow to it:
+**Package tier:** diff versions, and do not read logs. This tier holds
+`nixpkgs`, `llm-agents`, the Homebrew taps (`homebrew-core`, `homebrew-cask`,
+`homebrew-bundle`, `homebrew-fuse-t`), and the NURs (`rycee-nur`,
+`nur-jacobcolvin`). These inputs carry other software. Their commit logs are
+version bumps and packaging fixes, never the changelog of anything this repo
+configures, whether that log is thousands of nixpkgs commits or a dozen
+`claude-code: 2.1.0 -> 2.2.0` commits in llm-agents.nix. Reading such a log and
+reporting "package bumps, nothing actionable" is the failure that this skill
+prevents. The bump to Claude Code is the finding, and its changelog lives in
+Claude Code's own repo.
+
+The surface that matters is what these hosts install, and that is knowable.
+Narrow to it:
 
 ```bash
 task nix:pkg-diff

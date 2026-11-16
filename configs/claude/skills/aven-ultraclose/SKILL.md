@@ -99,13 +99,14 @@ adds tasks, run `ultraclose.py next`, so that the new tasks take the free
 slots.
 
 `ultraclose.py untriaged --project <key>` prints each task of the queue
-that the run does not hold. `<key>` is the key of the aven project of the
-repository. Always pass `--project`. Without it, `aven list` keeps to the
-project that aven infers from the main checkout, and it covers every
-project when aven infers none. Add each `aven list` filter that the
-arguments hold.
-The command prints a JSON list with the ref, the title, and the priority
-of each task. The list is empty when the run holds the whole queue.
+that the run does not hold. Add each `aven list` filter that the arguments
+hold. The command prints a JSON list with the ref, the title, and the
+priority of each task. The list is empty when the run holds the whole
+queue.
+
+`<key>` is the key of the aven project of the repository. Always pass
+`--project`. Without it, `aven list` keeps to the project that aven infers
+from the main checkout, and it covers every project when aven infers none.
 
 `--project` takes the key of a project, not the prefix of its refs. For
 example, the refs of the project `terrarium` start with `TRR`, and aven
@@ -1077,11 +1078,13 @@ its error gives:
   proposed the task did not remove the worktree. git deletes no branch
   that a worktree has checked out. Remove the worktree with the
   `git worktree remove --force <worktree>` command that the error gives.
-  When git fails, repair the cause that its error names, and run the git
-  command again. When git then answers that the path is not a working
-  tree, git deleted its record of the worktree, and only the directory
-  stays. Delete the directory with `rm -rf <worktree>`. Then run
-  `ultraclose.py merged <ref>` again.
+  Then run `ultraclose.py merged <ref>` again.
+
+  When git fails to remove the worktree, repair the cause that its error
+  names, and run the git command again. When git then answers that the
+  path is not a working tree, git deleted its record of the worktree, and
+  only the directory stays. Delete the directory with `rm -rf <worktree>`.
+  Then run `ultraclose.py merged <ref>` again.
 - **Another worktree has the branch checked out:** git deletes no such
   branch. The main checkout can have the branch checked out after a
   review. Ask the user to check out another branch there, and run the
@@ -1188,12 +1191,12 @@ When the message was about the task, take the action of the result.
   other inflight task with `ultraclose.py args <ref>`. The agents find the
   unfinished work in the worktree. A list that arrives after the relaunch
   can name a task that you relaunched, and the Landing section says to
-  skip its object. New sessions do not run `watch`, so start it again.
+  skip its object.
 
   Each new session first follows the `setup` line of `status`, as the
-  Setup section says. After the earlier session has ended, no landing
-  runs for its approved tasks. Land each of them again, as the Landing
-  section says.
+  Setup section says. New sessions do not run `watch`, so start it again.
+  After the earlier session has ended, no landing runs for its approved
+  tasks. Land each of them again, as the Landing section says.
 
   No proposed task takes a landing. When the `proposed` line of a task
   names a branch that waits for its push, take the steps of the Pull
