@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -25,20 +24,17 @@ func (s *stringSlice) Set(v string) error {
 	return nil
 }
 
-// resolveAllowDirs resolves symlinks in each allow dir so that
-// [handler.checkDest], which symlink-resolves the paths it checks,
-// compares like with like. A dir that cannot be resolved is kept
-// as given.
+// resolveAllowDirs resolves the symbolic links of each allowed
+// directory, so that [handler.checkDest] compares two resolved paths.
+// Both functions resolve a path with [resolveExistingPrefix]. The two
+// paths therefore also match for an allowed directory that does not
+// exist when the server starts and that has a symbolic link on its
+// path.
 func resolveAllowDirs(dirs []string) []string {
 	resolved := make([]string, 0, len(dirs))
 
 	for _, dir := range dirs {
-		r, err := filepath.EvalSymlinks(dir)
-		if err != nil {
-			r = dir
-		}
-
-		resolved = append(resolved, r)
+		resolved = append(resolved, resolveExistingPrefix(dir))
 	}
 
 	return resolved

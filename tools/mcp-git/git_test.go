@@ -805,7 +805,7 @@ func TestRunRemoteEscapeAboveAllowDir(t *testing.T) {
 	sub := filepath.Join(work, "sub")
 	require.NoError(t, os.Mkdir(sub, 0o755))
 
-	h := &handler{allowDirs: []string{sub}}
+	h := &handler{allowDirs: resolveAllowDirs([]string{sub})}
 
 	_, err := h.runRemote(t.Context(), remoteOp{
 		repo:   sub,
@@ -838,7 +838,7 @@ func TestRunRemoteDeniedRepoPath(t *testing.T) {
 		0o644,
 	))
 
-	h := &handler{allowDirs: []string{allowDir}}
+	h := &handler{allowDirs: resolveAllowDirs([]string{allowDir})}
 
 	_, err := h.runRemote(t.Context(), remoteOp{
 		repo:   evil,

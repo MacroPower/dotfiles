@@ -3097,10 +3097,11 @@ in
           type = "stdio";
           command = "${gitWrapper}";
           args = [
+            # mcp-git resolves the symbolic links of each --allow-dir,
+            # so on macOS this entry also allows the paths under
+            # /private/tmp/git.
             "--allow-dir"
             "/tmp/git"
-            "--allow-dir"
-            "/private/tmp/git"
             # git_fetch / git_pull / git_push operate on working
             # checkouts, which live here. The allowlist is shared
             # with git_clone's dest check, so clones into this tree

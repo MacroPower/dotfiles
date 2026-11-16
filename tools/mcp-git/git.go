@@ -1059,9 +1059,21 @@ func (h *handler) checkDest(dest string) error {
 // existing prefix of path and appends the remaining
 // unresolved suffix.
 func resolveExistingPrefix(path string) string {
+	// filepath.EvalSymlinks gets the path as the caller gave it, so a
+	// ".." after a symbolic link leads to the parent of the target of
+	// the link.
 	resolved, err := filepath.EvalSymlinks(path)
 	if err == nil {
 		return resolved
+	}
+
+	// filepath.Dir and filepath.Base both keep the last element of a
+	// path that ends with a separator, and the join of their results
+	// repeats that element. filepath.Clean removes the separator, and
+	// it also drops each ".." with the element before it. The cleaned
+	// path can exist, so filepath.EvalSymlinks gets another try at it.
+	if clean := filepath.Clean(path); clean != path {
+		return resolveExistingPrefix(clean)
 	}
 
 	dir := filepath.Dir(path)

@@ -393,7 +393,7 @@ func TestCheckDestSymlink(t *testing.T) {
 	link := filepath.Join(allowDir, "escape")
 	require.NoError(t, os.Symlink(outside, link))
 
-	h := &handler{allowDirs: []string{allowDir}}
+	h := &handler{allowDirs: resolveAllowDirs([]string{allowDir})}
 
 	// A path through the symlink should be denied.
 	err := h.checkDest(filepath.Join(link, "repo"))

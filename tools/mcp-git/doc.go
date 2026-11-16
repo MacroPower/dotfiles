@@ -283,11 +283,18 @@
 //   - --allow-insecure: permit unencrypted URL schemes (http, git)
 //   - --timeout: max duration for a single git operation (0 disables)
 //
+// The server resolves the symbolic links of each --allow-dir when it
+// starts, and it resolves the links of each path that it checks. An
+// --allow-dir with a symbolic link on its path, such as /tmp/git on
+// macOS, therefore allows the paths under the directory that the
+// link leads to. The --allow-dir can name a directory that does not
+// exist when the server starts.
+//
 // The flock acquired before the main git invocation is not
 // context-aware, so a repository contended by another caller can
-// extend the wall-clock duration past --timeout: the deadline
-// expires during the flock wait and the next git invocation aborts
-// immediately once flock returns.
+// extend the wall-clock duration past --timeout. The deadline then
+// expires during the flock wait, and the next git invocation aborts
+// immediately after flock returns.
 //
 // # Environment
 //
