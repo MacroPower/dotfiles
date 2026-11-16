@@ -10,20 +10,21 @@ description: >-
 
 ## Linter
 
-After every Write and Edit of a markdown or source file outside
-`/tmp/claude-<uid>`, a hook runs `prose-lint` and returns its findings
-before your next turn. The Bash hook also lints the message that a
-`git commit` or `gh pr create` carries. The MCP hook lints the prose
-arguments of tools such as `mcp__github__create_pull_request` before
-the call runs.
+After every Write and Edit of a markdown or source file outside the
+temporary directory of Claude Code, a hook runs `prose-lint` and
+returns its findings before your next turn. The Bash hook also lints
+the message that a `git commit` or `gh pr create` carries. The MCP hook
+lints the prose arguments of tools such as
+`mcp__github__create_pull_request` before the call runs.
 
-The Write and Edit hook skips every file under `/tmp/claude-<uid>`,
-which holds the session scratchpad, because most files there are
-throwaway scripts and notes. Run `prose-lint <file>` by hand on a draft
-there that a person reads, such as the description of an aven task or
-the body of a pull request. Run it by hand as well on a file that you
-write through Bash, because the hook lints only after a Write or an
-Edit.
+The Write and Edit hook skips every file under the temporary directory
+of Claude Code, because most files there are throwaway scripts and
+notes. The directory holds the session scratchpad, and the path of the
+scratchpad names it as `claude-<uid>`, such as `/tmp/claude-1000`. Run
+`prose-lint <file>` by hand on a draft there that a person reads, such
+as the description of an aven task or the body of a pull request. Run
+it by hand as well on a file that you write through Bash, because the
+hook lints only after a Write or an Edit.
 
 `prose-lint` tags each finding with its rule's tier. Each tier says how
 often its rules misread a sentence, so it sets what a finding asks of

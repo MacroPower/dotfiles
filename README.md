@@ -328,6 +328,37 @@ To apply the settings, run `task switch` on the host. For the OrbStack machine, 
 rm -rf /tmp/git
 ```
 
+### Session files
+
+Every NixOS host removes a session directory of Claude Code as a whole. So a session finds every file of its scratchpad or no file at all. Claude Code keeps the temporary files of each session in `/tmp/claude-<uid>/<project>/<session>`. Those files are the scratchpad of the session and the output of its background commands. `hosts/nixos/default.nix` imports `hosts/nixos/claude-tmp.nix`, which holds the settings that keep the files whole:
+
+- A `systemd-tmpfiles` rule keeps the daily cleanup of `/tmp` out of `/tmp/claude-<uid>`. That cleanup checks each file on its own and deletes a file that nothing read or changed in the last 10 days. Without the rule, a session that lives for more than 10 days loses each file of its scratchpad that it did not read or write in that time. The sandbox VM mounts the root filesystem with `noatime`, so a session there also loses the files that it reads every day.
+- `expire-claude-tmp.service` runs every day and removes each session directory that nothing changed in the last 10 days. `maxAge` sets that span.
+
+The service keeps these session directories, however old their files are:
+
+- The directory named by the current id of each session that runs. Claude Code keeps one file in `~/.claude/sessions` for each session that runs, and the service reads those files. When the service cannot read one of them, it removes no session directory and fails.
+- Each directory that a process uses. A process uses a directory when it holds the directory or a file under it open, or when its working directory lies there. The service reads the open files and the working directories from `/proc`. Each background command holds its output file open, so the directory of that file stays while the command runs.
+- Each directory that holds the socket of a server that listens, such as a `tmux` server that a command started. The cleanup of `/tmp` keeps such a socket too. The service finds those servers in `/proc/net/unix`, which lists only the sockets of its own network namespace.
+
+Claude Code keeps the output of the background commands of a session under the id that its process started with. On Linux, Claude Code 2.1.319 holds that directory open while its process runs. So the directory stays after `/clear` gives the session another id.
+
+The service removes the directory of a session that does not run 10 days after the last change to the directory. A session that you resume after that time finds none of its earlier scratchpad files.
+
+The service runs as root, as the cleanup of `/tmp` does. So it removes the files that the user cannot remove, such as the files that a rootless container wrote with a subordinate uid. It never follows a symbolic link out of `/tmp/claude-<uid>`, and systemd lets it write only in `/tmp`.
+
+The service keeps each session directory that holds a mount, so it does not delete the files of the source of a bind mount. It also keeps each project directory that is a mount point. The cleanup of `/tmp` skips such a mount too. Until someone removes the mount, each run fails and names the directory that holds it.
+
+The `claude` wrapper of `home/claude.nix` sets `CLAUDE_CODE_TMPDIR` to `/tmp`. Without the variable, Claude Code on Linux follows `TMPDIR`, so a session that starts in a shell with another `TMPDIR` keeps its files outside `/tmp/claude-<uid>`.
+
+`pkgs/expire-claude-tmp.nix` describes what counts as a session directory and as a change. The build of each configuration runs the cleanup of `/tmp` on a sample session directory. The build fails when the cleanup deletes a file of that directory. The evaluation of a NixOS host fails when the host lacks the rule. To list the session directories that the service removed, run this command on the host:
+
+```sh
+journalctl -u expire-claude-tmp.service -g removed
+```
+
+To apply the settings, run `task switch` on the host. For the OrbStack machine, run `task vm:switch` on the Mac. A session directory that lost files to the cleanup of `/tmp` before the switch stays incomplete. After the switch, the first run of the service keeps the directory named by the current id of each session that runs. It removes each other session directory whose last change is more than 10 days old.
+
 ## NixOS (Orb)
 
 ### Bootstrap
@@ -410,6 +441,38 @@ To apply the settings, run `sudo task switch` on the Mac. Then restart each Clau
 
 ```sh
 rm -rf /tmp/git
+```
+
+### Session files
+
+Each Darwin host keeps the temporary files of Claude Code outside `/tmp`. So a session finds every file of its scratchpad or no file at all. Claude Code keeps the files of each session in `~/Library/Caches/claude-tmp/claude-<uid>/<project>/<session>`. Those files are the scratchpad of the session and the output of its background commands. `claudeTmpDir` in `home/claude.nix` names `~/Library/Caches/claude-tmp`, and the `claude` wrapper passes that directory to Claude Code as `CLAUDE_CODE_TMPDIR`.
+
+The `tmp_cleaner` script of macOS deletes each file under `/tmp` that nothing read or changed in the last three days. No setting keeps the script out of a directory. In `/tmp`, a session that lives for more than three days loses single files of its scratchpad and keeps the others. The evaluation of a Darwin host fails when `claudeTmpDir` lies in `/tmp`.
+
+The script does not clean `~/Library/Caches`, so a launchd agent bounds the directory. The `expire-claude-tmp` agent runs every day at 04:30 and at each login. It removes each session directory that nothing changed in the last 10 days. It runs the tool that `expire-claude-tmp.service` runs on the NixOS hosts, so `pkgs/expire-claude-tmp.nix` describes what counts as a session directory and as a change. To list the session directories that the agent removed, run this command on the Mac:
+
+```sh
+grep removed ~/Library/Logs/expire-claude-tmp.log
+```
+
+The agent keeps these session directories, however old their files are:
+
+- The directory named by the current id of each session that runs.
+- Each directory that a process of the user uses. A process uses a directory when it holds the directory or a file under it open, or when its working directory lies there. The agent asks `lsof` for the open files. Each background command holds its output file open, so the directory of that file stays while the command runs.
+- Each directory that holds a socket. macOS does not list the sockets that servers bind, so the agent cannot tell whether a server listens on a socket.
+- Each directory that the agent cannot read in full, such as a directory with the mode `000`. The agent runs as the user, so the run fails, and the log names the directory.
+
+Claude Code keeps the output of the background commands of a session under the id that its process started with. On macOS, Claude Code 2.1.319 holds that directory open only while it writes there. After `/clear` gives a session another id, the agent removes that directory 10 days after its last change, even while the session runs. A background command that still runs keeps the directory.
+
+Sandboxed commands still get `/tmp/claude-<uid>` as `TMPDIR`. The path of `~/Library/Caches/claude-tmp/claude-<uid>` is too long for a Unix socket, so Claude Code does not pass that directory to the commands. macOS therefore still deletes single files that a command keeps in `TMPDIR` for more than three days. Files that a session needs for longer belong in its scratchpad.
+
+Claude Code creates `/tmp/claude-<uid>` once for each process, so each sandboxed command of a session fails after the directory is gone. The directory often stays empty, and the `tmp_cleaner` script deletes an empty directory that nothing modified in three days. So each run of the agent creates the directory when it does not exist, and it sets the modification time of the directory.
+
+To apply the settings, run `sudo task switch` on the Mac. Then quit each Claude Code session that started before the switch, because such a session still keeps its files in `/tmp/claude-<uid>`. The switch leaves those files there, so a session that you resume later finds none of its earlier scratchpad files. To keep the files, run these commands on the Mac before you start a session again:
+
+```sh
+mkdir -p ~/Library/Caches/claude-tmp
+mv -n "/private/tmp/claude-$(id -u)" ~/Library/Caches/claude-tmp/
 ```
 
 ## Sandbox VM

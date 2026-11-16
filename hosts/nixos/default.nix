@@ -9,6 +9,7 @@
   imports = [
     ../shared.nix
     ../options.nix
+    ./claude-tmp.nix
     ./clones.nix
   ];
 

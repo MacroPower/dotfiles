@@ -42,6 +42,7 @@ let
     comfyui = final.callPackage paths.comfyui { };
     slugify = final.callPackage paths.slugify { };
     mdcopy = final.callPackage paths.mdcopy { };
+    expire-claude-tmp = final.callPackage paths.expire-claude-tmp { };
     expire-clones = final.callPackage paths.expire-clones { };
     prose-weirpack = final.callPackage paths.prose-weirpack { };
     prose-lint = final.callPackage paths.prose-lint { };

@@ -17,10 +17,58 @@ let
   # Dagger) has no `osConfig.users`, so the lookup returns null and the
   # uid-scoped paths drop out of the lists below.
   hostUid = lib.attrByPath [ "users" "users" config.home.username "uid" ] null osConfig;
-  claudeTmpPaths = lib.optionals (hostUid != null) [
-    "/tmp/claude-${toString hostUid}"
-    "/private/tmp/claude-${toString hostUid}"
-  ];
+
+  # The claude wrapper passes this directory to Claude Code as
+  # CLAUDE_CODE_TMPDIR. Claude Code keeps its temporary files in the
+  # directory claude-<uid> there. That directory holds the files of
+  # each session as <project>/<session>, which are the scratchpad of
+  # the session and the output of its background commands.
+  #
+  # A Linux host keeps the directory in /tmp. Without the variable,
+  # Claude Code on Linux follows TMPDIR, so a session that starts in a
+  # shell with another TMPDIR keeps its files elsewhere. On a NixOS
+  # host, hosts/nixos/claude-tmp.nix keeps the daily cleanup of /tmp out
+  # of /tmp/claude-<uid> and removes each old session directory as a
+  # whole.
+  #
+  # A Darwin host cannot keep its cleanup of /tmp out of a directory,
+  # as the comment on cloneRoot describes. That cleanup deletes each
+  # file that nothing read or changed in the last three days. In /tmp,
+  # a session that lives for more than three days loses single files of
+  # its scratchpad and keeps the others. So a Darwin host keeps the
+  # directory in ~/Library/Caches, which macOS does not clean. The
+  # expire-claude-tmp agent of this module removes each old session
+  # directory there as a whole. Time Machine leaves ~/Library/Caches
+  # out of its backups.
+  claudeTmpDir =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      "${config.home.homeDirectory}/Library/Caches/claude-tmp"
+    else
+      "/tmp";
+
+  # Claude Code gives a sandboxed command the directory claude-<uid> as
+  # TMPDIR. A Unix socket cannot have a long path. So when the path of
+  # that directory is long, Claude Code gives the command
+  # /tmp/claude-<uid> instead. Claude Code 2.1.319 does so for a path
+  # of more than 44 bytes, and the directory of a Darwin host has such
+  # a path. So the sandbox write paths hold /tmp/claude-<uid> on every
+  # host. /tmp is a link to /private/tmp on macOS.
+  #
+  # Claude Code creates /tmp/claude-<uid> once for each process, so each
+  # sandboxed command of a session fails after the directory is gone.
+  # On a Darwin host, that directory holds only the short-lived files of
+  # commands, so it often stays empty. The cleanup of /tmp deletes an
+  # empty directory that nothing modified in three days. So the
+  # expire-claude-tmp agent of this module creates the directory and
+  # sets its modification time on each run.
+  claudeTmpPaths = lib.optionals (hostUid != null) (
+    lib.unique [
+      "${claudeTmpDir}/claude-${toString hostUid}"
+      "/tmp/claude-${toString hostUid}"
+      "/private/tmp/claude-${toString hostUid}"
+    ]
+  );
+
   sopsEnabled = config.dotfiles.sops.enable;
   skipPerms = cfg.dangerouslySkipPermissions;
 
@@ -1152,6 +1200,15 @@ let
     else
       "/tmp/git";
 
+  # inTmp tells whether a path lies in /tmp. /tmp is a link to
+  # /private/tmp on macOS.
+  inTmp =
+    path:
+    lib.any (tmp: lib.hasPrefix "${tmp}/" "${path}/") [
+      "/tmp"
+      "/private/tmp"
+    ];
+
   # A Darwin host runs the expire-clones agent when the git tool bundle
   # is on, because that bundle tells agents to clone into cloneRoot.
   expireClonesEnabled = pkgs.stdenv.hostPlatform.isDarwin && cfg.toolBundles.git.enable;
@@ -1159,6 +1216,10 @@ let
   # The expire-clones agent writes one line here for each clone that it
   # removes.
   expireClonesLog = "${config.home.homeDirectory}/Library/Logs/expire-clones.log";
+
+  # The expire-claude-tmp agent writes one line here for each session
+  # directory that it removes.
+  expireClaudeTmpLog = "${config.home.homeDirectory}/Library/Logs/expire-claude-tmp.log";
 
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''
     ${exportSecret "KAGI_API_KEY" "kagi_api_key"}
@@ -1239,6 +1300,13 @@ let
   # `rm` targets. Claude Code reads this variable only from its launch
   # environment and ignores it in settings.json `env`, so the wrapper
   # sets it.
+  #
+  # CLAUDE_CODE_TMPDIR names the parent of the directory claude-<uid>,
+  # where Claude Code keeps the temporary files of each session. The
+  # comment on claudeTmpDir describes the directory of each platform.
+  # The wrapper sets the variable, so each hook of a session inherits
+  # it. The write guard of hook-router reads it to find the directory
+  # claude-<uid>.
   claudeWrapped = pkgs.symlinkJoin {
     name = "claude-code-wrapped";
     paths = [ pkgs.llm-agents.claude-code ];
@@ -1256,6 +1324,7 @@ let
         --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
         --set CLAUDE_CODE_NO_FLICKER 1 \
         --set CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT 1 \
+        --set CLAUDE_CODE_TMPDIR ${lib.escapeShellArg claudeTmpDir} \
         --set DISABLE_AUTOUPDATER 1 \
         --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
         --set TF_CLI_CONFIG_FILE "${config.xdg.configHome}/opentofu/tofurc" \
@@ -1394,14 +1463,17 @@ let
   # list is gated on proseLint.enable so disabling it drops the rule
   # along with the binary.
   #
-  # Claude Code keeps each session's scratchpad and task output under
-  # /tmp/claude-<uid>. Most files there are throwaway scripts and notes
-  # no reader sees, so those paths always lead the exclude list. The
-  # Linter section of the prose skill and the Plain output style tell
-  # Claude to run prose-lint by hand on a draft there that a person
-  # reads. The globs match any uid, because standalone home-manager has
-  # none to read.
-  proseLintScratchGlobs = [
+  # Claude Code keeps each session's scratchpad and task output in the
+  # directory claude-<uid> under claudeTmpDir. Most files there are
+  # throwaway scripts and notes no reader sees, so those paths always
+  # lead the exclude list. The Linter section of the prose skill and
+  # the Plain output style tell Claude to run prose-lint by hand on a
+  # draft there that a person reads. The globs match any uid, because
+  # standalone home-manager has none to read. A sandboxed command on a
+  # Darwin host gets /tmp/claude-<uid> as TMPDIR, so the globs for /tmp
+  # apply on every host.
+  proseLintScratchGlobs = lib.unique [
+    "${claudeTmpDir}/claude-*/**"
     "/tmp/claude-*/**"
     "/private/tmp/claude-*/**"
   ];
@@ -1584,6 +1656,15 @@ let
   ]
   ++ claudeTmpPaths
   ++ bundledWritePaths;
+
+  # Without XDG_RUNTIME_DIR, as on macOS, Claude Code binds the
+  # messaging socket of each session in the directory cc-socks under
+  # claudeTmpDir. On a Darwin host, claudeTmpDir lies in
+  # ~/Library/Caches, which is a sandbox write path. This entry keeps
+  # sandboxed commands from removing or replacing those sockets.
+  defaultDenyWritePaths = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
+    "${claudeTmpDir}/cc-socks"
+  ];
 
   defaultUnixSockets = [
     "/nix/var/nix/daemon-socket/socket"
@@ -2235,9 +2316,10 @@ in
               formatterRules) that prose-lint skips. Each becomes a
               leading linter rule that exits 0, so first-match-wins
               stops the prose-lint rule from seeing the file. The hook
-              always skips every file under /tmp/claude-<uid>, which
-              holds the session scratchpad, so the list does not need
-              to name that directory.
+              always skips every file under the temporary directory
+              `claude-<uid>` of Claude Code, which holds the session
+              scratchpad, so the list does not need to name that
+              directory.
             '';
           };
         };
@@ -3027,13 +3109,9 @@ in
         # setting keeps that cleanup out of a directory. The comment on
         # cloneRoot describes the cleanup. This assertion fails the
         # evaluation of a Darwin host that has the git bundle and
-        # clones into /tmp. /tmp is a link to /private/tmp on macOS.
+        # clones into /tmp.
         assertion =
-          !(pkgs.stdenv.hostPlatform.isDarwin && cfg.toolBundles.git.enable)
-          || !(lib.any (tmp: lib.hasPrefix "${tmp}/" "${cloneRoot}/") [
-            "/tmp"
-            "/private/tmp"
-          ]);
+          !(pkgs.stdenv.hostPlatform.isDarwin && cfg.toolBundles.git.enable) || !(inTmp cloneRoot);
         message = ''
           dotfiles.claude: toolBundles.git tells agents to clone into
           ${cloneRoot} on this Darwin host. macOS deletes each file
@@ -3041,6 +3119,43 @@ in
           days, so a clone there loses single files. Set cloneRoot in
           home/claude.nix to a directory outside /tmp for a Darwin
           host.
+        '';
+      }
+      {
+        # Claude Code keeps the temporary files of each session in the
+        # directory claude-<uid> under claudeTmpDir. A NixOS host cleans
+        # /tmp every day, and the cleanup deletes single files of that
+        # directory. The tmpfiles rule of hosts/nixos/claude-tmp.nix
+        # keeps the cleanup out of the directory. This assertion fails
+        # the evaluation of a NixOS host that lacks the rule. osConfig
+        # holds the tmpfiles rules only on a NixOS host.
+        assertion =
+          !(osConfig ? systemd.tmpfiles.rules)
+          || lib.elem "x ${claudeTmpDir}/claude-[0-9]*" osConfig.systemd.tmpfiles.rules;
+        message = ''
+          dotfiles.claude: Claude Code keeps the temporary files of each
+          session in ${claudeTmpDir}/claude-<uid>, and this NixOS host
+          has no systemd-tmpfiles rule `x ${claudeTmpDir}/claude-[0-9]*`.
+          The daily cleanup of /tmp then deletes single files of a
+          session scratchpad. hosts/nixos/claude-tmp.nix sets the rule,
+          and hosts/nixos/default.nix imports that module. Import one of
+          the two files in the host module.
+        '';
+      }
+      {
+        # macOS deletes single files of a session scratchpad under /tmp,
+        # and no setting keeps that cleanup out of a directory. The
+        # comment on claudeTmpDir describes the cleanup. This assertion
+        # fails the evaluation of a Darwin host that keeps the
+        # temporary files of Claude Code in /tmp.
+        assertion = !(pkgs.stdenv.hostPlatform.isDarwin && inTmp claudeTmpDir);
+        message = ''
+          dotfiles.claude: Claude Code keeps the temporary files of each
+          session in ${claudeTmpDir}/claude-<uid> on this Darwin host.
+          macOS deletes each file under /tmp that nothing read or
+          changed in the last three days, so a session scratchpad there
+          loses single files. Set claudeTmpDir in home/claude.nix to a
+          directory outside /tmp for a Darwin host.
         '';
       }
     ];
@@ -3091,6 +3206,7 @@ in
         allowRead = defaultRules defaultReadPaths;
         allowWrite = defaultRules defaultWritePaths;
         denyRead = defaultRules defaultDenyReadPaths;
+        denyWrite = defaultRules defaultDenyWritePaths;
       };
       network = {
         allowUnixSockets = defaultRules defaultUnixSockets;
@@ -5049,6 +5165,61 @@ in
       };
     };
 
+    # The daily cleanup of /tmp does not reach claudeTmpDir on a Darwin
+    # host, so this agent bounds the temporary directory of Claude Code
+    # there. The agent removes each session directory that nothing
+    # changed in the last 10 days, and it removes the directory as a
+    # whole. It keeps the directory named by the current id of each
+    # session that runs. The sessions directory of Claude Code names
+    # those sessions. It also keeps each directory that a process of the
+    # user holds open or works in, which lsof lists. A session that
+    # changed its id, such as after /clear, keeps the output of its
+    # background commands under its first id. On macOS, Claude Code
+    # 2.1.319 holds that directory open only while it writes there. So
+    # the agent removes that directory after 10 days without a change,
+    # unless a background command of the directory still runs.
+    # pkgs/expire-claude-tmp.nix describes what counts as a session
+    # directory, as a change, and as a use. expire-claude-tmp.service of
+    # hosts/nixos/claude-tmp.nix removes the session directories of a
+    # NixOS host at the same age.
+    #
+    # With --fallback, the agent also keeps /tmp/claude-<uid>, which
+    # sandboxed commands get as TMPDIR. The comment on claudeTmpPaths
+    # gives the reason. The cleanup of /tmp runs every day at midnight,
+    # and it deletes the directory when the directory stays empty and
+    # unmodified for three days. Each run of the agent modifies the
+    # directory, so the cleanup keeps it.
+    #
+    # The agent runs every day at 04:30, and each time that launchd
+    # loads it. The comment on the expire-clones agent gives the reason
+    # for the second run.
+    #
+    # The tool passes the time that follows claudeTmpDir to `date -d`,
+    # so the value must be a time that date reads.
+    launchd.agents.expire-claude-tmp = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
+      enable = true;
+      config = {
+        ProgramArguments = [
+          (lib.getExe pkgs.expire-claude-tmp)
+          "--fallback"
+          "/tmp"
+          claudeTmpDir
+          "10 days ago"
+          "${config.programs.claude-code.configDir}/sessions"
+        ];
+        StartCalendarInterval = [
+          {
+            Hour = 4;
+            Minute = 30;
+          }
+        ];
+        RunAtLoad = true;
+        LowPriorityIO = true;
+        StandardOutPath = expireClaudeTmpLog;
+        StandardErrorPath = expireClaudeTmpLog;
+      };
+    };
+
     dotfiles.extraInventoryPackages = [
       pkgs.hook-router
       pkgs.mcp-git
@@ -5218,6 +5389,14 @@ in
       activation.ensureExpireClonesLogDir = lib.mkIf expireClonesEnabled (
         lib.hm.dag.entryBetween [ "setupLaunchAgents" ] [ "writeBoundary" ] ''
           run mkdir -p ${lib.escapeShellArg (dirOf expireClonesLog)}
+        ''
+      );
+
+      # The expire-claude-tmp agent needs the directory of its log in
+      # the same way.
+      activation.ensureExpireClaudeTmpLogDir = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
+        lib.hm.dag.entryBetween [ "setupLaunchAgents" ] [ "writeBoundary" ] ''
+          run mkdir -p ${lib.escapeShellArg (dirOf expireClaudeTmpLog)}
         ''
       );
 
