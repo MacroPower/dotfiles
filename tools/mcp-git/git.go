@@ -1039,7 +1039,10 @@ func (h *handler) checkDest(dest string) error {
 			continue
 		}
 
-		if len(rel) >= 2 && rel[:2] == ".." {
+		// A path outside dir has a relative path whose first segment
+		// is "..". A name that starts with two dots, such as
+		// "..owner", is another segment, and it stays under dir.
+		if !filepath.IsLocal(rel) {
 			continue
 		}
 

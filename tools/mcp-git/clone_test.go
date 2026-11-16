@@ -141,12 +141,29 @@ func TestCheckDest(t *testing.T) {
 		"allowed exact": {
 			dest: "/tmp/git",
 		},
+		"allowed first name starts with two dots": {
+			dest: "/tmp/git/..owner/repo",
+		},
+		"allowed first name of three dots": {
+			dest: "/tmp/git/...",
+		},
+		"allowed later name starts with two dots": {
+			dest: "/tmp/git/owner/..repo",
+		},
 		"denied": {
 			dest: "/home/user/repo",
 			err:  ErrDeniedDest,
 		},
 		"denied traversal": {
 			dest: "/tmp/git/../../etc/passwd",
+			err:  ErrDeniedDest,
+		},
+		"denied parent": {
+			dest: "/tmp/git/..",
+			err:  ErrDeniedDest,
+		},
+		"denied sibling": {
+			dest: "/tmp/git/../..owner/repo",
 			err:  ErrDeniedDest,
 		},
 	}
@@ -562,6 +579,33 @@ func TestHandleCloneDestSpelling(t *testing.T) {
 			assert.Equal(t, []string{".git", "README"}, dirEntries(t, dest))
 		})
 	}
+}
+
+// A directory name can start with two dots. Such a name is not a ".."
+// segment, so a dest under that directory stays under the allowed
+// directory. The second call pulls, and the pull checks the path of
+// the repository as git_fetch, git_pull, and git_push check it.
+func TestHandleCloneDestNameStartsWithTwoDots(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	allowDir := t.TempDir()
+
+	h := &handler{allowFileURLs: true, allowDirs: resolveAllowDirs([]string{allowDir})}
+
+	dest := filepath.Join(allowDir, "..owner", "repo")
+	input := CloneInput{URL: bare, Dest: dest}
+
+	result, _, err := h.handleClone(t.Context(), nil, input)
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+	assert.Equal(t, "Cloned "+bare+" into "+dest, resultText(t, result))
+	assert.Equal(t, []string{".git", "README"}, dirEntries(t, dest))
+
+	result, _, err = h.handleClone(t.Context(), nil, input)
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+	assert.Contains(t, resultText(t, result), "Pulled latest changes in "+dest)
 }
 
 // [handler.checkDest] removes a ".." segment and the segment before
