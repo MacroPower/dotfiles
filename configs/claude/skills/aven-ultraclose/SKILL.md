@@ -862,7 +862,8 @@ Act on the result as this table says:
 | `EMPTY` | The task branch holds no change against the base branch. Find the cause, and act on that cause. Do not sync the task. |
 | `LOGHASREF` | Only a landing with a `pr` target prints this result. A commit message of the task branch holds a task ref, and the push publishes each commit. Replace the commits of the branch with one commit, as the Pull requests section says, and land again. |
 | `BRANCHTAKEN` | Only a landing with a `pr` target prints this result. A branch blocks the name of the pull request branch, and the output names it. Act on the cause as the Pull requests section says. |
-| `DIRTY`, `NOTBASE`, `TREEMISMATCH`, `POSTDIRTY` | An agent or a hook changed the main checkout. Stop landing, find the cause, and repair the checkout before the next landing. |
+| `DIRTY`, `NOTBASE`, `TREEMISMATCH` | An agent or a hook changed the main checkout. Stop landing, find the cause, and repair the checkout before the next landing. |
+| `POSTDIRTY` | The task landed, and the main checkout then held a change that the commit did not record. Stop landing, find the cause, and repair the checkout before the next landing. Then run `ultraclose.py next`. Do not land the task again. |
 
 Every landing with a `pr` target leaves the main checkout alone, and it
 records no commit on the base branch. So it never prints `DIRTY`,
@@ -938,12 +939,22 @@ before the next landing:
 3. Run the git command that failed again, in the main checkout.
 4. Run `git clean -fd` in the main checkout.
 
+`POSTDIRTY` shows that, after the commit, the main checkout held a change
+that the commit did not record, such as a file that a commit hook left
+behind. The base branch holds the commit of the task by then, so the
+landing lands the task before it fails. It removes the worktree and the
+branch, sets the aven task to `done`, and sets the task to `landed` in the
+run. The output names the commit and lists each change of the main
+checkout above the `TIMES` line. The landing does not run `next`, so run
+`ultraclose.py next` after you repair the checkout.
+
 `NOWORKTREE` shows that the task lost its worktree after its review, or
 that another landing of the task removed the worktree. Each landing checks
 the state of the task and sets it to `approved` before it waits for the
-landing lock. It looks for the worktree after it takes that lock. Every
-failed landing leaves the task `approved`, unless another landing of the
-task held the lock first and then landed or proposed the task.
+landing lock. It looks for the worktree after it takes that lock. A
+landing that ends in `NOWORKTREE` leaves the task `approved`, unless
+another landing of the task held the lock first and then landed or
+proposed the task.
 
 Every `approved` task keeps the files of its triage row, and each task that
 comes after it keeps waiting. The run also does not end while it holds an
@@ -983,7 +994,7 @@ for a relaunch that ends `abandoned`. Act on the cause as this table says:
 | Cause | Action |
 | --- | --- |
 | Another commit made the same change, such as the commit of a task that covers this task. | Close the task as the Loop section says for the status `obsolete`, with that commit as the evidence. |
-| The commit comes from this task. An earlier landing recorded it and then failed, such as with `POSTDIRTY`, or the pull request of the task merged. | The task has landed. Set the aven task to `done` with `aven edit <ref> --status done`. Run `ultraclose.py set <ref> closed`, which removes the worktree and the branch. Then run `ultraclose.py set <ref> landed`. |
+| The commit comes from this task. An earlier landing recorded it and then stopped before it removed the worktree, or the pull request of the task merged. | The task has landed. Set the aven task to `done` with `aven edit <ref> --status done`. Run `ultraclose.py set <ref> closed`, which removes the worktree and the branch. Then run `ultraclose.py set <ref> landed`. |
 | No commit of the base branch made the change, so the task branch holds no change of its own. | Read the `summary` and the `notes` of the Workflow result of the task. When they say that the task does not need a change, close the task as the Loop section says for the status `obsolete`. Otherwise run `git -C <worktree> reset -q --hard <base>` on the worktree of the task, and relaunch the task with `ultraclose.py args <ref>`. When the same task ends in `EMPTY` again, note the task. |
 
 `ultraclose.py args` starts a task at the implementer only when the task

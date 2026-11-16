@@ -261,11 +261,11 @@ N rows, and the tasks that the run holds do not count toward N.
 
 The land command takes only an inflight task or an approved task. It
 sets the task to approved before the landing starts, and a failed
-landing leaves the task approved. The command refuses a task in each
-other state, because that task has no change that waits for a landing.
-Each refusal prints an error and no RESULT line, and it changes nothing.
-So a second landing of a landed task leaves the task landed, and the run
-still ends.
+landing leaves the task approved, unless its result is POSTDIRTY. The
+command refuses a task in each other state, because that task has no
+change that waits for a landing. Each refusal prints an error and no
+RESULT line, and it changes nothing. So a second landing of a landed
+task leaves the task landed, and the run still ends.
 
 The land command prints the failing output of a failed landing. The last
 line that a failed landing prints is the RESULT line. With --next, a
@@ -275,6 +275,15 @@ the RESULT line, and the list is empty when no task starts. After a
 failed landing, --next does not run next. When next fails after the
 landing, its error follows the RESULT line, and the command exits with a
 failure status.
+
+A landing that commits reads the changes of the main checkout after the
+commit. When the checkout holds a change that the commit did not record,
+such as a file that a commit hook left behind, the landing fails with
+the result POSTDIRTY. The base branch holds the commit of the task by
+then. So the landing first removes the worktree and the branch, sets the
+aven task to done, and sets the task to landed, as a landing with the
+result OK does. Its failing output names the commit and lists the
+changes of the main checkout.
 
 The land command sets GOLANGCI_LINT_CACHE for the check and for the
 commit, so that neither step reads the golangci-lint cache that every
@@ -2163,10 +2172,10 @@ def cmd_land(a):
                 " pull request, relaunch the task with the args command, and"
                 " land it after its review"
             )
-        # A landing that fails leaves its task approved. An approved task
-        # keeps its file locks and keeps the run from its end. So the
-        # command refuses each task that has no change to land before it
-        # sets the state.
+        # A failed landing that leaves no commit on the base branch leaves
+        # its task approved. An approved task keeps its file locks and
+        # keeps the run from its end. So the command refuses each task
+        # that has no change to land before it sets the state.
         if t["state"] not in LANDABLE:
             # Each error says what a task in its state needs. A relaunch
             # reopens a landed or a closed task, so only the error for a
@@ -2323,6 +2332,10 @@ def cmd_land(a):
         The main checkout gets the task branch as one commit with the
         message of the task. The worktree and the branch go, and the task
         lands.
+
+        After the commit, the main checkout can hold a change that the
+        commit did not record. The task still lands, and the landing
+        then fails with the result POSTDIRTY.
         """
         head = out("git", "rev-parse", "HEAD", cwd=repo)
 
@@ -2378,21 +2391,28 @@ def cmd_land(a):
                 fail("TREEMISMATCH", f"the commit did not record tree {want}")
             sh("git", "reset", "-q", "--soft", head, cwd=repo)
             sh("git", "read-tree", want, cwd=repo)
-        if dirty := out("git", "status", "--porcelain", cwd=repo):
-            fail("POSTDIRTY", dirty)
+        # The base branch holds the commit of the task from here on, and
+        # another landing of the task finds no change to commit. So the
+        # task lands before the landing reports the changes that the
+        # main checkout holds.
+        dirty = out("git", "status", "--porcelain", cwd=repo)
         sh("git", "worktree", "remove", "--force", wt, cwd=repo)
         sh("git", "branch", "-q", "-D", br, cwd=repo)
         sh("aven", "edit", ref, "--status", "done", cwd=repo)
         with state(run) as st:
             st["tasks"][ref]["state"] = "landed"
+        commit = out("git", "log", "-1", "--format=%h %s", cwd=repo)
+        if dirty:
+            fail(
+                "POSTDIRTY",
+                f"{ref} landed as {commit}, and the main checkout holds changes"
+                f" that the commit did not record:\n{dirty}",
+            )
         record("OK")
         # Python buffers the standard output of a background call. The
         # flush writes the result to the output before next runs, so the
         # result stays there when the caller stops the command during next.
-        print(
-            f"RESULT {ref} OK {out('git', 'log', '-1', '--format=%h %s', cwd=repo)}",
-            flush=True,
-        )
+        print(f"RESULT {ref} OK {commit}", flush=True)
 
     # Every landing that proposes a pull request leaves the main checkout
     # alone. So neither the branch nor the changes of the main checkout

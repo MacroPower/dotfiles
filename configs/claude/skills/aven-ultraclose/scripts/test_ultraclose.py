@@ -4190,10 +4190,12 @@ class LandTest(LandCase):
     """What a landing prints, and how it tells a down service from a fault.
 
     A failed landing prints its result last. A landing with --next and the
-    result OK then starts the next tasks. The check and the commit hooks
-    of a landing do not read the golangci-lint cache that every checkout
-    shares. A landing also records how long its check and its commit took.
-    It stops a check or a commit that runs longer than the step timeout.
+    result OK then starts the next tasks. A landing that finds a change in
+    the main checkout after its commit lands its task and then fails. The
+    check and the commit hooks of a landing do not read the golangci-lint
+    cache that every checkout shares. A landing also records how long its
+    check and its commit took. It stops a check or a commit that runs
+    longer than the step timeout.
     """
 
     def test_result_line_comes_last(self):
@@ -4337,6 +4339,42 @@ class LandTest(LandCase):
                     self.assert_failed(repo, env, landing, result)
                 self.assertEqual(self.task_states(tmp)[self.OTHER], "pending")
                 self.assertEqual(self.next_refs(repo, env), [self.OTHER])
+
+    def test_landing_with_dirty_checkout_after_commit_lands_task(self):
+        # The commit hook leaves a file in the main checkout. The base
+        # branch holds the commit of the task by then.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, hook="touch left.txt")
+            self.add_other(tmp, repo, env, after=[REF])
+            status, lines = self.land(repo, env, "--next")
+            self.assertEqual(status, 2, lines)
+            subjects = git("log", "--format=%s", cwd=repo, env=env)
+            self.assertEqual(subjects.splitlines(), [self.SUBJECT, "init"])
+            # The output names the commit and the file. The RESULT line
+            # comes last.
+            commit = git("log", "-1", "--format=%h %s", cwd=repo, env=env)
+            self.assertIn(f"{REF} landed as {commit}", lines[0])
+            self.assertEqual(lines[1], "?? left.txt")
+            self.assertRegex(lines[2], r"^TIMES commit=\S+$")
+            self.assertEqual(lines[3:], [f"RESULT {REF} POSTDIRTY"])
+            # The landing finished its task as a landing with the result OK
+            # does, and it did not run next.
+            self.assertFalse(Path(repo, ".claude", "worktrees", f"t-{REF}").exists())
+            self.assertEqual(branches(repo, env), ["main"])
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+            self.assertEqual(
+                self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
+            )
+            [entry] = state_of(Path(tmp, "run"))["landings"]
+            self.assertEqual((entry["ref"], entry["result"]), (REF, "POSTDIRTY"))
+            # The landing keeps the file for the caller, and the land
+            # command refuses the landed task.
+            self.assertEqual(
+                git("status", "--porcelain", cwd=repo, env=env), "?? left.txt"
+            )
+            self.assertIn(f"{REF} is landed", refused("land", REF, cwd=repo, env=env))
+            # The task that waited for the landed task can start.
+            self.assertEqual(self.next_refs(repo, env), [self.OTHER])
 
     def test_failed_next_keeps_result_of_landing(self):
         # The landing passes. Then the second task cannot start, because
