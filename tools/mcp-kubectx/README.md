@@ -478,24 +478,60 @@ runs in this order:
 5. Unlink the per-slot sidecar file at `<socket-path>.id`, which
    holds the `instance-id` of this `serve`.
 6. Unlink the scoped kubeconfig at `h.lastOutputPath`.
-7. Unlink the hook-router sidecar symlink. The link lies in
-   `$CLAUDE_KUBECTX_DIR`, which never crosses the Lima boundary.
+7. Unlink the hook-router sidecar symlink. The link lies in a
+   directory of the machine that runs `serve`, so it never crosses
+   the Lima boundary.
 
-SIGKILL leaks at most one SA + one kubeconfig file + one socket
-inode at the killed serve's slot. The leaked socket inode is
-reclaimed the next time a `serve` picks that slot during
-`socket.Acquire`'s walk: `socket.Listen`'s stale-clearance step
-dial-tests the path; ECONNREFUSED means the file is leftover
-state and is unlinked before the bind, while a successful dial
-means a live peer holds the slot and the loop advances to the
-next slot.
+SIGKILL ends `serve` before the cleanup closure runs. The killed
+`serve` then leaves these items behind:
 
-The SA + binding leak is reclaimed by the orphan sweep that runs
-on every `serve` startup. See [Orphan sweep](#orphan-sweep) below.
+- **SAs and bindings.** Each SA that the `serve` had not released
+  stays on its cluster with its binding. The orphan sweep at the
+  startup of a later `serve` deletes them, but only on the cluster of
+  the `current-context` in the host kubeconfig. That sweep also
+  deletes only the resources of its own env, host or guest, because
+  each env labels its resources with a `host-id` of its own.
+  [Manual sweep invocation](#manual-sweep-invocation) describes the
+  sweep of another cluster or env.
+- **Socket inode.** The inode stays at the slot of the killed
+  `serve`. The stale-clearance step of `socket.Listen` unlinks it
+  when a later `serve` takes the slot.
+- **Per-slot sidecar file.** The file stays at `<socket-path>.id`.
+  The same stale-clearance step unlinks it together with the socket
+  inode.
+- **Scoped kubeconfig.** The file exists after the first successful
+  `select` of an external context. No step removes it, and
+  [Out of scope](#out-of-scope) describes the manual cleanup.
+- **hook-router sidecar symlink.** The link exists after the first
+  successful `select` of an external context. hook-router removes it
+  at SessionEnd, together with the rest of `$CLAUDE_KUBECTX_DIR`.
+
+Each `serve` takes its slot during the walk of `socket.Acquire`. At
+each slot of the walk that holds a socket inode, the stale-clearance
+step dial-tests the socket path. When the dial fails, for example
+with ECONNREFUSED, the socket inode is leftover state. The step then unlinks the inode and the
+sidecar file before the bind. When the dial succeeds, a live peer
+holds the slot, so the walk advances to the next slot.
+
+`$CLAUDE_KUBECTX_DIR` holds the sidecar symlink only in a session
+that the launcher wrapper started.
+[Merged kubeconfig](#merged-kubeconfig-external--in-sandbox-clusters)
+describes what removes the directory after a session that ended
+without SessionEnd. While the session still runs, another `serve` in
+the session replaces the link at its next successful `select` of an
+external context. That `serve` also removes the link when it shuts
+down on SIGINT or SIGTERM, even when it never ran a `select`.
+
+Outside a session of the launcher wrapper, `serve` writes the link to
+`<TMPDIR>/claude-kubectx/<PPID>/kubeconfig` on the machine that runs
+it. No hook removes that link. So it stays until that machine cleans
+its temporary directory, or until a later `serve` with the same
+parent process replaces or removes it.
 
 The `TestSelect*`, `TestSessionDir*`, `TestDrainSweep*`, and
 `TestServeSocket*` test families pin the behaviors that this section
-describes.
+describes. The `TestClearStale*` tests of the `socket` package pin
+the removal of a leftover sidecar file.
 
 ## Orphan sweep
 
@@ -766,9 +802,10 @@ without expanding the read deny.
   the guest, the user adds it to `kubeApiDomains` or routes around
   it. Not this package's problem.
 - **Stale kubeconfig files.** SIGKILL leaves the killed serve's
-  scoped kubeconfig on disk. Provisioned SAs are reclaimed by the
-  [Orphan sweep](#orphan-sweep) above; the kubeconfig file itself
-  is small and benign and is overwritten on the next `select` for
-  that pid+env discriminator. Bulk cleanup is a manual
+  scoped kubeconfig on disk.
+  [Lifecycle and cleanup](#lifecycle-and-cleanup) says which SAs of
+  a killed serve the orphan sweep reclaims. The kubeconfig file
+  itself is small and benign, and the next `select` for that
+  pid+env discriminator overwrites it. Bulk cleanup is a manual
   `rm <state>/mcp-kubectx/kubeconfig.*.yaml` when no serve is
   running.

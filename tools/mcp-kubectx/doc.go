@@ -245,10 +245,30 @@
 // writable bind mount of <stateHomeDir> declared in workmux's
 // extra_mounts; the guest's write reach extends only to that
 // directory, which only ever holds mcp-kubectx kubeconfigs.
-// SIGKILL leaks at most one SA, one kubeconfig file, and one stale
-// socket inode at the killed serve's slot; the next serve that
-// reclaims that slot's path detects the leftover via the stale-probe
-// in [socket.Listen] and unlinks it before binding.
+//
+// SIGKILL ends a serve before the cleanup closure of
+// [*handler.sessionDir] runs. The killed serve then leaves these
+// items behind:
+//
+//   - Each SA that the serve had not released, and the binding of
+//     that SA. The startup sweep of a later serve in the same env,
+//     host or guest, deletes them. That sweep covers only the
+//     cluster of the current-context in the host kubeconfig. The
+//     sweep of the other env never deletes them, because each env
+//     labels its resources with a host-id of its own.
+//   - The socket inode at the slot of the killed serve. The next
+//     serve that takes the slot detects the inode with the stale
+//     probe in [socket.Listen] and unlinks it before the bind.
+//   - The per-slot sidecar file at [socket.SidecarPath]. The same
+//     stale probe unlinks the file together with the socket inode.
+//   - The scoped kubeconfig file. No step removes it. A later
+//     `host select` that writes the same path overwrites it.
+//   - The hook-router sidecar symlink at [sidecarSymlinkPath].
+//     hook-router removes $CLAUDE_KUBECTX_DIR at SessionEnd, and
+//     that directory holds the link of each session that the
+//     launcher wrapper started. Outside such a session, the link
+//     lies at <TMPDIR>/claude-kubectx/<PPID>/kubeconfig on the
+//     machine that runs the serve. No hook removes that link.
 //
 // Provisioned SAs and bindings carry three labels:
 // `app.kubernetes.io/managed-by=mcp-kubectx`,
