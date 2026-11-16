@@ -245,9 +245,11 @@ task.
    approved, proposed, and noted task of that run to the new run, and it
    prints those tasks. Each task keeps its triage row, its state, and its
    task directory, so the new run resumes its branch and its worktree.
-   Every proposed task keeps its branch and its pull request, but it has
-   no worktree. It waits in the new run until `ultraclose.py merged`
-   records the merge, as the Pull requests section says.
+   Every proposed task keeps its branch and its pull request. It keeps its
+   worktree only when the landing that proposed it could not remove the
+   worktree, as the Landing section says. It waits in the new run until
+   `ultraclose.py merged` records the merge, as the Pull requests section
+   says.
 
    The new run holds each noted task, so `untriaged` does not list it.
    `status` still lists each pending task that waits for a noted task as
@@ -845,27 +847,50 @@ When a landing fails, the `RESULT` line is the last line that the command
 prints. The last lines of the failing output come before it. The run
 directory holds the full output of each step in `logs/<ref>.<step>.log`.
 
-A landing with a branch target sets the aven task to `done` after the
-commit, and that `aven edit` command can fail, such as with a locked
-database. The base branch holds the commit by then, so the task lands with
-the result `OK` or `POSTDIRTY`. After `OK`, the `--next` flag runs `next`,
-and the command exits with a failure status. Both results print the failed
-`aven edit` command and its error before the `TIMES` line:
+After a landing commits its task, or names the branch of the pull request,
+it does not stop at a command that fails. The target of the run sets the
+commands that the landing ends with:
+
+- **A branch target:** `git worktree remove`, `git branch -D`, and
+  `aven edit`.
+- **A `pr` target:** `git worktree remove`.
+
+Each of these commands can fail, such as git with a locked worktree, or
+aven with a locked database. git also keeps the branch of a worktree that
+it did not remove. The task then still lands with the result `OK` or
+`POSTDIRTY`, or the landing still proposes it with the result `PR`. After
+`OK` or `PR`, the `--next` flag runs `next`, and the command exits with a
+failure status. Before the `TIMES` line and the `RESULT` line, the output
+gives each failed command, its error, and one line that says what the
+command left:
 
 ```text
-aven edit APP-7KQ9 --status done failed:
-Error: the database is locked
-The task landed, but the aven task is still open. Run the aven command again.
+git worktree remove --force /repo/.claude/worktrees/t-APP-7KQ9 failed:
+fatal: cannot remove a locked working tree;
+use 'remove -f -f' to override or unlock first
+The task landed, but its worktree still exists. Repair the cause of the error, and run the git command again.
+git branch -q -D task/APP-7KQ9 failed:
+error: cannot delete branch 'task/APP-7KQ9' used by worktree at '/repo/.claude/worktrees/t-APP-7KQ9'
+The task landed, but its branch still exists. Repair the cause of the error, and run the git command again.
 TIMES check=1m22s (median 1m24s) commit=18s (median 18s)
 RESULT APP-7KQ9 OK 1a2b3c4 fix: retry a timeout
 ```
+
+Act on each failed command as this table says, in the order of the output:
+
+| Failed command | Action |
+| --- | --- |
+| `git worktree remove`, and the worktree still exists | Repair the cause that the error names, and run the failed command again. After `PR`, `ultraclose.py merged` fails until you do, because git deletes no branch that a worktree has checked out. When git then answers that the path is not a working tree, act as for a worktree that git no longer lists. |
+| `git worktree remove`, and git no longer lists the worktree | git deleted its record of the worktree, and only the directory of the worktree stays. Repair the cause that the error names, and delete the directory with `rm -rf <worktree>`. |
+| `git branch -D` | The task landed, and its branch still exists. When `git worktree remove` failed as well, the worktree of the task keeps the branch, so remove that worktree first. Otherwise, repair the cause that the error names. Then run the failed command again. |
+| `aven edit` | The task landed, and its aven task is still open. Run `aven edit <ref> --status done`. |
 
 Act on the result as this table says:
 
 | Result | Action |
 | --- | --- |
-| `OK` | Launch one Workflow per object of the list that follows the `RESULT` line, as the Loop section says. Skip each object whose task you relaunched after the landing started. When an error follows the line instead of the list, the task landed and `next` failed. Repair the cause of the error, and run `ultraclose.py next`. When a line before the `TIMES` line says that `aven edit` failed, the task landed and its aven task is open. Run `aven edit <ref> --status done`. |
-| `PR` | Only a landing with a `pr` target prints this result. Act on the list that follows the `RESULT` line as for `OK`. Then push the branch and open the pull request, as the Pull requests section says. |
+| `OK` | Launch one Workflow per object of the list that follows the `RESULT` line, as the Loop section says. Skip each object whose task you relaunched after the landing started. When an error follows the line instead of the list, the task landed and `next` failed. Repair the cause of the error, and run `ultraclose.py next`. When a line before the `TIMES` line says that a command failed, the task still landed. Act on each failed command as the table of failed commands says. |
+| `PR` | Only a landing with a `pr` target prints this result. Act on the list that follows the `RESULT` line as for `OK`. Then push the branch and open the pull request, as the Pull requests section says. When a line before the `RESULT` line says that `git worktree remove` failed, the landing still proposed the task. Act on the failed command as the table of failed commands says. |
 | `CONFLICT` | The base branch moved under the task. Sync the task. |
 | `CHECKFAIL`, `COMMITFAIL` | The check or a commit hook failed. Find the cause in the failing output, and act on that cause. |
 | `CHECKTIMEOUT`, `COMMITTIMEOUT` | The check or the commit ran longer than the step timeout, and the landing stopped it. Find the cause in the last lines of the output, and act on that cause before you start another landing. |
@@ -878,7 +903,7 @@ Act on the result as this table says:
 | `LOGHASREF` | Only a landing with a `pr` target prints this result. A commit message of the task branch holds a task ref, and the push publishes each commit. Replace the commits of the branch with one commit, as the Pull requests section says, and land again. |
 | `BRANCHTAKEN` | Only a landing with a `pr` target prints this result. A branch blocks the name of the pull request branch, and the output names it. Act on the cause as the Pull requests section says. |
 | `DIRTY`, `NOTBASE`, `TREEMISMATCH` | An agent or a hook changed the main checkout. Stop landing, find the cause, and repair the checkout before the next landing. |
-| `POSTDIRTY` | The task landed, and the main checkout then held a change that the commit did not record. Stop landing, find the cause, and repair the checkout before the next landing. When a line before the `TIMES` line says that `aven edit` failed, run `aven edit <ref> --status done`. Then run `ultraclose.py next`. Do not land the task again. |
+| `POSTDIRTY` | The task landed, and the main checkout then held a change that the commit did not record. Stop landing, find the cause, and repair the checkout before the next landing. When a line before the `TIMES` line says that a command failed, act on each failed command as the table of failed commands says. Then run `ultraclose.py next`. Do not land the task again. |
 
 Every landing with a `pr` target leaves the main checkout alone, and it
 records no commit on the base branch. So it never prints `DIRTY`,
@@ -1158,9 +1183,17 @@ its error gives:
   Pass `--force` only when the pull request merged with commits that the
   local branch lacks, such as commits that the user pushed during the
   review.
-- **A worktree has the branch checked out:** git deletes no such branch.
-  The main checkout can have the branch checked out after a review. Ask
-  the user to check out another branch there, and run the command again.
+- **The worktree of the task keeps the branch:** the landing that
+  proposed the task did not remove the worktree. git deletes no branch
+  that a worktree has checked out. Remove the worktree with the
+  `git worktree remove --force <worktree>` command that the error gives.
+  When git fails, act on its error as the table of failed commands in the
+  Landing section says for `git worktree remove`. Then run
+  `ultraclose.py merged <ref>` again.
+- **Another worktree has the branch checked out:** git deletes no such
+  branch. The main checkout can have the branch checked out after a
+  review. Ask the user to check out another branch there, and run the
+  command again.
 
 Some pull requests end without a merge, or stop merging. Act on each of
 these events as this table says:

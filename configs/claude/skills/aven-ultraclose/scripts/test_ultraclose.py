@@ -23,6 +23,7 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("ultraclose.py")
@@ -4054,6 +4055,9 @@ class LandCase(unittest.TestCase):
     HOLD = 'touch "$RAN"; while test -e "$RAN"; do sleep 0.05; done'
     # The Claude Code session of the second command of land_twice.
     QUEUED = "queued"
+    # What a landing tells its caller to do about a git command that failed
+    # after the landing committed or named the branch of its task.
+    AGAIN = "Repair the cause of the error, and run the git command again."
 
     def start_task(self, tmp, *flags, hook="exit 0", checkout=None):
         """Start a run with one task that is ready to land.
@@ -4240,6 +4244,74 @@ class LandCase(unittest.TestCase):
         self.assertTrue(lines[1].startswith(f"RESULT {REF} OK "), lines)
         return lines[2:]
 
+    def failed_commands(self, lines):
+        """Split the reports of failed commands from the output of a landing.
+
+        A landing prints the reports first. Each report starts with the
+        line "COMMAND failed:", and the error of the command follows. The
+        last line of the report says what the command left, and it starts
+        with what the landing did with the task.
+
+        Return the command, the error, and the last line of each report.
+        Also return the lines that follow the reports.
+        """
+        did = ("The task landed", "The landing proposed the task")
+        reports, rest = [], list(lines)
+        while rest and rest[0].endswith(" failed:"):
+            ends = [i for i, line in enumerate(rest) if line.startswith(did)]
+            self.assertTrue(ends, lines)
+            command, error = rest[0].removesuffix(" failed:"), rest[1 : ends[0]]
+            reports.append((command, "\n".join(error), rest[ends[0]]))
+            rest = rest[ends[0] + 1 :]
+        return reports, rest
+
+    @contextmanager
+    def removed_in_part(self, repo):
+        """Keep git from a full removal of the worktree of the task.
+
+        The worktree gets a read-only directory that git ignores, with one
+        file in it. git worktree remove --force then deletes its record of
+        the worktree, and it fails on the file. Yield the real path of the
+        worktree, because git prints real paths. On exit, the directory is
+        writable again, so that TemporaryDirectory can delete it.
+        """
+        if os.geteuid() == 0:
+            self.skipTest("root deletes a file in a directory that it cannot write")
+        wt = Path(repo, ".claude", "worktrees", f"t-{REF}").resolve()
+        info = Path(repo, ".git", "info")
+        info.mkdir(exist_ok=True)
+        with open(info / "exclude", "a") as f:
+            f.write("ro/\n")
+        (wt / "ro").mkdir()
+        (wt / "ro" / "f").write_text("x\n")
+        (wt / "ro").chmod(0o555)
+        try:
+            yield wt
+        finally:
+            if (wt / "ro").exists():
+                (wt / "ro").chmod(0o755)
+
+    def assert_removed_in_part(self, repo, env, wt):
+        """Assert that only the directory of the worktree stays.
+
+        git lists no worktree at the path, and a second run of the git
+        command that removes the worktree fails. After the directory is
+        writable again, the caller can delete it.
+        """
+        self.assertTrue(wt.exists())
+        listed = git("worktree", "list", "--porcelain", cwd=repo, env=env)
+        self.assertNotIn(f"worktree {wt}", listed.splitlines())
+        again = subprocess.run(
+            ["git", "worktree", "remove", "--force", str(wt)],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(again.returncode, 0)
+        self.assertIn("is not a working tree", again.stderr)
+
 
 class LandTest(LandCase):
     """What a landing prints, and how it tells a down service from a fault.
@@ -4247,13 +4319,15 @@ class LandTest(LandCase):
     A failed landing prints its result last. A landing with --next and the
     result OK then starts the next tasks. A landing that finds a change in
     the main checkout after its commit lands its task and then fails. A
-    landing whose commit is on the base branch also lands its task when
-    aven then fails to set the aven task to done. A landing that fails on
-    uncommitted changes lists them as git status --porcelain prints them.
-    The check and the commit hooks of a landing do not read the
-    golangci-lint cache that every checkout shares. A landing also records
-    how long its check and its commit took. It stops a check or a commit
-    that runs longer than the step timeout.
+    landing whose commit is on the base branch also lands its task when a
+    later command fails. That command is the git command that removes the
+    worktree, the git command that deletes the branch, or the aven command
+    that sets the aven task to done. A landing that fails on uncommitted
+    changes lists them as git status --porcelain prints them. The check
+    and the commit hooks of a landing do not read the golangci-lint cache
+    that every checkout shares. A landing also records how long its check
+    and its commit took. It stops a check or a commit that runs longer
+    than the step timeout.
     """
 
     def test_result_line_comes_last(self):
@@ -4575,6 +4649,171 @@ class LandTest(LandCase):
                 self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
             )
             self.assertIn(f"{REF} is landed", refused("land", REF, cwd=repo, env=env))
+
+    def test_lands_task_whose_worktree_git_does_not_remove(self):
+        # git does not remove a locked worktree, and it keeps the branch
+        # that the worktree has checked out. The base branch holds the
+        # commit by then, so the task lands, and the second task, which
+        # waits for it, can start.
+        # name: (the land flags, the tasks that the landing starts)
+        cases = {
+            "a landing without --next": ([], []),
+            "a landing with --next": (["--next"], [self.OTHER]),
+        }
+        for name, (flags, started) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                self.add_other(tmp, repo, env, after=[REF])
+                # git prints the path of a worktree without the symbolic
+                # links that the path of the temporary directory can hold.
+                wt = Path(repo, ".claude", "worktrees", f"t-{REF}").resolve()
+                git("worktree", "lock", wt, cwd=repo, env=env)
+                status, lines = self.land(repo, env, *flags)
+                # The failure status sends the caller to the reports.
+                self.assertEqual(status, 1, lines)
+                # The reports come before the TIMES line. Each report
+                # names its git command and says what the command left.
+                reports, rest = self.failed_commands(lines)
+                landed = "The task landed, but"
+                self.assertEqual(
+                    [(command, left) for command, _, left in reports],
+                    [
+                        (
+                            f"git worktree remove --force {wt}",
+                            f"{landed} its worktree still exists. {self.AGAIN}",
+                        ),
+                        (
+                            f"git branch -q -D task/{REF}",
+                            f"{landed} its branch still exists. {self.AGAIN}",
+                        ),
+                    ],
+                )
+                # Each report holds the error of git. The second error
+                # names the worktree that keeps the branch.
+                self.assertIn("locked", reports[0][1])
+                self.assertIn(str(wt), reports[1][1])
+                listed = self.after_result(rest)
+                self.assertEqual(
+                    git("log", "-1", "--format=%s", cwd=repo, env=env),
+                    self.SUBJECT,
+                )
+                # Only a landing with --next prints a list.
+                self.assertEqual(bool(listed), bool(flags), lines)
+                inputs = json.loads("\n".join(listed) or "[]")
+                self.assertEqual([t["task"]["ref"] for t in inputs], started)
+                self.assertEqual(
+                    self.task_states(tmp),
+                    {REF: "landed", self.OTHER: "inflight" if started else "pending"},
+                )
+                # aven set the aven task of the landing to done.
+                self.assertIn(f"{REF} --status done", aven_edits(env))
+                # git kept the worktree and the branch, and the land
+                # command refuses the landed task.
+                self.assertTrue(wt.exists())
+                self.assertIn(f"task/{REF}", branches(repo, env))
+                self.assertIn(
+                    f"{REF} is landed", refused("land", REF, cwd=repo, env=env)
+                )
+                # After the caller unlocks the worktree, the two commands
+                # of the reports remove the worktree and the branch.
+                git("worktree", "unlock", wt, cwd=repo, env=env)
+                for command, _, _ in reports:
+                    git(*command.split()[1:], cwd=repo, env=env)
+                self.assertFalse(wt.exists())
+                self.assertNotIn(f"task/{REF}", branches(repo, env))
+
+    def test_lands_task_whose_branch_git_does_not_delete(self):
+        # A second worktree has the task branch checked out. So git
+        # removes the worktree of the task, and it keeps the branch.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            name, second = f"task/{REF}", Path(tmp, "second").resolve()
+            git("worktree", "add", "-q", "--force", second, name, cwd=repo, env=env)
+            status, lines = self.land(repo, env)
+            self.assertEqual(status, 1, lines)
+            # The landing reports only the command that failed, and the
+            # error of git names the second worktree.
+            reports, rest = self.failed_commands(lines)
+            self.assertEqual(len(reports), 1, lines)
+            [(command, error, left)] = reports
+            self.assertEqual(command, f"git branch -q -D {name}")
+            self.assertIn(str(second), error)
+            self.assertEqual(
+                left, f"The task landed, but its branch still exists. {self.AGAIN}"
+            )
+            self.assertEqual(self.after_result(rest), [])
+            self.assertEqual(self.task_states(tmp), {REF: "landed"})
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+            self.assertFalse(Path(repo, ".claude", "worktrees", f"t-{REF}").exists())
+            self.assertEqual(branches(repo, env), ["main", name])
+            # After the second worktree leaves, the command of the report
+            # deletes the branch.
+            git("worktree", "remove", second, cwd=repo, env=env)
+            git(*command.split()[1:], cwd=repo, env=env)
+            self.assertEqual(branches(repo, env), ["main"])
+
+    def test_dirty_checkout_lands_task_whose_worktree_git_does_not_remove(self):
+        # The commit hook leaves a file in the main checkout, and git does
+        # not remove the locked worktree. The base branch holds the commit
+        # of the task by then.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, hook="touch left.txt")
+            self.add_other(tmp, repo, env, after=[REF])
+            wt = Path(repo, ".claude", "worktrees", f"t-{REF}").resolve()
+            git("worktree", "lock", wt, cwd=repo, env=env)
+            status, lines = self.land(repo, env, "--next")
+            self.assertEqual(status, 2, lines)
+            # The reports of the two git commands come first. The output
+            # then names the commit and the file, and the RESULT line
+            # comes last.
+            reports, rest = self.failed_commands(lines)
+            self.assertEqual(
+                [command for command, _, _ in reports],
+                [f"git worktree remove --force {wt}", f"git branch -q -D task/{REF}"],
+            )
+            commit = git("log", "-1", "--format=%h %s", cwd=repo, env=env)
+            self.assertIn(f"{REF} landed as {commit}", rest[0])
+            self.assertEqual(rest[1], "?? left.txt")
+            self.assertRegex(rest[2], r"^TIMES commit=\S+$")
+            self.assertEqual(rest[3:], [f"RESULT {REF} POSTDIRTY"])
+            # The task landed, aven set its aven task to done, and the
+            # landing did not run next.
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+            self.assertEqual(
+                self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
+            )
+            self.assertIn(f"{REF} is landed", refused("land", REF, cwd=repo, env=env))
+
+    def test_lands_task_whose_worktree_git_removes_in_part(self):
+        # git deletes its record of the worktree and fails on a file in
+        # the worktree. So only the directory stays, git deletes the
+        # branch, and the task lands.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            with self.removed_in_part(repo) as wt:
+                status, lines = self.land(repo, env)
+                self.assert_removed_in_part(repo, env, wt)
+            self.assertEqual(status, 1, lines)
+            # The landing reports only the git command that removes the
+            # worktree. The report tells the caller to delete the
+            # directory, because a second run of the command fails.
+            reports, rest = self.failed_commands(lines)
+            self.assertEqual(len(reports), 1, lines)
+            [(command, error, left)] = reports
+            self.assertEqual(command, f"git worktree remove --force {wt}")
+            self.assertIn("Permission denied", error)
+            self.assertEqual(
+                left,
+                "The task landed, and git no longer lists its worktree, but the"
+                " directory of the worktree still exists. Repair the cause of the"
+                " error, and delete the directory.",
+            )
+            self.assertEqual(self.after_result(rest), [])
+            self.assertEqual(self.task_states(tmp), {REF: "landed"})
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+            self.assertEqual(branches(repo, env), ["main"])
+            # After the cause goes, the caller can delete the directory.
+            shutil.rmtree(wt)
 
     def test_next_reports_leftover_work_after_landing(self):
         # An earlier run left the branch of the second task. The landing
@@ -5318,8 +5557,8 @@ class LandableTest(LandCase):
         return p.stderr
 
     def test_second_landing_leaves_task_landed(self):
-        # The first landing removed the worktree, so a second landing has
-        # no change to land.
+        # The first landing set the task to landed, so a second landing
+        # has no change to land.
         with tempfile.TemporaryDirectory() as tmp:
             repo, env = self.start_task(tmp)
             self.assert_landed(repo, env, self.land(repo, env))
@@ -5608,7 +5847,8 @@ class PullRequestTest(LandCase):
 
     A landing of such a run runs the check and names the branch of the
     pull request. It records no commit on the base branch, and it leaves
-    the main checkout alone. The proposed task waits for its pull request
+    the main checkout alone. It also proposes its task when git then does
+    not remove the worktree. The proposed task waits for its pull request
     to merge, and the merged command lands it.
     """
 
@@ -5936,6 +6176,113 @@ class PullRequestTest(LandCase):
                 self.assertEqual(launch["task"]["ref"], self.OTHER)
                 self.assertTrue(Path(launch["task"]["wt"], self.FILE).exists())
 
+    def test_proposes_task_whose_worktree_git_does_not_remove(self):
+        # git does not remove a locked worktree. The branch has the name
+        # of the pull request by then, so the landing proposes the task.
+        # The second task, which waits for the slot, can then start.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--target", "pr", "--limit", "1")
+            self.add_other(tmp, repo, env)
+            wt = self.worktree(repo).resolve()
+            git("worktree", "lock", wt, cwd=repo, env=env)
+            status, lines = self.land(repo, env, "--next")
+            # The failure status sends the caller to the report.
+            self.assertEqual(status, 1, lines)
+            # The report comes before the RESULT line. It names the git
+            # command, it holds the error of git, and it says what the
+            # command left.
+            reports, rest = self.failed_commands(lines)
+            self.assertEqual(len(reports), 1, lines)
+            [(command, error, left)] = reports
+            self.assertEqual(command, f"git worktree remove --force {wt}")
+            self.assertIn("locked", error)
+            self.assertEqual(
+                left,
+                "The landing proposed the task, but its worktree still exists."
+                f" {self.AGAIN}",
+            )
+            # The list of Workflow inputs follows the RESULT line.
+            self.assertEqual(rest[0], self.RESULT)
+            started = json.loads("\n".join(rest[1:]))
+            self.assertEqual([t["task"]["ref"] for t in started], [self.OTHER])
+            # The task waits as proposed on the branch of the pull
+            # request, git kept the worktree, and the land command refuses
+            # the proposed task.
+            task = self.task(tmp)
+            self.assertEqual((task["state"], task["branch"]), ("proposed", HEAD))
+            self.assertTrue(wt.exists())
+            self.assertIn(f"{REF} is proposed", refused("land", REF, cwd=repo, env=env))
+            # After the merge, the worktree keeps the branch, so the merged
+            # command changes nothing. Its error names the worktree of the
+            # task and the command that removes it.
+            self.merge(repo, env)
+            before = self.task(tmp)
+            message = refused("merged", REF, cwd=repo, env=env)
+            self.assertIn(f"git cannot delete the branch {HEAD}", message)
+            self.assertIn(f"did not remove its worktree {wt}", message)
+            self.assertIn(command, message)
+            self.assertNotIn("Check out another branch there", message)
+            self.assertEqual(self.task(tmp), before)
+            self.assertNotIn(f"{REF} --status done", aven_edits(env))
+            # After the caller unlocks the worktree, the command of the
+            # report removes it. The merged command can then delete the
+            # branch.
+            git("worktree", "unlock", wt, cwd=repo, env=env)
+            git(*command.split()[1:], cwd=repo, env=env)
+            self.assertFalse(wt.exists())
+            ultraclose("merged", REF, cwd=repo, env=env)
+            self.assertEqual(self.task(tmp)["state"], "landed")
+            self.assertNotIn(HEAD, branches(repo, env))
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+
+    def test_proposes_task_whose_worktree_git_removes_in_part(self):
+        # git deletes its record of the worktree and fails on a file in
+        # the worktree. So only the directory stays, and the landing
+        # proposes the task.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--target", "pr")
+            with self.removed_in_part(repo) as wt:
+                status, lines = self.land(repo, env)
+                self.assert_removed_in_part(repo, env, wt)
+            self.assertEqual(status, 1, lines)
+            # The report tells the caller to delete the directory, because
+            # a second run of the git command fails.
+            reports, rest = self.failed_commands(lines)
+            self.assertEqual(len(reports), 1, lines)
+            [(command, error, left)] = reports
+            self.assertEqual(command, f"git worktree remove --force {wt}")
+            self.assertIn("Permission denied", error)
+            self.assertEqual(
+                left,
+                "The landing proposed the task, and git no longer lists its"
+                " worktree, but the directory of the worktree still exists."
+                " Repair the cause of the error, and delete the directory.",
+            )
+            self.assertEqual(rest, [self.RESULT])
+            task = self.task(tmp)
+            self.assertEqual((task["state"], task["branch"]), ("proposed", HEAD))
+            # The directory keeps no branch. So when another worktree has
+            # the branch checked out after the merge, the error of the
+            # merged command names that worktree and not the directory.
+            second = Path(tmp, "second").resolve()
+            git("worktree", "add", "-q", second, HEAD, cwd=repo, env=env)
+            self.merge(repo, env)
+            message = refused("merged", REF, cwd=repo, env=env)
+            self.assertIn(f"git cannot delete the branch {HEAD}", message)
+            self.assertIn(str(second), message)
+            self.assertIn("Check out another branch there", message)
+            self.assertNotIn("did not remove its worktree", message)
+            self.assertEqual(self.task(tmp), task)
+            # After the second worktree goes, the merged command lands the
+            # task, and the directory does not keep it from the step.
+            git("worktree", "remove", second, cwd=repo, env=env)
+            ultraclose("merged", REF, cwd=repo, env=env)
+            self.assertEqual(self.task(tmp)["state"], "landed")
+            self.assertNotIn(HEAD, branches(repo, env))
+            self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
+            # After the cause goes, the caller can delete the directory.
+            shutil.rmtree(wt)
+
     def test_opened_records_pull_request(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo, env = self.start_task(tmp, "--target", "pr")
@@ -6064,7 +6411,8 @@ class PullRequestTest(LandCase):
                 self.assertEqual(branches(repo, env), kept)
 
     def test_proposed_task_takes_no_landing(self):
-        # The landing that proposed the task removed its worktree.
+        # A proposed task waits for its pull request to merge, and the
+        # merged command lands it.
         with tempfile.TemporaryDirectory() as tmp:
             repo, env = self.propose(tmp)
             before = self.task(tmp)

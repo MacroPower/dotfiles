@@ -46,7 +46,8 @@ A new run does not take the config, the rules.md, or the notes.md of an
 earlier run. When init replaces a run that has unfinished tasks, it
 moves those tasks and each noted task into the new run. Each task keeps
 its triage row, its state, and its directory, so the new run resumes its
-branch and its worktree. A proposed task keeps its branch and has no
+branch and its worktree. A proposed task keeps its branch. It keeps its
+worktree only when the landing that proposed it could not remove the
 worktree. The earlier run keeps its landed and closed tasks. The state
 of the new run names the earlier run, and each run that the state of the
 earlier run names, and the status command prints
@@ -202,12 +203,12 @@ requests, or the landings of both runs commit. A new run whose landings
 commit leaves the pull request of each proposed task open beside the
 commit.
 
-The land command refuses a proposed task, because the landing that
-proposed the task removed its worktree. The args command starts the task
-again on its branch, such as for a pull request that has a conflict with
-the base branch. The next landing of the task keeps the name of the
-branch, and its RESULT line gives the pull request that the task
-records.
+The land command refuses a proposed task, because the task waits for
+its pull request to merge, and the merged command lands it. The args
+command starts the task again on its branch, such as for a pull request
+that has a conflict with the base branch. The next landing of the task
+keeps the name of the branch, and its RESULT line gives the pull request
+that the task records.
 
 After the pull request merged and the base branch holds the merge, the
 merged command deletes the task branch, sets the aven task to done, and
@@ -219,8 +220,9 @@ change. One merge without a change is enough, because a later commit of
 the base branch can change the lines of the change. With --force, it
 skips that test, such as for a pull request that gained commits after
 the push. It also refuses when git cannot delete the task branch, such
-as a branch that a worktree has checked out. Each refusal changes
-nothing.
+as a branch that a worktree has checked out. That worktree can be the
+worktree of the task, which the landing did not remove, and the error
+then says to remove it. Each refusal changes nothing.
 
 Each --model ROLE=MODEL flag of init and config names the model of the
 agents of one role of close-task.js. The roles are implementer, sync,
@@ -290,13 +292,33 @@ aven task to done, and sets the task to landed, as a landing with the
 result OK does. Its failing output names the commit and lists the
 changes of the main checkout.
 
-The aven command that sets the aven task to done can fail, such as with
-a locked database. The base branch holds the commit by then, so the task
-still lands with the result OK or POSTDIRTY. The landing prints the
-failed aven command and its output before the TIMES line, and the aven
-task stays open until the caller runs the aven command again. After such
-a landing with the result OK, --next runs next after the RESULT line,
-and the land command then exits with a failure status.
+A landing that commits ends with the commands that remove the worktree,
+delete the branch, and set the aven task to done. Each of these commands
+can fail, such as git with a locked worktree and aven with a locked
+database. git also keeps the branch of a worktree that it did not
+remove. The base branch holds the commit by then, so the task still
+lands with the result OK or POSTDIRTY. After such a landing with the
+result OK, --next runs next after the RESULT line, and the land command
+then exits with a failure status.
+
+Before the TIMES line, the landing prints each failed command with its
+output. One more line per command says what the command left, which is
+the worktree, the branch, or the open aven task. The caller repairs the
+cause of the error and runs the command again. git can also fail after
+it deleted its record of the worktree, such as when it cannot delete a
+file in the worktree. Only the directory of the worktree then stays,
+and a second run of the git command fails. So the line for that failure
+says that git no longer lists the worktree, and the caller deletes the
+directory.
+
+A landing that proposes a pull request ends with the git command that
+removes the worktree. The task branch has its name by then. So when that
+command fails, the landing prints it the same way above the RESULT line,
+sets the task to proposed, and prints the result PR. With --next, it
+then runs next, and the land command exits with a failure status. The
+merged command cannot delete the branch while the worktree has the
+branch checked out, so the caller removes the worktree before it runs
+the merged command.
 
 The land command sets GOLANGCI_LINT_CACHE for the check and for the
 commit, so that neither step reads the golangci-lint cache that every
@@ -522,6 +544,9 @@ BRANCH_TYPES = (
 BRANCH_TYPE = "feat"
 # How many characters the slug of a pull request branch holds at most.
 SLUG = 50
+# What a landing tells its caller to do about a git command that failed
+# after the landing committed or named the branch of its task.
+AGAIN = "Repair the cause of the error, and run the git command again."
 # The key of the git config of the repository that names the run directory.
 KEY = "ultraclose.run"
 # The environment variable in which Claude Code names the session of each
@@ -888,6 +913,29 @@ def branch_exists(repo, name):
     head = f"refs/heads/{name}"
     found = sh("git", "rev-parse", "-q", "--verify", head, cwd=repo, check=False)
     return not found.returncode
+
+
+def listed_worktrees(repo):
+    """The worktrees that git lists for a repository, or None when git fails.
+
+    Map the real path of each worktree to the name of the branch that the
+    worktree has checked out. A worktree with a detached HEAD maps to
+    None. The map holds real paths, so a caller looks up the real path of
+    a worktree. git keeps no record of a directory whose worktree it
+    removed in part, so the map leaves out that directory.
+    """
+    p = sh("git", "worktree", "list", "--porcelain", cwd=repo, check=False)
+    if p.returncode:
+        return None
+    found, path = {}, None
+    for line in p.stdout.splitlines():
+        key, _, value = line.partition(" ")
+        if key == "worktree":
+            path = os.path.realpath(value)
+            found[path] = None
+        elif key == "branch":
+            found[path] = value.removeprefix("refs/heads/")
+    return found
 
 
 def known_branches(repo):
@@ -1757,6 +1805,9 @@ def start(st, run, ref):
     if not Path(wt).exists():
         # A landing that proposes a pull request removes the worktree and
         # keeps the branch, so a relaunch of that task takes this path.
+        # When git still lists the worktree, the relaunch resumes it. git
+        # can also remove the worktree in part and leave its directory, and
+        # the landing then tells the caller to delete that directory.
         if branch_exists(repo, name):
             sh("git", "worktree", "add", "-q", wt, name, cwd=repo)
         else:
@@ -2187,8 +2238,10 @@ def landable(st, ref):
     task, and it says what a task in that state needs.
     """
     t = st["tasks"].get(ref) or die(f"unknown task {ref}")
-    # The landing that proposed the task removed its worktree, so a
-    # second landing fails. The task must keep its state until then.
+    # A proposed task waits for its pull request to merge, and the merged
+    # command lands it. The branch that the landing named for the pull
+    # request already holds the change of the task, so a second landing
+    # has nothing to propose.
     if t["state"] == "proposed":
         die(
             f"{ref} is proposed, so it waits for its pull request to merge."
@@ -2241,6 +2294,9 @@ def cmd_land(a):
     msg = run / "tasks" / ref / "msg.txt"
     logs = run / "logs"
     timeout = step_timeout(cfg)
+    # The git command that removes the worktree of the task. Each landing
+    # that proposes or lands its task ends with the command.
+    remove = ("git", "worktree", "remove", "--force", wt)
 
     # How long each timed step of this landing took, in seconds.
     times = {}
@@ -2325,6 +2381,42 @@ def cmd_land(a):
             detail = f"the health command failed {when}\n{tail(path)}"
             fail("HEALTHFAIL", detail.rstrip())
 
+    def passed(*cmd, left):
+        """Run a command that ends the landing, and return whether it passed.
+
+        The base branch holds the commit of the task by then, or the task
+        branch has the name of its pull request. So the landing does not
+        stop at a failed command. It prints the command and the output of
+        the command. Then it prints the text that the left function
+        returns, which says what the command left and what the caller does
+        about it. The function runs after the command, so the text can
+        depend on what the command left.
+        """
+        p = sh(*cmd, cwd=repo, check=False)
+        if p.returncode:
+            print(f"{' '.join(cmd)} failed:\n{p.stdout}{p.stderr}".rstrip())
+            print(left())
+        return not p.returncode
+
+    def unremoved(did):
+        """What a failed git worktree remove left, and what the caller does about it.
+
+        The did argument opens the text and says what the landing did with
+        the task. git can fail after it deleted its record of the
+        worktree, such as when it cannot delete a file in the directory of
+        the worktree. Only the directory then stays, and a second run of
+        the git command fails. So the text then tells the caller to delete
+        the directory.
+        """
+        listed = listed_worktrees(repo)
+        if listed is None or os.path.realpath(wt) in listed:
+            return f"{did}, but its worktree still exists. {AGAIN}"
+        return (
+            f"{did}, and git no longer lists its worktree, but the directory of"
+            " the worktree still exists. Repair the cause of the error, and"
+            " delete the directory."
+        )
+
     def propose(head):
         """End a landing that proposes the task as a pull request.
 
@@ -2339,6 +2431,10 @@ def cmd_land(a):
         second pull request while it is open. The task records that the
         branch waits for its push, until the opened command records the
         push.
+
+        Return whether git removed the worktree. The branch has its name
+        before that git command runs. So when the command fails, the
+        landing prints it, and the task still waits as proposed.
         """
         if head != br:
             # Another command can create a branch with the name during the
@@ -2348,7 +2444,13 @@ def cmd_land(a):
                 fail("BRANCHTAKEN", renamed.stderr.strip())
             with state(run) as st:
                 st["tasks"][ref]["branch"] = head
-        sh("git", "worktree", "remove", "--force", wt, cwd=repo)
+        # git can fail here, such as with a locked worktree. A landing
+        # that stops at that failure leaves an approved task, and each
+        # later landing of that task stops at the same failure. So the
+        # landing reports the failure and goes on.
+        removed = passed(
+            *remove, left=lambda: unremoved("The landing proposed the task")
+        )
         with state(run) as st:
             t = st["tasks"][ref]
             t["state"] = "proposed"
@@ -2359,6 +2461,7 @@ def cmd_land(a):
         record("PR")
         opened = f" pr={url}" if url else ""
         print(f"RESULT {ref} PR head={head} base={base}{opened}", flush=True)
+        return removed
 
     def squash():
         """End a landing that commits the task on the base branch.
@@ -2371,9 +2474,10 @@ def cmd_land(a):
         commit did not record. The task still lands, and the landing
         then fails with the result POSTDIRTY.
 
-        Return whether aven set its task to done. The base branch holds
-        the commit before the aven command runs. So when that command
-        fails, the landing prints it, and the task lands.
+        Return whether git removed the worktree, git deleted the branch,
+        and aven set its task to done. The base branch holds the commit
+        before these commands run. So when one of them fails, the landing
+        prints it, and the task lands.
         """
         head = out("git", "rev-parse", "HEAD", cwd=repo)
 
@@ -2434,20 +2538,26 @@ def cmd_land(a):
         # task lands before the landing reports the changes that the
         # main checkout holds.
         dirty = uncommitted(repo)
-        sh("git", "worktree", "remove", "--force", wt, cwd=repo)
-        sh("git", "branch", "-q", "-D", br, cwd=repo)
-        # aven can fail here, such as with a locked database. A landing
-        # that stops at that failure leaves an approved task without a
-        # worktree, and no second landing can land that task. So the
-        # landing reports the failure and goes on.
+        # git and aven can fail here, such as git with a locked worktree
+        # and aven with a locked database. A landing that stops at such a
+        # failure leaves an approved task, and no second landing can land
+        # that task. So the landing reports each failure and goes on. git
+        # keeps the branch of a worktree that it did not remove, and the
+        # landing then reports both git commands.
+        delete = ("git", "branch", "-q", "-D", br)
         edit = ("aven", "edit", ref, "--status", "done")
-        marked = sh(*edit, cwd=repo, check=False)
-        if marked.returncode:
-            print(
-                f"{' '.join(edit)} failed:\n{marked.stdout}{marked.stderr}".rstrip()
-                + "\nThe task landed, but the aven task is still open. Run the"
-                " aven command again."
-            )
+        landed = "The task landed"
+        done = [
+            passed(*remove, left=lambda: unremoved(landed)),
+            passed(
+                *delete, left=lambda: f"{landed}, but its branch still exists. {AGAIN}"
+            ),
+            passed(
+                *edit,
+                left=lambda: f"{landed}, but the aven task is still open. Run the aven"
+                " command again.",
+            ),
+        ]
         with state(run) as st:
             st["tasks"][ref]["state"] = "landed"
         commit = out("git", "log", "-1", "--format=%h %s", cwd=repo)
@@ -2462,7 +2572,7 @@ def cmd_land(a):
         # flush writes the result to the output before next runs, so the
         # result stays there when the caller stops the command during next.
         print(f"RESULT {ref} OK {commit}", flush=True)
-        return not marked.returncode
+        return all(done)
 
     # Every landing that proposes a pull request leaves the main checkout
     # alone. So neither the branch nor the changes of the main checkout
@@ -2470,9 +2580,9 @@ def cmd_land(a):
     pr = proposes(cfg)
     with locked(run / "land.lock"):
         # Another landing of the task can hold the lock while this landing
-        # waits for it. That landing removes the worktree when it lands or
-        # proposes the task, and the task then has no change to land. So
-        # the command refuses the task as it does before the wait.
+        # waits for it. That landing sets the task to landed or proposed,
+        # and the task then has no change that waits for a landing. So the
+        # command refuses the task as it does before the wait.
         with state(run) as st:
             landable(st, ref)
         if not pr:
@@ -2566,19 +2676,14 @@ def cmd_land(a):
                 fail("CHECKFAIL", tail(log))
             if dirty := uncommitted(wt):
                 fail("WTDIRTY", "the check changed files:\n" + dirty)
-        # Whether the landing did each of its steps. A landing that
-        # commits lands its task also when aven does not set the aven
-        # task to done.
-        finished = True
-        if pr:
-            propose(head)
-        else:
-            finished = squash()
+        # Whether each command that ends the landing passed. The landing
+        # proposes or lands its task also when one of them failed.
+        finished = propose(head) if pr else squash()
     # Each failed landing exits before this line. The landing lock is free
     # here, so a queued landing does not wait for the tasks that start.
     if a.next:
         fill_slots(run)
-    # The landing printed the aven command that failed above its RESULT
+    # The landing printed each command that failed above its RESULT
     # line. The failure status sends the caller to that output.
     if not finished:
         sys.exit(1)
@@ -2635,11 +2740,29 @@ def cmd_merged(a):
         if has:
             gone = sh("git", "branch", "-q", "-D", name, cwd=repo, check=False)
             if gone.returncode:
+                wt = worktree(st["config"], a.ref)
+                # The landing that proposed the task can fail to remove the
+                # worktree of the task, which then keeps the branch. A
+                # directory that git no longer lists as a worktree keeps no
+                # branch, and neither does a worktree on another branch.
+                listed = listed_worktrees(repo) or {}
+                if listed.get(os.path.realpath(wt)) == name:
+                    hint = (
+                        f"The landing that proposed {a.ref} did not remove its"
+                        f" worktree {wt}, which keeps the branch. Remove the"
+                        f" worktree with git worktree remove --force {wt}, and"
+                        " repair the cause that git names when it fails. Then"
+                        " run the command again"
+                    )
+                else:
+                    hint = (
+                        f"A worktree that has {name} checked out keeps the"
+                        " branch. Check out another branch there, and run the"
+                        " command again"
+                    )
                 die(
                     f"git cannot delete the branch {name}, so the command changed"
-                    f" nothing:\n{gone.stderr.strip()}\nA worktree that has"
-                    f" {name} checked out keeps the branch. Check out another"
-                    " branch there, and run the command again"
+                    f" nothing:\n{gone.stderr.strip()}\n{hint}"
                 )
         sh("aven", "edit", a.ref, "--status", "done", cwd=repo)
         t["state"] = "landed"
