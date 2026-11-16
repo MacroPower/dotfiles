@@ -27,6 +27,8 @@ func (m *Tests) All(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	eg.Go(m.TestAggregates)
+	eg.Go(func() error { return m.TestCheckLintRootModule(ctx) })
+	eg.Go(func() error { return m.TestCheckLintTestModule(ctx) })
 	eg.Go(func() error { return m.TestDependencySnapshot(ctx) })
 	eg.Go(func() error { return m.TestEditorconfigToolchains(ctx) })
 	eg.Go(func() error { return m.TestFormatSkipsDevGo(ctx) })
@@ -36,7 +38,12 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSourceToolchains(ctx) })
 	eg.Go(func() error { return m.TestVulnscanSarif(ctx) })
 
-	return eg.Wait()
+	err := eg.Wait()
+	if err != nil {
+		return fmt.Errorf("running the +check tests: %w", err)
+	}
+
+	return nil
 }
 
 // AllFull runs every test of the module.
@@ -72,6 +79,39 @@ const (
 	// trailingSpaceLine is a comment line that breaks the .editorconfig
 	// rules of the repository, because it ends with a space.
 	trailingSpaceLine = "// trailing space \n"
+
+	// rootModulePath is the path, in the project source, of the root
+	// module of the nix toolchain.
+	rootModulePath = "toolchains/nix"
+
+	// testModulePath is the path, in the project source, of the test
+	// module of the nix toolchain.
+	testModulePath = "toolchains/nix/tests"
+
+	// lintProbeName is the name of the Go file that a test adds to a
+	// module of the nix toolchain.
+	lintProbeName = "lint_probe.go"
+
+	// unwrappedProbe is a Go file of the root module whose function
+	// returns the error of another package unwrapped. golangci-lint
+	// reports that return with wrapcheck and reports nothing else in
+	// the file.
+	unwrappedProbe = `package main
+
+import "strconv"
+
+// lintProbe returns the error of another package unwrapped.
+func lintProbe(s string) (int, error) {
+	return strconv.Atoi(s)
+}
+
+var _ = lintProbe
+`
+
+	// undocumentedProbe is a Go file of the test module whose exported
+	// method has no doc comment. golangci-lint reports that method with
+	// godoclint and reports nothing else in the file.
+	undocumentedProbe = "package main\n\nfunc (m *Tests) LintProbe() {}\n"
 )
 
 // sourceFile returns the contents of the file at path in the default
@@ -89,12 +129,18 @@ func sourceFile(ctx context.Context, path string) (string, error) {
 	return contents, nil
 }
 
+// nixWithFile returns the [Nix] module whose source is the default
+// source with contents in the file at path.
+func nixWithFile(path, contents string) *dagger.Nix {
+	return dag.Nix(dagger.NixOpts{
+		Source: dag.Nix().Source().WithNewFile(path, contents),
+	})
+}
+
 // nixWithToolchainGo returns the [Nix] module whose source is the default
 // source with contents in the file at toolchainGoPath.
 func nixWithToolchainGo(contents string) *dagger.Nix {
-	return dag.Nix(dagger.NixOpts{
-		Source: dag.Nix().Source().WithNewFile(toolchainGoPath, contents),
-	})
+	return nixWithFile(toolchainGoPath, contents)
 }
 
 // editorconfigSource returns a directory that holds the .editorconfig
@@ -288,15 +334,69 @@ func (m *Tests) TestEditorconfigToolchains(ctx context.Context) error {
 	return nil
 }
 
+// checkLintProbe verifies that [Nix.CheckLint] lints the module of the
+// nix toolchain at probed. It returns an error when the check fails on
+// the default source of [Nix]. Then it adds a file with contents, in
+// which golangci-lint reports a finding, to the module at probed. It
+// returns an error when the check passes on that source. CheckLint
+// names the module of each failed lint by its path from the root of the
+// project source. So checkLintProbe also returns an error unless the
+// error of the second check names the module at probed and leaves out
+// the module at other.
+func checkLintProbe(ctx context.Context, probed, other, contents string) error {
+	err := dag.Nix().CheckLint(ctx)
+	if err != nil {
+		return fmt.Errorf("linting the default source: %w", err)
+	}
+
+	probe := probed + "/" + lintProbeName
+
+	err = nixWithFile(probe, contents).CheckLint(ctx)
+	if err == nil {
+		return fmt.Errorf("CheckLint passed with a finding in %s", probe)
+	}
+
+	want := "linting " + probed + ":"
+	if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "linting "+other+":") {
+		return fmt.Errorf("expected only the lint of %s to fail, got: %w", probed, err)
+	}
+
+	return nil
+}
+
+// TestCheckLintRootModule verifies that [Nix.CheckLint] lints the root
+// module of the nix toolchain and reports an error of another package
+// that a function returns unwrapped. The check passes on the default
+// source of [Nix]. It fails after the test adds a file with such a
+// function to the root module. The test requires the error of that
+// check to name the lint of the root module and no other lint.
+//
+// +check
+func (m *Tests) TestCheckLintRootModule(ctx context.Context) error {
+	return checkLintProbe(ctx, rootModulePath, testModulePath, unwrappedProbe)
+}
+
+// TestCheckLintTestModule verifies that [Nix.CheckLint] lints the test
+// module of the nix toolchain and reports an exported method that has
+// no doc comment. The check passes on the default source of [Nix]. It
+// fails after the test adds a file with such a method to the test
+// module. The test requires the error of that check to name the lint of
+// the test module and no other lint.
+//
+// +check
+func (m *Tests) TestCheckLintTestModule(ctx context.Context) error {
+	return checkLintProbe(ctx, testModulePath, rootModulePath, undocumentedProbe)
+}
+
 // ghSnapshot is the subset of the GitHub dependency snapshot format
 // needed to validate [Nix.DependencySnapshot] output.
 type ghSnapshot struct {
-	Version   int                   `json:"version"`
-	SHA       string                `json:"sha"`
-	Ref       string                `json:"ref"`
+	Manifests map[string]ghManifest `json:"manifests"`
 	Job       ghJob                 `json:"job"`
 	Detector  ghDetector            `json:"detector"`
-	Manifests map[string]ghManifest `json:"manifests"`
+	SHA       string                `json:"sha"`
+	Ref       string                `json:"ref"`
+	Version   int                   `json:"version"`
 }
 
 type ghJob struct {
@@ -312,9 +412,9 @@ type ghDetector struct {
 }
 
 type ghManifest struct {
-	Name     string                  `json:"name"`
 	File     *ghManifestFile         `json:"file,omitempty"`
 	Resolved map[string]ghDependency `json:"resolved"`
+	Name     string                  `json:"name"`
 }
 
 type ghManifestFile struct {
@@ -344,22 +444,28 @@ func (m *Tests) TestDependencySnapshot(ctx context.Context) error {
 	}
 
 	var snap ghSnapshot
-	if err := json.Unmarshal([]byte(contents), &snap); err != nil {
+
+	err = json.Unmarshal([]byte(contents), &snap)
+	if err != nil {
 		return fmt.Errorf("parsing snapshot JSON: %w", err)
 	}
 
 	if snap.Version != 0 {
 		return fmt.Errorf("version = %d, want 0", snap.Version)
 	}
+
 	if snap.SHA != "abc123def456" {
 		return fmt.Errorf("sha = %q, want %q", snap.SHA, "abc123def456")
 	}
+
 	if snap.Ref != "refs/heads/master" {
 		return fmt.Errorf("ref = %q, want %q", snap.Ref, "refs/heads/master")
 	}
+
 	if snap.Job.Correlator != "test-correlator" {
 		return fmt.Errorf("correlator = %q, want %q", snap.Job.Correlator, "test-correlator")
 	}
+
 	if snap.Detector.Name != "sbomnix" {
 		return fmt.Errorf("detector = %q, want %q", snap.Detector.Name, "sbomnix")
 	}
@@ -368,9 +474,11 @@ func (m *Tests) TestDependencySnapshot(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("missing nix-closure manifest")
 	}
+
 	if manifest.File == nil || manifest.File.SourceLocation != "flake.nix" {
 		return fmt.Errorf("manifest file source_location should be flake.nix")
 	}
+
 	if len(manifest.Resolved) == 0 {
 		return fmt.Errorf("expected resolved dependencies, got none")
 	}
@@ -379,6 +487,7 @@ func (m *Tests) TestDependencySnapshot(ctx context.Context) error {
 		if dep.PackageURL != purl {
 			return fmt.Errorf("dependency key %q != package_url %q", purl, dep.PackageURL)
 		}
+
 		if dep.Relationship != "direct" {
 			return fmt.Errorf("relationship = %q, want %q", dep.Relationship, "direct")
 		}
@@ -404,13 +513,16 @@ func (m *Tests) TestSbom(ctx context.Context) error {
 			Purl string `json:"purl"`
 		} `json:"components"`
 	}
-	if err := json.Unmarshal([]byte(contents), &bom); err != nil {
+
+	err = json.Unmarshal([]byte(contents), &bom)
+	if err != nil {
 		return fmt.Errorf("parsing sbom: %w", err)
 	}
 
 	if bom.BOMFormat != "CycloneDX" {
 		return fmt.Errorf("bomFormat = %q, want %q", bom.BOMFormat, "CycloneDX")
 	}
+
 	if len(bom.Components) == 0 {
 		return fmt.Errorf("expected components in SBOM, got none")
 	}
@@ -422,6 +534,7 @@ func (m *Tests) TestSbom(ctx context.Context) error {
 			purlCount++
 		}
 	}
+
 	if purlCount == 0 {
 		return fmt.Errorf("no components have purls")
 	}
@@ -480,16 +593,20 @@ func (m *Tests) TestVulnscanSarif(ctx context.Context) error {
 	}
 
 	var log sarifLog
-	if err := json.Unmarshal([]byte(contents), &log); err != nil {
+
+	err = json.Unmarshal([]byte(contents), &log)
+	if err != nil {
 		return fmt.Errorf("parsing sarif JSON: %w", err)
 	}
 
 	if log.Schema != "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json" {
 		return fmt.Errorf("schema = %q, want SARIF v2.1.0 schema", log.Schema)
 	}
+
 	if log.Version != "2.1.0" {
 		return fmt.Errorf("version = %q, want %q", log.Version, "2.1.0")
 	}
+
 	if len(log.Runs) != 1 {
 		return fmt.Errorf("runs count = %d, want 1", len(log.Runs))
 	}
@@ -504,11 +621,13 @@ func (m *Tests) TestVulnscanSarif(ctx context.Context) error {
 		if r.RuleID == "" {
 			return fmt.Errorf("result[%d] has empty ruleId", i)
 		}
+
 		switch r.Level {
 		case "error", "warning", "note":
 		default:
 			return fmt.Errorf("result[%d] level = %q, want error/warning/note", i, r.Level)
 		}
+
 		// Verify empty artifact URIs were patched (GitHub rejects empty URIs).
 		for _, loc := range r.Locations {
 			if loc.PhysicalLocation.ArtifactLocation.URI == "" {

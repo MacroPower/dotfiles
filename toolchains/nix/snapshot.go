@@ -23,6 +23,8 @@ type cdxComponent struct {
 
 // ghSnapshot is the GitHub dependency submission API payload.
 // https://docs.github.com/en/rest/dependency-graph/dependency-submission
+//
+//nolint:govet // The snapshot file holds the keys in the order of the fields.
 type ghSnapshot struct {
 	Version   int                   `json:"version"`
 	Scanned   string                `json:"scanned"`
@@ -48,6 +50,8 @@ type ghDetector struct {
 }
 
 // ghManifest groups resolved dependencies under a logical name.
+//
+//nolint:govet // The snapshot file holds the keys in the order of the fields.
 type ghManifest struct {
 	Name     string                  `json:"name"`
 	File     *ghManifestFile         `json:"file,omitempty"`
@@ -73,6 +77,7 @@ func buildDependencySnapshot(cdx cdxBOM, sha, ref, correlator, runURL string) gh
 		if c.Purl == "" {
 			continue
 		}
+
 		resolved[c.Purl] = ghDependency{
 			PackageURL:   c.Purl,
 			Relationship: "direct",

@@ -11,12 +11,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
-	"dagger/nix/internal/dagger"
-
 	"golang.org/x/sync/errgroup"
+
+	"dagger/nix/internal/dagger"
 )
 
 // Nix validates nix-darwin and home-manager flake configurations.
@@ -29,8 +30,10 @@ type Nix struct {
 //
 // The source holds the Dagger modules under toolchains/, so that
 // [Nix.Lint], [Nix.Format], and [Nix.Editorconfig] check their files.
-// The ignore list of source leaves out the files that Dagger generates
-// in those modules, which the .gitignore file of each module lists.
+// [Nix.CheckLint] reads the Go modules of this toolchain from the same
+// directory. The ignore list of source leaves out the files that Dagger
+// generates in those modules, which the .gitignore file of each module
+// lists.
 func New(
 	// Project source directory
 	// +defaultPath="/"
@@ -49,6 +52,7 @@ func nixSystem(ctx context.Context, ctr *dagger.Container) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("detecting platform: %w", err)
 	}
+
 	switch {
 	case strings.Contains(string(plat), "arm64"):
 		return "aarch64-linux", nil
@@ -62,6 +66,7 @@ func nixSystem(ctx context.Context, ctr *dagger.Container) (string, error) {
 // base returns a container with nix and flakes enabled.
 func (m *Nix) base() *dagger.Container {
 	ctr := dag.Container().From(nixImage)
+
 	return ctr.
 		WithMountedCache("/nix/store", dag.CacheVolume("nix-store"),
 			dagger.ContainerWithMountedCacheOpts{Source: ctr.Directory("/nix/store")}).
@@ -84,6 +89,7 @@ func (m *Nix) FlakeCheck() *dagger.Container {
   inputs.src.url = "path:/src";
   outputs = { src, ... }: builtins.removeAttrs src.outputs [ "nixosConfigurations" "inventory" ];
 }`
+
 	return m.base().
 		WithNewFile("/tmp/check/flake.nix", wrapper).
 		WithWorkdir("/tmp/check").
@@ -93,59 +99,45 @@ func (m *Nix) FlakeCheck() *dagger.Container {
 // hosts returns the list of darwinConfigurations defined in the flake.
 func (m *Nix) hosts(ctx context.Context) ([]string, error) {
 	out, err := m.base().
-		WithExec([]string{"nix", "eval", "--json",
-			".#darwinConfigurations", "--apply", "builtins.attrNames"}).
+		WithExec([]string{
+			"nix", "eval", "--json",
+			".#darwinConfigurations", "--apply", "builtins.attrNames",
+		}).
 		Stdout(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing darwin configurations: %w", err)
 	}
+
 	var names []string
-	if err := json.Unmarshal([]byte(out), &names); err != nil {
-		return nil, err
+
+	err = json.Unmarshal([]byte(out), &names)
+	if err != nil {
+		return nil, fmt.Errorf("parsing darwin configuration names: %w", err)
 	}
+
 	return names, nil
 }
 
 // homeConfigs returns the list of homeConfigurations defined in the flake.
 func (m *Nix) homeConfigs(ctx context.Context) ([]string, error) {
 	out, err := m.base().
-		WithExec([]string{"nix", "eval", "--json",
-			".#homeConfigurations", "--apply", "builtins.attrNames"}).
+		WithExec([]string{
+			"nix", "eval", "--json",
+			".#homeConfigurations", "--apply", "builtins.attrNames",
+		}).
 		Stdout(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing home configurations: %w", err)
 	}
-	var names []string
-	if err := json.Unmarshal([]byte(out), &names); err != nil {
-		return nil, err
-	}
-	return names, nil
-}
 
-// evalAttrNames evaluates a nix expression and returns builtins.attrNames as []string.
-func (m *Nix) evalAttrNames(ctx context.Context, ctr *dagger.Container, expr string) ([]string, error) {
-	out, err := ctr.
-		WithExec([]string{"nix", "eval", "--json", expr, "--apply", "builtins.attrNames"}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
 	var names []string
-	if err := json.Unmarshal([]byte(out), &names); err != nil {
-		return nil, err
-	}
-	return names, nil
-}
 
-// evalString evaluates a nix expression producing a bare string.
-func (m *Nix) evalString(ctx context.Context, ctr *dagger.Container, expr string) (string, error) {
-	out, err := ctr.
-		WithExec([]string{"nix", "eval", "--raw", expr}).
-		Stdout(ctx)
+	err = json.Unmarshal([]byte(out), &names)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("parsing home configuration names: %w", err)
 	}
-	return strings.TrimSpace(out), nil
+
+	return names, nil
 }
 
 // homeInfo holds the fields extracted from a home-manager configuration
@@ -169,12 +161,16 @@ func (m *Nix) evalHomeInfo(ctx context.Context, ctr *dagger.Container, name stri
 		}`}).
 		Stdout(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("evaluating home configuration: %w", err)
 	}
+
 	var info homeInfo
-	if err := json.Unmarshal([]byte(out), &info); err != nil {
-		return nil, err
+
+	err = json.Unmarshal([]byte(out), &info)
+	if err != nil {
+		return nil, fmt.Errorf("parsing home configuration: %w", err)
 	}
+
 	return &info, nil
 }
 
@@ -203,23 +199,29 @@ func (m *Nix) validateHome(ctx context.Context, name string) error {
 		if strings.HasPrefix(f, info.HomeDirectory+"/") {
 			path = f
 		}
+
 		ctr = ctr.WithExec([]string{"test", "-e", path})
 	}
+
 	for _, f := range info.HomeFiles {
 		path := fmt.Sprintf("%s/%s", info.HomeDirectory, f)
 		if strings.HasPrefix(f, info.HomeDirectory+"/") {
 			path = f
 		}
+
 		ctr = ctr.WithExec([]string{"test", "-e", path})
 	}
 
-	ctr = ctr.WithExec([]string{"test", "-d",
-		fmt.Sprintf("%s/.local/state/home-manager/gcroots/current-home/home-path/bin", info.HomeDirectory)})
+	ctr = ctr.WithExec([]string{
+		"test", "-d",
+		fmt.Sprintf("%s/.local/state/home-manager/gcroots/current-home/home-path/bin", info.HomeDirectory),
+	})
 
 	_, err = ctr.Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("home %s: %w", name, err)
 	}
+
 	return nil
 }
 
@@ -231,20 +233,29 @@ func (m *Nix) BuildHome(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	configs, err := m.homeConfigs(ctx)
 	if err != nil {
 		return err
 	}
+
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, name := range configs {
 		if !strings.HasSuffix(name, sys) {
 			continue
 		}
+
 		eg.Go(func() error {
 			return m.validateHome(ctx, name)
 		})
 	}
-	return eg.Wait()
+
+	err = eg.Wait()
+	if err != nil {
+		return fmt.Errorf("validating home configurations: %w", err)
+	}
+
+	return nil
 }
 
 // Build proves all host configurations evaluate without errors.
@@ -267,10 +278,17 @@ func (m *Nix) Build(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("host %s: %w", host, err)
 			}
+
 			return nil
 		})
 	}
-	return eg.Wait()
+
+	err = eg.Wait()
+	if err != nil {
+		return fmt.Errorf("evaluating host configurations: %w", err)
+	}
+
+	return nil
 }
 
 // Lint checks formatting and lint rules via treefmt.
@@ -281,7 +299,11 @@ func (m *Nix) Lint(ctx context.Context) error {
 	_, err := m.base().
 		WithExec([]string{"nix", "fmt", "--", "--fail-on-change"}).
 		Sync(ctx)
-	return err
+	if err != nil {
+		return fmt.Errorf("running treefmt: %w", err)
+	}
+
+	return nil
 }
 
 // Editorconfig validates files against .editorconfig rules.
@@ -293,7 +315,11 @@ func (m *Nix) Editorconfig(ctx context.Context) error {
 	_, err := m.base().
 		WithExec([]string{"nix", "run", "nixpkgs#editorconfig-checker", "--", "-no-color"}).
 		Sync(ctx)
-	return err
+	if err != nil {
+		return fmt.Errorf("running editorconfig-checker: %w", err)
+	}
+
+	return nil
 }
 
 // Format applies all auto-fixes via treefmt.
@@ -307,6 +333,7 @@ func (m *Nix) Format() *dagger.Changeset {
 	fixed := m.base().
 		WithExec([]string{"nix", "fmt"}).
 		Directory("/src")
+
 	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
 }
 
@@ -324,6 +351,7 @@ func (m *Nix) Sbom(ctx context.Context) (*dagger.File, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	config := fmt.Sprintf(`.#homeConfigurations."dev@%s".activationPackage`, sys)
 
 	out, err := base.
@@ -332,11 +360,14 @@ func (m *Nix) Sbom(ctx context.Context) (*dagger.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building home closure: %w", err)
 	}
+
 	storePath := strings.TrimSpace(out)
 
 	return base.
-		WithExec([]string{"nix", "run", sbomnixRef + "#sbomnix", "--",
-			storePath, "--cdx", "/tmp/sbom.cdx.json"}).
+		WithExec([]string{
+			"nix", "run", sbomnixRef + "#sbomnix", "--",
+			storePath, "--cdx", "/tmp/sbom.cdx.json",
+		}).
 		File("/tmp/sbom.cdx.json"), nil
 }
 
@@ -367,7 +398,9 @@ func (m *Nix) DependencySnapshot(
 	}
 
 	var cdx cdxBOM
-	if err := json.Unmarshal([]byte(sbomBytes), &cdx); err != nil {
+
+	err = json.Unmarshal([]byte(sbomBytes), &cdx)
+	if err != nil {
 		return nil, fmt.Errorf("parsing sbom: %w", err)
 	}
 
@@ -414,6 +447,7 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("running grype: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -435,10 +469,12 @@ func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
 	}
 
 	raw, err := ctr.
-		WithExec([]string{"grype", "--config", "/tmp/.grype.yaml",
+		WithExec([]string{
+			"grype", "--config", "/tmp/.grype.yaml",
 			"sbom:/tmp/sbom.cdx.json",
 			"--output", "sarif",
-			"--file", "/tmp/grype.sarif.json"},
+			"--file", "/tmp/grype.sarif.json",
+		},
 			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
 		File("/tmp/grype.sarif.json").
 		Contents(ctx)
@@ -448,10 +484,7 @@ func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
 
 	pkgNames := packageNamesFromSarif(raw)
 
-	locations, err := m.findPackageLocations(ctx, pkgNames)
-	if err != nil {
-		return nil, fmt.Errorf("finding package locations: %w", err)
-	}
+	locations := m.findPackageLocations(ctx, pkgNames)
 
 	fallbackLine, err := m.findNixpkgsLine(ctx)
 	if err != nil {
@@ -482,11 +515,14 @@ func packageNamesFromSarif(raw string) []string {
 			} `json:"results"`
 		} `json:"runs"`
 	}
-	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+
+	err := json.Unmarshal([]byte(raw), &doc)
+	if err != nil {
 		return nil
 	}
 
 	seen := make(map[string]bool)
+
 	var names []string
 	for _, run := range doc.Runs {
 		for _, r := range run.Results {
@@ -494,6 +530,7 @@ func packageNamesFromSarif(raw string) []string {
 			if m == nil {
 				continue
 			}
+
 			name := m[1]
 			if !seen[name] {
 				seen[name] = true
@@ -501,6 +538,7 @@ func packageNamesFromSarif(raw string) []string {
 			}
 		}
 	}
+
 	return names
 }
 
@@ -514,27 +552,31 @@ type sourceLocation struct {
 // and returns the first match as a source location. Only matches Nix
 // package reference patterns (pkgs.NAME, pkgs."NAME", or bare name on
 // its own line) to avoid false positives from attribute names.
-func (m *Nix) findPackageLocations(ctx context.Context, names []string) (map[string]sourceLocation, error) {
+//
+// It returns no location when the grep does not run. [Nix.VulnscanSarif]
+// then points each result at the nixpkgs pin in flake.lock.
+func (m *Nix) findPackageLocations(ctx context.Context, names []string) map[string]sourceLocation {
 	locations := make(map[string]sourceLocation)
 	if len(names) == 0 {
-		return locations, nil
+		return locations
 	}
 
 	var pkgPatterns, barePatterns []string
 	for _, name := range names {
-		pkgPatterns = append(pkgPatterns, fmt.Sprintf(`pkgs\.%s\b`, name))
-		pkgPatterns = append(pkgPatterns, fmt.Sprintf(`pkgs\."%s"`, name))
-		barePatterns = append(barePatterns, fmt.Sprintf(`^\s+%s\s*$`, regexp.QuoteMeta(name)))
+		pkgPatterns = append(pkgPatterns, `pkgs\.`+name+`\b`, `pkgs\."`+name+`"`)
+		barePatterns = append(barePatterns, `^\s+`+regexp.QuoteMeta(name)+`\s*$`)
 	}
-	allPatterns := append(pkgPatterns, barePatterns...)
-	pattern := strings.Join(allPatterns, "|")
+
+	pattern := strings.Join(slices.Concat(pkgPatterns, barePatterns), "|")
 
 	grepOut, err := m.base().
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("grep -rEn --include='*.nix' '%s' /src/home/ /src/hosts/ 2>/dev/null || true", pattern)}).
+		WithExec([]string{
+			"sh", "-c",
+			fmt.Sprintf("grep -rEn --include='*.nix' '%s' /src/home/ /src/hosts/ 2>/dev/null || true", pattern),
+		}).
 		Stdout(ctx)
 	if err != nil {
-		return locations, nil
+		return locations
 	}
 
 	nameSet := make(map[string]bool, len(names))
@@ -542,33 +584,37 @@ func (m *Nix) findPackageLocations(ctx context.Context, names []string) (map[str
 		nameSet[n] = true
 	}
 
-	for _, line := range strings.Split(grepOut, "\n") {
+	for line := range strings.SplitSeq(grepOut, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
+
 		parts := strings.SplitN(line, ":", 3)
 		if len(parts) < 3 {
 			continue
 		}
+
 		file := strings.TrimPrefix(parts[0], "/src/")
 		lineNum, err := strconv.Atoi(parts[1])
 		if err != nil {
 			continue
 		}
+
 		content := parts[2]
 
 		for name := range nameSet {
 			if _, ok := locations[name]; ok {
 				continue
 			}
+
 			if matchesPkgRef(content, name) {
 				locations[name] = sourceLocation{uri: file, line: lineNum}
 			}
 		}
 	}
 
-	return locations, nil
+	return locations
 }
 
 // matchesPkgRef reports whether a Nix source line contains a package
@@ -579,9 +625,11 @@ func matchesPkgRef(line, name string) bool {
 	if trimmed == name {
 		return true
 	}
+
 	if strings.Contains(line, `pkgs."`+name+`"`) {
 		return true
 	}
+
 	prefix := "pkgs." + name
 	idx := strings.Index(line, prefix)
 	if idx >= 0 {
@@ -589,11 +637,13 @@ func matchesPkgRef(line, name string) bool {
 		if end >= len(line) {
 			return true
 		}
+
 		next := line[end]
 		if !isNixIdentChar(next) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -608,58 +658,90 @@ func (m *Nix) findNixpkgsLine(ctx context.Context) (int, error) {
 		WithExec([]string{"sh", "-c", `grep -n '^    "nixpkgs": {' /src/flake.lock | head -1`}).
 		Stdout(ctx)
 	if err != nil {
-		return 1, err
+		return 1, fmt.Errorf("searching flake.lock: %w", err)
 	}
+
 	parts := strings.SplitN(strings.TrimSpace(out), ":", 2)
 	if len(parts) < 1 {
 		return 1, fmt.Errorf("nixpkgs not found in flake.lock")
 	}
+
 	n, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return 1, err
+		return 1, fmt.Errorf("parsing line number: %w", err)
 	}
+
 	return n, nil
+}
+
+// jsonObject returns v as a JSON object. It returns nil when v holds
+// another type, and each key of a nil object reads as nil.
+func jsonObject(v any) map[string]any {
+	object, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	return object
+}
+
+// jsonArray returns v as a JSON array. It returns nil when v holds
+// another type.
+func jsonArray(v any) []any {
+	array, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+
+	return array
 }
 
 // patchSarifLocations fills in artifact locations in SARIF results.
 // Results whose package has a source location point to that .nix file;
 // all others fall back to fallbackURI at fallbackLine.
-func patchSarifLocations(raw string, locations map[string]sourceLocation, fallbackURI string, fallbackLine int) (string, error) {
+func patchSarifLocations(
+	raw string,
+	locations map[string]sourceLocation,
+	fallbackURI string,
+	fallbackLine int,
+) (string, error) {
 	var doc map[string]any
-	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
-		return "", err
+
+	err := json.Unmarshal([]byte(raw), &doc)
+	if err != nil {
+		return "", fmt.Errorf("parsing sarif: %w", err)
 	}
 
-	runs, _ := doc["runs"].([]any)
-	for _, run := range runs {
-		runMap, _ := run.(map[string]any)
-		results, _ := runMap["results"].([]any)
-		for _, result := range results {
-			resultMap, _ := result.(map[string]any)
-			ruleID, _ := resultMap["ruleId"].(string)
+	for _, run := range jsonArray(doc["runs"]) {
+		for _, result := range jsonArray(jsonObject(run)["results"]) {
+			resultMap := jsonObject(result)
 
 			uri := fallbackURI
 			line := fallbackLine
-			if m := cveRuleIDRe.FindStringSubmatch(ruleID); m != nil {
-				if loc, ok := locations[m[1]]; ok {
-					uri = loc.uri
-					line = loc.line
+
+			if ruleID, ok := resultMap["ruleId"].(string); ok {
+				if m := cveRuleIDRe.FindStringSubmatch(ruleID); m != nil {
+					if loc, ok := locations[m[1]]; ok {
+						uri = loc.uri
+						line = loc.line
+					}
 				}
 			}
 
-			locs, _ := resultMap["locations"].([]any)
-			for _, loc := range locs {
-				locMap, _ := loc.(map[string]any)
-				phys, _ := locMap["physicalLocation"].(map[string]any)
+			for _, loc := range jsonArray(resultMap["locations"]) {
+				phys := jsonObject(jsonObject(loc)["physicalLocation"])
 				if phys == nil {
 					continue
 				}
-				art, _ := phys["artifactLocation"].(map[string]any)
+
+				art := jsonObject(phys["artifactLocation"])
 				if art == nil {
 					continue
 				}
+
 				art["uri"] = uri
-				region, _ := phys["region"].(map[string]any)
+
+				region := jsonObject(phys["region"])
 				if region != nil {
 					region["startLine"] = line
 					region["startColumn"] = 1
@@ -672,8 +754,9 @@ func patchSarifLocations(raw string, locations map[string]sourceLocation, fallba
 
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshaling sarif: %w", err)
 	}
+
 	return string(out), nil
 }
 
@@ -683,12 +766,22 @@ func (m *Nix) All(ctx context.Context) error {
 
 	eg.Go(func() error {
 		_, err := m.FlakeCheck().Sync(ctx)
-		return err
+		if err != nil {
+			return fmt.Errorf("checking the flake: %w", err)
+		}
+
+		return nil
 	})
 	eg.Go(func() error { return m.Build(ctx) })
 	eg.Go(func() error { return m.BuildHome(ctx) })
 	eg.Go(func() error { return m.Lint(ctx) })
 	eg.Go(func() error { return m.Editorconfig(ctx) })
+	eg.Go(func() error { return m.CheckLint(ctx) })
 
-	return eg.Wait()
+	err := eg.Wait()
+	if err != nil {
+		return fmt.Errorf("running all checks: %w", err)
+	}
+
+	return nil
 }
