@@ -1,8 +1,9 @@
 // Nix configuration validation toolchain
 //
-// Validates nix-darwin flake configuration through evaluation,
-// static analysis, and formatting checks in Linux containers
-// without needing to build darwin derivations.
+// Validates the nix-darwin, NixOS, and home-manager configurations of
+// the flake through evaluation, static analysis, and formatting checks.
+// The checks run in Linux containers and do not build a darwin
+// derivation.
 
 package main
 
@@ -20,7 +21,8 @@ import (
 	"dagger/nix/internal/dagger"
 )
 
-// Nix validates nix-darwin and home-manager flake configurations.
+// Nix validates the nix-darwin, NixOS, and home-manager configurations
+// of the flake.
 type Nix struct {
 	// Project source containing flake.nix
 	Source *dagger.Directory
@@ -78,11 +80,13 @@ func (m *Nix) base() *dagger.Container {
 		WithWorkdir("/src")
 }
 
-// FlakeCheck validates the flake schema and outputs.
+// FlakeCheck validates the schema and the outputs of the flake with
+// `nix flake check --no-build`. The command evaluates each output that
+// the flake defines per system, such as checks, only for the system of
+// the Dagger engine.
 //
-// nixosConfigurations are excluded because they may depend on host-specific
-// files (e.g., OrbStack's /etc/nixos/orbstack.nix) unavailable in CI.
-// NixOS configs are still validated by the Build check via nix eval.
+// The check skips the nixosConfigurations output of the flake, because
+// [Nix.Build] evaluates each NixOS configuration.
 // +check
 func (m *Nix) FlakeCheck(ctx context.Context) error {
 	wrapper := `{
@@ -102,45 +106,24 @@ func (m *Nix) FlakeCheck(ctx context.Context) error {
 	return nil
 }
 
-// hosts returns the list of darwinConfigurations defined in the flake.
-func (m *Nix) hosts(ctx context.Context) ([]string, error) {
+// configNames returns the name of each configuration that the flake
+// defines in output, such as darwinConfigurations.
+func (m *Nix) configNames(ctx context.Context, output string) ([]string, error) {
 	out, err := m.base().
 		WithExec([]string{
 			"nix", "eval", "--json",
-			".#darwinConfigurations", "--apply", "builtins.attrNames",
+			".#" + output, "--apply", "builtins.attrNames",
 		}).
 		Stdout(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing darwin configurations: %w", err)
+		return nil, fmt.Errorf("listing %s: %w", output, err)
 	}
 
 	var names []string
 
 	err = json.Unmarshal([]byte(out), &names)
 	if err != nil {
-		return nil, fmt.Errorf("parsing darwin configuration names: %w", err)
-	}
-
-	return names, nil
-}
-
-// homeConfigs returns the list of homeConfigurations defined in the flake.
-func (m *Nix) homeConfigs(ctx context.Context) ([]string, error) {
-	out, err := m.base().
-		WithExec([]string{
-			"nix", "eval", "--json",
-			".#homeConfigurations", "--apply", "builtins.attrNames",
-		}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing home configurations: %w", err)
-	}
-
-	var names []string
-
-	err = json.Unmarshal([]byte(out), &names)
-	if err != nil {
-		return nil, fmt.Errorf("parsing home configuration names: %w", err)
+		return nil, fmt.Errorf("parsing the names of %s: %w", output, err)
 	}
 
 	return names, nil
@@ -244,7 +227,7 @@ func (m *Nix) BuildHome(ctx context.Context) error {
 		return err
 	}
 
-	configs, err := m.homeConfigs(ctx)
+	configs, err := m.configNames(ctx, "homeConfigurations")
 	if err != nil {
 		return err
 	}
@@ -268,32 +251,48 @@ func (m *Nix) BuildHome(ctx context.Context) error {
 	return nil
 }
 
-// Build proves all host configurations evaluate without errors.
+// Build evaluates the system derivation of each darwin configuration
+// and of each NixOS configuration of the flake. It evaluates the
+// configurations for every system, whatever the system of the Dagger
+// engine is, and it does not build a derivation.
 // +check
 func (m *Nix) Build(ctx context.Context) error {
-	hosts, err := m.hosts(ctx)
-	if err != nil {
-		return err
+	// Each entry names a flake output that holds host configurations.
+	// drvPath is the attribute path, from a configuration of that output,
+	// of the store path of the derivation that builds the system.
+	outputs := []struct{ name, drvPath string }{
+		{name: "darwinConfigurations", drvPath: "system.drvPath"},
+		{name: "nixosConfigurations", drvPath: "config.system.build.toplevel.drvPath"},
+	}
+
+	var refs []string
+
+	for _, output := range outputs {
+		names, err := m.configNames(ctx, output.name)
+		if err != nil {
+			return err
+		}
+
+		for _, name := range names {
+			refs = append(refs, fmt.Sprintf(".#%s.%q.%s", output.name, name, output.drvPath))
+		}
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, host := range hosts {
+	for _, ref := range refs {
 		eg.Go(func() error {
 			_, err := m.base().
-				WithExec([]string{
-					"nix", "eval",
-					fmt.Sprintf(".#darwinConfigurations.%q.system", host),
-				}).
+				WithExec([]string{"nix", "eval", ref}).
 				Sync(ctx)
 			if err != nil {
-				return fmt.Errorf("host %s: %w", host, err)
+				return fmt.Errorf("%s: %w", ref, err)
 			}
 
 			return nil
 		})
 	}
 
-	err = eg.Wait()
+	err := eg.Wait()
 	if err != nil {
 		return fmt.Errorf("evaluating host configurations: %w", err)
 	}

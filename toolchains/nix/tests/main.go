@@ -28,6 +28,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	eg.Go(m.TestAggregates)
+	eg.Go(func() error { return m.TestBuild(ctx) })
 	eg.Go(func() error { return m.TestCheckLintRootModule(ctx) })
 	eg.Go(func() error { return m.TestCheckLintTestModule(ctx) })
 	eg.Go(func() error { return m.TestDependencySnapshot(ctx) })
@@ -100,6 +101,12 @@ const (
 	// one overlay, which is an integer. `nix flake check` rejects an
 	// overlay that is not a function.
 	badOverlayFlake = "{\n  outputs = _: { overlays.default = 1; };\n}\n"
+
+	// evaluatingExpr is a Nix expression that evaluates to a string.
+	evaluatingExpr = `"/nix/store/system.drv"`
+
+	// throwingExpr is a Nix expression that does not evaluate.
+	throwingExpr = `throw "broken configuration"`
 
 	// rootModulePath is the path, in the project source, of the root
 	// module of the nix toolchain.
@@ -180,6 +187,22 @@ func nixWithFlake(contents string) *dagger.Nix {
 	return dag.Nix(dagger.NixOpts{
 		Source: dag.Directory().WithNewFile("flake.nix", contents),
 	})
+}
+
+// hostsFlake returns a flake.nix file whose flake has no inputs, one
+// darwin configuration, and one NixOS configuration. Each configuration
+// holds only the attribute that [Nix.Build] evaluates, which is the
+// store path of the derivation of its system. darwin is the Nix
+// expression of that attribute in the darwin configuration, and nixos
+// is the Nix expression of that attribute in the NixOS configuration.
+func hostsFlake(darwin, nixos string) string {
+	return fmt.Sprintf(`{
+  outputs = _: {
+    darwinConfigurations.mac.system.drvPath = %s;
+    nixosConfigurations.vm.config.system.build.toplevel.drvPath = %s;
+  };
+}
+`, darwin, nixos)
 }
 
 // TestSourceToolchains verifies that the default source of [Nix] holds
@@ -409,6 +432,33 @@ func (m *Tests) TestFlakeCheck(ctx context.Context) error {
 	err = nixWithFlake(badOverlayFlake).FlakeCheck(ctx)
 	if err == nil {
 		return errors.New("flake check passed a flake whose overlay is not a function")
+	}
+
+	return nil
+}
+
+// TestBuild verifies that [Nix.Build] evaluates each darwin
+// configuration and each NixOS configuration of the flake. The test
+// checks flakes that have no inputs, so it does not evaluate the flake
+// of the repository. Build passes when both configurations of the flake
+// evaluate. It fails when the darwin configuration does not evaluate,
+// and it fails when the NixOS configuration does not evaluate.
+//
+// +check
+func (m *Tests) TestBuild(ctx context.Context) error {
+	err := nixWithFlake(hostsFlake(evaluatingExpr, evaluatingExpr)).Build(ctx)
+	if err != nil {
+		return fmt.Errorf("building a flake whose configurations evaluate: %w", err)
+	}
+
+	err = nixWithFlake(hostsFlake(throwingExpr, evaluatingExpr)).Build(ctx)
+	if err == nil {
+		return errors.New("build passed a flake whose darwin configuration does not evaluate")
+	}
+
+	err = nixWithFlake(hostsFlake(evaluatingExpr, throwingExpr)).Build(ctx)
+	if err == nil {
+		return errors.New("build passed a flake whose NixOS configuration does not evaluate")
 	}
 
 	return nil
