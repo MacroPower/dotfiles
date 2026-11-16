@@ -716,56 +716,96 @@ Named return values (`rerr`) are used with the deferred telemetry end to capture
 
 ## LLM Agents
 
-### String I/O
+Each recipe runs one conversation with the `LLM` type. [LLM Integration](architecture.md#llm-integration) in architecture.md covers the tools, the workspace, and the methods of the type.
+
+### Text reply
+
+`WithPromptFile` queues the contents of a file as the prompt, and `LastReply` returns the text of the reply:
 
 ```go
-func (m *MyModule) Summarize(ctx context.Context, text string) (string, error) {
-    env := dag.Env().
-        WithStringInput("text", text, "the text to summarize").
-        WithStringOutput("summary", "a concise summary")
-
-    return dag.LLM().
-        WithEnv(env).
-        WithPrompt("Summarize the following text: $text").
-        Env().
-        Output("summary").
-        AsString(ctx)
+// Summarize returns a summary of a document
+func (m *MyModule) Summarize(ctx context.Context, doc *dagger.File) (string, error) {
+    return core.NewLLM().
+        WithSystemPrompt("Summarize the document of the user in three sentences.").
+        WithPromptFile(doc).
+        Loop().
+        LastReply(ctx)
 }
 ```
 
-### Container I/O
+### Tools of the module
+
+This recipe needs a module on the Go runtime whose `engineVersion` is a 1.0 beta or a later version. `core.CurrentNode()` fails in a module with a generated entrypoint, and the generated bindings of a module at a lower `engineVersion` do not declare `WithTools` or `CurrentNode`. [Tools](architecture.md#tools) in architecture.md covers both limits. `GoProgram` binds the other functions of the module as tools. The model calls them until `main.go` builds, and `GoProgram` returns the file from the workspace that the tools changed:
 
 ```go
-func (m *MyModule) GoProgram(assignment string) *dagger.Container {
-    env := dag.Env().
-        WithStringInput("assignment", assignment, "the task to complete").
-        WithContainerInput("builder",
-            dag.Container().From("golang").WithWorkdir("/app"),
-            "a container for building Go code").
-        WithContainerOutput("completed", "the finished container")
+package main
 
+import (
+    "context"
+
+    "dagger/my-module/internal/dagger"
+)
+
+type MyModule struct{}
+
+// GoProgram writes main.go for an assignment and returns the file
+func (m *MyModule) GoProgram(assignment string, ws *dagger.Workspace) *dagger.File {
     return dag.LLM().
-        WithEnv(env).
-        WithPrompt("Complete the assignment: $assignment").
-        Env().
-        Output("completed").
-        AsContainer()
+        WithWorkspace(ws).
+        WithTools(dag.CurrentNode(), dagger.LLMWithToolsOpts{Except: []string{"goProgram"}}).
+        WithPrompt("Use the read, write, and build tools to complete the assignment. " +
+            "Do not stop until the code builds.\n\nAssignment: " + assignment).
+        Loop().
+        Workspace().
+        File("main.go")
+}
+
+// Read returns the contents of main.go
+func (m *MyModule) Read(ctx context.Context, ws *dagger.Workspace) (string, error) {
+    return ws.File("main.go").Contents(ctx)
+}
+
+// Write replaces the contents of main.go
+func (m *MyModule) Write(contents string, ws *dagger.Workspace) *dagger.Workspace {
+    return ws.WithNewFile("main.go", contents)
+}
+
+// Build compiles main.go with go build
+func (m *MyModule) Build(ctx context.Context, ws *dagger.Workspace) error {
+    _, err := dag.Container().
+        From("golang:1.22").
+        WithDirectory("/app", ws.Directory(".", dagger.WorkspaceDirectoryOpts{Include: []string{"main.go"}})).
+        WithWorkdir("/app").
+        WithExec([]string{"go", "mod", "init", "main"}).
+        WithExec([]string{"go", "build", "./..."}).
+        Sync(ctx)
+    return err
 }
 ```
 
-### Directory I/O
+Dagger fills the `ws` argument of each tool from the bound workspace, so the model passes only `contents`. `Write` returns a `*dagger.Workspace`, and that workspace replaces the bound workspace. When `Build` returns an error, the model reads the error, and the loop continues.
+
+### Tools of an MCP server
+
+This recipe runs in each layout. The model inspects the source through the tools of a language server that speaks the Model Context Protocol (MCP):
 
 ```go
-func (m *MyModule) ReviewCode(src *dagger.Directory) *dagger.Directory {
-    env := dag.Env().
-        WithDirectoryInput("source", src, "source code to review").
-        WithDirectoryOutput("reviewed", "the reviewed source code with fixes")
+// Explain answers a question about Go source code
+func (m *MyModule) Explain(ctx context.Context, source *dagger.Directory, question string) (string, error) {
+    mcpServer := core.NewContainer().
+        From("golang").
+        WithExec([]string{"go", "install", "golang.org/x/tools/gopls@latest"}).
+        WithExec([]string{"go", "install", "github.com/isaacphi/mcp-language-server@latest"}).
+        WithDirectory("/src", source).
+        WithWorkdir("/src").
+        AsService(dagger.ContainerAsServiceOpts{
+            Args: []string{"mcp-language-server", "--workspace", "/src", "--lsp", "gopls"},
+        })
 
-    return dag.LLM().
-        WithEnv(env).
-        WithPrompt("Review the source code and fix any issues").
-        Env().
-        Output("reviewed").
-        AsDirectory()
+    return core.NewLLM().
+        WithMCPServer("lsp", mcpServer).
+        WithPrompt(question).
+        Loop().
+        LastReply(ctx)
 }
 ```

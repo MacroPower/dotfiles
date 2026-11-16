@@ -753,4 +753,4 @@ Write the description of a module in the comment before the `package` clause. Da
 package main
 ```
 
-These comments appear in `dagger functions`, `dagger call --help`, and on daggerverse.dev. LLM integration depends on good documentation — when modules are attached to an LLM environment, function comments become tool descriptions that the LLM uses to decide which tools to call and how.
+These comments appear in `dagger functions`, `dagger call --help`, and on daggerverse.dev. LLM integration depends on these comments as well. When `WithTools` binds an object to an LLM, the comment of each function becomes the description of its tool. The model reads those descriptions to choose a tool and its arguments.

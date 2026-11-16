@@ -60,6 +60,7 @@ A module with a generated entrypoint has no `dag`. When its code calls `dag`, `d
 | `core.NewDirectory()` | `dag.Directory()` |
 | `core.NewCacheVolume("go-mod")` | `dag.CacheVolume("go-mod")` |
 | `core.NewCurrentModule()` | `dag.CurrentModule()` |
+| `core.NewLLM()` | `dag.LLM()` |
 | `core.Git(url)` | `dag.Git(url)` |
 | `core.HTTP(url)` | `dag.HTTP(url)` |
 | `core.SetSecret(name, value)` | `dag.SetSecret(name, value)` |
@@ -550,47 +551,58 @@ See [architecture.md](references/architecture.md) and [cookbook.md](references/c
 
 ## LLM Integration
 
-Dagger provides a native `LLM` type for building AI agents. Modules can use LLMs as tools, and LLMs can discover and call any Dagger Function. Function documentation is automatically provided to the LLM as tool descriptions.
+The `LLM` type holds one conversation with a large language model. To use the model, queue a prompt, run the model with `Loop()`, and read the reply. Dagger v1.0.0-beta.25 marks the LLM API as experimental.
 
 ```go
-func (m *MyModule) GoProgram(assignment string) *dagger.Container {
-    env := dag.Env().
-        WithStringInput("assignment", assignment, "the assignment to complete").
-        WithContainerInput("builder",
-            dag.Container().From("golang").WithWorkdir("/app"),
-            "a container to use for building Go code").
-        WithContainerOutput("completed", "the completed assignment in the Golang container")
-
-    work := dag.LLM().
-        WithEnv(env).
-        WithPrompt("You are an expert Go programmer. Your assignment is: $assignment")
-
-    return work.Env().Output("completed").AsContainer()
+// Summarize returns a summary of a text
+func (m *MyModule) Summarize(ctx context.Context, text string) (string, error) {
+    return core.NewLLM().
+        WithSystemPrompt("Summarize the text of the user in three sentences.").
+        WithPrompt(text).
+        Loop().
+        LastReply(ctx)
 }
 ```
 
+`WithPrompt` queues the prompt and does not call the model. `Loop()` sends the queued prompt and runs the model until the model ends its turn. Dagger sends the prompt text unchanged and does not replace a `$name` in it, so build the text in Go.
+
+The model acts only through the tools that the function gives it:
+
+- `WithTools(object)` makes each eligible function of one Dagger object a tool. The Go comment of the function becomes the description of the tool.
+- `WithMCPServer(name, service)` adds the tools of an external MCP server.
+- `WithWorkspace(ws)` binds the workspace that the tools read and change. After the loop, `Workspace()` returns that workspace with the changes.
+
+Modules on the Go runtime whose `engineVersion` is a 1.0 beta or a later version bind their own functions with `WithTools(dag.CurrentNode())`. With Go SDK v1.6.0, `core.CurrentNode()` fails in a module with a generated entrypoint. So choose the layout before you create a module that binds its own functions. [Tools](references/architecture.md#tools) in architecture.md covers the failure, and [Tool functions](references/architecture.md#tool-functions) covers the arguments and the return types of a tool function.
+
+Dagger serves `WithTools`, `WithWorkspace`, and `CurrentNode` only to a module that it loads at a 1.0 beta or a later version. The generated bindings of a module whose `engineVersion` is lower than 1.0, such as a `dagger.json` module of a 0.x project, do not declare these calls. So such a module fails to compile when it makes one of them, and it gives the model tools only through `WithMCPServer`. [LLM API methods](references/architecture.md#llm-api-methods) in architecture.md lists the changes that a raise of the `engineVersion` needs.
+
+Dagger v1.0.0-beta.25 does not declare an `Env` type. A module that calls `dag.Env()`, `WithEnv`, `Env().Output()`, `WithPromptVar`, or `History` fails to compile in each layout. [Removed API](references/architecture.md#removed-api) in architecture.md gives the replacement of each call.
+
 ### MCP integration
 
-Modules can connect to external MCP servers and expose themselves as MCP servers:
+`WithMCPServer` takes a `*dagger.Service` that runs an MCP server. Dagger starts the service and talks to the server over its standard input and output:
 
 ```go
-// Connect external MCP server to an LLM
-mcpServer := dag.Container().
+mcpServer := core.NewContainer().
     From("golang").
+    WithExec([]string{"go", "install", "golang.org/x/tools/gopls@latest"}).
     WithExec([]string{"go", "install", "github.com/isaacphi/mcp-language-server@latest"}).
+    WithDirectory("/src", source).
+    WithWorkdir("/src").
     AsService(dagger.ContainerAsServiceOpts{
-        Args: []string{"mcp-language-server", "--workspace", "/src"},
+        Args: []string{"mcp-language-server", "--workspace", "/src", "--lsp", "gopls"},
     })
 
-work := dag.LLM().
-    WithEnv(env).
+reply, err := core.NewLLM().
     WithMCPServer("lsp", mcpServer).
-    WithPrompt("your prompt")
+    WithPrompt("your prompt").
+    Loop().
+    LastReply(ctx)
 ```
 
-Modules with no required constructor arguments can also be exposed as MCP servers for tools like Claude Desktop or Cursor: `dagger -m <module> mcp`
+To expose a module as an MCP server to a tool such as Claude Desktop or Cursor, run `dagger -m <module> mcp`. The command skips each module whose constructor requires an argument other than a `*dagger.Workspace`. `dagger --help` does not list the command, and Dagger v1.0.0-beta.25 marks it as experimental.
 
-See [architecture.md](references/architecture.md) for the full LLM API.
+See [LLM Integration](references/architecture.md#llm-integration) in architecture.md for the tools, the workspace, and the methods of the `LLM` type.
 
 ## Testing Modules
 

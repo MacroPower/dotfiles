@@ -34,8 +34,8 @@ Before you copy an example, match its calls to the layout of your module. A modu
 | `CacheVolume` | Persistent filesystem cache | `core.NewCacheVolume("go-mod")` |
 | `GitRepository` | Git repo reference | `core.Git("https://github.com/...")` |
 | `Socket` | Unix/TCP socket | SSH auth sockets |
-| `LLM` | Large Language Model interface | `core.NewLLM()` |
-| `Env` | LLM environment with I/O | `dag.Env()` |
+| `LLM` | Conversation with a large language model | `core.NewLLM()` |
+| `Workspace` | Project that a function or an LLM reads and changes | Function args, and `dir.AsWorkspace()` in a module that Dagger loads at a 1.0 beta or a later version |
 | `Changeset` | File modifications to apply to source | `dir.Changes(baseDir)` |
 
 All types are immutable and content-addressed. Operations on them produce new instances rather than mutating state.
@@ -708,130 +708,160 @@ dagger lock update                              # refresh the pins in dagger.loc
 
 ## LLM Integration
 
-Dagger provides a native `LLM` type for building AI agents. Modules can attach functions as tools for the LLM, and configure structured inputs/outputs through environments.
+The `LLM` type holds one conversation with a large language model. To use the model, queue prompts, give the model tools, and run it until it ends its turn. Dagger v1.0.0-beta.25 marks the LLM API as experimental, and it does not declare an `Env` type. [Removed API](#removed-api) gives the replacement of each `Env` call.
 
-### Environment pattern
+### Conversation
 
-The `Env` type configures typed inputs and outputs for the LLM. Module functions attached through the environment become tools the LLM can call — their Go doc comments serve as tool descriptions.
+`core.NewLLM()` starts a conversation. Each `With*` method returns a new conversation and does not call the model. `Loop()` sends the queued prompt and runs the model until the model replies without a tool call:
 
 ```go
-func (m *MyModule) GoProgram(assignment string) *dagger.Container {
-    env := dag.Env().
-        WithStringInput("assignment", assignment, "the assignment to complete").
-        WithContainerInput("builder",
-            dag.Container().From("golang").WithWorkdir("/app"),
-            "a container to use for building Go code").
-        WithContainerOutput("completed", "the completed assignment in the Golang container")
-
-    work := dag.LLM().
-        WithEnv(env).
-        WithPrompt(`
-            You are an expert Go programmer with an assignment.
-            Create files in the default directory in $builder
-            Always build the code to make sure it is valid
-            Do not stop until your assignment is completed and the code builds
-            Your assignment is: $assignment
-        `)
-
-    return work.Env().Output("completed").AsContainer()
+// Summarize returns a summary of a text
+func (m *MyModule) Summarize(ctx context.Context, text string) (string, error) {
+    return core.NewLLM().
+        WithSystemPrompt("Summarize the text of the user in three sentences.").
+        WithPrompt(text).
+        Loop().
+        LastReply(ctx)
 }
 ```
 
-### Input/Output types
+Follow these rules in each conversation:
+
+- Call `Loop()` before you read a reply. For a conversation that the model never answered, `LastReply(ctx)` returns the text `(no reply)`.
+- Build the prompt text in Go. Dagger sends the text unchanged and does not replace a `$name` in it.
+- Name the model with `core.NewLLM(dagger.LLMOpts{Model: "claude-sonnet-4-5"})` or with `WithModel`. Without a name, the conversation takes the default model that the user configured.
+- Cap the loop with `Loop(dagger.LLMLoopOpts{MaxSteps: 20})`. The loop fails when the model has not ended its turn after that number of steps.
+- Do not write a retry loop for rate limits. Dagger retries a request that the provider rejects for a rate limit, with exponential backoff.
+
+The chain is lazy. The model runs when the function resolves a value of the conversation, such as `LastReply(ctx)`, or calls `Sync(ctx)`.
+
+### Tools
+
+The model acts only through tools. `WithTools(object)` makes each eligible function of one Dagger object a tool, and each further call of `WithTools` binds another object. Dagger keeps one bound object of each type, so a second object of the same type replaces the first. The name of the tool is the API name of the function. The Go comment of the function is the description that the model reads, so write that comment for the model.
+
+To bind the functions of the module itself, pass the object that received the current call. `dag.CurrentNode()` returns that object in a module on the Go runtime:
 
 ```go
-// String I/O
-dag.Env().
-    WithStringInput("name", value, "description").
-    WithStringOutput("result", "description")
-
-// Container I/O
-dag.Env().
-    WithContainerInput("builder", container, "description").
-    WithContainerOutput("result", "description")
-
-// Directory I/O
-dag.Env().
-    WithDirectoryInput("source", dir, "description").
-    WithDirectoryOutput("output", "description")
-
-// File I/O
-dag.Env().
-    WithFileInput("config", file, "description").
-    WithFileOutput("report", "description")
-
-// Custom object I/O (any module type)
-dag.Env().
-    WithCustomInput("tool", obj, "description").
-    WithCustomOutput("result", "description")
+// GoProgram writes main.go for an assignment and returns the file
+func (m *MyModule) GoProgram(assignment string, ws *dagger.Workspace) *dagger.File {
+    return dag.LLM().
+        WithWorkspace(ws).
+        WithTools(dag.CurrentNode(), dagger.LLMWithToolsOpts{Except: []string{"goProgram"}}).
+        WithPrompt("Use the read, write, and build tools to complete the assignment. " +
+            "Do not stop until the code builds.\n\nAssignment: " + assignment).
+        Loop().
+        Workspace().
+        File("main.go")
+}
 ```
 
-### Retrieving outputs
+`Except` lists the API names of the functions that do not become tools. Here it holds `goProgram`, the API name of `GoProgram`, so that the model cannot start the loop again. [LLM Agents](cookbook.md#llm-agents) in cookbook.md shows the `Read`, `Write`, and `Build` functions that become the tools of this example.
 
-```go
-llm := dag.LLM().WithEnv(env).WithPrompt("...")
+Only modules on the Go runtime can bind their own functions. Go SDK v1.6.0 runs each function of a module with a generated entrypoint in a process of its own. Dagger v1.0.0-beta.25 does not give that process a current function call, so `core.CurrentNode()` fails there with `no current function call`. [Layout settings](#layout-settings) covers how to create a module on the Go runtime. `WithMCPServer` gives the model tools in each layout.
 
-// String output
-result, err := llm.Env().Output("result").AsString(ctx)
+A module on the Go runtime that binds its own functions must also declare an `engineVersion` of a 1.0 beta or a later version. Dagger serves `CurrentNode` and `WithTools` only to a module that it loads at such a version, as [LLM API methods](#llm-api-methods) describes. So the generated bindings of a module at a 0.x `engineVersion` do not declare `dag.CurrentNode()` or `WithTools`. In such a module, raise the field as [dagger-module.toml](#dagger-moduletoml) describes before you bind the functions of the module.
 
-// Container output
-ctr := llm.Env().Output("result").AsContainer()
+### Tool functions
 
-// Directory output
-dir := llm.Env().Output("output").AsDirectory()
+Dagger makes a function a tool when the model can supply each required argument of the function. These rules cover the common argument types:
 
-// File output
-file := llm.Env().Output("report").AsFile()
-```
+- The model supplies each scalar argument and each list of scalars. The comment of the argument is its description.
+- Dagger fills each `*dagger.Workspace` argument from the bound workspace, and the model does not see the argument.
+- The model names a `*dagger.Container`, a `*dagger.Directory`, or a `*dagger.File` argument by an address, such as an image ref or an `https://` Git URL.
+- The model cannot name a `*dagger.Secret`, a `*dagger.Socket`, or an object of a module. So a function that requires one of them is not a tool.
+
+The return type of a tool function decides the effect of each call:
+
+| Return type | Effect of a call |
+| --- | --- |
+| The type of the bound object, such as `*MyModule` | The returned object replaces the bound object, so later calls run on it |
+| `*dagger.Workspace` | The returned workspace replaces the bound workspace |
+| `*dagger.Changeset` | Dagger applies the changes to the bound workspace |
+| A scalar or a list of scalars | The model reads the value |
+| Another object, such as `*dagger.Container` | Dagger evaluates the object, and the model reads the logs of the call |
+| Only `error` | The model reads the logs of the call, or `(done)` when the call does not log anything |
+
+When a tool function returns an error, the model reads the error, and the loop continues.
+
+### Workspace
+
+`WithWorkspace(ws)` binds the workspace that the tools read and change. Take the workspace as a `*dagger.Workspace` argument of the function that runs the loop. Dagger fills the argument from the workspace of a call that starts outside a module, as [Default path context](#default-path-context) describes. To bind a `*dagger.Directory` instead, convert it with `dir.AsWorkspace()`.
+
+The changes of the tools stay in the bound workspace and do not reach the files of the host. After the loop, `Workspace()` returns the workspace with those changes. Read a result from it with `File(path)` or `Directory(path)`. `Changes()` returns the changes as a `*dagger.Changeset`.
 
 ### LLM API methods
 
+This table lists the methods that most functions need. The generated bindings of the `LLM` type declare the other methods.
+
 | Method | Description |
 | --- | --- |
-| `dag.LLM()` | Create a new LLM instance |
-| `.WithModel(model)` | Set the model, such as `"claude-sonnet-4-6"` or `"gpt-4o"` |
-| `.WithPrompt(text)` | Append a prompt (variables use `$name` syntax) |
-| `.WithPromptFile(file)` | Append a prompt read from a `*dagger.File` |
-| `.WithPromptVar(name, value)` | Add a string variable to the LLM context |
-| `.WithEnv(env)` | Attach an environment with inputs/outputs |
-| `.WithMCPServer(name, service)` | Connect to an external MCP server (takes a name and `*dagger.Service`) |
-| `.LastReply(ctx)` | Get the last text reply |
-| `.History(ctx)` | Get conversation history |
-| `.Model(ctx)` | Get the current model name |
-| `.Env()` | Get the current environment |
+| `core.NewLLM()` | Start a conversation. `dagger.LLMOpts{Model: "..."}` names the model |
+| `.WithModel(model)` | Change the model for the rest of the conversation, such as `"claude-sonnet-4-5"` or `"gpt-5.4"` |
+| `.WithSystemPrompt(text)` | Add a system prompt |
+| `.WithPrompt(text)` | Queue a user prompt |
+| `.WithPromptFile(file)` | Queue the contents of a `*dagger.File` as a user prompt |
+| `.WithTools(object)` | Make the eligible functions of an object tools |
+| `.WithWorkspace(ws)` | Bind the workspace that the tools read and change |
+| `.WithMCPServer(name, service)` | Add the tools of the MCP server that a `*dagger.Service` runs |
+| `.Loop()` | Send the queued prompt, and run the model until it ends its turn |
+| `.Step()` | Send the queued prompt or the queued tool results one time, and run the tool calls of the reply |
+| `.LastReply(ctx)` | Get the text of the last reply of the model |
+| `.Transcript(ctx)` | Get the message history as plain text |
+| `.Messages(ctx)` | Get the message history as a `[]dagger.LLMMessage` |
+| `.Workspace()` | Get the bound workspace |
+| `.Tools(ctx)` | Get the documentation of the tools that the model sees |
+| `.Model(ctx)` | Get the name of the model |
+| `.TokenUsage()` | Get the token counts of the conversation |
+
+Dagger serves `WithTools`, `WithWorkspace`, `Workspace`, `Transcript`, `Messages`, `CurrentNode`, `Directory.AsWorkspace`, and the options of `Loop` only to a module that it loads at a 1.0 beta or a later version. Modules with a lower `engineVersion`, such as the `dagger.json` modules of a 0.x project, give the model tools only through `WithMCPServer`.
+
+To make these calls in a module at a 0.x `engineVersion`, raise the field as [dagger-module.toml](#dagger-moduletoml) describes. Before the raise, make each check function of the module return only `error`. A module that Dagger loads at a 1.0 beta or a later version fails to load when one of its check functions returns a value, as [Check functions](#check-functions) describes. The raise also removes the API that Dagger serves only before 1.0, such as `Workspace.Path` and the `MaxAPICalls` option of `LLMOpts`. So fix each call that the bindings of the new version do not declare.
 
 ### MCP integration
 
-Dagger supports the Model Context Protocol (MCP) in two directions:
+Dagger supports the Model Context Protocol (MCP) in two directions.
 
-**Expose modules as MCP servers** — Modules with no required constructor arguments can be exposed as MCP servers for tools like Claude Desktop, Cursor, or Goose:
-```shell
-dagger -m github.com/user/module mcp
-```
+To give a model the tools of an MCP server, run the server as a `*dagger.Service` and pass the service to `WithMCPServer`. Dagger starts the service and talks to the server over its standard input and output:
 
-**Connect to external MCP servers** — Attach MCP servers to an LLM as services:
 ```go
-mcpServer := dag.Container().
+mcpServer := core.NewContainer().
     From("golang").
     WithExec([]string{"go", "install", "golang.org/x/tools/gopls@latest"}).
     WithExec([]string{"go", "install", "github.com/isaacphi/mcp-language-server@latest"}).
+    WithDirectory("/src", source).
     WithWorkdir("/src").
     AsService(dagger.ContainerAsServiceOpts{
         Args: []string{"mcp-language-server", "--workspace", "/src", "--lsp", "gopls"},
     })
 
-work := dag.LLM().
-    WithEnv(env).
+reply, err := core.NewLLM().
     WithMCPServer("lsp", mcpServer).
-    WithPrompt("your prompt")
+    WithPrompt("your prompt").
+    Loop().
+    LastReply(ctx)
 ```
 
-### Key concepts
+To expose a module as an MCP server to a tool such as Claude Desktop, Cursor, or Goose, run `dagger mcp` with the module:
 
-- Module functions become LLM tools automatically — inline documentation serves as tool descriptions, so write clear function comments
-- The LLM runs an internal agent loop, calling tools and iterating until complete
-- Prompt variables use `$variablename` syntax
-- Rate limit detection with automatic retry and exponential backoff
+```shell
+dagger -m github.com/user/module mcp
+```
+
+The command skips each module whose constructor requires an argument other than a `*dagger.Workspace`. `dagger --help` does not list the command, and Dagger v1.0.0-beta.25 marks it as experimental.
+
+### Removed API
+
+Examples for Dagger 0.x make the calls of this table. Dagger v1.0.0-beta.25 does not serve them to a module of any `engineVersion`, so a module that makes one of them fails to compile.
+
+Dagger serves the replacements `WithTools`, `WithWorkspace`, `Workspace()`, `Transcript`, and `Messages` only to a module that it loads at a 1.0 beta or a later version. In a module at a 0.x `engineVersion`, replace the removed calls with `LastReply`, `WithMCPServer`, and prompt text that you build in Go. To make the other replacements, raise the `engineVersion` of the module first. [LLM API methods](#llm-api-methods) lists the changes that the raise needs.
+
+| Removed call | Replacement |
+| --- | --- |
+| `dag.Env()` and its `With*Input` methods | Put each value in the prompt text, or bind an object with `WithTools` and the project with `WithWorkspace` |
+| The `With*Output` methods and `llm.Env().Output(name)` | Read `LastReply(ctx)`, or read the files of `Workspace()` after the loop |
+| `llm.WithEnv(env)` | `WithTools(object)` and `WithWorkspace(ws)` |
+| `llm.WithPromptVar(name, value)` | Build the prompt text in Go |
+| `llm.History(ctx)` | `Transcript(ctx)` or `Messages(ctx)` |
 
 ---
 
