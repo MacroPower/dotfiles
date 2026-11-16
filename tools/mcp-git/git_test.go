@@ -24,22 +24,6 @@ func runGitCmds(t *testing.T, cmds [][]string) {
 	}
 }
 
-// initWorkClone clones bare into a fresh temp dir and configures a
-// test identity.
-func initWorkClone(t *testing.T, bare string) string {
-	t.Helper()
-
-	work := filepath.Join(t.TempDir(), "work")
-
-	runGitCmds(t, [][]string{
-		{"git", "clone", bare, work},
-		{"git", "-C", work, "config", "user.email", "test@test.com"},
-		{"git", "-C", work, "config", "user.name", "Test"},
-	})
-
-	return work
-}
-
 // gitOut returns the trimmed stdout of a git command, failing the
 // test on error.
 func gitOut(t *testing.T, args ...string) string {
@@ -50,13 +34,6 @@ func gitOut(t *testing.T, args ...string) string {
 	require.NoError(t, err, "git %v", args)
 
 	return strings.TrimSpace(string(out))
-}
-
-// currentBranch returns the checked-out branch of repo.
-func currentBranch(t *testing.T, repo string) string {
-	t.Helper()
-
-	return gitOut(t, "-C", repo, "symbolic-ref", "--short", "HEAD")
 }
 
 // writeHook installs an executable hook script in repo's default
@@ -119,22 +96,6 @@ func requireNotRun(t *testing.T, marker string) {
 
 	_, err := os.Stat(marker)
 	require.ErrorIs(t, err, os.ErrNotExist, "git must not run a command that the git config names")
-}
-
-// appendGitConfig appends text to the config file of the repository
-// at repo. Text reaches the keys that git config cannot write, such
-// as a hook with an empty name.
-func appendGitConfig(t *testing.T, repo, text string) {
-	t.Helper()
-
-	config := filepath.Join(gitOut(t, "-C", repo, "rev-parse", "--absolute-git-dir"), "config")
-
-	f, err := os.OpenFile(config, os.O_APPEND|os.O_WRONLY, 0o644)
-	require.NoError(t, err)
-
-	_, err = f.WriteString(text)
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
 }
 
 // commitFile writes content to name in repo and commits it.
@@ -552,7 +513,7 @@ func TestGitWorkTree(t *testing.T) {
 	// repository.
 	outside, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-	runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", outside}})
+	setWorkTree(t, work, outside)
 
 	got, err = gitWorkTree(t.Context(), work)
 	require.NoError(t, err)
@@ -580,11 +541,11 @@ func TestEnclosingGitDir(t *testing.T) {
 	require.NoError(t, os.Rename(head, head+".aside"))
 
 	missingRef := filepath.Join(t.TempDir(), "missing.git")
-	runGitCmds(t, [][]string{{"git", "init", "-q", "--bare", missingRef}})
+	initEmptyBare(t, missingRef)
 	linkHead(t, missingRef, "refs/heads/nope")
 
 	refsDir := filepath.Join(t.TempDir(), "dir.git")
-	runGitCmds(t, [][]string{{"git", "init", "-q", "--bare", refsDir}})
+	initEmptyBare(t, refsDir)
 	linkHead(t, refsDir, "refs/heads")
 
 	named := filepath.Join(t.TempDir(), ".git")
@@ -621,13 +582,13 @@ func TestEnclosingGitDir(t *testing.T) {
 func TestConfigValue(t *testing.T) {
 	t.Parallel()
 
-	repo := filepath.Join(t.TempDir(), "repo")
-	runGitCmds(t, [][]string{
-		{"git", "init", "-q", repo},
-		{"git", "-C", repo, "config", "mcp-git.name", "value"},
-		{"git", "-C", repo, "config", "mcp-git.switch", "yes"},
-		{"git", "-C", repo, "config", "branch.feat/x.merge", "refs/heads/feat/x"},
-	})
+	repo := initRepo(t, t.TempDir())
+
+	setConfig(t, repo,
+		"mcp-git.name", "value",
+		"mcp-git.switch", "yes",
+		"branch.feat/x.merge", "refs/heads/feat/x",
+	)
 
 	tests := map[string]struct {
 		key     string
@@ -1028,13 +989,14 @@ func lastEnv(env []string, name string) string {
 func TestConfigHooks(t *testing.T) {
 	t.Parallel()
 
-	// hook returns the git config commands that define the hook name
-	// for event in repo.
-	hook := func(repo, name, event string) [][]string {
-		return [][]string{
-			{"git", "-C", repo, "config", "hook." + name + ".command", "true"},
-			{"git", "-C", repo, "config", "hook." + name + ".event", event},
-		}
+	// hook defines the hook name for event in the git config of repo.
+	hook := func(t *testing.T, repo, name, event string) {
+		t.Helper()
+
+		setConfig(t, repo,
+			"hook."+name+".command", "true",
+			"hook."+name+".event", event,
+		)
 	}
 
 	tests := map[string]struct {
@@ -1049,7 +1011,7 @@ func TestConfigHooks(t *testing.T) {
 			setup: func(t *testing.T, work string) {
 				t.Helper()
 
-				runGitCmds(t, hook(work, "check", "pre-push"))
+				hook(t, work, "check", "pre-push")
 			},
 			want: []string{"check"},
 		},
@@ -1057,8 +1019,8 @@ func TestConfigHooks(t *testing.T) {
 			setup: func(t *testing.T, work string) {
 				t.Helper()
 
-				runGitCmds(t, hook(work, "lint", "pre-push"))
-				runGitCmds(t, hook(work, "check", "pre-push"))
+				hook(t, work, "lint", "pre-push")
+				hook(t, work, "check", "pre-push")
 			},
 			want: []string{"lint", "check"},
 		},
@@ -1066,17 +1028,15 @@ func TestConfigHooks(t *testing.T) {
 			setup: func(t *testing.T, work string) {
 				t.Helper()
 
-				runGitCmds(t, hook(work, "check", "pre-push"))
-				runGitCmds(t, [][]string{
-					{"git", "-C", work, "config", "hook.check.enabled", "false"},
-				})
+				hook(t, work, "check", "pre-push")
+				setConfig(t, work, "hook.check.enabled", "false")
 			},
 		},
 		"hook for another event": {
 			setup: func(t *testing.T, work string) {
 				t.Helper()
 
-				runGitCmds(t, hook(work, "check", "pre-commit"))
+				hook(t, work, "check", "pre-commit")
 			},
 		},
 		// hookFile reports the hook file.
@@ -1173,9 +1133,7 @@ func TestHookFile(t *testing.T) {
 
 				// The default hooks directory must lose to hooksPath.
 				writeHook(t, work, "pre-push", script)
-				runGitCmds(t, [][]string{
-					{"git", "-C", work, "config", "core.hooksPath", ".husky"},
-				})
+				setConfig(t, work, "core.hooksPath", ".husky")
 
 				return work, writeHookIn(t, filepath.Join(work, ".husky"), "pre-push", script)
 			},
@@ -1185,9 +1143,7 @@ func TestHookFile(t *testing.T) {
 				t.Helper()
 
 				writeHook(t, work, "pre-push", script)
-				runGitCmds(t, [][]string{
-					{"git", "-C", work, "config", "core.hooksPath", os.DevNull},
-				})
+				setConfig(t, work, "core.hooksPath", os.DevNull)
 
 				return work, ""
 			},
@@ -1295,9 +1251,7 @@ func TestRunRemoteDeniedRepoPath(t *testing.T) {
 	bare := initBareRepo(t)
 
 	inside := filepath.Join(allowDir, "repo")
-	runGitCmds(t, [][]string{
-		{"git", "clone", bare, inside},
-	})
+	copyCloneTo(t, baseRepos(t).work, inside, bare)
 
 	// A gitdir file outside the allow dirs pointing at an allowed
 	// git directory must still be denied: git -C would mutate the
@@ -1445,9 +1399,9 @@ func TestGitEnvPreservesEmptyConfigCommands(t *testing.T) { //nolint:paralleltes
 
 // setConfigFileEnv points GIT_CONFIG at a new file that holds text,
 // for the rest of the test. A git config command without a file
-// option then reads and writes only that file, and so do the git
-// config commands of the helpers. A test therefore calls
-// setConfigFileEnv after it creates and configures its repositories.
+// option then reads and writes only that file, and so does each git
+// config command that a test runs itself. A test therefore calls
+// setConfigFileEnv after it runs those commands.
 func setConfigFileEnv(t *testing.T, text string) {
 	t.Helper()
 
@@ -1551,12 +1505,9 @@ func TestGitEnvRemovesRepositoryVariables(t *testing.T) { //nolint:paralleltest 
 // still read the config of the repository, which the git commands of
 // the server read. It must not read the file that the variable names.
 func TestConfigValueSkipsConfigFileVariable(t *testing.T) { //nolint:paralleltest // t.Setenv
-	repo := filepath.Join(t.TempDir(), "repo")
-	runGitCmds(t, [][]string{
-		{"git", "init", "-q", repo},
-		{"git", "-C", repo, "config", "mcp-git.name", "value"},
-	})
+	repo := initRepo(t, t.TempDir())
 
+	setConfig(t, repo, "mcp-git.name", "value")
 	setConfigFileEnv(t, "[mcp-git]\n\tname = other\n\textra = other\n")
 
 	got, err := configValue(t.Context(), repo, "mcp-git.name")

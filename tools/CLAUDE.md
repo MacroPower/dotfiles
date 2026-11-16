@@ -32,6 +32,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with to
 - Use `require.ErrorIs` for sentinel error checking.
 - Use `require.ErrorAs` for error type extraction.
 
+## mcp-git Tests
+
+Keep the count of git processes low when you add a test to `mcp-git`. Process starts take most of the run time of the suite. When every test case built its repositories with git, the suite ran for more than ten minutes on a Mac that scans each new process. The Nix build of the package then failed.
+
+- Take each repository from a helper of `mcp-git/fixture_test.go`, such as `initRepos`, `initFeatureRepos`, or `initSubmoduleRepos`. Each helper copies a template that the test binary builds one time. When no helper fits, add a template to that file, and add its helper to `TestFixturesStartNoGit`.
+- Write the git config of a repository with `setConfig`, `appendGitConfig`, `setOriginURL`, and `unsetOriginURL`. Do not run `git config` in the setup of a test.
+- Give the remote of a clone a later commit with `pushRemoteCommit`. Do not commit and push from a second clone.
+- Each call of a tool starts several git processes. Cover each value of an input with a test of the function that reads the value. When one call of a tool can show several values, such as every config key that the tool refuses, set the values in one case.
+
+To count the git processes of one run, put a `git` script that records each start first on `PATH`:
+
+```sh
+dir=$(mktemp -d)
+mkdir -p "$dir/shim"
+printf '#!/bin/sh\necho x >> "$GITCOUNT_FILE"\nexec %s "$@"\n' "$(command -v git)" > "$dir/shim/git"
+chmod +x "$dir/shim/git"
+cd tools/mcp-git
+: > "$dir/count"
+GITCOUNT_FILE="$dir/count" PATH="$dir/shim:$PATH" go test -count=1 ./...
+wc -l < "$dir/count"
+```
+
+The count was about 2,700 at the commit that added this section.
+
 ## mcp-destiny Game Data
 
 Destiny 2 is frozen, so the game data that `mcp-destiny` vendors does not go stale. Bungie shipped its final major patch, Update 9.7.0, on 2026-06-09. Bungie has shipped only maintenance hotfixes since that patch, and the last hotfix is Update 9.7.0.6 of 2026-10-20. Game data such as perks, weapon frames, armor archetypes, and stat formulas stays as that hotfix left it.

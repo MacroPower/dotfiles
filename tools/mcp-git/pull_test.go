@@ -95,12 +95,7 @@ func TestHandlePullValidation(t *testing.T) {
 func TestHandlePull(t *testing.T) {
 	t.Parallel()
 
-	bare := initBareRepo(t)
-	a := initWorkClone(t, bare)
-	b := initWorkClone(t, bare)
-
-	commitFile(t, b, "new.txt", "fresh", "add new file")
-	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
+	_, a := initRepos(t, true, false)
 
 	h := &handler{allowFileURLs: true}
 
@@ -109,21 +104,15 @@ func TestHandlePull(t *testing.T) {
 	require.False(t, result.IsError, resultText(t, result))
 	assert.Contains(t, resultText(t, result), "Pulled from origin")
 
-	content, readErr := os.ReadFile(filepath.Join(a, "new.txt"))
+	content, readErr := os.ReadFile(filepath.Join(a, remoteFile))
 	require.NoError(t, readErr, "pull should update the working tree")
-	assert.Equal(t, "fresh", string(content))
+	assert.Equal(t, "remote", string(content))
 }
 
 func TestHandlePullFFOnlyRejectsDivergence(t *testing.T) {
 	t.Parallel()
 
-	bare := initBareRepo(t)
-	a := initWorkClone(t, bare)
-	b := initWorkClone(t, bare)
-
-	commitFile(t, a, "local.txt", "local", "local commit")
-	commitFile(t, b, "remote.txt", "remote", "remote commit")
-	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
+	_, a := initRepos(t, true, true)
 
 	h := &handler{allowFileURLs: true}
 
@@ -136,13 +125,7 @@ func TestHandlePullFFOnlyRejectsDivergence(t *testing.T) {
 func TestHandlePullRebase(t *testing.T) {
 	t.Parallel()
 
-	bare := initBareRepo(t)
-	a := initWorkClone(t, bare)
-	b := initWorkClone(t, bare)
-
-	commitFile(t, a, "local.txt", "local", "local commit")
-	commitFile(t, b, "remote.txt", "remote", "remote commit")
-	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
+	_, a := initRepos(t, true, true)
 
 	h := &handler{allowFileURLs: true}
 
@@ -153,34 +136,15 @@ func TestHandlePullRebase(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.IsError, resultText(t, result))
 
-	_, statErr := os.Stat(filepath.Join(a, "local.txt"))
+	_, statErr := os.Stat(filepath.Join(a, localFile))
 	require.NoError(t, statErr)
 
-	_, statErr = os.Stat(filepath.Join(a, "remote.txt"))
+	_, statErr = os.Stat(filepath.Join(a, remoteFile))
 	require.NoError(t, statErr)
 
 	// The local commit is replayed on top of the remote one.
-	assert.Equal(t, "local commit",
-		gitOut(t, "-C", a, "log", "-1", "--format=%s"))
-	assert.Equal(t, "remote commit",
-		gitOut(t, "-C", a, "log", "-1", "--format=%s", "HEAD~1"))
-}
-
-// initRebaseConflict returns a clone whose rebase pull conflicts. The
-// clone and its remote each hold a commit of their own that edits
-// README, the file that [initBareRepo] commits.
-func initRebaseConflict(t *testing.T) string {
-	t.Helper()
-
-	bare := initBareRepo(t)
-	a := initWorkClone(t, bare)
-	b := initWorkClone(t, bare)
-
-	commitFile(t, a, "README", "local edit", "local edit")
-	commitFile(t, b, "README", "remote edit", "remote edit")
-	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
-
-	return a
+	assert.Equal(t, "local commit\nremote commit",
+		gitOut(t, "-C", a, "log", "-2", "--format=%s"))
 }
 
 // rebaseDir returns the absolute path of the directory where git keeps
@@ -252,12 +216,7 @@ func TestHandlePullRebaseConflictAborts(t *testing.T) {
 func TestHandlePullSkipsHooks(t *testing.T) {
 	t.Parallel()
 
-	bare := initBareRepo(t)
-	a := initWorkClone(t, bare)
-	b := initWorkClone(t, bare)
-
-	commitFile(t, b, "new.txt", "fresh", "add new file")
-	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
+	_, a := initRepos(t, true, false)
 
 	// Hooks execute outside the caller's sandbox, so the pull tool
 	// must never run them. post-merge fires on a plain fast-forward
@@ -337,22 +296,11 @@ func TestHandlePullSkipsSubmodules(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			s := initSubmoduleRepos(t)
-			subBranch := advanceSubmodule(t, s)
-
 			// The hook of the submodule fires when git updates a ref
 			// of the submodule or checks out a commit in it.
-			runGitCmds(t, [][]string{
-				{"git", "-C", s.sub, "config", "--add", "hook.check.event", "reference-transaction"},
-				{"git", "-C", s.sub, "config", "--add", "hook.check.event", "post-checkout"},
-			})
+			s := initAdvancedSubmoduleRepos(t, "pre-push", "reference-transaction", "post-checkout")
 
-			if tt.config != nil {
-				runGitCmds(t, [][]string{slices.Concat([]string{"git", "-C", s.work, "config"}, tt.config)})
-			}
-
-			before := gitOut(t, "-C", s.sub, "rev-parse", "origin/"+subBranch)
-			head := gitOut(t, "-C", s.sub, "rev-parse", "HEAD")
+			setConfig(t, s.work, tt.config...)
 
 			h := &handler{allowFileURLs: true}
 
@@ -360,14 +308,15 @@ func TestHandlePullSkipsSubmodules(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, result.IsError, resultText(t, result))
 
+			assert.Equal(t, s.bareHead, gitOut(t, "-C", s.work, "rev-parse", "HEAD"))
+
+			// The remote-tracking branch of the submodule and its
+			// checked-out commit both stay at the commit of the setup.
 			assert.Equal(t,
-				gitOut(t, "-C", s.bare, "rev-parse", currentBranch(t, s.work)),
-				gitOut(t, "-C", s.work, "rev-parse", "HEAD"),
+				s.subHead+"\n"+s.subHead,
+				gitOut(t, "-C", s.sub, "rev-parse", "origin/"+defaultBranch(t), "HEAD"),
+				"git_pull must not fetch or update a submodule",
 			)
-			assert.Equal(t, before, gitOut(t, "-C", s.sub, "rev-parse", "origin/"+subBranch),
-				"git_pull must not fetch a submodule")
-			assert.Equal(t, head, gitOut(t, "-C", s.sub, "rev-parse", "HEAD"),
-				"git_pull must not update a submodule")
 
 			_, statErr := os.Stat(s.marker)
 			require.ErrorIs(t, statErr, os.ErrNotExist,
@@ -416,15 +365,10 @@ func TestHandlePullWorkTrees(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			bare := initBareRepo(t)
-			work := initWorkClone(t, bare)
-			other := initWorkClone(t, bare)
-			branch := currentBranch(t, work)
+			_, work := initRepos(t, true, false)
+			branch := defaultBranch(t)
 
 			repo, root := tt.setup(t, work)
-
-			commitFile(t, other, "new.txt", "fresh", "add new file")
-			runGitCmds(t, [][]string{{"git", "-C", other, "push"}})
 
 			h := &handler{
 				allowDirs:     mustResolveAllowDirs(t, filepath.Dir(work)),
@@ -435,7 +379,7 @@ func TestHandlePullWorkTrees(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, result.IsError, resultText(t, result))
 
-			assert.FileExists(t, filepath.Join(root, "new.txt"))
+			assert.FileExists(t, filepath.Join(root, remoteFile))
 		})
 	}
 }
@@ -446,8 +390,8 @@ func TestHandlePullWorkTrees(t *testing.T) {
 func TestHandlePullInSubmodule(t *testing.T) {
 	t.Parallel()
 
-	s := initSubmoduleRepos(t)
-	branch := advanceSubmodule(t, s)
+	s := initAdvancedSubmoduleRepos(t)
+	branch := defaultBranch(t)
 
 	require.NotEmpty(t, gitOut(t, "-C", s.sub, "config", "core.worktree"))
 

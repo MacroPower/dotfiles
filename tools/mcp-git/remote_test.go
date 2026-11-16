@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,9 +36,11 @@ type remoteTool struct {
 	// call runs the tool on the repository at repo.
 	call func(ctx context.Context, h *handler, repo string) (*mcp.CallToolResult, any, error)
 
-	// landed returns the two commits that are equal after the call
-	// did its work.
-	landed func(t *testing.T, bare, work, branch string) (got, want string)
+	// landed returns a repository and a revision of it. The revision
+	// names the commit that the call brings only after the call did
+	// its work. That commit is the remote commit for a tool with
+	// upstream set, and the local commit for every other tool.
+	landed func(bare, work, branch string) (repo, rev string)
 }
 
 // remoteTools returns the calls that the tests of this file run.
@@ -50,11 +53,7 @@ func remoteTools() map[string]remoteTool {
 			call: func(ctx context.Context, h *handler, repo string) (*mcp.CallToolResult, any, error) {
 				return h.handleFetch(ctx, nil, FetchInput{Repo: repo})
 			},
-			landed: func(t *testing.T, bare, work, branch string) (string, string) {
-				t.Helper()
-
-				return gitOut(t, "-C", work, "rev-parse", "origin/"+branch), gitOut(t, "-C", bare, "rev-parse", branch)
-			},
+			landed: func(_, work, branch string) (string, string) { return work, "origin/" + branch },
 		},
 		"pull": {
 			upstream: true,
@@ -67,11 +66,7 @@ func remoteTools() map[string]remoteTool {
 			call: func(ctx context.Context, h *handler, repo string) (*mcp.CallToolResult, any, error) {
 				return h.handlePull(ctx, nil, PullInput{Repo: repo})
 			},
-			landed: func(t *testing.T, bare, work, branch string) (string, string) {
-				t.Helper()
-
-				return gitOut(t, "-C", work, "rev-parse", "HEAD"), gitOut(t, "-C", bare, "rev-parse", branch)
-			},
+			landed: func(_, work, _ string) (string, string) { return work, "HEAD" },
 		},
 		"pull with rebase": {
 			upstream: true,
@@ -88,11 +83,7 @@ func remoteTools() map[string]remoteTool {
 			},
 			// The rebase puts the local commit on top of the commit of
 			// the remote.
-			landed: func(t *testing.T, bare, work, branch string) (string, string) {
-				t.Helper()
-
-				return gitOut(t, "-C", work, "rev-parse", "HEAD~1"), gitOut(t, "-C", bare, "rev-parse", branch)
-			},
+			landed: func(_, work, _ string) (string, string) { return work, "HEAD~1" },
 		},
 		"push": {
 			local:   true,
@@ -107,35 +98,34 @@ func remoteTools() map[string]remoteTool {
 			call: func(ctx context.Context, h *handler, repo string) (*mcp.CallToolResult, any, error) {
 				return h.handlePush(ctx, nil, PushInput{Repo: repo})
 			},
-			landed: func(t *testing.T, bare, work, branch string) (string, string) {
-				t.Helper()
-
-				return gitOut(t, "-C", bare, "rev-parse", branch), gitOut(t, "-C", work, "rev-parse", "HEAD")
-			},
+			landed: func(bare, _, branch string) (string, string) { return bare, branch },
 		},
 	}
 }
 
-// repos creates a bare repository and a clone of it, with the commits
-// that the tool needs. It returns the path of each.
+// repos returns a bare repository and a clone of it, with the commits
+// that the tool needs, as [initRepos] creates them.
 func (rt remoteTool) repos(t *testing.T) (string, string) {
 	t.Helper()
 
-	bare := initBareRepo(t)
-	work := initWorkClone(t, bare)
+	return initRepos(t, rt.upstream, rt.local)
+}
 
+// landedCommits returns the commit that the call of the tool brings,
+// and the commit that the revision of landed names.
+func (rt remoteTool) landedCommits(t *testing.T, bare, work string) (string, string) {
+	t.Helper()
+
+	tm := repos(t)
+
+	want := tm.localCommit
 	if rt.upstream {
-		other := initWorkClone(t, bare)
-
-		commitFile(t, other, "remote.txt", "remote", "remote commit")
-		runGitCmds(t, [][]string{{"git", "-C", other, "push", "-q"}})
+		want = tm.remoteCommit
 	}
 
-	if rt.local {
-		commitFile(t, work, "local.txt", "local", "local commit")
-	}
+	repo, rev := rt.landed(bare, work, tm.branch)
 
-	return bare, work
+	return want, gitOut(t, "-C", repo, "rev-parse", rev)
 }
 
 // requireLanded fails the test when the call of the tool did not do
@@ -143,7 +133,7 @@ func (rt remoteTool) repos(t *testing.T) (string, string) {
 func (rt remoteTool) requireLanded(t *testing.T, bare, work string) {
 	t.Helper()
 
-	got, want := rt.landed(t, bare, work, currentBranch(t, work))
+	want, got := rt.landedCommits(t, bare, work)
 	require.Equal(t, want, got, "the tool must do its work")
 }
 
@@ -152,7 +142,7 @@ func (rt remoteTool) requireLanded(t *testing.T, bare, work string) {
 func (rt remoteTool) requireNotLanded(t *testing.T, bare, work string) {
 	t.Helper()
 
-	got, want := rt.landed(t, bare, work, currentBranch(t, work))
+	want, got := rt.landedCommits(t, bare, work)
 	require.NotEqual(t, want, got, "the tool must not do its work")
 }
 
@@ -207,7 +197,7 @@ func hookConfig(script string, names ...string) string {
 	var text strings.Builder
 
 	for _, name := range names {
-		text.WriteString("[hook \"" + name + "\"]\n\tcommand = " + script + "\n")
+		text.WriteString("[hook " + configQuote(name) + "]\n\tcommand = " + configQuote(script) + "\n")
 
 		for _, event := range hookEvents {
 			text.WriteString("\tevent = " + event + "\n")
@@ -222,43 +212,51 @@ func hookConfig(script string, names ...string) string {
 func TestRemoteToolsSkipConfigHooks(t *testing.T) {
 	t.Parallel()
 
-	// configs maps the name of a case to a function that returns the
-	// git config text of the case. Each hook runs script.
-	configs := map[string]func(script string) string{
-		"plain name":          func(script string) string { return hookConfig(script, "check") },
-		"name with a dot":     func(script string) string { return hookConfig(script, "dotted.name") },
-		"name with a space":   func(script string) string { return hookConfig(script, "spaced name") },
-		"name with an equals": func(script string) string { return hookConfig(script, "equals=sign") },
-		"name in upper case":  func(script string) string { return hookConfig(script, "UPPER") },
-		"empty name":          func(script string) string { return hookConfig(script, "") },
-		"more than one hook":  func(script string) string { return hookConfig(script, "check", "lint") },
-		// git has a switch that disables every hook of one event. The
-		// switch stops working when the config gives a command to a
-		// hook with the name of the event. The tools therefore do not
-		// use the switch.
-		"hook with the name of an event": func(script string) string {
-			return "[hook \"reference-transaction\"]\n\tcommand = " + script + "\n" + hookConfig(script, "check")
-		},
-	}
+	// names holds a hook name of each form that the git config allows.
+	// One config defines them all, and each hook has a marker of its
+	// own, so a failure names the hook that ran.
+	names := []string{"check", "dotted.name", "spaced name", "equals=sign", "UPPER", "", "lint"}
+
+	// git has a switch that disables every hook of one event. The
+	// switch stops working when the config gives a command to a hook
+	// with the name of the event. The tools therefore do not use the
+	// switch.
+	const eventName = "reference-transaction"
 
 	for toolName, rt := range remoteTools() {
-		for name, config := range configs {
-			t.Run(toolName+"/"+name, func(t *testing.T) {
-				t.Parallel()
+		t.Run(toolName+"/hooks in the git config", func(t *testing.T) {
+			t.Parallel()
 
-				bare, work := rt.repos(t)
+			bare, work := rt.repos(t)
+			markers := map[string]string{}
+
+			var config strings.Builder
+
+			for _, name := range names {
 				script, marker := markerScript(t)
 
-				appendGitConfig(t, work, config(script))
+				markers[name] = marker
 
-				result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
-				require.NoError(t, err)
-				require.False(t, result.IsError, resultText(t, result))
+				config.WriteString(hookConfig(script, name))
+			}
 
-				requireNotRun(t, marker)
-				rt.requireLanded(t, bare, work)
-			})
-		}
+			script, marker := markerScript(t)
+
+			markers[eventName] = marker
+
+			config.WriteString("[hook " + configQuote(eventName) + "]\n\tcommand = " + configQuote(script) + "\n")
+			appendGitConfig(t, work, config.String())
+
+			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+			require.NoError(t, err)
+
+			for name, marker := range markers {
+				assert.NoFileExists(t, marker, "git must not run the hook %q of the git config", name)
+			}
+
+			require.False(t, result.IsError, resultText(t, result))
+			rt.requireLanded(t, bare, work)
+		})
 
 		t.Run(toolName+"/hook files", func(t *testing.T) {
 			t.Parallel()
@@ -282,107 +280,123 @@ func TestRemoteToolsSkipConfigHooks(t *testing.T) {
 
 // git options turn off each command that the git config names under a
 // fixed key. A tool therefore does its work and never runs the command.
+// One config sets every key, and each command has a marker of its own.
 func TestRemoteToolsIgnoreConfigCommands(t *testing.T) {
 	t.Parallel()
 
-	configs := map[string]func(t *testing.T, work, script string){
-		// git runs the hook when it reads the index.
-		"core.fsmonitor": func(t *testing.T, work, script string) {
-			t.Helper()
+	for toolName, rt := range remoteTools() {
+		t.Run(toolName, func(t *testing.T) {
+			t.Parallel()
 
-			runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.fsmonitor", script}})
-		},
-		// A fetch runs the command for each alternate object store.
-		"core.alternateRefsCommand": func(t *testing.T, work, script string) {
-			t.Helper()
+			bare, work := rt.repos(t)
+
+			// git runs the hook of core.fsmonitor when it reads the
+			// index. A fetch runs core.alternateRefsCommand for each
+			// alternate object store.
+			fsmonitor, fsmonitorRan := markerScript(t)
+			alternateRefs, alternateRefsRan := markerScript(t)
 
 			alternate := filepath.Join(t.TempDir(), "alternate.git")
-			runGitCmds(t, [][]string{
-				{"git", "init", "-q", "--bare", alternate},
-				{"git", "-C", work, "config", "core.alternateRefsCommand", script},
-			})
+			initEmptyBare(t, alternate)
+
+			setConfig(t, work,
+				"core.fsmonitor", fsmonitor,
+				"core.alternateRefsCommand", alternateRefs,
+			)
 			require.NoError(t, os.WriteFile(
 				filepath.Join(work, ".git", "objects", "info", "alternates"),
 				[]byte(filepath.Join(alternate, "objects")+"\n"),
 				0o644,
 			))
-		},
-	}
 
-	for toolName, rt := range remoteTools() {
-		for name, setup := range configs {
-			t.Run(toolName+"/"+name, func(t *testing.T) {
-				t.Parallel()
+			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+			require.NoError(t, err)
 
-				bare, work := rt.repos(t)
-				script, marker := markerScript(t)
+			assert.NoFileExists(t, fsmonitorRan, "git must not run the command of core.fsmonitor")
+			assert.NoFileExists(t, alternateRefsRan, "git must not run the command of core.alternateRefsCommand")
 
-				setup(t, work, script)
-
-				result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
-				require.NoError(t, err)
-				require.False(t, result.IsError, resultText(t, result))
-
-				requireNotRun(t, marker)
-				rt.requireLanded(t, bare, work)
-			})
-		}
+			require.False(t, result.IsError, resultText(t, result))
+			rt.requireLanded(t, bare, work)
+		})
 	}
 }
 
 // git options cannot override these keys, so a tool refuses the
 // repository when its config sets one that the tool reads. The keys
 // name a command, or they change how git connects to a remote.
+//
+// The error of a refusal names every key that the tool refuses. One
+// config therefore sets all the keys of a case, and the test compares
+// the keys that the error names.
 func TestRemoteToolsRefuseConfigKeys(t *testing.T) {
 	t.Parallel()
 
-	keys := map[string]struct {
-		// worktree is set for a key that only a tool that updates
-		// the working tree reads.
-		worktree bool
+	// remoteKeys holds the keys that every tool reads.
+	remoteKeys := []string{
+		"credential.helper",
+		"credential.https://example.invalid.helper",
+		"remote.origin.uploadpack",
+		"remote.other.receivepack",
+		"http.proxy",
+		"http.https://example.invalid/.proxy",
+		"http.sslverify",
+		"http.https://example.invalid/.sslverify",
+		"http.sslcainfo",
+		"http.curloptresolve",
+		"http.cookiefile",
+		"remote.origin.proxy",
+		"remote.other.proxyauthmethod",
+	}
+
+	// worktreeKeys holds the keys that only a tool that updates the
+	// working tree reads.
+	worktreeKeys := []string{
+		"filter.x.clean",
+		"filter.x.smudge",
+		"filter.x.process",
+		"merge.x.driver",
+		"gpg.program",
+		"gpg.ssh.defaultkeycommand",
+		"lfs.extension.x.clean",
+		"lfs.extension.x.smudge",
+		"lfs.customtransfer.x.path",
+		"lfs.customtransfer.x.args",
+		"lfs.storage",
+	}
+
+	tcs := map[string]struct {
+		// keys holds the keys that the config of the clone sets, in
+		// the order of the config file.
+		keys []string
+
+		// worktreeOnly is set when only a tool that updates the
+		// working tree refuses the config.
+		worktreeOnly bool
 	}{
-		"credential.helper":                         {},
-		"credential.https://example.invalid.helper": {},
-		"remote.origin.uploadpack":                  {},
-		"remote.other.receivepack":                  {},
-		"http.proxy":                                {},
-		"http.https://example.invalid/.proxy":       {},
-		"http.sslverify":                            {},
-		"http.https://example.invalid/.sslverify":   {},
-		"http.sslcainfo":                            {},
-		"http.curloptresolve":                       {},
-		"http.cookiefile":                           {},
-		"remote.origin.proxy":                       {},
-		"remote.other.proxyauthmethod":              {},
-		"filter.x.clean":                            {worktree: true},
-		"filter.x.smudge":                           {worktree: true},
-		"filter.x.process":                          {worktree: true},
-		"merge.x.driver":                            {worktree: true},
-		"gpg.program":                               {worktree: true},
-		"gpg.ssh.defaultkeycommand":                 {worktree: true},
-		"lfs.extension.x.clean":                     {worktree: true},
-		"lfs.extension.x.smudge":                    {worktree: true},
-		"lfs.customtransfer.x.path":                 {worktree: true},
-		"lfs.customtransfer.x.args":                 {worktree: true},
-		"lfs.storage":                               {worktree: true},
+		"every key":                     {keys: slices.Concat(remoteKeys, worktreeKeys)},
+		"keys of a working tree update": {keys: worktreeKeys, worktreeOnly: true},
 	}
 
 	for toolName, rt := range remoteTools() {
-		for key, tt := range keys {
-			t.Run(toolName+"/"+key, func(t *testing.T) {
+		for name, tc := range tcs {
+			t.Run(toolName+"/"+name, func(t *testing.T) {
 				t.Parallel()
 
 				bare, work := rt.repos(t)
 				script, marker := markerScript(t)
 
-				runGitCmds(t, [][]string{{"git", "-C", work, "config", key, script}})
+				for _, key := range tc.keys {
+					setConfig(t, work, key, script)
+				}
+
+				before := readTrees(t, bare, work)
 
 				result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
 				require.NoError(t, err)
 
 				requireNotRun(t, marker)
 
-				if tt.worktree && !rt.op.worktree {
+				if tc.worktreeOnly && !rt.op.worktree {
 					require.False(t, result.IsError, resultText(t, result))
 					rt.requireLanded(t, bare, work)
 
@@ -391,10 +405,17 @@ func TestRemoteToolsRefuseConfigKeys(t *testing.T) {
 
 				require.True(t, result.IsError, "the tool must refuse the repository")
 
+				// The error names the keys that every tool reads
+				// first.
+				want := tc.keys
+				if !rt.op.worktree {
+					want = remoteKeys
+				}
+
 				text := resultText(t, result)
-				assert.Contains(t, text, ErrDeniedConfig.Error()+": the repository sets "+key+".")
-				assert.NotContains(t, text, script, "the message must name the key, never its value")
-				rt.requireNotLanded(t, bare, work)
+				assert.Contains(t, text, ErrDeniedConfig.Error()+": the repository sets "+strings.Join(want, ", ")+".")
+				assert.NotContains(t, text, script, "the message must name the keys, never their values")
+				requireUnchanged(t, before, bare, work)
 			})
 		}
 	}
@@ -406,14 +427,23 @@ func TestRemoteToolsRefuseConfigKeys(t *testing.T) {
 // tool must therefore still refuse a key that the config of the
 // repository sets. It must also still skip a hook that this config
 // defines.
+//
+// Every tool reads the config of the repository with the same code,
+// and [TestReadRepoConfigSkipsConfigFileVariable] covers that code.
+// Each tool therefore runs one of the two cases, and the tools take
+// the cases in turn.
 func TestRemoteToolsSkipConfigFileVariable(t *testing.T) { //nolint:paralleltest // t.Setenv
-	for toolName, rt := range remoteTools() { //nolint:paralleltest // t.Setenv
-		t.Run(toolName+"/refused key", func(t *testing.T) {
+	cases := map[string]func(t *testing.T, rt remoteTool){
+		"refused key": func(t *testing.T, rt remoteTool) {
+			t.Helper()
+
 			bare, work := rt.repos(t)
 			script, marker := markerScript(t)
 
-			runGitCmds(t, [][]string{{"git", "-C", work, "config", "credential.helper", script}})
+			setConfig(t, work, "credential.helper", script)
 			setConfigFileEnv(t, "")
+
+			before := readTrees(t, bare, work)
 
 			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
 			require.NoError(t, err)
@@ -424,10 +454,11 @@ func TestRemoteToolsSkipConfigFileVariable(t *testing.T) { //nolint:paralleltest
 				ErrDeniedConfig.Error()+": the repository sets credential.helper.",
 			)
 			requireNotRun(t, marker)
-			rt.requireNotLanded(t, bare, work)
-		})
+			requireUnchanged(t, before, bare, work)
+		},
+		"config hook": func(t *testing.T, rt remoteTool) {
+			t.Helper()
 
-		t.Run(toolName+"/config hook", func(t *testing.T) {
 			bare, work := rt.repos(t)
 			script, marker := markerScript(t)
 
@@ -440,33 +471,19 @@ func TestRemoteToolsSkipConfigFileVariable(t *testing.T) { //nolint:paralleltest
 
 			requireNotRun(t, marker)
 			rt.requireLanded(t, bare, work)
+		},
+	}
+
+	tools := remoteTools()
+	caseNames := slices.Sorted(maps.Keys(cases))
+
+	for i, toolName := range slices.Sorted(maps.Keys(tools)) { //nolint:paralleltest // t.Setenv
+		caseName := caseNames[i%len(caseNames)]
+
+		t.Run(toolName+"/"+caseName, func(t *testing.T) {
+			cases[caseName](t, tools[toolName])
 		})
 	}
-}
-
-// serverRepositoryEnvCases returns the cases of [repositoryEnvCases],
-// a case for GIT_REFERENCE_BACKEND, and a case that sets every variable
-// that the server removes. [TestGitSkipsEnvironmentRepository] checks
-// that TestMain unsets each variable of [repositoryEnvCases], and git
-// rev-parse --local-env-vars prints each of those variables. git does
-// not print GIT_REFERENCE_BACKEND, so [repositoryEnvCases] does not
-// hold that case. [TestGitSkipsEnvironmentFormat] checks that TestMain
-// unsets GIT_REFERENCE_BACKEND.
-func serverRepositoryEnvCases() map[string]map[string]string {
-	tcs := repositoryEnvCases()
-
-	tcs["reference backend"] = map[string]string{
-		"GIT_REFERENCE_BACKEND": ".git",
-	}
-
-	every := map[string]string{}
-	for _, name := range repositoryVariables {
-		every[name] = ".git"
-	}
-
-	tcs["every variable that the server removes"] = every
-
-	return tcs
 }
 
 // The environment of the server can set variables that point git at a
@@ -475,6 +492,9 @@ func serverRepositoryEnvCases() map[string]map[string]string {
 // set, git -C <repo> acts on the repository that the variable names.
 // Every tool must still act on the repository of the call, and it must
 // leave the repository that the variables name as it was.
+//
+// The environment of each call sets every variable that the server
+// must remove, as [serverRepositoryPaths] lists them.
 func TestRemoteToolsSkipRepositoryVariables(t *testing.T) { //nolint:paralleltest // t.Setenv
 	// other stands for the repository that the variables name. Its
 	// setup does not run git commit in other. A commit starts git
@@ -483,22 +503,20 @@ func TestRemoteToolsSkipRepositoryVariables(t *testing.T) { //nolint:paralleltes
 	other := initWorkClone(t, initBareRepo(t))
 
 	for toolName, rt := range remoteTools() { //nolint:paralleltest // t.Setenv
-		for name, tc := range serverRepositoryEnvCases() {
-			t.Run(toolName+"/"+name, func(t *testing.T) {
-				bare, work := rt.repos(t)
-				before := readTree(t, other)
+		t.Run(toolName, func(t *testing.T) {
+			bare, work := rt.repos(t)
+			before := readTree(t, other)
 
-				unset := setRepositoryEnv(t, other, tc)
-				result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+			unset := setRepositoryEnv(t, other, serverRepositoryPaths(t))
+			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
 
-				unset()
+			unset()
 
-				require.NoError(t, err)
-				assert.Equal(t, before, readTree(t, other), "the tool must not write the other repository")
-				require.False(t, result.IsError, resultText(t, result))
-				rt.requireLanded(t, bare, work)
-			})
-		}
+			require.NoError(t, err)
+			assert.Equal(t, before, readTree(t, other), "the tool must not write the other repository")
+			require.False(t, result.IsError, resultText(t, result))
+			rt.requireLanded(t, bare, work)
+		})
 	}
 }
 
@@ -515,7 +533,9 @@ func TestRemoteToolsRefuseWorkTreeOutsideAllowDir(t *testing.T) {
 			bare, work := rt.repos(t)
 			outside := t.TempDir()
 
-			runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", outside}})
+			setWorkTree(t, work, outside)
+
+			before := readTrees(t, bare, work)
 
 			h := &handler{
 				allowDirs:     mustResolveAllowDirs(t, filepath.Dir(work)),
@@ -528,7 +548,7 @@ func TestRemoteToolsRefuseWorkTreeOutsideAllowDir(t *testing.T) {
 			assert.Contains(t, resultText(t, result), ErrDeniedDest.Error())
 
 			requireEmptyDir(t, outside)
-			rt.requireNotLanded(t, bare, work)
+			requireUnchanged(t, before, bare, work)
 		})
 	}
 }
@@ -612,42 +632,41 @@ func TestRemoteToolsRefuseForeignWorkTree(t *testing.T) {
 		}
 	}
 
-	for toolName, rt := range remoteTools() {
-		for treeName, setup := range trees {
-			t.Run(toolName+"/"+treeName, func(t *testing.T) {
-				t.Parallel()
+	// Every tool takes the check of the working tree before it does
+	// anything of its own. Each tree therefore runs with one tool, and
+	// the trees take the tools in turn, so that each tool refuses more
+	// than one tree.
+	tools := remoteTools()
+	toolNames := slices.Sorted(maps.Keys(tools))
 
-				bare, work := rt.repos(t)
-				other := t.TempDir()
-				repo, dir := setup(t, other, work)
-				before := dirEntries(t, dir)
+	for i, treeName := range slices.Sorted(maps.Keys(trees)) {
+		toolName := toolNames[i%len(toolNames)]
+		rt := tools[toolName]
+		setup := trees[treeName]
 
-				h := &handler{
-					allowDirs:     mustResolveAllowDirs(t, filepath.Dir(work), other),
-					allowFileURLs: true,
-				}
+		t.Run(toolName+"/"+treeName, func(t *testing.T) {
+			t.Parallel()
 
-				result, _, err := rt.call(t.Context(), h, repo)
-				require.NoError(t, err)
-				require.True(t, result.IsError, "the tool must refuse the working tree")
-				assert.Contains(t, resultText(t, result), ErrDeniedWorkTree.Error())
+			bare, work := rt.repos(t)
+			other := t.TempDir()
+			repo, dir := setup(t, other, work)
+			entries := dirEntries(t, dir)
+			before := readTrees(t, bare, work)
 
-				assert.Equal(t, before, dirEntries(t, dir), "git must write nothing to %s", dir)
-				rt.requireNotLanded(t, bare, work)
-			})
-		}
+			h := &handler{
+				allowDirs:     mustResolveAllowDirs(t, filepath.Dir(work), other),
+				allowFileURLs: true,
+			}
+
+			result, _, err := rt.call(t.Context(), h, repo)
+			require.NoError(t, err)
+			require.True(t, result.IsError, "the tool must refuse the working tree")
+			assert.Contains(t, resultText(t, result), ErrDeniedWorkTree.Error())
+
+			assert.Equal(t, entries, dirEntries(t, dir), "git must write nothing to %s", dir)
+			requireUnchanged(t, before, bare, work)
+		})
 	}
-}
-
-// initRepo creates a repository in a new directory under parent, and
-// returns the path of its working tree.
-func initRepo(t *testing.T, parent string) string {
-	t.Helper()
-
-	repo := filepath.Join(parent, "repo")
-	runGitCmds(t, [][]string{{"git", "init", "-q", repo}})
-
-	return repo
 }
 
 // makeHooksDir creates the hooks directory of the git directory at
@@ -668,7 +687,7 @@ func makeHooksDir(t *testing.T, gitDir string) string {
 func setWorkTree(t *testing.T, work, dir string) {
 	t.Helper()
 
-	runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", dir}})
+	setConfig(t, work, "core.worktree", dir)
 }
 
 // plantGitFile writes a .git file into the git directory of the
@@ -678,7 +697,10 @@ func plantGitFile(t *testing.T, repo, work string) string {
 	t.Helper()
 
 	gitDir := filepath.Join(repo, ".git")
-	target := gitOut(t, "-C", work, "rev-parse", "--absolute-git-dir")
+
+	// git names a git directory by its path without a symbolic link.
+	target, err := filepath.EvalSymlinks(filepath.Join(work, ".git"))
+	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(gitDir, ".git"), []byte("gitdir: "+target+"\n"), 0o644))
 
@@ -748,13 +770,13 @@ func TestGitIgnoresCoreWorktree(t *testing.T) {
 			bare, work := rt.repos(t)
 			outside := t.TempDir()
 
-			runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", outside}})
+			setWorkTree(t, work, outside)
 
 			out, err := rt.runGit(t, &handler{allowFileURLs: true}, work)
 			require.NoError(t, err, out)
 
 			requireEmptyDir(t, outside)
-			assert.FileExists(t, filepath.Join(work, "remote.txt"))
+			assert.FileExists(t, filepath.Join(work, remoteFile))
 			rt.requireLanded(t, bare, work)
 		})
 	}
@@ -765,25 +787,21 @@ func TestGitIgnoresCoreWorktree(t *testing.T) {
 // is the command that git runs when it follows the URL.
 func deniedRemotes() map[string]func(t *testing.T, work, bare, script string) {
 	return map[string]func(t *testing.T, work, bare, script string){
-		// initWorkClone leaves origin at the path of the bare
+		// The clone names its origin by the path of the bare
 		// repository.
 		"path": func(*testing.T, string, string, string) {},
 		"file URL": func(t *testing.T, work, bare, _ string) {
 			t.Helper()
 
-			runGitCmds(t, [][]string{
-				{"git", "-C", work, "remote", "set-url", "origin", "file://" + bare},
-			})
+			setOriginURL(t, work, bare, "file://"+bare)
 		},
 		// The ext transport runs the command that the URL holds, and
 		// git allows it only when the config says so.
-		"ext URL": func(t *testing.T, work, _, script string) {
+		"ext URL": func(t *testing.T, work, bare, script string) {
 			t.Helper()
 
-			runGitCmds(t, [][]string{
-				{"git", "-C", work, "remote", "set-url", "origin", "ext::" + script},
-				{"git", "-C", work, "config", "protocol.ext.allow", "always"},
-			})
+			setOriginURL(t, work, bare, "ext::"+script)
+			setConfig(t, work, "protocol.ext.allow", "always")
 		},
 	}
 }
@@ -804,6 +822,8 @@ func TestRemoteToolsRefuseDeniedURL(t *testing.T) {
 
 				remote(t, work, bare, script)
 
+				before := readTrees(t, bare, work)
+
 				result, _, err := rt.call(t.Context(), &handler{}, work)
 				require.NoError(t, err)
 				require.True(t, result.IsError, "the tool must refuse the remote")
@@ -814,7 +834,7 @@ func TestRemoteToolsRefuseDeniedURL(t *testing.T) {
 				assert.NotContains(t, text, script, "error must name the remote, never its URL")
 
 				requireNotRun(t, marker)
-				rt.requireNotLanded(t, bare, work)
+				requireUnchanged(t, before, bare, work)
 			})
 		}
 	}
@@ -824,6 +844,9 @@ func TestRemoteToolsRefuseDeniedURL(t *testing.T) {
 // name of the remote as its URL, and the server refuses that name as a
 // URL. The error must say that the remote has no URL. It must not say
 // that the remote has a URL of a scheme that the server refuses.
+//
+// [TestRemoteLacksURL] covers each form of a remote without a URL,
+// such as a URL that an empty value clears.
 func TestRemoteToolsRefuseRemoteWithoutURL(t *testing.T) {
 	t.Parallel()
 
@@ -832,51 +855,13 @@ func TestRemoteToolsRefuseRemoteWithoutURL(t *testing.T) {
 		noPushURL = noURL + " and no push URL in remote.origin.pushurl"
 	)
 
-	// An empty value of remote.<name>.url or remote.<name>.pushurl
-	// clears the URLs that the git config stores before it, in git
-	// 2.46 and later.
 	tcs := map[string]struct {
-		// remote removes the URL of the origin remote of the clone at
-		// work. bare is the path of the bare repository.
-		remote func(t *testing.T, work, bare string)
-
 		// pushURL is set when the remote keeps the path of the bare
 		// repository as its push URL.
 		pushURL bool
 	}{
-		"remote that lost its URL": {
-			remote: func(t *testing.T, work, _ string) {
-				t.Helper()
-
-				runGitCmds(t, [][]string{{"git", "-C", work, "config", "--unset", "remote.origin.url"}})
-			},
-		},
-		"empty value clears the URL": {
-			remote: func(t *testing.T, work, _ string) {
-				t.Helper()
-
-				appendGitConfig(t, work, remoteNamed("origin", ""))
-			},
-		},
-		"push URL and no URL": {
-			remote: func(t *testing.T, work, bare string) {
-				t.Helper()
-
-				runGitCmds(t, [][]string{
-					{"git", "-C", work, "config", "--unset", "remote.origin.url"},
-					{"git", "-C", work, "config", "remote.origin.pushurl", bare},
-				})
-			},
-			pushURL: true,
-		},
-		"empty values clear the URL and the push URL": {
-			remote: func(t *testing.T, work, bare string) {
-				t.Helper()
-
-				runGitCmds(t, [][]string{{"git", "-C", work, "config", "remote.origin.pushurl", bare}})
-				appendGitConfig(t, work, "[remote \"origin\"]\n\turl =\n\tpushurl =\n")
-			},
-		},
+		"remote that lost its URL": {},
+		"push URL and no URL":      {pushURL: true},
 	}
 
 	for toolName, rt := range remoteTools() {
@@ -886,7 +871,11 @@ func TestRemoteToolsRefuseRemoteWithoutURL(t *testing.T) {
 
 				bare, work := rt.repos(t)
 
-				tc.remote(t, work, bare)
+				unsetOriginURL(t, work, bare)
+
+				if tc.pushURL {
+					setConfig(t, work, "remote.origin.pushurl", bare)
+				}
 
 				// git pushes to the push URLs of a remote, so a remote
 				// with a push URL and no URL still takes a push.
@@ -905,6 +894,8 @@ func TestRemoteToolsRefuseRemoteWithoutURL(t *testing.T) {
 					want = rt.failure.Error() + ": " + noPushURL
 				}
 
+				before := readTrees(t, bare, work)
+
 				// A server that allows every URL has no URL to connect
 				// to either.
 				for _, h := range []*handler{{}, {allowFileURLs: true}} {
@@ -915,7 +906,7 @@ func TestRemoteToolsRefuseRemoteWithoutURL(t *testing.T) {
 					assert.Equal(t, want, resultText(t, result))
 				}
 
-				rt.requireNotLanded(t, bare, work)
+				requireUnchanged(t, before, bare, work)
 			})
 		}
 	}
@@ -929,24 +920,27 @@ func TestRemoteToolsRefuseStoredRemoteName(t *testing.T) {
 	t.Parallel()
 
 	tcs := map[string]struct {
-		// cmds stores the name origin as a URL of the origin remote of
-		// the clone at work.
-		cmds func(work string) [][]string
+		// remote stores the name origin as a URL of the origin remote
+		// of the clone at work. bare is the path of the bare
+		// repository.
+		remote func(t *testing.T, work, bare string)
 
 		// push is set when only a push reads the URL.
 		push bool
 	}{
 		"URL": {
-			cmds: func(work string) [][]string {
-				return [][]string{{"git", "-C", work, "config", "remote.origin.url", "origin"}}
+			remote: func(t *testing.T, work, bare string) {
+				t.Helper()
+
+				setOriginURL(t, work, bare, "origin")
 			},
 		},
 		"push URL and no URL": {
-			cmds: func(work string) [][]string {
-				return [][]string{
-					{"git", "-C", work, "config", "--unset", "remote.origin.url"},
-					{"git", "-C", work, "config", "remote.origin.pushurl", "origin"},
-				}
+			remote: func(t *testing.T, work, bare string) {
+				t.Helper()
+
+				unsetOriginURL(t, work, bare)
+				setConfig(t, work, "remote.origin.pushurl", "origin")
 			},
 			push: true,
 		},
@@ -963,7 +957,9 @@ func TestRemoteToolsRefuseStoredRemoteName(t *testing.T) {
 
 				bare, work := rt.repos(t)
 
-				runGitCmds(t, tc.cmds(work))
+				tc.remote(t, work, bare)
+
+				before := readTrees(t, bare, work)
 
 				result, _, err := rt.call(t.Context(), &handler{}, work)
 				require.NoError(t, err)
@@ -975,7 +971,7 @@ func TestRemoteToolsRefuseStoredRemoteName(t *testing.T) {
 					resultText(t, result),
 				)
 
-				rt.requireNotLanded(t, bare, work)
+				requireUnchanged(t, before, bare, work)
 			})
 		}
 	}
@@ -996,6 +992,8 @@ func TestRemoteToolsReportUnreadableRemote(t *testing.T) {
 
 			appendGitConfig(t, work, valuelessOriginURL)
 
+			before := readTrees(t, bare, work)
+
 			result, _, err := rt.call(t.Context(), &handler{}, work)
 			require.NoError(t, err)
 			require.True(t, result.IsError, "the tool must not contact the remote")
@@ -1004,7 +1002,7 @@ func TestRemoteToolsReportUnreadableRemote(t *testing.T) {
 			assert.Contains(t, text, rt.failure.Error()+": reading the origin remote of "+work+": ")
 			assert.NotContains(t, text, "unknown remote")
 
-			rt.requireNotLanded(t, bare, work)
+			requireUnchanged(t, before, bare, work)
 		})
 	}
 }
@@ -1022,12 +1020,10 @@ func TestRemoteToolsReportUnparseableConfig(t *testing.T) {
 			t.Parallel()
 
 			bare, work := rt.repos(t)
-			config := filepath.Join(work, ".git", "config")
-
-			parseable, err := os.ReadFile(config)
-			require.NoError(t, err)
 
 			appendGitConfig(t, work, unparseableConfig)
+
+			before := readTrees(t, bare, work)
 
 			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
 			require.NoError(t, err)
@@ -1038,10 +1034,7 @@ func TestRemoteToolsReportUnparseableConfig(t *testing.T) {
 			assert.Contains(t, text, "fatal: bad config line")
 			assert.NotContains(t, text, ErrNotRepo.Error())
 
-			// git reads the commits of the clone only when it can parse
-			// the config.
-			require.NoError(t, os.WriteFile(config, parseable, 0o644))
-			rt.requireNotLanded(t, bare, work)
+			requireUnchanged(t, before, bare, work)
 		})
 	}
 }
@@ -1057,14 +1050,14 @@ func TestGitRefusesTransports(t *testing.T) {
 
 	// The config can name the transport of a remote, whatever its URL
 	// is.
-	remotes["transport that the config names"] = func(t *testing.T, work, _, script string) {
+	remotes["transport that the config names"] = func(t *testing.T, work, bare, script string) {
 		t.Helper()
 
-		runGitCmds(t, [][]string{
-			{"git", "-C", work, "remote", "set-url", "origin", script},
-			{"git", "-C", work, "config", "remote.origin.vcs", "ext"},
-			{"git", "-C", work, "config", "protocol.ext.allow", "always"},
-		})
+		setOriginURL(t, work, bare, script)
+		setConfig(t, work,
+			"remote.origin.vcs", "ext",
+			"protocol.ext.allow", "always",
+		)
 	}
 
 	for toolName, rt := range remoteTools() {
@@ -1104,72 +1097,84 @@ func TestGitRefusesTransports(t *testing.T) {
 // TestGitIgnoresServePrograms covers a remote whose definition changes
 // after runRemote reads the config. git runs the program that serves a
 // fetch or a push on the host of the remote. The git command itself
-// must therefore name the program.
+// must therefore name the program. One config names a program for a
+// fetch and a program for a push, and each program has a marker of its
+// own.
 func TestGitIgnoresServePrograms(t *testing.T) {
 	t.Parallel()
 
 	for toolName, rt := range remoteTools() {
-		for _, key := range []string{"remote.origin.uploadpack", "remote.origin.receivepack"} {
-			t.Run(toolName+"/"+key, func(t *testing.T) {
-				t.Parallel()
+		t.Run(toolName, func(t *testing.T) {
+			t.Parallel()
 
-				bare, work := rt.repos(t)
-				script, marker := markerScript(t)
+			bare, work := rt.repos(t)
+			uploadPack, uploadPackRan := markerScript(t)
+			receivePack, receivePackRan := markerScript(t)
 
-				runGitCmds(t, [][]string{{"git", "-C", work, "config", key, script}})
+			setConfig(t, work,
+				"remote.origin.uploadpack", uploadPack,
+				"remote.origin.receivepack", receivePack,
+			)
 
-				out, err := rt.runGit(t, &handler{allowFileURLs: true}, work)
-				require.NoError(t, err, out)
+			out, err := rt.runGit(t, &handler{allowFileURLs: true}, work)
 
-				requireNotRun(t, marker)
-				rt.requireLanded(t, bare, work)
-			})
-		}
+			assert.NoFileExists(t, uploadPackRan, "git must not run the program of remote.origin.uploadpack")
+			assert.NoFileExists(t, receivePackRan, "git must not run the program of remote.origin.receivepack")
+
+			require.NoError(t, err, out)
+			rt.requireLanded(t, bare, work)
+		})
 	}
 }
 
 // Each tool gives the token to an https connection to github.com.
 // The credential helper of the git config answers for every other
 // host, also when the token is set.
+//
+// The credential options of a call do not depend on the tool, and
+// [TestGitOptions] checks that every command takes them. Each tool
+// therefore connects to one host, and the tools take the hosts in
+// turn. [TestHandlePushCredentialOfEachURL] covers a push to both
+// hosts.
 func TestRemoteToolsCredential(t *testing.T) { //nolint:paralleltest // t.Setenv
 	const token = "ghp_test123"
 
-	tests := map[string]struct {
+	hosts := []struct {
 		host string
 		cred string
 	}{
-		"GitHub":       {host: "github.com", cred: "x-access-token:" + token},
-		"another host": {host: "gitlab.com", cred: "global:secret"},
+		{host: "github.com", cred: "x-access-token:" + token},
+		{host: "gitlab.com", cred: "global:secret"},
 	}
 
-	for toolName, rt := range remoteTools() { //nolint:paralleltest // setProxyEnv calls t.Setenv.
-		for name, tt := range tests {
-			t.Run(toolName+"/"+name, func(t *testing.T) {
-				bare, work := rt.repos(t)
-				url := "https://" + tt.host + "/" + filepath.Base(bare)
+	tools := remoteTools()
 
-				runGitCmds(t, [][]string{
-					{"git", "-C", bare, "config", "http.receivepack", "true"},
-					{"git", "-C", work, "remote", "set-url", "origin", url},
-				})
+	for i, toolName := range slices.Sorted(maps.Keys(tools)) { //nolint:paralleltest // setProxyEnv calls t.Setenv.
+		rt := tools[toolName]
+		tt := hosts[i%len(hosts)]
 
-				backend := requireHostCredential(
-					map[string]string{tt.host: tt.cred},
-					gitBackend(t, filepath.Dir(bare)),
-				)
-				proxy := startAuthProxy(t, backend)
-				setProxyEnv(t, token, proxy.config()+globalHelper)
+		t.Run(toolName+"/"+tt.host, func(t *testing.T) {
+			bare, work := rt.repos(t)
 
-				result, _, err := rt.call(t.Context(), &handler{token: token}, work)
-				require.NoError(t, err)
-				require.False(t, result.IsError, resultText(t, result))
+			setConfig(t, bare, "http.receivepack", "true")
+			setOriginURL(t, work, bare, "https://"+tt.host+"/"+filepath.Base(bare))
 
-				rt.requireLanded(t, bare, work)
+			backend := requireHostCredential(
+				map[string]string{tt.host: tt.cred},
+				gitBackend(t, filepath.Dir(bare)),
+			)
+			proxy := startAuthProxy(t, backend)
+			setProxyEnv(t, token, proxy.config()+globalHelper)
 
-				hosts, creds := proxy.requests()
-				assert.Equal(t, []string{tt.host + ":443"}, hosts)
-				assert.Equal(t, []string{tt.cred}, slices.Compact(creds))
-			})
-		}
+			result, _, err := rt.call(t.Context(), &handler{token: token}, work)
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			rt.requireLanded(t, bare, work)
+
+			connected, creds := proxy.requests()
+			assert.Equal(t, []string{tt.host + ":443"}, connected)
+			assert.Equal(t, []string{tt.cred}, slices.Compact(creds))
+		})
 	}
 }

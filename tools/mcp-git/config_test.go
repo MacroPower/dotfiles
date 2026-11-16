@@ -354,14 +354,14 @@ func TestReadRepoConfig(t *testing.T) {
 			setup: func(t *testing.T, repo string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{
-					{"git", "-C", repo, "config", "hook.check.command", "check"},
-					{"git", "-C", repo, "config", "hook.check.event", "pre-push"},
-					{"git", "-C", repo, "config", "credential.helper", "store"},
-					{"git", "-C", repo, "config", "filter.x.smudge", "smudge"},
-					{"git", "-C", repo, "config", "http.https://example.invalid/.sslVerify", "false"},
-					{"git", "-C", repo, "config", "lfs.customTransfer.Agent.path", "agent"},
-				})
+				setConfig(t, repo,
+					"hook.check.command", "check",
+					"hook.check.event", "pre-push",
+					"credential.helper", "store",
+					"filter.x.smudge", "smudge",
+					"http.https://example.invalid/.sslVerify", "false",
+					"lfs.customTransfer.Agent.path", "agent",
+				)
 			},
 			want: repoConfig{
 				hooks:        []string{"check"},
@@ -381,9 +381,7 @@ func TestReadRepoConfig(t *testing.T) {
 					[]byte("[hook \"check\"]\n\tcommand = check\n[merge \"x\"]\n\tdriver = driver\n"),
 					0o644,
 				))
-				runGitCmds(t, [][]string{
-					{"git", "-C", repo, "config", "include.path", included},
-				})
+				setConfig(t, repo, "include.path", included)
 			},
 			want: repoConfig{
 				hooks:        []string{"check"},
@@ -394,10 +392,14 @@ func TestReadRepoConfig(t *testing.T) {
 			setup: func(t *testing.T, repo string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{
-					{"git", "-C", repo, "config", "extensions.worktreeConfig", "true"},
-					{"git", "-C", repo, "config", "--worktree", "gpg.program", "gpg"},
-				})
+				// git reads the config of a working tree from the file
+				// config.worktree of its git directory.
+				setConfig(t, repo, "extensions.worktreeConfig", "true")
+				require.NoError(t, os.WriteFile(
+					filepath.Join(repo, ".git", "config.worktree"),
+					[]byte(configText("gpg.program", "gpg")),
+					0o644,
+				))
 			},
 			want: repoConfig{worktreeKeys: []string{"gpg.program"}},
 		},
@@ -426,8 +428,7 @@ func TestReadRepoConfig(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			repo := filepath.Join(t.TempDir(), "repo")
-			runGitCmds(t, [][]string{{"git", "init", "-q", repo}})
+			repo := initRepo(t, t.TempDir())
 			tt.setup(t, repo)
 
 			got, err := readRepoConfig(t.Context(), repo)
@@ -452,13 +453,12 @@ func TestReadRepoConfig(t *testing.T) {
 // variable names, because those git commands do not read it.
 func TestReadRepoConfigSkipsConfigFileVariable(t *testing.T) { //nolint:paralleltest // t.Setenv
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "repo")
+	repo := initRepo(t, dir)
 
-	runGitCmds(t, [][]string{
-		{"git", "init", "-q", repo},
-		{"git", "-C", repo, "config", "credential.helper", "store"},
-		{"git", "-C", repo, "config", "hook.check.command", "check"},
-	})
+	setConfig(t, repo,
+		"credential.helper", "store",
+		"hook.check.command", "check",
+	)
 
 	keys := filepath.Join(dir, "keys")
 	require.NoError(t, os.WriteFile(

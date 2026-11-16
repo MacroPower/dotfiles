@@ -395,39 +395,6 @@ func TestHandleValidation(t *testing.T) {
 	}
 }
 
-// initBareRepo creates a bare git repository with one commit for testing.
-func initBareRepo(t *testing.T) string {
-	t.Helper()
-
-	bare := filepath.Join(t.TempDir(), "bare.git")
-	work := filepath.Join(t.TempDir(), "work")
-
-	for _, args := range [][]string{
-		{"git", "init", "--bare", bare},
-		{"git", "clone", bare, work},
-		{"git", "-C", work, "config", "user.email", "test@test.com"},
-		{"git", "-C", work, "config", "user.name", "Test"},
-	} {
-		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper
-		cmd.Stderr = os.Stderr
-		require.NoError(t, cmd.Run(), "setup command failed: %v", args)
-	}
-
-	require.NoError(t, os.WriteFile(filepath.Join(work, "README"), []byte("hello"), 0o644))
-
-	for _, args := range [][]string{
-		{"git", "-C", work, "add", "."},
-		{"git", "-C", work, "commit", "-m", "init"},
-		{"git", "-C", work, "push"},
-	} {
-		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper
-		cmd.Stderr = os.Stderr
-		require.NoError(t, cmd.Run(), "setup command failed: %v", args)
-	}
-
-	return bare
-}
-
 func TestCredentialArgs(t *testing.T) {
 	t.Parallel()
 
@@ -911,13 +878,7 @@ func TestHandleCloneRef(t *testing.T) {
 
 	bare := initBareRepo(t)
 
-	// Create a tag in the bare repo via a temporary clone.
-	tmp := initWorkClone(t, bare)
-
-	runGitCmds(t, [][]string{
-		{"git", "-C", tmp, "tag", "v1.0.0"},
-		{"git", "-C", tmp, "push", "--tags"},
-	})
+	runGitCmds(t, [][]string{{"git", "-C", bare, "tag", "v1.0.0"}})
 
 	h := &handler{allowFileURLs: true}
 	dest := filepath.Join(t.TempDir(), "cloned")
@@ -941,21 +902,8 @@ func TestHandleCloneRef(t *testing.T) {
 func TestHandleCloneSparse(t *testing.T) {
 	t.Parallel()
 
-	bare := initBareRepo(t)
-
-	// Add files in src/ and docs/ directories.
-	tmp := initWorkClone(t, bare)
-
-	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "src"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "docs"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(tmp, "src", "main.go"), []byte("package main"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(tmp, "docs", "README"), []byte("docs"), 0o644))
-
-	runGitCmds(t, [][]string{
-		{"git", "-C", tmp, "add", "."},
-		{"git", "-C", tmp, "commit", "-m", "add dirs"},
-		{"git", "-C", tmp, "push"},
-	})
+	// The bare repository holds the directories docs and other.
+	bare := initDocsRepo(t, filepath.Join(t.TempDir(), "bare.git")).bare
 
 	h := &handler{allowFileURLs: true}
 	dest := filepath.Join(t.TempDir(), "cloned")
@@ -964,18 +912,18 @@ func TestHandleCloneSparse(t *testing.T) {
 	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:         bare,
 		Dest:        dest,
-		SparsePaths: []string{"src"},
+		SparsePaths: []string{"docs"},
 	})
 	require.NoError(t, err)
 	require.False(t, result.IsError, resultText(t, result))
-	assert.Contains(t, resultText(t, result), "sparse: src")
+	assert.Contains(t, resultText(t, result), "sparse: docs")
 
-	// src/ should exist, docs/ should not.
-	_, statErr := os.Stat(filepath.Join(dest, "src", "main.go"))
-	require.NoError(t, statErr, "src/main.go should exist")
+	// docs/ should exist, other/ should not.
+	_, statErr := os.Stat(filepath.Join(dest, "docs", "guide"))
+	require.NoError(t, statErr, "docs/guide should exist")
 
-	_, statErr = os.Stat(filepath.Join(dest, "docs", "README"))
-	require.ErrorIs(t, statErr, os.ErrNotExist, "docs/README should not exist in sparse checkout")
+	_, statErr = os.Stat(filepath.Join(dest, "other", "x"))
+	require.ErrorIs(t, statErr, os.ErrNotExist, "other/x should not exist in sparse checkout")
 
 	// Pull should still work.
 	result, _, err = h.handleClone(t.Context(), nil, CloneInput{
@@ -993,12 +941,7 @@ func TestHandleCloneSparse(t *testing.T) {
 func TestSparseCheckoutArgsKeepWorkTree(t *testing.T) {
 	t.Parallel()
 
-	bare := initBareRepo(t)
-	work := initWorkClone(t, bare)
-
-	require.NoError(t, os.MkdirAll(filepath.Join(work, "docs"), 0o755))
-	commitFile(t, work, "docs/README", "docs", "add docs")
-	runGitCmds(t, [][]string{{"git", "-C", work, "push"}})
+	bare := initDocsRepo(t, filepath.Join(t.TempDir(), "bare.git")).bare
 
 	h := &handler{allowFileURLs: true}
 	dest := filepath.Join(t.TempDir(), "cloned")
@@ -1013,7 +956,7 @@ func TestSparseCheckoutArgsKeepWorkTree(t *testing.T) {
 	}))...)
 	require.NoError(t, err, out)
 
-	runGitCmds(t, [][]string{{"git", "-C", dest, "config", "core.worktree", outside}})
+	setWorkTree(t, dest, outside)
 
 	out, err = h.runGit(t.Context(), sparseCheckoutArgs(opts, dest, paths)...)
 	require.NoError(t, err, out)
@@ -1022,7 +965,7 @@ func TestSparseCheckoutArgsKeepWorkTree(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 
-	assert.FileExists(t, filepath.Join(dest, "docs", "README"))
+	assert.FileExists(t, filepath.Join(dest, "docs", "guide"))
 }
 
 func TestHandleOriginMismatch(t *testing.T) {
@@ -1067,7 +1010,7 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 			setup: func(t *testing.T, _, dest string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{{"git", "init", "-q", dest}})
+				initRepoAt(t, dest)
 			},
 			err: ErrNoOrigin,
 		},
@@ -1075,10 +1018,8 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 			setup: func(t *testing.T, bare, dest string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{
-					{"git", "clone", "-q", bare, dest},
-					{"git", "-C", dest, "remote", "remove", "origin"},
-				})
+				initCloneAt(t, bare, dest)
+				runGitCmds(t, [][]string{{"git", "-C", dest, "remote", "remove", "origin"}})
 			},
 			err: ErrNoOrigin,
 		},
@@ -1086,10 +1027,8 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 			setup: func(t *testing.T, bare, dest string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{
-					{"git", "init", "-q", dest},
-					{"git", "-C", dest, "remote", "add", "upstream", bare},
-				})
+				initRepoAt(t, dest)
+				appendGitConfig(t, dest, remoteConfig("upstream", bare))
 			},
 			err: ErrNoOrigin,
 		},
@@ -1097,10 +1036,8 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 			setup: func(t *testing.T, bare, dest string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{
-					{"git", "init", "-q", dest},
-					{"git", "-C", dest, "config", "remote.origin.pushurl", bare},
-				})
+				initRepoAt(t, dest)
+				setConfig(t, dest, "remote.origin.pushurl", bare)
 			},
 			err: ErrNoOriginURL,
 		},
@@ -1108,10 +1045,8 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 			setup: func(t *testing.T, _, dest string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{
-					{"git", "init", "-q", dest},
-					{"git", "-C", dest, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"},
-				})
+				initRepoAt(t, dest)
+				appendGitConfig(t, dest, fetchOnlyOrigin)
 			},
 			err: ErrNoOriginURL,
 		},
@@ -1119,10 +1054,8 @@ func TestHandleCloneDestWithoutOrigin(t *testing.T) {
 			setup: func(t *testing.T, bare, dest string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{
-					{"git", "clone", "-q", bare, dest},
-					{"git", "-C", dest, "config", "--unset", "remote.origin.url"},
-				})
+				initCloneAt(t, bare, dest)
+				unsetOriginURL(t, dest, bare)
 			},
 			err: ErrNoOriginURL,
 		},
@@ -1184,14 +1117,14 @@ func addRewrite(t *testing.T, bare, dest string) {
 }
 
 // aliasOrigin adds the rewrite of [rewriteConfig] to the git config of
-// the repository at dest. It also stores the URL of [aliasURL] as the
-// URL of origin. git clone stores that URL when the caller clones the
-// alias.
+// the repository at dest, a clone of [initWorkClone] of bare. It also
+// stores the URL of [aliasURL] as the URL of origin. git clone stores
+// that URL when the caller clones the alias.
 func aliasOrigin(t *testing.T, bare, dest string) {
 	t.Helper()
 
 	addRewrite(t, bare, dest)
-	runGitCmds(t, [][]string{{"git", "-C", dest, "remote", "set-url", "origin", aliasURL(bare)}})
+	setOriginURL(t, dest, bare, aliasURL(bare))
 }
 
 // setGlobalRewrite points the global git config at a file that holds
@@ -1796,14 +1729,14 @@ func TestMatchingInputSkipsEmptyURL(t *testing.T) {
 	assert.Equal(t, ".git", got)
 }
 
-// initConfigRepo creates a repository with git init, adds config to
-// its git config, and returns its path.
+// initConfigRepo creates a repository as git init creates it, adds
+// config to its git config, and returns its path.
 func initConfigRepo(t *testing.T, config string) string {
 	t.Helper()
 
 	dest := filepath.Join(t.TempDir(), "cloned")
 
-	runGitCmds(t, [][]string{{"git", "init", "-q", dest}})
+	initRepoAt(t, dest)
 	appendGitConfig(t, dest, config)
 
 	return dest
@@ -1908,9 +1841,7 @@ func TestCheckOriginRewrittenRemoteName(t *testing.T) {
 func TestStoredOriginWithoutConfigURL(t *testing.T) {
 	t.Parallel()
 
-	dest := filepath.Join(t.TempDir(), "cloned")
-
-	runGitCmds(t, [][]string{{"git", "init", "-q", dest}})
+	dest := initConfigRepo(t, "")
 
 	stored, err := (&handler{}).storedOrigin(t.Context(), dest, aliasPrefix+"a.git")
 	require.NoError(t, err)
@@ -1931,16 +1862,7 @@ const credentialRewrite = "[url \"" + credentialPrefix + "\"]\n\tinsteadOf = " +
 func initOriginRepo(t *testing.T, origin, config string) string {
 	t.Helper()
 
-	dest := filepath.Join(t.TempDir(), "cloned")
-
-	runGitCmds(t, [][]string{
-		{"git", "init", "-q", dest},
-		{"git", "-C", dest, "remote", "add", "origin", origin},
-	})
-
-	appendGitConfig(t, dest, config)
-
-	return dest
+	return initConfigRepo(t, remoteConfig("origin", origin)+config)
 }
 
 // The tool result holds the mismatch error, so the error must name
@@ -2485,9 +2407,10 @@ func TestCheckOriginUnresolvedURL(t *testing.T) {
 func TestCheckOriginUnreadableRemote(t *testing.T) {
 	t.Parallel()
 
-	dest := initWorkClone(t, initBareRepo(t))
+	bare := initBareRepo(t)
+	dest := initWorkClone(t, bare)
 
-	runGitCmds(t, [][]string{{"git", "-C", dest, "remote", "remove", "origin"}})
+	unsetOriginURL(t, dest, bare)
 	appendGitConfig(t, dest, valuelessOriginURL)
 
 	err := (&handler{}).checkOrigin(t.Context(), "https://example.invalid/r.git", dest)
@@ -2572,17 +2495,12 @@ func TestHandleCloneIgnoresDefaultRemoteName(t *testing.T) { //nolint:parallelte
 
 	for name, tc := range tcs { //nolint:paralleltest // setGlobalConfig calls t.Setenv.
 		t.Run(name, func(t *testing.T) {
-			bare := initBareRepo(t)
-			runGitCmds(t, [][]string{{"git", "-C", bare, "config", "uploadpack.allowFilter", "true"}})
+			// The bare repository holds the files docs/guide and
+			// other/x.
+			docs := initDocsRepo(t, filepath.Join(t.TempDir(), "bare.git"))
+			bare := docs.bare
 
-			work := initWorkClone(t, bare)
-
-			require.NoError(t, os.MkdirAll(filepath.Join(work, "docs"), 0o755))
-			require.NoError(t, os.MkdirAll(filepath.Join(work, "other"), 0o755))
-			require.NoError(t, os.WriteFile(filepath.Join(work, "other", "x"), []byte("other"), 0o644))
-			commitFile(t, work, filepath.Join("docs", "guide"), "guide", "add docs")
-			runGitCmds(t, [][]string{{"git", "-C", work, "push", "-q"}})
-
+			setConfig(t, bare, "uploadpack.allowFilter", "true")
 			setGlobalConfig(t, "[clone]\n\tdefaultRemoteName = upstream\n")
 
 			h := &handler{allowFileURLs: true}
@@ -2603,18 +2521,16 @@ func TestHandleCloneIgnoresDefaultRemoteName(t *testing.T) { //nolint:parallelte
 			assert.Equal(t, defaultRemote, gitOut(t, "-C", input.Dest, "remote"))
 			assert.FileExists(t, filepath.Join(input.Dest, "docs", "guide"))
 
-			blob := gitOut(t, "-C", work, "rev-parse", "HEAD:other/x")
 			objects := gitOut(t, "-C", input.Dest, "rev-list", "--objects", "--missing=print", "HEAD")
 
-			want := blob
+			want := docs.otherBlob
 			if tc.partial {
-				want = "?" + blob
+				want = "?" + docs.otherBlob
 			}
 
 			assert.Contains(t, strings.Fields(objects), want)
 
-			commitFile(t, work, filepath.Join("docs", "guide"), "guide v2", "update docs")
-			runGitCmds(t, [][]string{{"git", "-C", work, "push", "-q"}})
+			pushDocsUpdate(t, bare)
 
 			result, _, err = h.handleClone(t.Context(), nil, input)
 			require.NoError(t, err)
@@ -2950,21 +2866,11 @@ func TestHandleCloneCredential(t *testing.T) { //nolint:paralleltest // t.Setenv
 func TestHandleCloneSparseCredential(t *testing.T) { //nolint:paralleltest // t.Setenv
 	const token = "ghp_test123"
 
+	// The bare repository holds the files docs/guide and other/x.
 	root := t.TempDir()
-	bare := filepath.Join(root, "a", "b.git")
+	docs := initDocsRepo(t, filepath.Join(root, "a", "b.git"))
 
-	runGitCmds(t, [][]string{
-		{"git", "init", "-q", "--bare", bare},
-		{"git", "-C", bare, "config", "uploadpack.allowFilter", "true"},
-	})
-
-	work := initWorkClone(t, bare)
-
-	require.NoError(t, os.MkdirAll(filepath.Join(work, "dir"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(work, "other"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(work, "other", "g.txt"), []byte("other"), 0o644))
-	commitFile(t, work, "dir/f.txt", "dir", "add dirs")
-	runGitCmds(t, [][]string{{"git", "-C", work, "push", "-q", "origin", "HEAD"}})
+	setConfig(t, docs.bare, "uploadpack.allowFilter", "true")
 
 	proxy := startAuthProxy(t, requireCredential("x-access-token:"+token, gitBackend(t, root)))
 	setProxyEnv(t, token, proxy.config()+githubHTTPSRewrite)
@@ -2974,20 +2880,19 @@ func TestHandleCloneSparseCredential(t *testing.T) { //nolint:paralleltest // t.
 	result, _, err := (&handler{token: token}).handleClone(t.Context(), nil, CloneInput{
 		URL:         "git@github.com:a/b.git",
 		Dest:        dest,
-		SparsePaths: []string{"dir"},
+		SparsePaths: []string{"docs"},
 	})
 	require.NoError(t, err)
 	require.False(t, result.IsError, resultText(t, result))
 
-	assert.FileExists(t, filepath.Join(dest, "dir", "f.txt"))
-	assert.NoFileExists(t, filepath.Join(dest, "other", "g.txt"))
+	assert.FileExists(t, filepath.Join(dest, "docs", "guide"))
+	assert.NoFileExists(t, filepath.Join(dest, "other", "x"))
 
 	// The clone lacks the blob of a path outside the sparse checkout.
 	// git clone therefore left out the blobs, and git sparse-checkout
-	// set fetched the blob of dir/f.txt.
-	blob := gitOut(t, "-C", work, "rev-parse", "HEAD:other/g.txt")
+	// set fetched the blob of docs/guide.
 	missing := gitOut(t, "-C", dest, "rev-list", "--objects", "--missing=print", "HEAD")
-	assert.Contains(t, strings.Fields(missing), "?"+blob)
+	assert.Contains(t, strings.Fields(missing), "?"+docs.otherBlob)
 }
 
 // A new clone holds the hook files of the template directory, and git
@@ -3049,11 +2954,9 @@ func TestHandleCloneIgnoresConfigOfWorkingDirectory(t *testing.T) { //nolint:par
 	bare := initBareRepo(t)
 	script, marker := markerScript(t)
 
-	cwd := filepath.Join(t.TempDir(), "repo")
-	runGitCmds(t, [][]string{
-		{"git", "init", "-q", cwd},
-		{"git", "-C", cwd, "config", "core.fsmonitor", script},
-	})
+	cwd := initRepo(t, t.TempDir())
+
+	setConfig(t, cwd, "core.fsmonitor", script)
 	appendGitConfig(t, cwd, hookConfig(script, "check"))
 
 	t.Chdir(cwd)
@@ -3074,56 +2977,49 @@ func TestHandleCloneIgnoresConfigOfWorkingDirectory(t *testing.T) { //nolint:par
 // clone into the destination of the call, and a second call must pull
 // there. Both calls must leave the repository that the variables name
 // as it was.
+//
+// The environment of each call sets every variable that the server
+// must remove, as [serverRepositoryPaths] lists them.
 func TestHandleCloneSkipsRepositoryVariables(t *testing.T) { //nolint:paralleltest // t.Setenv
 	// other stands for the repository that the variables name. Its
 	// setup does not run git commit in other. A commit starts git
 	// maintenance in the background, and maintenance writes under the
 	// git directory.
 	other := initWorkClone(t, initBareRepo(t))
+	env := serverRepositoryPaths(t)
 
-	for name, tc := range serverRepositoryEnvCases() { //nolint:paralleltest // t.Setenv
-		t.Run(name, func(t *testing.T) {
-			bare := initBareRepo(t)
-			work := initWorkClone(t, bare)
-			before := readTree(t, other)
+	bare := initBareRepo(t)
+	tm := repos(t)
+	before := readTree(t, other)
 
-			h := &handler{allowFileURLs: true}
-			input := CloneInput{URL: bare, Dest: filepath.Join(t.TempDir(), "cloned")}
+	h := &handler{allowFileURLs: true}
+	input := CloneInput{URL: bare, Dest: filepath.Join(t.TempDir(), "cloned")}
 
-			unset := setRepositoryEnv(t, other, tc)
-			result, _, err := h.handleClone(t.Context(), nil, input)
+	unset := setRepositoryEnv(t, other, env)
+	result, _, err := h.handleClone(t.Context(), nil, input)
 
-			unset()
+	unset()
 
-			require.NoError(t, err)
-			assert.Equal(t, before, readTree(t, other), "the clone must not write the other repository")
-			require.False(t, result.IsError, resultText(t, result))
-			assert.Contains(t, resultText(t, result), "Cloned")
-			assert.FileExists(t, filepath.Join(input.Dest, "README"))
-			assert.Equal(t,
-				gitOut(t, "-C", bare, "rev-parse", "HEAD"),
-				gitOut(t, "-C", input.Dest, "rev-parse", "HEAD"),
-			)
+	require.NoError(t, err)
+	assert.Equal(t, before, readTree(t, other), "the clone must not write the other repository")
+	require.False(t, result.IsError, resultText(t, result))
+	assert.Contains(t, resultText(t, result), "Cloned")
+	assert.FileExists(t, filepath.Join(input.Dest, "README"))
+	assert.Equal(t, tm.firstCommit, gitOut(t, "-C", input.Dest, "rev-parse", "HEAD"))
 
-			commitFile(t, work, "remote.txt", "remote", "remote commit")
-			runGitCmds(t, [][]string{{"git", "-C", work, "push", "-q"}})
+	pushRemoteCommit(t, bare)
 
-			unset = setRepositoryEnv(t, other, tc)
-			result, _, err = h.handleClone(t.Context(), nil, input)
+	unset = setRepositoryEnv(t, other, env)
+	result, _, err = h.handleClone(t.Context(), nil, input)
 
-			unset()
+	unset()
 
-			require.NoError(t, err)
-			assert.Equal(t, before, readTree(t, other), "the pull must not write the other repository")
-			require.False(t, result.IsError, resultText(t, result))
-			assert.Contains(t, resultText(t, result), "Pulled")
-			assert.FileExists(t, filepath.Join(input.Dest, "remote.txt"))
-			assert.Equal(t,
-				gitOut(t, "-C", bare, "rev-parse", "HEAD"),
-				gitOut(t, "-C", input.Dest, "rev-parse", "HEAD"),
-			)
-		})
-	}
+	require.NoError(t, err)
+	assert.Equal(t, before, readTree(t, other), "the pull must not write the other repository")
+	require.False(t, result.IsError, resultText(t, result))
+	assert.Contains(t, resultText(t, result), "Pulled")
+	assert.FileExists(t, filepath.Join(input.Dest, remoteFile))
+	assert.Equal(t, tm.remoteCommit, gitOut(t, "-C", input.Dest, "rev-parse", "HEAD"))
 }
 
 // A second git_clone call pulls into the existing checkout, and the
@@ -3142,7 +3038,7 @@ func TestHandleClonePullRefusesConfigCommands(t *testing.T) {
 
 	script, marker := markerScript(t)
 
-	runGitCmds(t, [][]string{{"git", "-C", input.Dest, "config", "filter.x.smudge", script}})
+	setConfig(t, input.Dest, "filter.x.smudge", script)
 
 	result, _, err = h.handleClone(t.Context(), nil, input)
 	require.NoError(t, err)
@@ -3229,23 +3125,26 @@ func TestHandleCloneCorruptDest(t *testing.T) {
 			// A repository encloses dest, so the check must not
 			// walk up and accept the parent as the checkout.
 			parent := t.TempDir()
-			runGitCmds(t, [][]string{{"git", "init", "-q", parent}})
+			initRepoAt(t, parent)
 
 			input := CloneInput{URL: bare, Dest: filepath.Join(parent, "cloned"), SparsePaths: tc.sparsePaths}
 			dest := input.Dest
 
 			// git ignores --filter in a clone from a local path, so a
 			// sparse clone reads the bare repository through a file://
-			// URL.
+			// URL. Only git_clone makes a sparse clone, so every other
+			// case starts from a copy of a clone.
 			if len(tc.sparsePaths) > 0 {
-				runGitCmds(t, [][]string{{"git", "-C", bare, "config", "uploadpack.allowFilter", "true"}})
+				setConfig(t, bare, "uploadpack.allowFilter", "true")
 
 				input.URL = "file://" + bare
-			}
 
-			result, _, err := h.handleClone(t.Context(), nil, input)
-			require.NoError(t, err)
-			require.False(t, result.IsError, resultText(t, result))
+				result, _, err := h.handleClone(t.Context(), nil, input)
+				require.NoError(t, err)
+				require.False(t, result.IsError, resultText(t, result))
+			} else {
+				initCloneAt(t, bare, dest)
+			}
 
 			for _, f := range tc.remove {
 				require.NoError(t, os.Remove(filepath.Join(dest, ".git", f)))
@@ -3262,7 +3161,7 @@ func TestHandleCloneCorruptDest(t *testing.T) {
 
 			require.NoError(t, os.WriteFile(filepath.Join(dest, "local.txt"), []byte("keep"), 0o644))
 
-			result, _, err = h.handleClone(t.Context(), nil, input)
+			result, _, err := h.handleClone(t.Context(), nil, input)
 			require.NoError(t, err)
 			require.False(t, result.IsError, resultText(t, result))
 			assert.Contains(t, resultText(t, result), "Cloned")
@@ -3276,11 +3175,11 @@ func TestHandleCloneCorruptDest(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "keep", string(kept))
 
-			// The new checkout is a working repository again.
-			result, _, err = h.handleClone(t.Context(), nil, input)
-			require.NoError(t, err)
-			require.False(t, result.IsError, resultText(t, result))
-			assert.Contains(t, resultText(t, result), "Pulled")
+			// The new checkout is a working repository again. git_clone
+			// pulls into a destination that passes this check, and
+			// [TestHandleClone] covers that pull.
+			require.NoError(t, checkGitDir(t.Context(), filepath.Join(dest, ".git")))
+			assert.FileExists(t, filepath.Join(dest, "README"))
 		})
 	}
 }
@@ -3295,13 +3194,10 @@ func TestHandleCloneCorruptDestOutsideAllowDir(t *testing.T) {
 	// an allowed path and the checkout must stay in place.
 	h := &handler{allowFileURLs: true, allowDirs: mustResolveAllowDirs(t, dest)}
 
-	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
-	require.NoError(t, err)
-	require.False(t, result.IsError, resultText(t, result))
-
+	initCloneAt(t, bare, dest)
 	require.NoError(t, os.Remove(filepath.Join(dest, ".git", "HEAD")))
 
-	result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 	assert.Contains(t, resultText(t, result), ErrCorruptDest.Error())
@@ -3329,10 +3225,7 @@ func TestCheckGitDir(t *testing.T) {
 	worktreeConfig := func(t *testing.T, gitDir, text string) {
 		t.Helper()
 
-		runGitCmds(t, [][]string{
-			{"git", "--git-dir", gitDir, "config", "extensions.worktreeConfig", "true"},
-		})
-
+		setConfig(t, gitDir, "extensions.worktreeConfig", "true")
 		require.NoError(t, os.WriteFile(filepath.Join(gitDir, "config.worktree"), []byte(text), 0o644))
 	}
 
@@ -3586,9 +3479,9 @@ func TestCheckGitDir(t *testing.T) {
 			change: func(t *testing.T, gitDir string) {
 				t.Helper()
 
-				runGitCmds(t, [][]string{
-					{"git", "--git-dir", gitDir, "config", "core.repositoryformatversion", "99"},
-				})
+				// git reads the last value that the config file holds
+				// for the key.
+				setConfig(t, gitDir, "core.repositoryformatversion", "99")
 			},
 			want: "fatal: Expected git repo version",
 		},
@@ -3778,15 +3671,12 @@ func TestHandleCloneKeepsDestWhenCheckFails(t *testing.T) { //nolint:paralleltes
 			h := &handler{allowFileURLs: true}
 			dest := filepath.Join(t.TempDir(), "cloned")
 
-			result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
-			require.NoError(t, err)
-			require.False(t, result.IsError, resultText(t, result))
-
+			initCloneAt(t, bare, dest)
 			require.NoError(t, os.WriteFile(filepath.Join(dest, "local.txt"), []byte("keep"), 0o644))
 
 			tc.setup(t, dest)
 
-			result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
 			require.NoError(t, err)
 			require.True(t, result.IsError)
 			assert.Contains(t, resultText(t, result),
@@ -3822,13 +3712,9 @@ func TestHandleCloneCorruptDestIgnoresLocale(t *testing.T) { //nolint:parallelte
 	bare := initBareRepo(t)
 	h := &handler{allowFileURLs: true}
 	dest := filepath.Join(t.TempDir(), "cloned")
-
-	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
-	require.NoError(t, err)
-	require.False(t, result.IsError, resultText(t, result))
-
 	gitDir := filepath.Join(dest, ".git")
 
+	initCloneAt(t, bare, dest)
 	require.NoError(t, os.Remove(filepath.Join(gitDir, "HEAD")))
 
 	// The check needs a git that prints a translated message here. git
@@ -3844,7 +3730,7 @@ func TestHandleCloneCorruptDestIgnoresLocale(t *testing.T) { //nolint:parallelte
 		t.Skip("git does not translate its messages in this environment")
 	}
 
-	result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
 	require.NoError(t, err)
 	require.False(t, result.IsError, resultText(t, result))
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,16 +49,24 @@ var testGitEnv = map[string]string{
 // ignore file, the global attributes file, and the repository of the
 // developer from every test. It also keeps the system attributes file
 // of the machine from every test. The tests run git in their setup and
-// through the handlers, and keys of the git config change what git
-// does. For example, a plain git clone names its remote after
-// clone.defaultRemoteName. Each git command of the tests therefore
-// skips the system config, reads an empty global config, and reads no
-// config from the environment. Each git config command of the tests
-// reads and writes the config of the repository, not a file that the
-// environment names. A test that needs a global config points
-// GIT_CONFIG_GLOBAL at a file of its own, as [setGlobalConfig] does. A
-// test that needs config from the environment sets GIT_CONFIG_COUNT
-// and its numbered variables, as [TestReadUserHooks] does.
+// through the handlers. The setup of most tests copies a repository
+// that the test binary builds with git one time, as fixture_test.go
+// describes. The commands that build it take the environment that
+// TestMain leaves, except their global config.
+//
+// Keys of the git config change what git does. For example, a plain
+// git clone names its remote after clone.defaultRemoteName. Each git
+// command of the tests therefore skips the system config and reads no
+// config from the environment. Each one reads an empty global config,
+// except the commands that build a template. Their global config sets
+// only maintenance.auto to false, as [templateEnv] describes. Each git
+// config command of the tests reads and writes the config of the
+// repository, not a file that the environment names.
+//
+// A test that needs a global config points GIT_CONFIG_GLOBAL at a file
+// of its own, as [setGlobalConfig] does. A test that needs config from
+// the environment sets GIT_CONFIG_COUNT and its numbered variables, as
+// [TestReadUserHooks] does.
 //
 // git init and git clone copy the files of the template directory,
 // such as its hooks, into each repository that they create. The git
@@ -141,7 +150,17 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	os.Exit(m.Run())
+	// The templates take the environment that the steps before this
+	// one leave.
+	removeTemplates, err := setUpTemplates()
+	if err != nil {
+		panic(err)
+	}
+
+	code := m.Run()
+
+	removeTemplates()
+	os.Exit(code)
 }
 
 // formatEnv returns the name of each variable that [TestMain] unsets
@@ -180,41 +199,60 @@ func repositoryEnv(ctx context.Context) ([]string, error) {
 	return strings.Fields(string(out)), nil
 }
 
-// repositoryEnvCases returns sets of variables of the environment
-// that point git at a repository, by the name of a case. Each set maps
-// a variable to a path inside the working tree of that repository. The
-// empty path names the working tree.
-func repositoryEnvCases() map[string]map[string]string {
-	return map[string]map[string]string{
-		"git directory": {
-			"GIT_DIR": ".git",
-		},
-		// git sets these variables for the hooks of a commit in a
-		// linked worktree.
-		"git directory and index file": {
-			"GIT_DIR":        ".git",
-			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
-		},
-		// With this variable alone, git finds the repository from the
-		// directory of the command, and it reads and writes the index
-		// of the other repository.
-		"index file": {
-			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
-		},
-		"common directory": {
-			"GIT_COMMON_DIR": ".git",
-		},
-		"working tree": {
-			"GIT_WORK_TREE": "",
-		},
-		"object directory": {
-			"GIT_OBJECT_DIRECTORY": filepath.Join(".git", "objects"),
-		},
+// repositoryPaths maps variables of the environment that point git at
+// a repository to a path inside the working tree of that repository.
+// A variable with that path points git at the part of the repository
+// that the variable names, such as its index. The empty path names the
+// working tree.
+//
+// The result holds each variable that the function names, and each
+// variable of names. A test sets every variable of the result at one
+// time. The code under test removes each variable on its own. When the
+// code stops removing one variable, the test therefore leaves that
+// variable set alone. For example, with only GIT_INDEX_FILE set, git
+// finds the repository from the directory of the command. It then
+// reads and writes the index of the other repository.
+//
+// A test must not take names from the list of the code under test. The
+// test then stops setting a variable when the code stops removing it.
+func repositoryPaths(names []string) map[string]string {
+	paths := map[string]string{
+		"GIT_DIR":              ".git",
+		"GIT_COMMON_DIR":       ".git",
+		"GIT_WORK_TREE":        "",
+		"GIT_INDEX_FILE":       filepath.Join(".git", "index"),
+		"GIT_OBJECT_DIRECTORY": filepath.Join(".git", "objects"),
 	}
+
+	for _, name := range names {
+		if _, ok := paths[name]; !ok {
+			paths[name] = ".git"
+		}
+	}
+
+	return paths
+}
+
+// serverRepositoryPaths returns the result of [repositoryPaths] for
+// each variable that the server must remove. git rev-parse
+// --local-env-vars prints these variables, except
+// GIT_REFERENCE_BACKEND. The server keeps the two variables of that
+// list that pass config to every git command.
+func serverRepositoryPaths(t *testing.T) map[string]string {
+	t.Helper()
+
+	names, err := repositoryEnv(t.Context())
+	require.NoError(t, err)
+
+	names = slices.DeleteFunc(names, func(name string) bool {
+		return name == "GIT_CONFIG_PARAMETERS" || name == "GIT_CONFIG_COUNT"
+	})
+
+	return repositoryPaths(append(names, "GIT_REFERENCE_BACKEND"))
 }
 
 // setRepositoryEnv sets each variable of env to its path inside the
-// working tree at repo, as [repositoryEnvCases] gives it. git reads the
+// working tree at repo, as [repositoryPaths] gives it. git reads the
 // URI of a ref store from GIT_REFERENCE_BACKEND, so setRepositoryEnv
 // gives that variable the path with the files:// scheme. It returns a
 // function that unsets the variables, and t.Setenv restores them when
@@ -273,15 +311,67 @@ func readTree(t *testing.T, root string) map[string]string {
 	return tree
 }
 
+// readTrees returns the entries of [readTree] for every root.
+func readTrees(t *testing.T, roots ...string) map[string]string {
+	t.Helper()
+
+	trees := map[string]string{}
+
+	for _, root := range roots {
+		maps.Copy(trees, readTree(t, root))
+	}
+
+	return trees
+}
+
+// requireUnchanged fails the test when a file or a directory under a
+// root differs from before, the result of [readTrees] for the same
+// roots. The message names each path that changed.
+//
+// A call that the server refuses before it runs the git command of the
+// tool must change nothing. A test of such a refusal therefore checks
+// the repositories of the call with requireUnchanged. A git command that
+// fails can still write under the git directory. For example, a pull
+// writes the index before it connects to the remote. A test of a git
+// command that fails therefore checks the commits instead, as
+// [remoteTool.requireNotLanded] does.
+func requireUnchanged(t *testing.T, before map[string]string, roots ...string) {
+	t.Helper()
+
+	after := readTrees(t, roots...)
+
+	var changed []string
+
+	for path, entry := range before {
+		if after[path] != entry {
+			changed = append(changed, path)
+		}
+	}
+
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			changed = append(changed, path)
+		}
+	}
+
+	slices.Sort(changed)
+	require.Empty(t, changed, "the call must change no file of the repositories")
+}
+
 // plainCloneRemote makes a plain git clone of a new repository, and it
-// returns the name that git gave the remote of the clone.
+// returns the name that git gave the remote of the clone. Both git
+// commands run in the environment of the test, so the repository is
+// no copy of a template.
 func plainCloneRemote(t *testing.T) string {
 	t.Helper()
 
-	bare := initBareRepo(t)
+	bare := filepath.Join(t.TempDir(), "bare.git")
 	work := filepath.Join(t.TempDir(), "work")
 
-	runGitCmds(t, [][]string{{"git", "clone", "-q", bare, work}})
+	runGitCmds(t, [][]string{
+		{"git", "init", "-q", "--bare", bare},
+		{"git", "clone", "-q", bare, work},
+	})
 
 	return gitOut(t, "-C", work, "remote")
 }
@@ -413,9 +503,10 @@ func TestGitSkipsTemplateDirectory(t *testing.T) {
 	const probeEnv = "MCP_GIT_TEST_TEMPLATE_PROBE"
 
 	if os.Getenv(probeEnv) != "" {
-		// The setup of most tests starts with these commands. They
-		// create a bare repository and clones of it, and they commit
-		// and push.
+		// The setup of most tests copies the repositories of these
+		// helpers. The first call of each helper builds them with git
+		// commands. The commands create a bare repository and clones
+		// of it, and they commit and push.
 		bare := initBareRepo(t)
 		work := initWorkClone(t, bare)
 
@@ -479,11 +570,12 @@ func TestGitSkipsTemplateDirectory(t *testing.T) {
 // TestMain sets XDG_CONFIG_HOME when the test binary starts, so a test
 // that sets the variable leads git to the files again. Each case
 // therefore starts the test binary again. The environment of the new
-// process leads git to an ignore file or to an attributes file of the
+// process leads git to an ignore file and to an attributes file of the
 // case, as the environment of a developer does. The new process runs
 // only this test. probeEnv makes the test check a path in a new
 // repository and run the setup of a test instead of starting a
-// process.
+// process. The check of the ignore file and the check of the
+// attributes file each fail on their own.
 func TestGitSkipsDeveloperIgnoreAndAttributes(t *testing.T) {
 	t.Parallel()
 
@@ -518,9 +610,10 @@ func TestGitSkipsDeveloperIgnoreAndAttributes(t *testing.T) {
 		got := gitOut(t, "-C", repo, "check-attr", attribute, "--", "README")
 		assert.Equal(t, "README: "+attribute+": unspecified", got)
 
-		// The setup of most tests starts with these commands. They
-		// write the README file, and their git add adds every file
-		// that git does not ignore.
+		// The setup of most tests copies the repositories of these
+		// helpers. The first call of each helper builds them with git
+		// commands. The commands write the README file, and their git
+		// add adds every file that git does not ignore.
 		work := initWorkClone(t, initBareRepo(t))
 		assert.Equal(t, "init", gitOut(t, "-C", work, "log", "--format=%s"))
 
@@ -548,33 +641,19 @@ func TestGitSkipsDeveloperIgnoreAndAttributes(t *testing.T) {
 	)
 
 	tcs := map[string]struct {
-		// env names the variable that leads git to the file.
+		// env names the variable that leads git to the files.
 		env string
-		// file is the path of the file inside the directory that env
-		// names.
-		file string
-		// content is the content of the file.
-		content string
+		// dir is the path of the directory of the files inside the
+		// directory that env names.
+		dir string
 	}{
-		"ignore file in the XDG directory": {
-			env:     "XDG_CONFIG_HOME",
-			file:    filepath.Join("git", "ignore"),
-			content: ignore,
+		"files in the XDG directory": {
+			env: "XDG_CONFIG_HOME",
+			dir: "git",
 		},
-		"ignore file in the home directory": {
-			env:     "HOME",
-			file:    filepath.Join(".config", "git", "ignore"),
-			content: ignore,
-		},
-		"attributes file in the XDG directory": {
-			env:     "XDG_CONFIG_HOME",
-			file:    filepath.Join("git", "attributes"),
-			content: attributes,
-		},
-		"attributes file in the home directory": {
-			env:     "HOME",
-			file:    filepath.Join(".config", "git", "attributes"),
-			content: attributes,
+		"files in the home directory": {
+			env: "HOME",
+			dir: filepath.Join(".config", "git"),
 		},
 	}
 
@@ -583,10 +662,11 @@ func TestGitSkipsDeveloperIgnoreAndAttributes(t *testing.T) {
 			t.Parallel()
 
 			dir := t.TempDir()
-			file := filepath.Join(dir, tc.file)
+			files := filepath.Join(dir, tc.dir)
 
-			require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
-			require.NoError(t, os.WriteFile(file, []byte(tc.content), 0o644))
+			require.NoError(t, os.MkdirAll(files, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(files, "ignore"), []byte(ignore), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(files, "attributes"), []byte(attributes), 0o644))
 
 			cmd := exec.CommandContext(t.Context(), binary, run)
 			cmd.Env = slices.Concat(environ, []string{tc.env + "=" + dir, probeEnv + "=1"})
@@ -628,6 +708,13 @@ func TestGitSkipsSystemAttributes(t *testing.T) {
 				return (&handler{}).commandEnv()
 			},
 		},
+		// The commands that build the templates of fixture_test.go run
+		// with an environment of their own.
+		"git command that builds a template": {
+			env: func(*testing.T) []string {
+				return templateEnv
+			},
+		},
 		// The variables of [TestMain] do not reach git http-backend.
 		// The case runs git with the Env field of the handler alone.
 		"git http-backend": {
@@ -661,24 +748,27 @@ func TestGitSkipsSystemAttributes(t *testing.T) {
 // that the variables name as it was.
 //
 // TestMain unsets the variables when the test binary starts, so a
-// test that sets them points git at that repository again. Each case
+// test that sets them points git at that repository again. The test
 // therefore starts the test binary again in an environment that names
 // the repository of a developer, as the environment of a commit hook
-// does. The new process runs only this test. probeEnv makes the test
-// run the setup of a test and check its own environment instead of
-// starting a process.
+// does. git sets GIT_DIR and GIT_INDEX_FILE for the hooks of a commit
+// in a linked worktree. The new process runs only this test. probeEnv
+// makes the test run the setup of a test and check its own environment
+// instead of starting a process.
 func TestGitSkipsEnvironmentRepository(t *testing.T) {
 	t.Parallel()
 
-	// probeEnv marks a process that a case of this test started.
+	// probeEnv marks the process that this test started.
 	const probeEnv = "MCP_GIT_TEST_REPOSITORY_PROBE"
 
 	names, err := repositoryEnv(t.Context())
 	require.NoError(t, err)
 
 	if os.Getenv(probeEnv) != "" {
-		// The setup of most tests starts with these commands. They
-		// write the git config, the index, and a commit.
+		// The setup of most tests copies the repositories of these
+		// helpers. The first call of each helper builds them with git
+		// commands. The commands write the git config, the index, and
+		// a commit.
 		work := initWorkClone(t, initBareRepo(t))
 		assert.Equal(t, "init", gitOut(t, "-C", work, "log", "--format=%s"))
 
@@ -700,48 +790,28 @@ func TestGitSkipsEnvironmentRepository(t *testing.T) {
 	binary, err := os.Executable()
 	require.NoError(t, err)
 
-	run := "-test.run=^" + t.Name() + "$"
+	// dev stands for the repository of the developer. Its setup does
+	// not run git commit in dev. A commit starts git maintenance in
+	// the background, and maintenance writes under the git directory.
+	dev := initWorkClone(t, initBareRepo(t))
+	before := readTree(t, dev)
 
-	// every points each variable of the list at the git directory.
+	// The environment points every variable that git lists at dev.
 	// TestMain gives the variables of testGitEnv their own values.
-	every := map[string]string{}
-	for _, name := range names {
-		every[name] = ".git"
+	env := []string{probeEnv + "=1"}
+	for variable, path := range repositoryPaths(names) {
+		env = append(env, variable+"="+filepath.Join(dev, path))
 	}
 
-	// Each case maps a variable to a path inside the repository of the
-	// developer. With the index file alone, the setup of a test
-	// succeeds, and its git add writes the index of the developer.
-	tcs := repositoryEnvCases()
-	tcs["every variable that git lists"] = every
+	cmd := exec.CommandContext(t.Context(), binary, "-test.run=^"+t.Name()+"$")
+	cmd.Env = slices.Concat(os.Environ(), env)
 
-	for name, tc := range tcs {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+	out, err := cmd.CombinedOutput()
 
-			// dev stands for the repository of the developer. Its
-			// setup does not run git commit in dev. A commit starts
-			// git maintenance in the background, and maintenance
-			// writes under the git directory.
-			dev := initWorkClone(t, initBareRepo(t))
-			before := readTree(t, dev)
-
-			env := []string{probeEnv + "=1"}
-			for variable, path := range tc {
-				env = append(env, variable+"="+filepath.Join(dev, path))
-			}
-
-			cmd := exec.CommandContext(t.Context(), binary, run)
-			cmd.Env = slices.Concat(os.Environ(), env)
-
-			out, err := cmd.CombinedOutput()
-
-			// A process that fails can still write to the repository,
-			// so the test reports both.
-			assert.Equal(t, before, readTree(t, dev))
-			require.NoError(t, err, "%s", out)
-		})
-	}
+	// A process that fails can still write to the repository, so the
+	// test reports both.
+	assert.Equal(t, before, readTree(t, dev))
+	require.NoError(t, err, "%s", out)
 }
 
 // [TestMain] unsets each variable of the environment that selects a
@@ -750,39 +820,41 @@ func TestGitSkipsEnvironmentRepository(t *testing.T) {
 // create its repository whatever they say.
 //
 // TestMain unsets the variables when the test binary starts, so a test
-// that sets them selects a format again. Each case therefore starts
-// the test binary again in an environment that sets one of the
+// that sets them selects a format again. The test therefore starts the
+// test binary again in an environment that sets every one of the
 // variables, as the shell of a developer can. The value names no
-// format, so a git init that reads the variable fails, whatever
-// formats the installed git creates by default. The new process runs
-// only this test. probeEnv makes the test check its own environment
-// and run the setup of a test instead of starting a process.
+// format, so a git init that reads one of the variables fails,
+// whatever formats the installed git creates by default. The new
+// process runs only this test. probeEnv makes the test check its own
+// environment and run the setup of a test instead of starting a
+// process. That check names each variable that TestMain left set.
 func TestGitSkipsEnvironmentFormat(t *testing.T) {
 	t.Parallel()
 
-	// probeEnv marks a process that a case of this test started.
+	// probeEnv marks the process that this test started.
 	const probeEnv = "MCP_GIT_TEST_FORMAT_PROBE"
 
 	// noFormat names no object format and no format of the ref
 	// storage.
 	const noFormat = "mcp-git-test-no-format"
 
-	// Each case names a variable that selects a format.
-	tcs := map[string]string{
-		"object format": "GIT_DEFAULT_HASH",
-		"ref format":    "GIT_DEFAULT_REF_FORMAT",
-		"ref backend":   "GIT_REFERENCE_BACKEND",
+	// variables names each variable that selects a format.
+	variables := []string{
+		"GIT_DEFAULT_HASH",
+		"GIT_DEFAULT_REF_FORMAT",
+		"GIT_REFERENCE_BACKEND",
 	}
 
 	if os.Getenv(probeEnv) != "" {
-		for _, variable := range tcs {
+		for _, variable := range variables {
 			_, set := os.LookupEnv(variable)
 			assert.False(t, set, "TestMain left %s set", variable)
 		}
 
-		// The setup of most tests starts with these commands. They
-		// create a bare repository with git init, and they commit to
-		// a clone of it.
+		// The setup of most tests copies the repositories of these
+		// helpers. The first call of each helper builds them with git
+		// commands. The commands create a bare repository with git
+		// init, and they commit to a clone of it.
 		work := initWorkClone(t, initBareRepo(t))
 		assert.Equal(t, "init", gitOut(t, "-C", work, "log", "--format=%s"))
 
@@ -792,19 +864,16 @@ func TestGitSkipsEnvironmentFormat(t *testing.T) {
 	binary, err := os.Executable()
 	require.NoError(t, err)
 
-	run := "-test.run=^" + t.Name() + "$"
-
-	for name, variable := range tcs {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			cmd := exec.CommandContext(t.Context(), binary, run)
-			cmd.Env = slices.Concat(os.Environ(), []string{variable + "=" + noFormat, probeEnv + "=1"})
-
-			out, err := cmd.CombinedOutput()
-			require.NoError(t, err, "%s", out)
-		})
+	env := []string{probeEnv + "=1"}
+	for _, variable := range variables {
+		env = append(env, variable+"="+noFormat)
 	}
+
+	cmd := exec.CommandContext(t.Context(), binary, "-test.run=^"+t.Name()+"$")
+	cmd.Env = slices.Concat(os.Environ(), env)
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
 }
 
 // mustResolveAllowDirs resolves dirs as the server does when it
