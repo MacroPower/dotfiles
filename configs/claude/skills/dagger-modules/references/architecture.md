@@ -546,14 +546,15 @@ func (m *GolangciLint) Lint(
     // +optional
     // +default="v1.57.2"
     version string,
-) (string, error) {
-    return dag.Container().
+) error {
+    _, err := dag.Container().
         From("golangci/golangci-lint:" + version).
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
         WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
         WithExec([]string{"golangci-lint", "run"}).
-        Stdout(ctx)
+        Sync(ctx)
+    return err
 }
 ```
 
@@ -562,7 +563,10 @@ func (m *GolangciLint) Lint(
 Check functions are the key integration point with `dagger check`:
 - Annotate with `// +check` above the function
 - Must not require any arguments (optional args with defaults are fine)
-- Can return `error` (pass/fail), `*dagger.Container` (exit code determines result), or `void` (no return)
+- Return only `error`, and the check fails when the error is not nil
+- To check a command, run the container with `Sync(ctx)` and return the error of `Sync`, as `Lint` does in the [example toolchain](#example-toolchain). `Sync` returns an error when the command exits with a non-zero code
+- Dagger fails to load a module whose `engineVersion` is a 1.0 beta or a later version when one of its check functions returns a value, such as a `*dagger.Container`. The error is `check <Object>.<function> must return Void`, and `Void` is the Dagger return type of a Go function that returns only `error`
+- Dagger does not apply that rule to a module whose `engineVersion` is lower than 1.0, such as a `dagger.json` module of a 0.x project. A check function of such a module can return a `*dagger.Container`. Dagger then runs the container, and the check fails when a command of the container exits with a non-zero code
 - Checks execute in parallel for maximum performance
 - Checks from toolchains are namespaced: `dagger check golangci-lint:lint`
 - Pattern-based filtering: `dagger check lint-*`, `dagger check golangci-lint:*`

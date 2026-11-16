@@ -165,7 +165,7 @@ func (m *MyModule) Verify(ctx context.Context) error
 
 ### Check functions
 
-Annotate functions with `// +check` to register them as checks that run with `dagger check`. Check functions must not require arguments (optional args with defaults are fine). They can return `error` (pass/fail) or `*dagger.Container` (exit code determines result):
+Annotate functions with `// +check` to register them as checks that run with `dagger check`. A check function takes no required argument, but it can take optional arguments that have defaults. It returns only `error`, and the check fails when the error is not nil. To check a command, run the container with `Sync(ctx)` and return the error of `Sync`. `Sync` returns an error when the command exits with a non-zero code. Each check in this example runs a command that way:
 
 ```go
 // Lint runs the linter
@@ -180,16 +180,20 @@ func (m *MyModule) Lint(ctx context.Context) error {
     return err
 }
 
-// Build verifies the project compiles (container exit code = check result)
+// Build verifies the project compiles
 // +check
-func (m *MyModule) Build() *dagger.Container {
-    return dag.Container().
+func (m *MyModule) Build(ctx context.Context) error {
+    _, err := dag.Container().
         From("golang:1.22").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
-        WithExec([]string{"go", "build", "./..."})
+        WithExec([]string{"go", "build", "./..."}).
+        Sync(ctx)
+    return err
 }
 ```
+
+Do not return a `*dagger.Container` or another value from a check function. Dagger applies this rule to each module whose `engineVersion` is a 1.0 beta or a later version. When a check function of such a module returns a value, Dagger fails to load the module with `check <Object>.<function> must return Void`. [Check functions](architecture.md#check-functions) in architecture.md covers the modules whose `engineVersion` is lower than 1.0.
 
 ### When to include `context.Context`
 

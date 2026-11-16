@@ -357,7 +357,7 @@ A good toolchain:
 
 ### Writing check functions
 
-Check functions must not require any arguments (but can accept optional arguments with defaults). Annotate with `// +check`. Checks can return `error` (pass/fail) or `*dagger.Container` (exit code determines result):
+Annotate each check function with `// +check`. A check function takes no required argument, but it can take optional arguments that have defaults. It returns only `error`, and the check fails when the error is not nil. To check a command, run the container with `Sync(ctx)` and return the error of `Sync`. `Sync` returns an error when the command exits with a non-zero code. Each check in this example runs a command that way:
 
 ```go
 // Lint runs golangci-lint on the source code
@@ -372,16 +372,22 @@ func (m *MyModule) Lint(ctx context.Context) error {
     return err
 }
 
-// Build verifies the project compiles (exit code determines pass/fail)
+// Build verifies the project compiles
 // +check
-func (m *MyModule) Build() *dagger.Container {
-    return dag.Container().
+func (m *MyModule) Build(ctx context.Context) error {
+    _, err := dag.Container().
         From("golang:1.22").
         WithDirectory("/src", m.Source).
         WithWorkdir("/src").
-        WithExec([]string{"go", "build", "./..."})
+        WithExec([]string{"go", "build", "./..."}).
+        Sync(ctx)
+    return err
 }
 ```
+
+Do not return a `*dagger.Container` or another value from a check function. Dagger applies this rule to each module whose `engineVersion` is a 1.0 beta or a later version, and every module that `dagger module init` creates carries such a version. When a check function of such a module returns a value, Dagger fails to load the module with `check <Object>.<function> must return Void`. `Void` is the Dagger return type of a Go function that returns only `error`.
+
+Dagger does not apply the rule to a module whose `engineVersion` is lower than 1.0, such as a `dagger.json` module of a 0.x project. A check function of such a module can return a `*dagger.Container`. Dagger then runs the container, and the check fails when a command of the container exits with a non-zero code. Return only `error` from each check function that you add to such a module, so that the module still loads after its `engineVersion` rises to 1.0.
 
 Checks from toolchains are namespaced: `dagger check my-toolchain:lint`. Run all checks from a toolchain with `dagger check my-toolchain:*`. List available checks with `dagger check -l`. `dagger check` resolves against the entire workspace (all modules and toolchains it contains), not just the current module. Pass `--fail-fast` to cancel remaining checks on the first failure.
 
