@@ -727,8 +727,14 @@ func TestGitOptions(t *testing.T) {
 	}
 }
 
-func TestCommandEnv(t *testing.T) {
-	t.Parallel()
+func TestCommandEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// The environment of the test process might already hold a value
+	// that the server sets. The test therefore gives each of these
+	// variables another value first, so that each assertion passes
+	// only when the server sets the variable.
+	t.Setenv("GIT_ALLOW_PROTOCOL", "ext")
+	t.Setenv(hookSwitchEnv, "true")
+	t.Setenv("GIT_TERMINAL_PROMPT", "1")
 
 	tests := map[string]struct {
 		h    *handler
@@ -743,10 +749,8 @@ func TestCommandEnv(t *testing.T) {
 		},
 	}
 
-	for name, tt := range tests {
+	for name, tt := range tests { //nolint:paralleltest // t.Setenv
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
 			env := tt.h.commandEnv()
 
 			// The process runs git with the last value of a variable,
@@ -766,6 +770,13 @@ func TestCommandEnv(t *testing.T) {
 // env holds the environment of the test process with its secrets,
 // such as GH_TOKEN. A failed assertion on env therefore writes those
 // secrets to the test log.
+//
+// A test must also set or remove each variable that it asserts on
+// before it builds env, with t.Setenv or unsetEnv. The environment of
+// the test process might already hold the wanted value, such as
+// GIT_EDITOR=true. The assertion then passes whether or not the
+// server sets the variable. To check a value that the server sets,
+// give the variable another value first.
 func lastEnv(env []string, name string) string {
 	var last string
 
@@ -1118,6 +1129,14 @@ func TestTruncateOutput(t *testing.T) {
 }
 
 func TestGitEnvDefaultSSHCommand(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// The environment of the test process might already hold a value
+	// that gitEnv sets, such as GIT_EDITOR=true. The test therefore
+	// gives each of these variables another value first, so that each
+	// assertion passes only when gitEnv sets the variable.
+	t.Setenv("GIT_TERMINAL_PROMPT", "1")
+	t.Setenv("GIT_EDITOR", "vi")
+	t.Setenv("GIT_SEQUENCE_EDITOR", "vi")
+
 	t.Setenv("GIT_SSH_COMMAND", "")
 
 	env := gitEnv()
