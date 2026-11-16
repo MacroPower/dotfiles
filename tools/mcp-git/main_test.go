@@ -2,8 +2,10 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,13 +16,24 @@ import (
 // tests run git in their setup and through the handlers, and keys of
 // the git config change what git does. For example, a plain git clone
 // names its remote after clone.defaultRemoteName. Each git command of
-// the tests therefore skips the system config and reads an empty
-// global config. A test that needs a global config points
-// GIT_CONFIG_GLOBAL at a file of its own, as [setGlobalConfig] does.
+// the tests therefore skips the system config, reads an empty global
+// config, and reads no config from the environment. Each git config
+// command of the tests reads and writes the config of the repository,
+// not a file that the environment names. A test that needs a global
+// config points GIT_CONFIG_GLOBAL at a file of its own, as
+// [setGlobalConfig] does. A test that needs config from the
+// environment sets GIT_CONFIG_COUNT and its numbered variables, as
+// [TestReadUserHooks] does.
 func TestMain(m *testing.M) {
 	for name, value := range map[string]string{
 		"GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_CONFIG_GLOBAL":   os.DevNull,
+		// A count of zero makes git skip each GIT_CONFIG_KEY_<n> and
+		// GIT_CONFIG_VALUE_<n> variable of the developer.
+		"GIT_CONFIG_COUNT": "0",
+		// git -c passes its config in this variable to each command
+		// that git starts, such as the command of git rebase --exec.
+		"GIT_CONFIG_PARAMETERS": "",
 	} {
 		err := os.Setenv(name, value)
 		if err != nil {
@@ -28,7 +41,29 @@ func TestMain(m *testing.M) {
 		}
 	}
 
+	// A git config command without a file option reads and writes the
+	// file that GIT_CONFIG names in place of the config of the
+	// repository. An empty value names no file, and git config then
+	// fails to write, so TestMain unsets the variable.
+	err := os.Unsetenv("GIT_CONFIG")
+	if err != nil {
+		panic(err)
+	}
+
 	os.Exit(m.Run())
+}
+
+// plainCloneRemote makes a plain git clone of a new repository, and it
+// returns the name that git gave the remote of the clone.
+func plainCloneRemote(t *testing.T) string {
+	t.Helper()
+
+	bare := initBareRepo(t)
+	work := filepath.Join(t.TempDir(), "work")
+
+	runGitCmds(t, [][]string{{"git", "clone", "-q", bare, work}})
+
+	return gitOut(t, "-C", work, "remote")
 }
 
 // [TestMain] makes git skip the config file in each place where git
@@ -58,8 +93,6 @@ func TestGitSkipsDeveloperConfig(t *testing.T) { //nolint:paralleltest // t.Sete
 
 	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
 		t.Run(name, func(t *testing.T) {
-			bare := initBareRepo(t)
-
 			path := filepath.Join(t.TempDir(), "config")
 			file := filepath.Join(path, tc.file)
 
@@ -67,10 +100,77 @@ func TestGitSkipsDeveloperConfig(t *testing.T) { //nolint:paralleltest // t.Sete
 			require.NoError(t, os.WriteFile(file, []byte("[clone]\n\tdefaultRemoteName = upstream\n"), 0o644))
 			t.Setenv(tc.env, path)
 
-			work := filepath.Join(t.TempDir(), "work")
-			runGitCmds(t, [][]string{{"git", "clone", "-q", bare, work}})
+			assert.Equal(t, defaultRemote, plainCloneRemote(t))
+		})
+	}
+}
 
-			assert.Equal(t, defaultRemote, gitOut(t, "-C", work, "remote"))
+// [TestMain] makes git read no config from the variables of the
+// environment that pass config to git or that name the config file of
+// git config. A plain git clone must therefore name its remote origin,
+// and git config must find no clone.defaultRemoteName, whatever those
+// variables say.
+//
+// TestMain resets the variables when the test binary starts, so a test
+// that sets them puts the config back. Each case therefore starts the
+// test binary again in an environment that sets the key, as the shell
+// of a developer can. The new process runs only this test, and
+// probeEnv makes the test check a clone and the config instead of
+// starting a process.
+func TestGitSkipsEnvironmentConfig(t *testing.T) {
+	t.Parallel()
+
+	// probeEnv marks a process that a case of this test started.
+	const probeEnv = "MCP_GIT_TEST_CLONE_PROBE"
+
+	if os.Getenv(probeEnv) != "" {
+		assert.Equal(t, defaultRemote, plainCloneRemote(t))
+
+		// git config exits 1 when no config sets the key. The command
+		// runs outside every repository, so only the config of the
+		// developer can set the key.
+		cmd := exec.CommandContext(t.Context(), "git", "-C", t.TempDir(), "config", "--get", "clone.defaultRemoteName")
+
+		var exitErr *exec.ExitError
+
+		out, err := cmd.Output()
+		require.ErrorAs(t, err, &exitErr, "git config found %q", out)
+		assert.Equal(t, 1, exitErr.ExitCode())
+
+		return
+	}
+
+	binary, err := os.Executable()
+	require.NoError(t, err)
+
+	run := "-test.run=^" + t.Name() + "$"
+
+	file := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(file, []byte("[clone]\n\tdefaultRemoteName = upstream\n"), 0o644))
+
+	tcs := map[string][]string{
+		"config file variable": {
+			"GIT_CONFIG=" + file,
+		},
+		"numbered variables": {
+			"GIT_CONFIG_COUNT=1",
+			"GIT_CONFIG_KEY_0=clone.defaultRemoteName",
+			"GIT_CONFIG_VALUE_0=upstream",
+		},
+		"parameters variable": {
+			"GIT_CONFIG_PARAMETERS='clone.defaultRemoteName'='upstream'",
+		},
+	}
+
+	for name, env := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := exec.CommandContext(t.Context(), binary, run)
+			cmd.Env = slices.Concat(os.Environ(), env, []string{probeEnv + "=1"})
+
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", out)
 		})
 	}
 }

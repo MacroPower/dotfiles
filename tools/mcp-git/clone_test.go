@@ -1820,8 +1820,10 @@ func (p *authProxy) config() string {
 // setProxyEnv sets GH_TOKEN to token, and it points the global git
 // config at a file that holds config. It clears each variable of the
 // environment that changes how git reaches a host or where git finds a
-// credential. It sets environment variables, so the test must not run
-// in parallel.
+// credential. [TestMain] keeps the git config of the developer from
+// every test, so a credential helper or a proxy of the developer never
+// overrides config. setProxyEnv sets environment variables, so the
+// test must not run in parallel.
 func setProxyEnv(t *testing.T, token, config string) {
 	t.Helper()
 
@@ -1836,11 +1838,6 @@ func setProxyEnv(t *testing.T, token, config string) {
 	// without a connection to a host when no rewrite changes an
 	// SCP-style URL to an https URL.
 	t.Setenv("GIT_SSH_COMMAND", "false")
-	// git reads config from these variables after the global config.
-	// A credential helper or a proxy that they set then overrides the
-	// test config.
-	t.Setenv("GIT_CONFIG_COUNT", "0")
-	t.Setenv("GIT_CONFIG_PARAMETERS", "")
 	setGlobalConfig(t, config)
 }
 
