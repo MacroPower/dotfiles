@@ -121,8 +121,8 @@ This is the most common pattern for build/CI modules:
 
 ```go
 func New(
-    // Project source directory
-    // +defaultPath="."
+    // Project source directory, which defaults to the repository root
+    // +defaultPath="/"
     // +ignore=["**/node_modules", "**/.git"]
     source *dagger.Directory,
 ) *MyModule {
@@ -133,6 +133,8 @@ type MyModule struct {
     Source *dagger.Directory
 }
 ```
+
+In a Git repository, `+defaultPath="/"` names the root of the repository that holds the module. `+defaultPath="."` names the module directory, which `dagger module init` puts in `.dagger/modules/<name>`. A module that another repository installs reads the project through a `*dagger.Workspace` argument instead, as the [example toolchain](architecture.md#example-toolchain) does.
 
 ### Important
 
@@ -230,8 +232,8 @@ func (m *MyModule) Build(
 
 ```go
 func (m *MyModule) Lint(
-    // Source code
-    // +defaultPath="."
+    // Source code, which defaults to the repository root
+    // +defaultPath="/"
     // +ignore=["**/.git", "**/vendor"]
     src *dagger.Directory,
 ) *dagger.Container {

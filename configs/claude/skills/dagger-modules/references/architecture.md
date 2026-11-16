@@ -164,15 +164,13 @@ func (m *MyModule) FreshBuild(ctx context.Context, src *dagger.Directory) *dagge
 
 ### Backwards compatibility (pre-v0.19.4)
 
-Modules created before v0.19.4 defaulted to `"session"` caching for all functions. After upgrading and running `dagger develop`, a flag appears in `dagger.json`:
+Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching for all functions. To keep that default when the `engineVersion` rises, Dagger writes a flag into the module config. `dagger-module.toml` holds the flag in this form, and a 0.x `dagger.json` holds it as `"disableDefaultFunctionCaching": true`:
 
-```json
-{
-  "disableDefaultFunctionCaching": true
-}
+```toml
+disableDefaultFunctionCaching = true
 ```
 
-This preserves the old behavior. After reviewing each function's caching needs and adding appropriate `// +cache` annotations where necessary, remove this flag to opt in to the new 7-day default TTL.
+The flag preserves the session default. After you review the caching of each function and add the `// +cache` annotations that the functions need, remove the flag to opt in to the 7-day default TTL.
 
 ---
 
@@ -366,15 +364,17 @@ secret := dag.SetSecret("my-secret", "the-value")
 ### How users pass secrets
 
 ```shell
-dagger call publish --token=env://GITHUB_TOKEN       # from environment variable
-dagger call publish --token=file://~/.token           # from file
-dagger call publish --token=cmd://"vault read ..."    # from command output
-dagger call publish --token=op://vault/item/field     # 1Password
-dagger call publish --token=vault://path/to/secret    # HashiCorp Vault
-dagger call publish --token=aws://prod/github/token   # AWS Secrets Manager
+dagger call publish --token=env://GITHUB_TOKEN              # from environment variable
+dagger call publish --token=file://~/.token                 # from file
+dagger call publish --token=cmd://"vault read ..."          # from command output
+dagger call publish --token=op://vault/item/field           # 1Password
+dagger call publish --token=vault://secret/ci/github.token  # HashiCorp Vault
+dagger call publish --token=aws+sm://prod/github/token      # AWS Secrets Manager
 ```
 
-Always include the scheme. Passing a bare, scheme-less value is deprecated and warns that a future release requires a scheme prefix (for example, `env://`).
+Each `vault://` address has the form `vault://<mount>/<path>.<field>`. The first path segment names the KVv2 mount, and the field follows the last dot. The example reads the `token` field of the secret `ci/github` from the `secret` mount.
+
+Always include the full `<provider>://` scheme. Dagger 1.0 rejects a bare name such as `GITHUB_TOKEN`, and it rejects the short form `env:GITHUB_TOKEN`.
 
 Secret references (and other function arguments) can be saved as user-defaults in a local `.env` file. Dagger persists the *reference* (for example, `env://GITHUB_TOKEN`), never the plaintext, so the `.env` holds no secret material.
 
@@ -433,7 +433,7 @@ func (m *MyModule) Generate() *dagger.Changeset {
 }
 ```
 
-The `// +generate` annotation registers the function with the `dagger generate` command, which runs every generator and merges all of their changesets into the source directory. Each `// +generate` function also gets a matching check automatically, so `dagger check` reports whether generated files are stale (committed output drifted from a fresh run). Use `dagger check --generated=false` to run only the explicit checks, or a toolchain's `ignoreChecks` to suppress its generated checks.
+The `// +generate` annotation registers the function with the `dagger generate` command, which runs every generator and merges all of their changesets into the source directory. Each `// +generate` function also gets a matching check automatically, so `dagger check` reports whether generated files are stale (committed output drifted from a fresh run). Use `dagger check --generated=false` to run only the explicit checks. To suppress the generated check of one generator, list the generator under `check.skip` in the `[modules.<name>]` entry of its module in `dagger.toml`. `check-generated = false` at the top of `dagger.toml` suppresses the generated checks of every module. 0.x projects list the checks to suppress in the `ignoreChecks` of each toolchain entry in `dagger.json`.
 
 For changesets returned without `// +generate`, the CLI prompts the user to apply them. Use `-y` / `--auto-apply` to apply automatically (useful in CI). Functions can return an array of changesets for multiple independent sets of changes.
 
@@ -441,23 +441,25 @@ For changesets returned without `// +generate`, the CLI prompts the user to appl
 
 ## Default Path Resolution
 
-How `+defaultPath` resolves depends on whether the module is in a git repository:
+How `+defaultPath` resolves depends on whether the module is in a git repository. The module config directory is the directory that holds the `dagger-module.toml` of the module, or its `dagger.json` in a 0.x project.
 
 **Git repositories:**
 | Default path | Context directory | Resolved path |
 | --- | --- | --- |
 | `/` | Repository root (`/`) | `/` |
 | `/src` | Repository root (`/`) | `/src` |
-| `.` | `dagger.json` directory (`/my-module`) | `/my-module` |
-| `..` | `dagger.json` directory (`/my-module`) | `/` |
+| `.` | Module config directory (`/my-module`) | `/my-module` |
+| `..` | Module config directory (`/my-module`) | `/` |
 
 **Non-git directories:**
 | Default path | Context directory | Resolved path |
 | --- | --- | --- |
-| `/` | `dagger.json` directory (`/my-module`) | `/my-module` |
-| `.` | `dagger.json` directory (`/my-module`) | `/my-module` |
+| `/` | Module config directory (`/my-module`) | `/my-module` |
+| `.` | Module config directory (`/my-module`) | `/my-module` |
 
-The key distinction: in git repos, absolute paths resolve from the repo root; relative paths resolve from the `dagger.json` directory. Outside git repos, all paths resolve from the `dagger.json` directory.
+In git repos, absolute paths resolve from the repo root, and relative paths resolve from the module config directory. Outside git repos, all paths resolve from the module config directory.
+
+These rules resolve a path against the module that declares the argument, and against the Git repository that holds that module. [Toolchain Design](#toolchain-design) covers the modules whose paths resolve against the project that installs them.
 
 ---
 
@@ -467,20 +469,23 @@ Toolchains are modules optimized for zero-code consumption. Instead of importing
 
 ### Design principles
 
-1. **Single-tool focus** — one toolchain per tool (golangci-lint, not "Go toolchain"). This enables independent updates, tool-specific customization, and mixing across language stacks
-2. **Default paths** — use `+defaultPath` so source arguments resolve automatically
-3. **Checks** — expose validation functions that integrate with `dagger check`
-4. **Sensible defaults** — work out of the box, customize via optional args
+1. **Single-tool focus**: one toolchain per tool (golangci-lint, not "Go toolchain"). This enables independent updates, tool-specific customization, and mixing across language stacks
+2. **Workspace input**: take a `*dagger.Workspace` argument in `New` and read the project with `ws.Directory("/")`, so the toolchain works without explicit args
+3. **Checks**: expose validation functions that integrate with `dagger check`
+4. **Defaults**: give each optional argument a default, so the toolchain runs with no arguments
 
 ### Example toolchain
 
 ```go
 func New(
-    // +defaultPath="."
-    // +ignore=["**/.git", "**/vendor"]
-    source *dagger.Directory,
+    // The project that installs the toolchain, filled by Dagger
+    ws *dagger.Workspace,
 ) *GolangciLint {
-    return &GolangciLint{Source: source}
+    return &GolangciLint{
+        Source: ws.Directory("/", dagger.WorkspaceDirectoryOpts{
+            Exclude: []string{"**/.git", "**/vendor"},
+        }),
+    }
 }
 
 type GolangciLint struct {
@@ -522,11 +527,11 @@ Check functions are the key integration point with `dagger check`:
 ### Installation and usage
 
 ```shell
-# Install
-dagger toolchain install github.com/you/golangci-lint-toolchain@v1.0.0
+# Install into the workspace
+dagger install github.com/you/golangci-lint-toolchain@v1.0.0
 
 # Custom name
-dagger toolchain install github.com/you/toolchain --name lint
+dagger install github.com/you/toolchain --name lint
 
 # Use
 dagger call lint lint
@@ -534,9 +539,22 @@ dagger check          # runs all checks from all toolchains
 dagger check lint:*   # runs checks from "lint" toolchain only
 ```
 
+`dagger install` records the module under `[modules.<name>]` in the `dagger.toml` of the project. Toolchain is the Dagger 0.x name for such a module. 0.x projects list their toolchains under `toolchains` in `dagger.json`, and Dagger 1.0 has no command that adds an entry to that list, so edit the file.
+
+### Default path context
+
+Dagger resolves `+defaultPath` against the Git repository that holds the module that declares it, as [Default Path Resolution](#default-path-resolution) describes. It resolves the path against the project that installs the module in two cases only:
+
+- The module is a toolchain or the blueprint of a 0.x project.
+- The `dagger.toml` entry of the module sets `legacy-default-path = true`. `dagger workspace migrate` writes that key for each toolchain and for the blueprint that it migrates.
+
+Toolchains read the project without that key through a `*dagger.Workspace` argument, as the [example toolchain](#example-toolchain) does. Dagger fills the argument from the workspace of a call that starts outside a module, such as a `dagger call` or a `dagger check`. Dagger does not forward the workspace of a module function to the dependencies that the function calls. So a module that calls such a dependency, such as a test module, takes a `*dagger.Workspace` argument of its own and passes it to the dependency.
+
+`+defaultPath` serves the modules that read the repository that holds them, such as a module inside the project that it builds. It also serves the toolchains and the blueprint of a 0.x project. `ws.Directory` takes `Exclude` and `Include` patterns in place of `+ignore`. `ws.File` reads one file, and `ws.FindUp` returns the workspace path of the nearest file or directory with a given name.
+
 ### Customization in dagger.json
 
-Users can customize toolchains without forking:
+0.x projects customize a toolchain in `dagger.json`, without forking the toolchain:
 
 ```json
 {
@@ -561,9 +579,11 @@ Users can customize toolchains without forking:
 ```
 
 Three customization mechanisms:
-1. **Override argument defaults** — change default values for function arguments
-2. **Override `defaultPath`** — redirect source directory for functions using `+defaultPath`
-3. **Ignore checks** — skip specific checks by name (supports glob patterns, scoped to the toolchain)
+1. **Override argument defaults**: change default values for function arguments
+2. **Override `defaultPath`**: redirect source directory for functions using `+defaultPath`
+3. **Ignore checks**: skip specific checks by name (supports glob patterns, scoped to the toolchain)
+
+1.0 workspaces hold these choices under `[modules.<name>]` in `dagger.toml`. The `settings` table sets the constructor arguments of the module, and `check.skip` lists the checks that `dagger check` leaves out. `dagger workspace migrate` converts each customization that has a setting to match.
 
 ---
 
@@ -571,9 +591,13 @@ Three customization mechanisms:
 
 ### Installing
 
+Run the `dagger module client` commands from the directory of the module that takes the dependency. Each `add`, `update`, and `rm` regenerates that module, and `-y` applies the changes.
+
 ```shell
-dagger install github.com/user/module@v1.0.0
+dagger module client add github.com/user/module@v1.0.0 --sdk=go -y
 ```
+
+The command records the dependency in `dagger.toml`, and the SDK writes the matching `[[dependencies]]` entry of `dagger-module.toml`. The next `dagger generate` replaces a manual edit of that entry, so do not edit it by hand.
 
 ### Using in code
 
@@ -588,20 +612,31 @@ func (m *MyModule) Build(ctx context.Context, src *dagger.Directory) *dagger.Dir
 ### Local dependencies
 
 ```shell
-dagger install ./path/to/local-module
+dagger module client add ./path/to/local-module --sdk=go -y
 ```
 
-Both modules must be in the same git repository.
+Both modules must be in the same git repository. Write a local path with a leading `./` or `../`. The command rejects a bare name such as `local-module`.
 
 ### Managing dependencies
 
 ```shell
-dagger install github.com/user/module@v1.0.0  # install or update to specific version
-dagger update module-name                       # update to latest
-dagger uninstall module-name                    # remove
+dagger module client list --sdk=go              # list the dependencies, with the TARGET that rm takes
+dagger module client update --sdk=go -y         # update every dependency of the module
+dagger module client rm <TARGET> --sdk=go -y    # remove
 ```
 
 Module references use the format `[proto://]host/repo[/subpath][@version]`.
+
+### Workspace modules
+
+`dagger install` and `dagger uninstall` do not change the dependencies of a module. They act on the modules that the workspace installs, in `dagger.toml`:
+
+```shell
+dagger install github.com/user/module@v1.0.0   # install a module in the workspace
+dagger module update module-name                # refresh the version of an installed module
+dagger uninstall module-name                    # remove
+dagger lock update                              # refresh the pins in dagger.lock
+```
 
 ---
 
@@ -738,13 +773,16 @@ work := dag.LLM().
 
 ### Test module pattern
 
-Create a `tests/` subdirectory with its own `dagger.json` that depends on the parent module:
+Create a `tests/` subdirectory with its own `dagger-module.toml` that depends on the parent module:
 
 ```shell
-cd my-module/tests
-dagger init --sdk=go --name=tests --source=.
-dagger install ../
+cd my-module
+dagger module init go --name tests --path tests -y
+cd tests
+dagger module client add .. --sdk=go -y
 ```
+
+`--path` creates the test module without installing it in the workspace, so each command that calls it loads it with `-m`.
 
 ```go
 // tests/main.go
@@ -781,7 +819,7 @@ func (t *Tests) All(ctx context.Context) error {
 dagger call -m tests all
 
 # Or from inside the tests directory
-cd tests && dagger call all
+cd tests && dagger call -m . all
 ```
 
 ### Testing with services
@@ -836,9 +874,10 @@ func (t *Tests) All(ctx context.Context) error {
 Create an `examples/go/` module that both showcases usage and acts as integration tests. Example functions serve as documentation on daggerverse.dev and improve module discoverability:
 
 ```shell
-mkdir -p examples/go && cd examples/go
-dagger init --name=examples --sdk=go --source=.
-dagger install ../..
+# From the directory of my-module
+dagger module init go --name examples --path examples/go -y
+cd examples/go
+dagger module client add ../.. --sdk=go -y
 ```
 
 ```go
@@ -859,20 +898,23 @@ func (e *Examples) MyModuleBuild(ctx context.Context) error {
 
 ```
 repo/
-├── dagger.json           # root module (orchestrator)
+├── dagger.toml                  # workspace config: installs the modules
+├── ci/
+│   ├── dagger-module.toml       # orchestrator module, the workspace main
+│   └── main.go
 ├── services/
 │   ├── api/
-│   │   ├── dagger.json   # API module
+│   │   ├── dagger-module.toml   # API module
 │   │   └── main.go
 │   └── web/
-│       ├── dagger.json   # Web module
+│       ├── dagger-module.toml   # Web module
 │       └── main.go
 └── shared/
-    ├── dagger.json       # Shared utilities module
+    ├── dagger-module.toml       # Shared utilities module
     └── main.go
 ```
 
-The root module installs service modules as dependencies and orchestrates cross-service operations.
+The orchestrator module takes the service modules as dependencies and orchestrates cross-service operations. `dagger.toml` installs it as the workspace main, so `dagger call` takes its functions without a module name.
 
 ### Shared build patterns
 
@@ -898,18 +940,22 @@ Even if unnecessary CI jobs trigger in a monorepo, Dagger's layer cache means mo
 
 ## Publishing & Versioning
 
-1. **Set module description** in `dagger.json`:
-   ```json
-   { "name": "my-module", "description": "Build and test Go applications" }
+1. **Describe the module** in the comment that opens `main.go`, above `package main`:
+   ```go
+   // Build and test Go applications
+
+   package main
    ```
 
-2. **Document all functions** with Go comments — they become API docs
+2. **Document all functions** with Go comments, which become the API docs
 
-3. **Use semantic versioning**: `git tag v1.0.0 && git push --tags`
+3. **Commit the generated code**: run `dagger generate -y` and commit the result, because Dagger loads a published module from its committed bindings
 
-4. **Auto-indexed** on daggerverse.dev on first remote use
+4. **Use semantic versioning**: `git tag v1.0.0 && git push --tags`
 
-5. **Create examples** as separate modules in an `examples/` directory — they serve as both documentation and integration tests
+5. **Auto-indexed** on daggerverse.dev on first remote use
+
+6. **Create examples** as separate modules in an `examples/` directory, where they serve as both documentation and integration tests
 
 ---
 
@@ -951,42 +997,62 @@ Write your pipeline logic in Dagger Functions, not in CI YAML. The CI config sho
 
 ## Module Configuration
 
-### dagger.json
+### dagger-module.toml
 
-The central configuration file, auto-generated by `dagger init`/`dagger develop`:
+`dagger-module.toml` is the manifest of one module. `dagger module init` creates it, and the SDK rewrites `engineVersion` and the `[[dependencies]]` entries each time it generates the module:
 
-```json
-{
-  "name": "my-module",
-  "sdk": "go",
-  "description": "Build and test Go applications",
-  "dependencies": [],
-  "toolchains": []
-}
+```toml
+name = "my-module"
+engineVersion = "v1.0.0"
+
+[runtime]
+source = "go"
+
+[[dependencies]]
+name = "golang"
+source = "github.com/user/golang@v1.0.0"
 ```
+
+The `dagger.json` of a 0.x module holds the same fields as JSON, with the `runtime` table under the name `sdk`. The `dagger.json` of a 0.x project also lists its `toolchains`.
+
+### dagger.toml
+
+`dagger.toml` is the config of a workspace. Dagger reads the nearest `dagger.toml` above the current directory, up to the root of the Git repository. The commands of this skill write the file, as in this example:
+
+```toml
+[modules.my-module]
+source = ".dagger/modules/my-module"
+
+[modules.go-sdk]
+source = "dagger.io/sdk/go"
+
+[sdks.go]
+module = "go-sdk"
+
+[sdks.go.scopes.".dagger/modules/my-module"]
+is-module = true
+name = "my-module"
+clients = ["github.com/user/golang@v1.0.0"]
+```
+
+`[modules.<name>]` records an installed module: its `source`, its `settings`, and `main = true` for the workspace main. `[sdks.<name>]` records an installed SDK and its scopes. Each scope is a directory where the SDK generates code, and its `clients` list holds the dependencies that `dagger module client add` records.
 
 ### Lockfiles
 
-Workspaces support opt-in lockfiles that pin otherwise-floating references so builds are reproducible. The floating references are the images that `container.From()` resolves and the commits behind Git refs. Lock state lives in `.dagger/lock`. Control resolution with `--lock`:
+`dagger.lock` sits beside `dagger.toml`. It pins the lookups that the workspace resolved, so that later runs reuse them. The lookups include the images that `container.From()` resolves and the commits behind Git refs. Any Dagger command can update the file, so commit it with your changes.
 
 ```shell
-dagger call build                  # disabled: lockfile not consulted (default)
-dagger call build --lock live      # resolve fresh, then refresh the lockfile
-dagger call build --lock pinned    # use locked digests, lock anything new
-dagger call build --lock frozen    # fail if any reference is missing from the lockfile
-dagger lock update                 # refresh locked digests to current
+dagger lock list                 # print the entries of dagger.lock
+dagger lock update               # refresh every entry
+dagger lock update 'node:lts*'   # refresh the entries that match a selector
 ```
-
-Use `frozen` in CI to guarantee nothing resolves outside the committed lockfile.
 
 ### File/directory filters
 
-The `include` field specifies additional files/dirs to include or exclude when loading the module itself (not function arguments — those use `+ignore`). By default, only `dagger.json` and files under the source directory are included. Supports `!` prefix for exclusion:
+The `include` field of `dagger-module.toml` lists more files and directories to include or exclude when Dagger loads the module itself. It does not filter function arguments, which use `+ignore`. By default, Dagger includes only the module config file and the files under the source directory. Patterns with a `!` prefix exclude the paths that they match. Put the field above the first table of the file:
 
-```json
-{
-  "include": ["**/*.go", "go.mod", "go.sum", "!**/*_test.go"]
-}
+```toml
+include = ["**/*.go", "go.mod", "go.sum", "!**/*_test.go"]
 ```
 
 Adding `!` exclusion patterns is useful to avoid uploading large cache or generated files that the Dagger Engine doesn't need.
@@ -997,7 +1063,7 @@ If a `go.work` file exists in the repository root, Dagger automatically adds new
 
 ### Private Go modules
 
-Configure access to private Go modules via `goprivate` in the SDK config section of `dagger.json`:
+0.x modules configure access to private Go modules via `goprivate` in the SDK config section of `dagger.json`. `dagger-module.toml` has no `config` key under `[runtime]`, so only a `dagger.json` holds this setting:
 
 ```json
 {
