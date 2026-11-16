@@ -7,8 +7,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path"
 	"strings"
+	"sync"
 
 	"dagger/dev/internal/dagger"
 )
@@ -27,6 +30,14 @@ const (
 	// golangciLintVersion is the golangci-lint image tag used by [Dev.CheckLint].
 	golangciLintVersion = "v2.11" // renovate: datasource=github-releases depName=golangci/golangci-lint
 
+	// toolchainSubpath is the path of this toolchain from the root of
+	// the repository.
+	toolchainSubpath = "toolchains/dev"
+
+	// lintDir is the directory of the lint container that holds the
+	// source of the toolchain.
+	lintDir = "/src"
+
 	// username is the non-root user created inside the dev container.
 	username = "dev"
 
@@ -43,6 +54,13 @@ const (
 	// looks for its configuration YAML.
 	terrariumConfigPath = homeDir + "/.config/terrarium/config.yaml"
 )
+
+// goModules holds the path of each Go module of the toolchain from the
+// root of the toolchain. Each Go module is also a Dagger module.
+// golangci-lint does not lint a Go module that is nested in the module
+// of its working directory. [Dev.CheckLint] and [Dev.Format] therefore
+// run it in each module of this list.
+var goModules = []string{".", "tests"}
 
 // Dev provides reusable development container functions powered by
 // nix home-manager. Create instances with [New].
@@ -62,92 +80,137 @@ func New(
 	return &Dev{Source: source}
 }
 
-// lintBase returns a golangci-lint container with source, caches, and
-// the repo's linter configuration. When mod is non-empty and not ".",
-// the container's working directory is set to the module subdirectory.
-func (m *Dev) lintBase(mod string) *dagger.Container {
-	src := dag.CurrentModule().Source()
-	ctr := dag.Container().
+// Toolchain returns the source directory of this toolchain, which holds
+// the Go modules that [Dev.CheckLint] and [Dev.Format] lint.
+func (m *Dev) Toolchain() *dagger.Directory {
+	return dag.CurrentModule().Source()
+}
+
+// lintSource returns src, a source directory of the toolchain, with the
+// generated bindings of each Go module. The code of a module imports
+// its bindings, so golangci-lint cannot check the types of the module
+// without them. Git ignores the bindings, and the engine generates only
+// the bindings of the module that it loads. A source directory
+// therefore does not hold the bindings of the test module.
+func lintSource(src *dagger.Directory) *dagger.Directory {
+	withBindings := src
+
+	for _, mod := range goModules {
+		bindings := src.
+			AsModuleSource(dagger.DirectoryAsModuleSourceOpts{SourceRootPath: mod}).
+			GeneratedContextDirectory()
+		withBindings = withBindings.WithDirectory("/", bindings)
+	}
+
+	return withBindings
+}
+
+// lintBase returns a golangci-lint container whose working directory,
+// [lintDir], holds src and the linter configuration of the repository.
+// golangci-lint reads that configuration in each Go module of src,
+// because it searches the parents of its working directory. The
+// container mounts the caches of Go and of golangci-lint.
+func (m *Dev) lintBase(src *dagger.Directory) *dagger.Container {
+	return dag.Container().
 		From("golangci/golangci-lint:"+golangciLintVersion).
 		WithMountedCache("/go/pkg/mod", dag.CacheVolume(devCacheNamespace+":modules")).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", dag.CacheVolume(devCacheNamespace+":build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
-		WithMountedDirectory("/src", src).
-		WithFile("/src/.golangci.yaml", m.Source.File(".golangci.yaml")).
-		WithWorkdir("/src").
+		WithMountedDirectory(lintDir, src).
+		WithFile(lintDir+"/.golangci.yaml", m.Source.File(".golangci.yaml")).
+		WithWorkdir(lintDir).
 		WithMountedCache("/root/.cache/golangci-lint",
 			dag.CacheVolume(devCacheNamespace+":golangci-lint-"+golangciLintVersion))
-	if mod != "" && mod != "." {
-		ctr = ctr.WithWorkdir("/src/" + mod)
-	}
-
-	return ctr
 }
 
-// CheckLint verifies that golangci-lint passes on all Go modules in the
-// toolchain.
+// CheckLint verifies that golangci-lint passes on each Go module of the
+// toolchain, which includes the test module. It lints the modules at
+// the same time and returns after every lint ends, so one run reports
+// the findings of each module.
 //
 // +check
-func (m *Dev) CheckLint(ctx context.Context) error {
-	cmd := []string{"golangci-lint", "run"}
-
-	_, err := m.lintBase(".").WithExec(cmd).Sync(ctx)
-	if err != nil {
-		return fmt.Errorf("linting: %w", err)
+func (m *Dev) CheckLint(
+	ctx context.Context,
+	// Source directory of the toolchain to lint. The default is the
+	// directory that [Dev.Toolchain] returns.
+	// +optional
+	toolchain *dagger.Directory,
+) error {
+	if toolchain == nil {
+		toolchain = m.Toolchain()
 	}
 
-	return nil
+	base := m.lintBase(lintSource(toolchain))
+
+	// No run of golangci-lint depends on another, so the runs start at
+	// the same time. errs keeps the order of goModules, whichever run
+	// ends first.
+	errs := make([]error, len(goModules))
+
+	var wg sync.WaitGroup
+
+	for i, mod := range goModules {
+		wg.Go(func() {
+			_, err := base.
+				WithWorkdir(path.Join(lintDir, mod)).
+				WithExec([]string{"golangci-lint", "run"}).
+				Sync(ctx)
+			if err != nil {
+				errs[i] = fmt.Errorf("linting %s: %w", path.Join(toolchainSubpath, mod), err)
+			}
+		})
+	}
+
+	wg.Wait()
+
+	return errors.Join(errs...)
 }
 
-// Format runs golangci-lint --fix across all Go modules in the toolchain
-// and returns the merged changeset of auto-fixed source files. Changeset
-// paths are prefixed with the module's location within the repo so that
-// dagger generate applies fixes at the correct location (see
-// dagger/dagger#11160).
+// Format runs golangci-lint --fix on each Go module of the toolchain,
+// which includes the test module. It returns the changeset of the
+// source files that golangci-lint fixed. Each path of the changeset
+// starts at the root of the repository, so that dagger generate writes
+// each fix to its file (see dagger/dagger#11160).
 //
 // +generate
-func (m *Dev) Format() *dagger.Changeset {
-	return m.formatModule(".")
-}
-
-// formatModule runs golangci-lint --fix on a single module directory and
-// returns the changeset with repo-root-relative paths.
-func (m *Dev) formatModule(mod string) *dagger.Changeset {
-	src := dag.CurrentModule().Source()
-
-	outDir := "/src"
-	if mod != "" && mod != "." {
-		outDir = "/src/" + mod
+func (m *Dev) Format(
+	// Source directory of the toolchain to fix. The default is the
+	// directory that [Dev.Toolchain] returns.
+	// +optional
+	toolchain *dagger.Directory,
+) *dagger.Changeset {
+	if toolchain == nil {
+		toolchain = m.Toolchain()
 	}
 
-	// The modernize/newexpr pass panics with --fix on some packages
-	// (golang.org/x/tools bug); disable it until golangci-lint ships
-	// a fixed version. ReturnTypeAny tolerates non-zero exits from
-	// unfixable lint issues while still applying available fixes.
-	fixed := m.lintBase(mod).
-		WithExec(
-			[]string{"golangci-lint", "run", "--fix"},
-			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
-		).
-		Directory(outDir).
-		// lintBase copies .golangci.yaml from the repo root into /src;
-		// strip it so it does not appear as a new file in the changeset.
-		WithoutFile(".golangci.yaml")
+	src := lintSource(toolchain)
+	ctr := m.lintBase(src)
 
-	if mod != "" && mod != "." {
-		src = src.WithDirectory(mod, fixed)
-	} else {
-		src = fixed
+	// golangci-lint exits with an error when it finds an issue that it
+	// cannot fix. ReturnTypeAny accepts that exit, so the container
+	// keeps the fixes of that run and fixes the next module. The linter
+	// configuration turns off the newexpr pass of modernize, because
+	// that pass panics under --fix.
+	for _, mod := range goModules {
+		ctr = ctr.
+			WithWorkdir(path.Join(lintDir, mod)).
+			WithExec(
+				[]string{"golangci-lint", "run", "--fix"},
+				dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
+			)
 	}
 
-	// moduleSubpath is the module's location within the repo root.
-	// Wrapping both sides at this prefix produces context-root-relative
-	// changeset paths so dagger generate writes to the correct directory.
-	const moduleSubpath = "toolchains/dev"
+	// lintBase copies .golangci.yaml into lintDir. Without this step,
+	// the changeset adds the file to the toolchain.
+	fixed := ctr.Directory(lintDir).WithoutFile(".golangci.yaml")
 
-	original := dag.Directory().WithDirectory(moduleSubpath, dag.CurrentModule().Source())
-	updated := dag.Directory().WithDirectory(moduleSubpath, src)
+	// Both directories hold the generated bindings, so the changeset
+	// holds only the files that golangci-lint fixed. Both directories
+	// sit at toolchainSubpath, so each path of the changeset starts at
+	// the root of the repository.
+	original := dag.Directory().WithDirectory(toolchainSubpath, src)
+	updated := dag.Directory().WithDirectory(toolchainSubpath, fixed)
 
 	return updated.Changes(original)
 }

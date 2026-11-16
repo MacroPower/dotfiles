@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -130,8 +131,15 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSandboxPathNormalization(ctx) })
 	eg.Go(func() error { return m.TestSandboxWildcardDnsmasq(ctx) })
 	eg.Go(func() error { return m.TestAtuinDaemon(ctx) })
+	eg.Go(func() error { return m.TestCheckLintTestModule(ctx) })
+	eg.Go(func() error { return m.TestFormatTestModule(ctx) })
 
-	return eg.Wait()
+	err := eg.Wait()
+	if err != nil {
+		return fmt.Errorf("running the +check tests: %w", err)
+	}
+
+	return nil
 }
 
 // AllFull runs every test of the module in parallel. It adds to
@@ -158,7 +166,12 @@ func (m *Tests) AllFull(ctx context.Context) error {
 	eg.Go(func() error { return m.TestShellRelinkManaged(ctx) })
 	eg.Go(func() error { return m.TestShellMcpSync(ctx) })
 
-	return eg.Wait()
+	err := eg.Wait()
+	if err != nil {
+		return fmt.Errorf("running every test: %w", err)
+	}
+
+	return nil
 }
 
 // TestDevBase verifies that [Dev.DevBase] produces a container with essential
@@ -220,9 +233,11 @@ func (m *Tests) TestDevBaseEnv(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("reading env %s: %w", name, err)
 		}
+
 		if tc.want != "" && val != tc.want {
 			return fmt.Errorf("env %s: expected %q, got %q", name, tc.want, val)
 		}
+
 		for _, seg := range tc.contains {
 			if !strings.Contains(val, seg) {
 				return fmt.Errorf("env %s: missing segment %q: %s", name, seg, val)
@@ -287,7 +302,8 @@ func (m *Tests) TestDevBaseShellConfig(ctx context.Context) error {
 	}
 
 	for desc, cmd := range checks {
-		if _, err := ctr.WithExec(cmd).Sync(ctx); err != nil {
+		_, err := ctr.WithExec(cmd).Sync(ctx)
+		if err != nil {
 			return fmt.Errorf("%s: %w", desc, err)
 		}
 	}
@@ -476,6 +492,7 @@ func (m *Tests) TestSandboxBase(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading config.yaml: %w", err)
 	}
+
 	for _, want := range []string{"egress", "toFQDNs", "matchName", "anthropic.com", "github.com", "golang.org"} {
 		if !strings.Contains(cfgContent, want) {
 			return fmt.Errorf("config.yaml missing %q", want)
@@ -483,7 +500,8 @@ func (m *Tests) TestSandboxBase(ctx context.Context) error {
 	}
 
 	// Verify terrarium binary is on PATH and executable.
-	if _, err := ctr.WithExec([]string{"which", "terrarium"}).Sync(ctx); err != nil {
+	_, err = ctr.WithExec([]string{"which", "terrarium"}).Sync(ctx)
+	if err != nil {
 		return fmt.Errorf("terrarium not on PATH: %w", err)
 	}
 
@@ -492,13 +510,15 @@ func (m *Tests) TestSandboxBase(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading IS_SANDBOX_NETWORK: %w", err)
 	}
+
 	if val != "1" {
 		return fmt.Errorf("IS_SANDBOX_NETWORK: expected 1, got %q", val)
 	}
 
 	// Verify that binaries referenced by terrarium init are reachable.
 	for _, bin := range []string{"envoy", "setpriv"} {
-		if _, err := ctr.WithExec([]string{"sh", "-c", hmBin + "/" + bin + " --version"}).Sync(ctx); err != nil {
+		_, err := ctr.WithExec([]string{"sh", "-c", hmBin + "/" + bin + " --version"}).Sync(ctx)
+		if err != nil {
 			return fmt.Errorf("%s not reachable at %s/%s: %w", bin, hmBin, bin, err)
 		}
 	}
@@ -508,6 +528,7 @@ func (m *Tests) TestSandboxBase(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading /etc/passwd: %w", err)
 	}
+
 	if !strings.Contains(passwd, "dev:x:1000:1000") {
 		return fmt.Errorf("/etc/passwd missing dev user entry")
 	}
@@ -642,9 +663,11 @@ func (m *Tests) TestSandboxEgressRules(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading config.yaml: %w", err)
 	}
+
 	if !strings.Contains(cfgContent, "golang.org") {
 		return fmt.Errorf("config.yaml missing golang.org")
 	}
+
 	for _, unwanted := range []string{"github.com", "anthropic.com"} {
 		if strings.Contains(cfgContent, unwanted) {
 			return fmt.Errorf("config.yaml should not contain %q with only go domains", unwanted)
@@ -658,9 +681,11 @@ func (m *Tests) TestSandboxEgressRules(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading generated envoy config: %w", err)
 	}
+
 	if !strings.Contains(envoyConf, "golang.org") {
 		return fmt.Errorf("generated envoy config missing golang.org")
 	}
+
 	for _, unwanted := range []string{"github.com", "anthropic.com"} {
 		if strings.Contains(envoyConf, unwanted) {
 			return fmt.Errorf("generated envoy config should not contain %s with only go domains", unwanted)
@@ -691,6 +716,7 @@ func (m *Tests) TestSandboxAdditionalPorts(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading iptables rules: %w", err)
 	}
+
 	if !strings.Contains(rules, "--dport 8080") {
 		return fmt.Errorf("iptables rules missing REDIRECT for port 8080")
 	}
@@ -699,9 +725,11 @@ func (m *Tests) TestSandboxAdditionalPorts(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading envoy config: %w", err)
 	}
+
 	if !strings.Contains(envoyConf, "tls_passthrough_8080") {
 		return fmt.Errorf("envoy config missing listener for port 8080")
 	}
+
 	if !strings.Contains(envoyConf, "extra.example.com") {
 		return fmt.Errorf("envoy config missing extra.example.com in port 8080 listener")
 	}
@@ -728,6 +756,7 @@ func (m *Tests) TestSandboxTCPForward(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading iptables rules: %w", err)
 	}
+
 	if !strings.Contains(rules, "--to-port 15022") {
 		return fmt.Errorf("iptables rules missing REDIRECT for port 22")
 	}
@@ -736,6 +765,7 @@ func (m *Tests) TestSandboxTCPForward(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading envoy config: %w", err)
 	}
+
 	for _, want := range []string{"tcp_forward_22", "STRICT_DNS", "github.com"} {
 		if !strings.Contains(envoyConf, want) {
 			return fmt.Errorf("envoy config missing %q for tcp forward", want)
@@ -769,6 +799,7 @@ func (m *Tests) TestSandboxLogging(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading envoy config: %w", err)
 	}
+
 	if !strings.Contains(envoyConf, "access_log") {
 		return fmt.Errorf("envoy config missing access_log with logging enabled")
 	}
@@ -777,6 +808,7 @@ func (m *Tests) TestSandboxLogging(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading iptables rules: %w", err)
 	}
+
 	if !strings.Contains(rules, "LOG") {
 		return fmt.Errorf("iptables rules missing LOG target with logging enabled")
 	}
@@ -1085,12 +1117,14 @@ func (m *Tests) TestPublishSandboxImage(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading default args: %w", err)
 	}
+
 	if strings.Join(args, " ") != "fish" {
 		return fmt.Errorf("expected default args [fish], got %v", args)
 	}
 
 	// Verify terrarium binary is on PATH.
-	if _, err := ctr.WithExec([]string{"which", "terrarium"}).Sync(ctx); err != nil {
+	_, err = ctr.WithExec([]string{"which", "terrarium"}).Sync(ctx)
+	if err != nil {
 		return fmt.Errorf("terrarium not found: %w", err)
 	}
 
@@ -1099,6 +1133,7 @@ func (m *Tests) TestPublishSandboxImage(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading default config.yaml: %w", err)
 	}
+
 	if !strings.Contains(cfgContent, "egress") {
 		return fmt.Errorf("default config.yaml missing egress")
 	}
@@ -1153,6 +1188,7 @@ func (m *Tests) TestSandboxGenDefault(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading generated envoy config: %w", err)
 	}
+
 	for _, want := range []string{"github.com", "golang.org", "anthropic.com"} {
 		if !strings.Contains(envoyConf, want) {
 			return fmt.Errorf("generated envoy config missing %q", want)
@@ -1163,6 +1199,7 @@ func (m *Tests) TestSandboxGenDefault(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading generated iptables rules: %w", err)
 	}
+
 	if !strings.Contains(iptRules, "REDIRECT") {
 		return fmt.Errorf("generated iptables rules missing REDIRECT")
 	}
@@ -1216,12 +1253,15 @@ func (m *Tests) TestSandboxGenCustomConfig(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading generated envoy config: %w", err)
 	}
+
 	if !strings.Contains(envoyConf, "golang.org") {
 		return fmt.Errorf("generated envoy config missing golang.org")
 	}
+
 	if !strings.Contains(envoyConf, "api.company.com") {
 		return fmt.Errorf("generated envoy config missing api.company.com")
 	}
+
 	// github.com should NOT be present (only go domains + custom).
 	if strings.Contains(envoyConf, "github.com") {
 		return fmt.Errorf("generated envoy config should not contain github.com")
@@ -1718,7 +1758,8 @@ func (m *Tests) TestAtuinDaemon(ctx context.Context) error {
 
 	// Start the daemon the same way wrapWithAtuinDaemon does and wait
 	// for the unix socket to appear, confirming the daemon is ready.
-	_, err := ctr.WithExec([]string{"sh", "-c",
+	_, err := ctr.WithExec([]string{
+		"sh", "-c",
 		`atuin daemon >/dev/null 2>&1 & ` +
 			`for i in 1 2 3 4 5 6 7 8 9 10; do ` +
 			`  test -S "$HOME/.local/share/atuin/atuin.sock" && break; ` +
@@ -1769,6 +1810,7 @@ func (m *Tests) TestPublish(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading entrypoint: %w", err)
 	}
+
 	if len(ep) != 0 {
 		return fmt.Errorf("expected empty entrypoint, got %v", ep)
 	}
@@ -1792,6 +1834,7 @@ func (m *Tests) TestPublish(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("reading label %s: %w", key, err)
 		}
+
 		if got != want {
 			return fmt.Errorf("label %s: expected %q, got %q", key, want, got)
 		}
@@ -1820,6 +1863,7 @@ func (m *Tests) TestShellSSHReady(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading entrypoint: %w", err)
 	}
+
 	if len(ep) != 0 {
 		return fmt.Errorf("expected empty entrypoint, got %v", ep)
 	}
@@ -1838,6 +1882,7 @@ func (m *Tests) TestShellSSHReady(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading /etc/passwd: %w", err)
 	}
+
 	if !strings.Contains(passwd, "sshd:x:74:74:") {
 		return fmt.Errorf("/etc/passwd missing sshd privsep user")
 	}
@@ -1846,6 +1891,7 @@ func (m *Tests) TestShellSSHReady(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading /etc/group: %w", err)
 	}
+
 	if !strings.Contains(group, "sshd:x:74:") {
 		return fmt.Errorf("/etc/group missing sshd group")
 	}
@@ -1863,6 +1909,7 @@ func (m *Tests) TestShellSSHReady(ctx context.Context) error {
 			rootOK = true
 		}
 	}
+
 	if !rootOK {
 		return fmt.Errorf("/etc/passwd missing root entry")
 	}
@@ -1871,17 +1918,21 @@ func (m *Tests) TestShellSSHReady(ctx context.Context) error {
 	// OpenSSH refuses all auth (even pubkey) for locked accounts.
 	shadowCheck := `[ ! -f /etc/shadow ] || ` +
 		`awk -F: '$1=="root"{locked = ($2=="" || $2 ~ /^[!*]/)} END{exit locked}' /etc/shadow`
-	if _, err := ctr.WithExec([]string{"sh", "-c", shadowCheck}).Sync(ctx); err != nil {
+	_, err = ctr.WithExec([]string{"sh", "-c", shadowCheck}).Sync(ctx)
+	if err != nil {
 		return fmt.Errorf("root is locked in /etc/shadow: %w", err)
 	}
 
 	// Helper scripts are baked in, executable, and on PATH.
 	for _, script := range []string{"fish-login", "container-init", "sshd-entrypoint", "relink-managed"} {
 		path := "/usr/local/bin/" + script
-		if _, err := ctr.WithExec([]string{"test", "-x", path}).Sync(ctx); err != nil {
+		_, err := ctr.WithExec([]string{"test", "-x", path}).Sync(ctx)
+		if err != nil {
 			return fmt.Errorf("%s not executable: %w", path, err)
 		}
-		if _, err := ctr.WithExec([]string{"sh", "-c", "command -v " + script}).Sync(ctx); err != nil {
+
+		_, err = ctr.WithExec([]string{"sh", "-c", "command -v " + script}).Sync(ctx)
+		if err != nil {
 			return fmt.Errorf("%s not on PATH: %w", script, err)
 		}
 	}
@@ -1892,7 +1943,8 @@ func (m *Tests) TestShellSSHReady(ctx context.Context) error {
 		"lastlog":        {"test", "-f", "/var/log/lastlog"},
 		"sshd binary":    {"sh", "-c", "command -v sshd"},
 	} {
-		if _, err := ctr.WithExec(cmd).Sync(ctx); err != nil {
+		_, err := ctr.WithExec(cmd).Sync(ctx)
+		if err != nil {
 			return fmt.Errorf("%s: %w", desc, err)
 		}
 	}
@@ -2035,6 +2087,138 @@ func (m *Tests) TestShellMcpSync(ctx context.Context) error {
 		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("container-init MCP sync: %w", err)
+	}
+
+	return nil
+}
+
+const (
+	// lintProbePath is the path of the Go file that [lintProbeToolchain]
+	// adds to the test module, from the root of the toolchain.
+	lintProbePath = "tests/lint_probe.go"
+
+	// lintProbeSource is the content of the file at [lintProbePath]. It
+	// lacks the space that gofmt puts after a comma, so golangci-lint
+	// reports the file and golangci-lint --fix rewrites it.
+	lintProbeSource = "package main\n\nvar _ = []int{1,2}\n"
+
+	// lintProbeFixed is the content of the file at [lintProbePath] after
+	// golangci-lint --fix rewrites it.
+	lintProbeFixed = "package main\n\nvar _ = []int{1, 2}\n"
+)
+
+// lintProbeToolchain returns the source directory of the dev toolchain
+// with one more Go file in its test module. The file holds
+// [lintProbeSource] at [lintProbePath].
+func lintProbeToolchain() *dagger.Directory {
+	return dag.Dev().Toolchain().WithNewFile(lintProbePath, lintProbeSource)
+}
+
+// changesetPaths holds the paths that a changeset adds, modifies, and
+// removes.
+type changesetPaths struct {
+	added    []string
+	modified []string
+	removed  []string
+}
+
+// readChangesetPaths returns the paths that changes adds, modifies, and
+// removes.
+func readChangesetPaths(ctx context.Context, changes *dagger.Changeset) (changesetPaths, error) {
+	added, err := changes.AddedPaths(ctx)
+	if err != nil {
+		return changesetPaths{}, fmt.Errorf("listing the added paths: %w", err)
+	}
+
+	modified, err := changes.ModifiedPaths(ctx)
+	if err != nil {
+		return changesetPaths{}, fmt.Errorf("listing the modified paths: %w", err)
+	}
+
+	removed, err := changes.RemovedPaths(ctx)
+	if err != nil {
+		return changesetPaths{}, fmt.Errorf("listing the removed paths: %w", err)
+	}
+
+	return changesetPaths{added: added, modified: modified, removed: removed}, nil
+}
+
+// equal reports whether p and other hold the same paths in the same
+// order.
+func (p changesetPaths) equal(other changesetPaths) bool {
+	return slices.Equal(p.added, other.added) &&
+		slices.Equal(p.modified, other.modified) &&
+		slices.Equal(p.removed, other.removed)
+}
+
+// TestCheckLintTestModule verifies that [Dev.CheckLint] lints the test
+// module of the toolchain. The check passes on the source of the
+// toolchain. It fails after the test adds a file with a finding to the
+// test module. The test requires the error of that check to name the
+// lint of the test module and no other lint.
+//
+// +check
+func (m *Tests) TestCheckLintTestModule(ctx context.Context) error {
+	err := dag.Dev().CheckLint(ctx)
+	if err != nil {
+		return fmt.Errorf("linting the toolchain: %w", err)
+	}
+
+	err = dag.Dev().CheckLint(ctx, dagger.DevCheckLintOpts{Toolchain: lintProbeToolchain()})
+	if err == nil {
+		return fmt.Errorf("CheckLint passed with a finding in %s", lintProbePath)
+	}
+
+	// CheckLint names the module of each failed lint by its path from
+	// the root of the repository.
+	want := "linting toolchains/dev/tests:"
+	if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "linting toolchains/dev:") {
+		return fmt.Errorf("expected only the lint of the test module to fail, got: %w", err)
+	}
+
+	return nil
+}
+
+// TestFormatTestModule verifies that [Dev.Format] fixes a file of the
+// test module and that its changeset holds only the fixed file. The
+// changeset of the source of the toolchain is empty, so it holds none
+// of the generated bindings that Format lints with. Then the test adds
+// a file with a finding to the test module. The changeset of that
+// source modifies only the file, names it by its path from the root of
+// the repository, and holds its fixed content.
+//
+// +check
+func (m *Tests) TestFormatTestModule(ctx context.Context) error {
+	clean, err := readChangesetPaths(ctx, dag.Dev().Format())
+	if err != nil {
+		return fmt.Errorf("formatting the toolchain: %w", err)
+	}
+
+	if !clean.equal(changesetPaths{}) {
+		return fmt.Errorf("expected no changes to the toolchain, got %+v", clean)
+	}
+
+	changes := dag.Dev().Format(dagger.DevFormatOpts{Toolchain: lintProbeToolchain()})
+
+	got, err := readChangesetPaths(ctx, changes)
+	if err != nil {
+		return fmt.Errorf("formatting the toolchain with %s: %w", lintProbePath, err)
+	}
+
+	probe := "toolchains/dev/" + lintProbePath
+
+	want := changesetPaths{modified: []string{probe}}
+	if !got.equal(want) {
+		return fmt.Errorf("expected changes %+v, got %+v", want, got)
+	}
+
+	content, err := changes.After().File(probe).Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading the fixed %s: %w", probe, err)
+	}
+
+	if content != lintProbeFixed {
+		return fmt.Errorf("fixed %s: expected %q, got %q", probe, lintProbeFixed, content)
 	}
 
 	return nil

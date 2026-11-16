@@ -18,11 +18,12 @@ Follow these conventions in the Go code of each module.
 - Take each setting of the module as an argument of the `New` constructor. Set the default of the argument with a Dagger pragma, as `+defaultPath="/"` sets the default of `source`.
 - Store each setting in an exported field of the main object, as `New` stores `source` in `Source`. Dagger passes only the exported fields from the constructor to a function.
 - Keep each helper unexported, so that Dagger does not publish it as a function.
-- Wrap each error that another package returns, such as the error of a Dagger call, with `fmt.Errorf("context: %w", err)`. `CheckLint` of the `dev` toolchain runs `golangci-lint` on that toolchain, and the `wrapcheck` linter reports each such error that a function returns unwrapped.
+- Wrap each error that another package returns, such as the error of a Dagger call, with `fmt.Errorf("context: %w", err)`. `CheckLint` of the `dev` toolchain runs `golangci-lint` on each Go module of that toolchain, which includes its test module. The `wrapcheck` linter reports each such error that a function returns unwrapped.
 - Name the step in the context of the wrap, such as `reading sbom`. Do not write that the step failed, as in `failed to read sbom` or `error reading sbom`.
 - Prefer consistency over performance. Do not add a fast path that makes the behavior of a function hard to predict.
 - Format the Go code with gofmt. `nix fmt -- toolchains` runs gofmt on each Go file of the toolchains, and `nix fmt -- --fail-on-change toolchains` also fails when gofmt changes a file.
-- In the `dev` module, also format the Go code with the formatters of the root `.golangci.yaml`. `CheckLint` of the `dev` toolchain runs gofumpt with its extra rules, gci, and golines, and it fails when one of them changes a file. These formatters are stricter than gofmt, so a file that passes `nix fmt` can fail `CheckLint`. To apply them, run `dagger call dev format -y`, which runs `golangci-lint run --fix` on the module.
+- In each Go module of the `dev` toolchain, which includes its test module, also format the Go code with the formatters of the root `.golangci.yaml`. `CheckLint` of the `dev` toolchain runs gofumpt with its extra rules, gci, and golines, and it fails when one of them changes a file. These formatters are stricter than gofmt, so a file that passes `nix fmt` can fail `CheckLint`. To apply them, run `dagger call dev format -y`, which runs `golangci-lint run --fix` in each module that `goModules` lists.
+- List each Go module that you add to the `dev` toolchain in `goModules` in `toolchains/dev/main.go`. `CheckLint` and `Format` run `golangci-lint` only in the modules of that list.
 
 ### Documentation
 
@@ -44,6 +45,7 @@ The tests of each toolchain are Dagger functions in the test module at `toolchai
 
 Each test is a method of `Tests` that returns an error, such as `func (m *Tests) TestDevBase(ctx context.Context) error`. Follow these conventions in each test.
 
+- Apply the conventions of the Code Style section to the code of a test module.
 - Start the name of the method with `Test`. `TestAggregates` counts only those methods as tests.
 - Call the toolchain through its `dag` binding, such as `dag.Dev()`, and return an error when a result is wrong.
 - Name an expected value `want`.
