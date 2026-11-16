@@ -1,56 +1,135 @@
 package main
 
 import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestMain keeps the git config of the developer from every test. The
-// tests run git in their setup and through the handlers, and keys of
-// the git config change what git does. For example, a plain git clone
-// names its remote after clone.defaultRemoteName. Each git command of
-// the tests therefore skips the system config, reads an empty global
-// config, and reads no config from the environment. Each git config
-// command of the tests reads and writes the config of the repository,
-// not a file that the environment names. A test that needs a global
-// config points GIT_CONFIG_GLOBAL at a file of its own, as
-// [setGlobalConfig] does. A test that needs config from the
-// environment sets GIT_CONFIG_COUNT and its numbered variables, as
-// [TestReadUserHooks] does.
+// testGitEnv holds each variable that [TestMain] sets for every test,
+// with its value.
+var testGitEnv = map[string]string{
+	"GIT_CONFIG_NOSYSTEM": "1",
+	"GIT_CONFIG_GLOBAL":   os.DevNull,
+	// A count of zero makes git skip each GIT_CONFIG_KEY_<n> and
+	// GIT_CONFIG_VALUE_<n> variable of the developer.
+	"GIT_CONFIG_COUNT": "0",
+	// git -c passes its config in this variable to each command
+	// that git starts, such as the command of git rebase --exec.
+	"GIT_CONFIG_PARAMETERS": "",
+}
+
+// TestMain keeps the git config and the repository of the developer
+// from every test. The tests run git in their setup and through the
+// handlers, and keys of the git config change what git does. For
+// example, a plain git clone names its remote after
+// clone.defaultRemoteName. Each git command of the tests therefore
+// skips the system config, reads an empty global config, and reads no
+// config from the environment. Each git config command of the tests
+// reads and writes the config of the repository, not a file that the
+// environment names. A test that needs a global config points
+// GIT_CONFIG_GLOBAL at a file of its own, as [setGlobalConfig] does. A
+// test that needs config from the environment sets GIT_CONFIG_COUNT
+// and its numbered variables, as [TestReadUserHooks] does.
+//
+// Variables of the environment also point git at a repository. With
+// GIT_DIR set, git -C <dir> acts on the repository that GIT_DIR names.
+// The setup of a test then commits to the branch of the developer. git
+// sets GIT_DIR and GIT_INDEX_FILE for the hooks of a commit in a
+// linked worktree. A commit hook that runs the tests passes both
+// variables on. TestMain therefore unsets each variable that
+// [repositoryEnv] lists and that [testGitEnv] does not hold. Each git
+// command of the tests then acts on the repository that git finds from
+// the directory of the command.
 func TestMain(m *testing.M) {
-	for name, value := range map[string]string{
-		"GIT_CONFIG_NOSYSTEM": "1",
-		"GIT_CONFIG_GLOBAL":   os.DevNull,
-		// A count of zero makes git skip each GIT_CONFIG_KEY_<n> and
-		// GIT_CONFIG_VALUE_<n> variable of the developer.
-		"GIT_CONFIG_COUNT": "0",
-		// git -c passes its config in this variable to each command
-		// that git starts, such as the command of git rebase --exec.
-		"GIT_CONFIG_PARAMETERS": "",
-	} {
+	for name, value := range testGitEnv {
 		err := os.Setenv(name, value)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	// A git config command without a file option reads and writes the
-	// file that GIT_CONFIG names in place of the config of the
-	// repository. An empty value names no file, and git config then
-	// fails to write, so TestMain unsets the variable.
-	err := os.Unsetenv("GIT_CONFIG")
+	// git reads the system config and the global config before it
+	// prints the names. The variables of testGitEnv are therefore in
+	// place before repositoryEnv runs git.
+	names, err := repositoryEnv(context.Background())
 	if err != nil {
 		panic(err)
 	}
 
+	for _, name := range names {
+		if _, ok := testGitEnv[name]; ok {
+			continue
+		}
+
+		// git reads an empty value of some of these variables. For
+		// example, a git config command without a file option reads
+		// and writes the file that GIT_CONFIG names in place of the
+		// config of the repository. An empty value names no file, and
+		// git config then fails to write. TestMain therefore unsets
+		// each variable.
+		err := os.Unsetenv(name)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	os.Exit(m.Run())
+}
+
+// repositoryEnv returns the name of each variable of the environment
+// that is local to one repository, such as GIT_DIR, GIT_WORK_TREE, and
+// GIT_INDEX_FILE. git rev-parse --local-env-vars prints the names, and
+// it does not need a repository to print them.
+func repositoryEnv(ctx context.Context) ([]string, error) {
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--local-env-vars").Output()
+	if err != nil {
+		return nil, fmt.Errorf("listing the repository variables of git: %w", err)
+	}
+
+	return strings.Fields(string(out)), nil
+}
+
+// readTree returns the mode of each file and each directory under
+// root, by path. The entry of a regular file also holds the SHA-256
+// hash of its content. A command that adds, removes, or changes a file
+// under root between two calls therefore changes the result.
+func readTree(t *testing.T, root string) map[string]string {
+	t.Helper()
+
+	tree := map[string]string{}
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		require.NoError(t, err)
+
+		info, err := d.Info()
+		require.NoError(t, err)
+
+		tree[path] = info.Mode().String()
+
+		if info.Mode().IsRegular() {
+			content, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			tree[path] += fmt.Sprintf(" %x", sha256.Sum256(content))
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	return tree
 }
 
 // plainCloneRemote makes a plain git clone of a new repository, and it
@@ -170,6 +249,112 @@ func TestGitSkipsEnvironmentConfig(t *testing.T) {
 			cmd.Env = slices.Concat(os.Environ(), env, []string{probeEnv + "=1"})
 
 			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", out)
+		})
+	}
+}
+
+// [TestMain] unsets each variable of the environment that points git
+// at a repository. The git commands of the tests must therefore act
+// on the repositories of the tests. They must leave the repository
+// that the variables name as it was.
+//
+// TestMain unsets the variables when the test binary starts, so a
+// test that sets them points git at that repository again. Each case
+// therefore starts the test binary again in an environment that names
+// the repository of a developer, as the environment of a commit hook
+// does. The new process runs only this test. probeEnv makes the test
+// run the setup of a test and check its own environment instead of
+// starting a process.
+func TestGitSkipsEnvironmentRepository(t *testing.T) {
+	t.Parallel()
+
+	// probeEnv marks a process that a case of this test started.
+	const probeEnv = "MCP_GIT_TEST_REPOSITORY_PROBE"
+
+	names, err := repositoryEnv(t.Context())
+	require.NoError(t, err)
+
+	if os.Getenv(probeEnv) != "" {
+		// The setup of most tests starts with these commands. They
+		// write the git config, the index, and a commit.
+		work := initWorkClone(t, initBareRepo(t))
+		assert.Equal(t, "init", gitOut(t, "-C", work, "log", "--format=%s"))
+
+		// Some of the variables change only what git reads, such as
+		// GIT_GRAFT_FILE, and the setup succeeds with them. Of the
+		// variables of the list, the environment must therefore hold
+		// only the variables of testGitEnv.
+		for _, name := range names {
+			want, wantSet := testGitEnv[name]
+			got, gotSet := os.LookupEnv(name)
+
+			assert.Equal(t, wantSet, gotSet, "%s is set", name)
+			assert.Equal(t, want, got, name)
+		}
+
+		return
+	}
+
+	binary, err := os.Executable()
+	require.NoError(t, err)
+
+	run := "-test.run=^" + t.Name() + "$"
+
+	// every points each variable of the list at the git directory.
+	// TestMain gives the variables of testGitEnv their own values.
+	every := map[string]string{}
+	for _, name := range names {
+		every[name] = ".git"
+	}
+
+	// Each case maps a variable to a path inside the repository of the
+	// developer.
+	tcs := map[string]map[string]string{
+		"git directory": {
+			"GIT_DIR": ".git",
+		},
+		// git sets these variables for the hooks of a commit in a
+		// linked worktree.
+		"git directory and index file": {
+			"GIT_DIR":        ".git",
+			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
+		},
+		// With this variable alone, the setup of a test succeeds, and
+		// its git add writes the index of the developer.
+		"index file": {
+			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
+		},
+		"common directory": {
+			"GIT_COMMON_DIR": ".git",
+		},
+		"every variable that git lists": every,
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			// dev stands for the repository of the developer. Its
+			// setup does not run git commit in dev. A commit starts
+			// git maintenance in the background, and maintenance
+			// writes under the git directory.
+			dev := initWorkClone(t, initBareRepo(t))
+			before := readTree(t, dev)
+
+			env := []string{probeEnv + "=1"}
+			for variable, path := range tc {
+				env = append(env, variable+"="+filepath.Join(dev, path))
+			}
+
+			cmd := exec.CommandContext(t.Context(), binary, run)
+			cmd.Env = slices.Concat(os.Environ(), env)
+
+			out, err := cmd.CombinedOutput()
+
+			// A process that fails can still write to the repository,
+			// so the test reports both.
+			assert.Equal(t, before, readTree(t, dev))
 			require.NoError(t, err, "%s", out)
 		})
 	}
