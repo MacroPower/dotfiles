@@ -475,8 +475,13 @@ func checkSparsePaths(paths []string) error {
 }
 
 // buildCloneArgs converts a [CloneInput] into the argument list for git clone.
+//
+// The list names the remote of the new clone [defaultRemote], because
+// [handler.pullExisting] pulls from the remote of that name. Without
+// --origin, git names the remote after clone.defaultRemoteName of the
+// git config.
 func buildCloneArgs(input CloneInput) []string {
-	args := []string{"clone", "-q"}
+	args := []string{"clone", "-q", "--origin", defaultRemote}
 
 	if input.Depth > 0 {
 		args = append(args, "--depth", fmt.Sprintf("%d", input.Depth))

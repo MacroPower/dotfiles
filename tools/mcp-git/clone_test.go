@@ -40,19 +40,28 @@ func TestBuildCloneArgs(t *testing.T) {
 	}{
 		"minimal": {
 			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/b"},
-			want:  []string{"clone", "-q", "--", "https://github.com/a/b", "/tmp/b"},
+			want:  []string{"clone", "-q", "--origin", "origin", "--", "https://github.com/a/b", "/tmp/b"},
 		},
 		"with depth": {
 			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/b", Depth: 1},
-			want:  []string{"clone", "-q", "--depth", "1", "--", "https://github.com/a/b", "/tmp/b"},
+			want: []string{
+				"clone", "-q", "--origin", "origin", "--depth", "1",
+				"--", "https://github.com/a/b", "/tmp/b",
+			},
 		},
 		"with branch": {
 			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/b", Branch: "main"},
-			want:  []string{"clone", "-q", "--branch", "main", "--", "https://github.com/a/b", "/tmp/b"},
+			want: []string{
+				"clone", "-q", "--origin", "origin", "--branch", "main",
+				"--", "https://github.com/a/b", "/tmp/b",
+			},
 		},
 		"with single branch": {
 			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/b", SingleBranch: true},
-			want:  []string{"clone", "-q", "--single-branch", "--", "https://github.com/a/b", "/tmp/b"},
+			want: []string{
+				"clone", "-q", "--origin", "origin", "--single-branch",
+				"--", "https://github.com/a/b", "/tmp/b",
+			},
 		},
 		"all options": {
 			input: CloneInput{
@@ -60,14 +69,14 @@ func TestBuildCloneArgs(t *testing.T) {
 				Depth: 1, Branch: "dev", SingleBranch: true,
 			},
 			want: []string{
-				"clone", "-q", "--depth", "1", "--branch", "dev", "--single-branch",
+				"clone", "-q", "--origin", "origin", "--depth", "1", "--branch", "dev", "--single-branch",
 				"--", "https://github.com/a/b", "/tmp/b",
 			},
 		},
 		"with sparse bool": {
 			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/b", Sparse: true},
 			want: []string{
-				"clone", "-q", "--sparse", "--filter=blob:none",
+				"clone", "-q", "--origin", "origin", "--sparse", "--filter=blob:none",
 				"--", "https://github.com/a/b", "/tmp/b",
 			},
 		},
@@ -77,7 +86,7 @@ func TestBuildCloneArgs(t *testing.T) {
 				SparsePaths: []string{"src", "docs"},
 			},
 			want: []string{
-				"clone", "-q", "--sparse", "--filter=blob:none",
+				"clone", "-q", "--origin", "origin", "--sparse", "--filter=blob:none",
 				"--", "https://github.com/a/b", "/tmp/b",
 			},
 		},
@@ -87,7 +96,7 @@ func TestBuildCloneArgs(t *testing.T) {
 				Sparse: true, Depth: 1,
 			},
 			want: []string{
-				"clone", "-q", "--depth", "1", "--sparse",
+				"clone", "-q", "--origin", "origin", "--depth", "1", "--sparse",
 				"--", "https://github.com/a/b", "/tmp/b",
 			},
 		},
@@ -1183,6 +1192,83 @@ func TestHandleClonePullsRewrittenURL(t *testing.T) { //nolint:paralleltest // t
 	require.NoError(t, err)
 	require.False(t, result.IsError, resultText(t, result))
 	assert.Contains(t, resultText(t, result), "Pulled")
+}
+
+// git clone names the remote of a new clone after
+// clone.defaultRemoteName of the git config. git_clone pulls from
+// origin, so the remote of its clone must have that name whatever the
+// key says. A second git_clone call with the same inputs must then
+// pull. A sparse clone without a depth leaves out each blob that its
+// checkout does not hold. git fetches each blob that the checkout
+// needs from the remote of the clone, both when it sets the sparse
+// paths and when the second call pulls.
+func TestHandleCloneIgnoresDefaultRemoteName(t *testing.T) { //nolint:paralleltest // t.Setenv
+	tcs := map[string]struct {
+		sparsePaths []string
+		// partial reports whether the clone lacks the blob of
+		// other/x, a file outside the sparse paths.
+		partial bool
+	}{
+		"full clone":   {},
+		"sparse clone": {sparsePaths: []string{"docs"}, partial: true},
+	}
+
+	for name, tc := range tcs { //nolint:paralleltest // setGlobalConfig calls t.Setenv.
+		t.Run(name, func(t *testing.T) {
+			bare := initBareRepo(t)
+			runGitCmds(t, [][]string{{"git", "-C", bare, "config", "uploadpack.allowFilter", "true"}})
+
+			work := initWorkClone(t, bare)
+
+			require.NoError(t, os.MkdirAll(filepath.Join(work, "docs"), 0o755))
+			require.NoError(t, os.MkdirAll(filepath.Join(work, "other"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(work, "other", "x"), []byte("other"), 0o644))
+			commitFile(t, work, filepath.Join("docs", "guide"), "guide", "add docs")
+			runGitCmds(t, [][]string{{"git", "-C", work, "push", "-q"}})
+
+			setGlobalConfig(t, "[clone]\n\tdefaultRemoteName = upstream\n")
+
+			h := &handler{allowFileURLs: true}
+
+			// git ignores --filter in a clone from a local path, so the
+			// clone reads the bare repository through a file:// URL.
+			input := CloneInput{
+				URL:         "file://" + bare,
+				Dest:        filepath.Join(t.TempDir(), "cloned"),
+				SparsePaths: tc.sparsePaths,
+			}
+
+			result, _, err := h.handleClone(t.Context(), nil, input)
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+			assert.Contains(t, resultText(t, result), "Cloned")
+
+			assert.Equal(t, defaultRemote, gitOut(t, "-C", input.Dest, "remote"))
+			assert.FileExists(t, filepath.Join(input.Dest, "docs", "guide"))
+
+			blob := gitOut(t, "-C", work, "rev-parse", "HEAD:other/x")
+			objects := gitOut(t, "-C", input.Dest, "rev-list", "--objects", "--missing=print", "HEAD")
+
+			want := blob
+			if tc.partial {
+				want = "?" + blob
+			}
+
+			assert.Contains(t, strings.Fields(objects), want)
+
+			commitFile(t, work, filepath.Join("docs", "guide"), "guide v2", "update docs")
+			runGitCmds(t, [][]string{{"git", "-C", work, "push", "-q"}})
+
+			result, _, err = h.handleClone(t.Context(), nil, input)
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+			assert.Contains(t, resultText(t, result), "Pulled")
+
+			got, err := os.ReadFile(filepath.Join(input.Dest, "docs", "guide"))
+			require.NoError(t, err)
+			assert.Equal(t, "guide v2", string(got))
+		})
+	}
 }
 
 // authProxy is an HTTP proxy that tunnels each CONNECT request to one

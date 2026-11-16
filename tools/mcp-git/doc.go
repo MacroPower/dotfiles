@@ -8,6 +8,10 @@
 // relative path or a path with a trailing slash, therefore names the
 // same destination and the same lock file.
 //
+// git_clone names the remote of a new clone origin, and it pulls an
+// existing destination from origin. clone.defaultRemoteName of the git
+// config does not change that name.
+//
 // When the destination holds a .git directory that git cannot open or
 // that has no config file, git_clone renames the destination to
 // <dest>.corrupt-<timestamp> and clones again. It refuses a
