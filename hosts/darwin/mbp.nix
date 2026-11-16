@@ -65,7 +65,6 @@
         ../../home/ghostty.nix
         ../../home/zed.nix
         ../../home/development.nix
-        ../../home/kubernetes.nix
         ../../home/claude.nix
         ../../home/displayplacer.nix
         ../../home/personal.nix

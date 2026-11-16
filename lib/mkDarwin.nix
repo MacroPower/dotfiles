@@ -51,7 +51,7 @@ inputs.nix-darwin.lib.darwinSystem {
       };
     }
     # Sync nix-homebrew taps into nix-darwin's homebrew.taps so
-    # `brew bundle --cleanup` doesn't try to untap them.
+    # `brew bundle --cleanup` does not try to untap them.
     (
       { config, ... }:
       {
@@ -74,6 +74,9 @@ inputs.nix-darwin.lib.darwinSystem {
           imports = [
             ../home/k9s.nix
             ../home/kube-radar.nix
+            # Declares dotfiles.kubernetes.extraKrewPlugins, which this
+            # module sets.
+            ../home/kubernetes.nix
             ../home/tmux.nix
             ../home/virtualization.nix
             ../home/wireshark.nix
