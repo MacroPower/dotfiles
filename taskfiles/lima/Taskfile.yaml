@@ -6,25 +6,36 @@ vars:
   LIMA_ARCH:
     sh: "uname -m | sed 's/arm64/aarch64/'"
   IMAGE_DIR: '{{env "HOME"}}/.lima/_images'
+  IMAGE_ATTR: ".#packages.{{.NIX_SYSTEM}}.terrarium-image"
+  # The image task records in this file the store path of the image that
+  # it copied to IMAGE_DIR.
+  IMAGE_STORE_PATH: "{{.IMAGE_DIR}}/terrarium.store-path"
 
 tasks:
   image:
     desc: Build the Lima Terrarium golden image
-    sources:
-      - hosts/nixos/terrarium.nix
-      - hosts/nixos/lima-hardware.nix
-      - hosts/nixos/default.nix
-      - hosts/nixos/clones.nix
-      - hosts/shared.nix
-    generates:
-      - "{{.IMAGE_DIR}}/terrarium.qcow2"
+    # Nix decides whether the image is stale. The image gets a new store
+    # path when any file or flake input that it depends on changes. Each
+    # run records the store path of the image that it copied. The task is
+    # up to date when both image files exist and the flake still evaluates
+    # to the recorded store path. test_image.py runs this task and the
+    # pull task against fakes of nix, zstd, and oras.
+    status:
+      - test -f {{.IMAGE_DIR}}/terrarium.qcow2
+      - test -f {{.IMAGE_DIR}}/terrarium.qcow2.zst
+      - test -s {{.IMAGE_STORE_PATH}}
+      - test "$(cat {{.IMAGE_STORE_PATH}})" = "$(nix eval --raw --no-update-lock-file {{.IMAGE_ATTR}}.outPath)"
     cmds:
       - mkdir -p {{.IMAGE_DIR}}
-      - nix build .#packages.{{.NIX_SYSTEM}}.terrarium-image --no-update-lock-file --always-allow-substitutes --out-link {{.ROOT_DIR}}/lima/result-terrarium
+      - nix build {{.IMAGE_ATTR}} --no-update-lock-file --always-allow-substitutes --out-link {{.ROOT_DIR}}/lima/result-terrarium
+      # Drop the record before the copy replaces the image. A run that
+      # fails later leaves no record, so the next run builds again.
+      - rm -f {{.IMAGE_STORE_PATH}}
       - cp -f {{.ROOT_DIR}}/lima/result-terrarium/*.qcow2 {{.IMAGE_DIR}}/terrarium.qcow2
       - chmod u+w {{.IMAGE_DIR}}/terrarium.qcow2
-      - rm -f {{.ROOT_DIR}}/lima/result-terrarium
       - zstd -T0 -19 -f {{.IMAGE_DIR}}/terrarium.qcow2 -o {{.IMAGE_DIR}}/terrarium.qcow2.zst
+      - readlink {{.ROOT_DIR}}/lima/result-terrarium > {{.IMAGE_STORE_PATH}}
+      - rm -f {{.ROOT_DIR}}/lima/result-terrarium
 
   login:
     desc: Log in to GHCR for image publishing
@@ -63,6 +74,8 @@ tasks:
       - test -f {{.IMAGE_DIR}}/terrarium.qcow2
     cmds:
       - mkdir -p {{.IMAGE_DIR}}
+      # The pulled image replaces the image of the recorded store path.
+      - rm -f {{.IMAGE_STORE_PATH}}
       - oras pull {{.IMAGE_REF}}:{{.TAG}} -o {{.IMAGE_DIR}}/
       - zstd -d -f {{.IMAGE_DIR}}/terrarium.qcow2.zst -o {{.IMAGE_DIR}}/terrarium.qcow2
       - rm -f {{.IMAGE_DIR}}/terrarium.qcow2.zst
