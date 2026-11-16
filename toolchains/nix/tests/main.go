@@ -43,6 +43,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSbom(ctx) })
 	eg.Go(func() error { return m.TestSourceToolchains(ctx) })
 	eg.Go(func() error { return m.TestTaskfileCommands(ctx) })
+	eg.Go(func() error { return m.TestVulnscanGrypeFailure(ctx) })
 	eg.Go(func() error { return m.TestVulnscanSarif(ctx) })
 
 	err := eg.Wait()
@@ -142,6 +143,46 @@ var _ = lintProbe
 	// method has no doc comment. golangci-lint reports that method with
 	// godoclint and reports nothing else in the file.
 	undocumentedProbe = "package main\n\nfunc (m *Tests) LintProbe() {}\n"
+
+	// homeFlake is a flake.nix file whose flake has no inputs. It holds
+	// a home-manager configuration for aarch64-linux and one for
+	// x86_64-linux, each with the name that [Nix.Sbom] builds on an
+	// engine of that system. The activation package of each
+	// configuration is a derivation that writes one file and depends on
+	// no other store path. So Sbom builds the package without the flake
+	// of the repository, and grype matches no CVE to its closure.
+	homeFlake = `{
+  outputs = _: {
+    homeConfigurations = builtins.listToAttrs (
+      map
+        (system: {
+          name = "dev@${system}";
+          value.activationPackage = derivation {
+            inherit system;
+            name = "home-fixture";
+            builder = "/bin/sh";
+            args = [
+              "-c"
+              "echo fixture > $out"
+            ];
+          };
+        })
+        [
+          "aarch64-linux"
+          "x86_64-linux"
+        ]
+    );
+  };
+}
+`
+
+	// validGrypeConfig is a .grype.yaml file that grype parses. It
+	// ignores no finding.
+	validGrypeConfig = "ignore: []\n"
+
+	// brokenGrypeConfig is a .grype.yaml file that grype cannot parse,
+	// because the YAML list of the file has no end.
+	brokenGrypeConfig = "ignore: [\n"
 )
 
 // sourceFile returns the contents of the file at path in the default
@@ -216,6 +257,16 @@ func editorconfigSource(path, contents string) *dagger.Directory {
 func nixWithFlake(contents string) *dagger.Nix {
 	return dag.Nix(dagger.NixOpts{
 		Source: dag.Directory().WithNewFile("flake.nix", contents),
+	})
+}
+
+// nixWithGrypeConfig returns the [Nix] module whose source holds only
+// the flake.nix file homeFlake and a .grype.yaml file with contents.
+func nixWithGrypeConfig(contents string) *dagger.Nix {
+	return dag.Nix(dagger.NixOpts{
+		Source: dag.Directory().
+			WithNewFile("flake.nix", homeFlake).
+			WithNewFile(".grype.yaml", contents),
 	})
 }
 
@@ -838,4 +889,57 @@ func (m *Tests) TestVulnscanSarif(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// checkGrypeFailure returns nil when err is the failure of a grype
+// command. name is the function of [Nix] that returned err. Dagger
+// returns a [dagger.ExecError] for a step whose command exits with a
+// status that the step does not accept. So checkGrypeFailure returns
+// an error when err is nil or is not an ExecError. It also returns an
+// error when the command of the ExecError runs a binary with another
+// name than grype.
+func checkGrypeFailure(name string, err error) error {
+	if err == nil {
+		return fmt.Errorf("%s passed a .grype.yaml file that grype cannot parse", name)
+	}
+
+	var execErr *dagger.ExecError
+	if !errors.As(err, &execErr) || len(execErr.Cmd) == 0 || !strings.HasSuffix(execErr.Cmd[0], "/grype") {
+		return fmt.Errorf("%s: want the error of a grype command, got: %w", name, err)
+	}
+
+	return nil
+}
+
+// TestVulnscanGrypeFailure verifies that [Nix.Vulnscan] and
+// [Nix.VulnscanSarif] return the failure of grype as their error. Each
+// source of the test holds only the flake.nix file homeFlake and a
+// .grype.yaml file. So the test does not build the flake of the
+// repository. Vulnscan passes when grype parses the .grype.yaml file.
+// When grype cannot parse the file, it exits with status 1 and writes
+// no report. Both functions then fail with the error of the grype
+// command. The test fails when Vulnscan returns the empty output of
+// that command as a report. It also fails when VulnscanSarif returns
+// another error, such as the error of a read of the SARIF file, which
+// grype did not write.
+//
+// +check
+func (m *Tests) TestVulnscanGrypeFailure(ctx context.Context) error {
+	_, err := nixWithGrypeConfig(validGrypeConfig).Vulnscan(ctx)
+	if err != nil {
+		return fmt.Errorf("scanning with a .grype.yaml file that grype parses: %w", err)
+	}
+
+	broken := nixWithGrypeConfig(brokenGrypeConfig)
+
+	_, scanErr := broken.Vulnscan(ctx)
+
+	err = checkGrypeFailure("Vulnscan", scanErr)
+	if err != nil {
+		return err
+	}
+
+	_, sarifErr := broken.VulnscanSarif().Sync(ctx)
+
+	return checkGrypeFailure("VulnscanSarif", sarifErr)
 }

@@ -451,10 +451,17 @@ const (
 // changes the grype package, `nix profile install` fails on a profile
 // that holds the earlier grype.
 //
-// The build is a step of its own, so a failure of nix fails the
-// function. [Nix.Vulnscan] and [Nix.VulnscanSarif] accept each exit
-// status of the grype step, and a `nix run nixpkgs#grype` command in
-// that step hides a failure of nix.
+// The build is a step of its own, so the step that runs grypeBin fails
+// only when grype exits with a status other than 0. [Nix.Vulnscan] and
+// [Nix.VulnscanSarif] return the error of that step. A
+// `nix run nixpkgs#grype` command in that step also fails when nix
+// fails.
+//
+// Without a `fail-on-severity` setting in .grype.yaml, grype exits with
+// status 0 after each scan that it completes, whatever the scan finds.
+// With the setting, grype exits with status 2 after a scan with a
+// finding of that severity or a higher one. Both functions then return
+// an error and no report.
 func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 	sbom, err := m.Sbom(ctx)
 	if err != nil {
@@ -470,7 +477,10 @@ func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 		WithFile("/tmp/.grype.yaml", grypeConfig), nil
 }
 
-// Vulnscan checks the home-manager closure for known CVEs using grype.
+// Vulnscan checks the home-manager closure for known CVEs using grype
+// and returns the report of grype as text. It returns an error when
+// grype exits with a status other than 0, such as when grype cannot
+// parse .grype.yaml or cannot load its vulnerability database.
 func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 	ctr, err := m.grypeBase(ctx)
 	if err != nil {
@@ -478,8 +488,7 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 	}
 
 	out, err := ctr.
-		WithExec([]string{grypeBin, "--config", "/tmp/.grype.yaml", "sbom:/tmp/sbom.cdx.json"},
-			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+		WithExec([]string{grypeBin, "--config", "/tmp/.grype.yaml", "sbom:/tmp/sbom.cdx.json"}).
 		Stdout(ctx)
 	if err != nil {
 		return "", fmt.Errorf("running grype: %w", err)
@@ -492,7 +501,8 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 // returns the results as a SARIF v2.1.0 JSON file suitable for upload
 // to GitHub Code Scanning. Unlike [Nix.Vulnscan], which returns raw text,
 // this method produces structured output that GitHub can render as
-// security alerts.
+// security alerts. Like Vulnscan, it returns an error when grype exits
+// with a status other than 0.
 //
 // Grype produces empty artifact locations when scanning SBOMs. GitHub
 // Code Scanning requires every result to reference a file in the repo,
@@ -512,8 +522,7 @@ func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
 			"sbom:/tmp/sbom.cdx.json",
 			"--output", "sarif",
 			"--file", "/tmp/grype.sarif.json",
-		},
-			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+		}).
 		File("/tmp/grype.sarif.json").
 		Contents(ctx)
 	if err != nil {
