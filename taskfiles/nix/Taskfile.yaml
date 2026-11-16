@@ -16,10 +16,14 @@ tasks:
     cmds:
       - dagger check nix:build
 
+  # BuildHome of the nix toolchain is too slow for every run of
+  # `dagger check`, so it does not carry the +check pragma and is not a
+  # check. A `dagger check` pattern selects only checks, so the task
+  # calls the function by name.
   build:home:
-    desc: Evaluate all home-manager configurations
+    desc: Build and activate each home-manager configuration for the platform of the Dagger engine
     cmds:
-      - dagger check nix:build-home
+      - dagger call nix build-home
 
   flake-check:
     desc: Validate flake schema

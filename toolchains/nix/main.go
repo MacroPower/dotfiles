@@ -227,6 +227,10 @@ func (m *Nix) validateHome(ctx context.Context, name string) error {
 
 // BuildHome builds and validates home-manager activation packages
 // that match the current engine platform.
+//
+// A full build of each activation package is too slow for every run
+// of the checks, so `dagger check` does not run this function.
+// `task nix:build:home` runs it with `dagger call nix build-home`.
 func (m *Nix) BuildHome(ctx context.Context) error {
 	base := m.base()
 	sys, err := nixSystem(ctx, base)

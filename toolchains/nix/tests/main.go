@@ -37,6 +37,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestLintToolchains(ctx) })
 	eg.Go(func() error { return m.TestSbom(ctx) })
 	eg.Go(func() error { return m.TestSourceToolchains(ctx) })
+	eg.Go(func() error { return m.TestTaskfileCommands(ctx) })
 	eg.Go(func() error { return m.TestVulnscanSarif(ctx) })
 
 	err := eg.Wait()

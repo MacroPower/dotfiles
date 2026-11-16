@@ -11,7 +11,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0
 )
 
-require golang.org/x/sync v0.20.0
+require (
+	golang.org/x/sync v0.20.0
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/99designs/gqlgen v0.17.90 // indirect
