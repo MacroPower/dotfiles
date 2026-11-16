@@ -84,7 +84,9 @@ var testGitEnv = map[string]string{
 // variables on. TestMain therefore unsets each variable that
 // [repositoryEnv] lists and that [testGitEnv] does not hold. Each git
 // command of the tests then acts on the repository that git finds from
-// the directory of the command.
+// the directory of the command. A test that needs one of the variables
+// sets it for a call of the server alone, as [setRepositoryEnv]
+// describes.
 func TestMain(m *testing.M) {
 	for name, value := range testGitEnv {
 		err := os.Setenv(name, value)
@@ -132,6 +134,68 @@ func repositoryEnv(ctx context.Context) ([]string, error) {
 	}
 
 	return strings.Fields(string(out)), nil
+}
+
+// repositoryEnvCases returns sets of variables of the environment
+// that point git at a repository, by the name of a case. Each set maps
+// a variable to a path inside the working tree of that repository. The
+// empty path names the working tree.
+func repositoryEnvCases() map[string]map[string]string {
+	return map[string]map[string]string{
+		"git directory": {
+			"GIT_DIR": ".git",
+		},
+		// git sets these variables for the hooks of a commit in a
+		// linked worktree.
+		"git directory and index file": {
+			"GIT_DIR":        ".git",
+			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
+		},
+		// With this variable alone, git finds the repository from the
+		// directory of the command, and it reads and writes the index
+		// of the other repository.
+		"index file": {
+			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
+		},
+		"common directory": {
+			"GIT_COMMON_DIR": ".git",
+		},
+		"working tree": {
+			"GIT_WORK_TREE": "",
+		},
+		"object directory": {
+			"GIT_OBJECT_DIRECTORY": filepath.Join(".git", "objects"),
+		},
+	}
+}
+
+// setRepositoryEnv sets each variable of env to its path inside the
+// working tree at repo, as [repositoryEnvCases] gives it. git reads the
+// URI of a ref store from GIT_REFERENCE_BACKEND, so setRepositoryEnv
+// gives that variable the path with the files:// scheme. It returns a
+// function that unsets the variables, and t.Setenv restores them when
+// the test ends.
+//
+// The git commands of the helpers read the variables too. A test
+// therefore calls setRepositoryEnv after it creates its repositories,
+// and it calls the returned function before it reads a repository.
+func setRepositoryEnv(t *testing.T, repo string, env map[string]string) func() {
+	t.Helper()
+
+	for name, path := range env {
+		value := filepath.Join(repo, path)
+		if name == "GIT_REFERENCE_BACKEND" {
+			value = "files://" + value
+		}
+
+		t.Setenv(name, value)
+	}
+
+	return func() {
+		for name := range env {
+			require.NoError(t, os.Unsetenv(name))
+		}
+	}
 }
 
 // readTree returns the mode of each file and each directory under
@@ -544,27 +608,10 @@ func TestGitSkipsEnvironmentRepository(t *testing.T) {
 	}
 
 	// Each case maps a variable to a path inside the repository of the
-	// developer.
-	tcs := map[string]map[string]string{
-		"git directory": {
-			"GIT_DIR": ".git",
-		},
-		// git sets these variables for the hooks of a commit in a
-		// linked worktree.
-		"git directory and index file": {
-			"GIT_DIR":        ".git",
-			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
-		},
-		// With this variable alone, the setup of a test succeeds, and
-		// its git add writes the index of the developer.
-		"index file": {
-			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
-		},
-		"common directory": {
-			"GIT_COMMON_DIR": ".git",
-		},
-		"every variable that git lists": every,
-	}
+	// developer. With the index file alone, the setup of a test
+	// succeeds, and its git add writes the index of the developer.
+	tcs := repositoryEnvCases()
+	tcs["every variable that git lists"] = every
 
 	for name, tc := range tcs {
 		t.Run(name, func(t *testing.T) {

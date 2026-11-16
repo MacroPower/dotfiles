@@ -444,6 +444,63 @@ func TestRemoteToolsSkipConfigFileVariable(t *testing.T) { //nolint:paralleltest
 	}
 }
 
+// serverRepositoryEnvCases returns the cases of [repositoryEnvCases],
+// a case for GIT_REFERENCE_BACKEND, and a case that sets every variable
+// that the server removes. [TestGitSkipsEnvironmentRepository] checks
+// that TestMain unsets each variable of [repositoryEnvCases]. TestMain
+// unsets the variables that git rev-parse --local-env-vars prints, and
+// git does not print GIT_REFERENCE_BACKEND. [repositoryEnvCases]
+// therefore does not hold that case.
+func serverRepositoryEnvCases() map[string]map[string]string {
+	tcs := repositoryEnvCases()
+
+	tcs["reference backend"] = map[string]string{
+		"GIT_REFERENCE_BACKEND": ".git",
+	}
+
+	every := map[string]string{}
+	for _, name := range repositoryVariables {
+		every[name] = ".git"
+	}
+
+	tcs["every variable that the server removes"] = every
+
+	return tcs
+}
+
+// The environment of the server can set variables that point git at a
+// repository, such as GIT_DIR. git sets them for the hooks of a
+// commit, and a server that a hook starts inherits them. With GIT_DIR
+// set, git -C <repo> acts on the repository that the variable names.
+// Every tool must still act on the repository of the call, and it must
+// leave the repository that the variables name as it was.
+func TestRemoteToolsSkipRepositoryVariables(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// other stands for the repository that the variables name. Its
+	// setup does not run git commit in other. A commit starts git
+	// maintenance in the background, and maintenance writes under the
+	// git directory.
+	other := initWorkClone(t, initBareRepo(t))
+
+	for toolName, rt := range remoteTools() { //nolint:paralleltest // t.Setenv
+		for name, tc := range serverRepositoryEnvCases() {
+			t.Run(toolName+"/"+name, func(t *testing.T) {
+				bare, work := rt.repos(t)
+				before := readTree(t, other)
+
+				unset := setRepositoryEnv(t, other, tc)
+				result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+
+				unset()
+
+				require.NoError(t, err)
+				assert.Equal(t, before, readTree(t, other), "the tool must not write the other repository")
+				require.False(t, result.IsError, resultText(t, result))
+				rt.requireLanded(t, bare, work)
+			})
+		}
+	}
+}
+
 // core.worktree in the config of a repository names its working tree,
 // and git writes there. Every tool therefore refuses a repository
 // whose working tree lies outside the allowed directories.

@@ -1480,6 +1480,63 @@ func TestGitEnvRemovesConfigFile(t *testing.T) { //nolint:paralleltest // t.Sete
 	}
 }
 
+// git rev-parse --local-env-vars prints the variables that point git
+// at one repository. gitEnv must remove each of them, whatever its
+// value is. It must keep the two variables of the list that pass
+// config to every git command.
+//
+// The list comes from the git that runs the tests. The test therefore
+// fails when that git prints a variable that repositoryVariables does
+// not hold.
+func TestGitEnvRemovesRepositoryVariables(t *testing.T) { //nolint:paralleltest // t.Setenv
+	listed, err := repositoryEnv(t.Context())
+	require.NoError(t, err)
+	require.Contains(t, listed, "GIT_DIR")
+
+	kept := []string{"GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT"}
+
+	for _, name := range kept {
+		assert.NotContains(t, repositoryVariables, name)
+	}
+
+	for _, name := range listed {
+		if !slices.Contains(kept, name) {
+			assert.Contains(t, repositoryVariables, name, "git lists the variable")
+		}
+	}
+
+	// values maps the name of a case to the value of each variable.
+	values := map[string]string{
+		"path": filepath.Join(t.TempDir(), "repo", ".git"),
+		// git reads an empty GIT_DIR as the path of a git directory,
+		// and it finds no repository there.
+		"empty value": "",
+	}
+
+	for name, value := range values { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			for _, name := range slices.Concat(repositoryVariables, kept) {
+				t.Setenv(name, value)
+			}
+
+			envs := map[string][]string{
+				"gitEnv":     gitEnv(),
+				"commandEnv": (&handler{}).commandEnv(),
+			}
+
+			for source, env := range envs {
+				for _, name := range repositoryVariables {
+					assert.Empty(t, lastEnv(env, name), source)
+				}
+
+				for _, name := range kept {
+					assert.Equal(t, name+"="+value, lastEnv(env, name), source)
+				}
+			}
+		})
+	}
+}
+
 // The environment of the server can set GIT_CONFIG. configValue must
 // still read the config of the repository, which the git commands of
 // the server read. It must not read the file that the variable names.

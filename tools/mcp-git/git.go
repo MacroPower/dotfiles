@@ -107,6 +107,52 @@ var (
 	// a force push, and neither must be expressible through a ref
 	// field.
 	refNamePattern = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._/-]*$`)
+
+	// repositoryVariables names each variable that [gitEnv] removes
+	// from the environment of a git command. Each variable points git
+	// at one repository or at a part of one, such as its git
+	// directory, its working tree, its index, or its object store.
+	// With GIT_DIR set, git -C <dir> acts on the repository that the
+	// variable names, not on the repository that git finds from
+	// <dir>.
+	//
+	// git sets some of these variables for each command that it
+	// starts, such as a hook, and a server that the command starts
+	// inherits them. git rev-parse --local-env-vars prints the
+	// variables that git itself removes before it runs a command in
+	// another repository. repositoryVariables holds each variable
+	// that git 2.56 prints, except GIT_CONFIG_PARAMETERS and
+	// GIT_CONFIG_COUNT. Those two variables pass config to every git
+	// command, and they name no repository. A test compares
+	// repositoryVariables with the list of the git that runs the
+	// tests.
+	//
+	// repositoryVariables also holds GIT_REFERENCE_BACKEND, which git
+	// 2.56 does not print. The variable holds the URI of a ref store,
+	// such as files:///path/to/repo/.git. git reads HEAD and every ref
+	// of a command from that store. With the variable set, a push
+	// without a ref pushes the current branch of that store.
+	//
+	// hook-router removes the same variables when it reads the
+	// current branch of a git_push call without a ref, in
+	// tools/hook-router/git/git.go. Both processes then read the
+	// branch that the call pushes.
+	repositoryVariables = []string{
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_CONFIG",
+		"GIT_OBJECT_DIRECTORY",
+		"GIT_DIR",
+		"GIT_WORK_TREE",
+		"GIT_IMPLICIT_WORK_TREE",
+		"GIT_GRAFT_FILE",
+		"GIT_INDEX_FILE",
+		"GIT_NO_REPLACE_OBJECTS",
+		"GIT_REPLACE_REF_BASE",
+		"GIT_PREFIX",
+		"GIT_SHALLOW_FILE",
+		"GIT_COMMON_DIR",
+		"GIT_REFERENCE_BACKEND",
+	}
 )
 
 // handler implements the tool handlers for the git MCP server.
@@ -1168,10 +1214,11 @@ func (h *handler) credentialArgs() []string {
 }
 
 // gitEnv returns the environment for git subprocesses. It preserves
-// the inherited environment except GIT_CONFIG. It forces
-// non-interactive behavior: no credential prompt, no editor for merge
-// or rebase messages, and no SSH passphrase prompt. GIT_SSH_COMMAND is
-// only set when the caller has not configured one.
+// the inherited environment except the variables of
+// repositoryVariables. It forces non-interactive behavior: no
+// credential prompt, no editor for merge or rebase messages, and no
+// SSH passphrase prompt. It sets GIT_SSH_COMMAND only when the caller
+// has not configured one.
 //
 // Each variable that gitEnv sets also keeps git from running a
 // command that the git config names. git reads the editor, the SSH
@@ -1184,19 +1231,29 @@ func (h *handler) credentialArgs() []string {
 // which git reads after core.askPass. GIT_PROXY_COMMAND is empty,
 // which runs no proxy.
 //
-// gitEnv removes GIT_CONFIG. With that variable set, a git config
-// command without a file option reads and writes only the file that
-// the variable names. Every other git command ignores the variable.
-// The server reads the config of a repository with git config, as
-// [readRepoConfig] and [configValue] do. It then runs git commands
-// that read the config files of the repository. Without the variable,
-// git config reads the same files.
+// gitEnv removes each variable of repositoryVariables. Each git
+// command of the server names its repository in its arguments. The
+// name is the directory after -C, the git directory after --git-dir,
+// or the destination of a clone. Without the variables, git acts on
+// that repository, whatever repository the environment of the server
+// names.
+//
+// GIT_CONFIG is one of the variables. With that variable set, a git
+// config command without a file option reads and writes only the file
+// that the variable names. Every other git command ignores the
+// variable. The server reads the config of a repository with git
+// config, as [readRepoConfig] and [configValue] do. It then runs git
+// commands that read the config files of the repository. Without the
+// variable, git config reads the same files.
 func gitEnv() []string {
-	// git reads an empty GIT_CONFIG as the name of a file, and git
-	// config then fails. gitEnv therefore removes the variable, and it
-	// does not give the variable an empty value.
+	// git reads a variable with an empty value as a set variable. With
+	// an empty GIT_DIR, git finds no repository, and with an empty
+	// GIT_CONFIG, git config fails. gitEnv therefore removes each
+	// variable, and it does not give the variable an empty value.
 	env := slices.DeleteFunc(os.Environ(), func(entry string) bool {
-		return strings.HasPrefix(entry, "GIT_CONFIG=")
+		name, _, _ := strings.Cut(entry, "=")
+
+		return slices.Contains(repositoryVariables, name)
 	})
 
 	env = append(env,

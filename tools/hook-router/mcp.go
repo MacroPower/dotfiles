@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/git"
@@ -18,11 +17,6 @@ import (
 var (
 	// errRelativeRepo reports a repository path that is not absolute.
 	errRelativeRepo = errors.New("repository path is not absolute")
-
-	// errEnvironmentRepo reports that the environment sets GIT_DIR,
-	// GIT_COMMON_DIR, or GIT_REFERENCE_BACKEND. Each of them points every
-	// git command of a process at the refs of one repository.
-	errEnvironmentRepo = errors.New("environment sets a repository variable of git")
 
 	// errNoStore reports a read of the state store on a hook that runs
 	// without one.
@@ -281,47 +275,24 @@ func currentBranch(logger *slog.Logger) mcprules.BranchResolver {
 // repoBranch asks git for the current branch of the repository at the
 // absolute path repo. A rule reads that branch for a call that names no
 // branch, so repoBranch must read the repository that the MCP server
-// acts on. It returns an error when the MCP server might act on another
-// repository.
+// acts on.
 //
 // It rejects a relative path with [errRelativeRepo]. An MCP server
 // resolves a relative path against its own working directory, and that
 // directory can differ from the directory of this process. The two
 // processes then read different repositories.
 //
-// It also rejects every path with [errEnvironmentRepo] when the
-// environment sets GIT_DIR, GIT_COMMON_DIR, or GIT_REFERENCE_BACKEND.
 // An MCP server starts with the environment of Claude Code, as this
-// process does. A [git.Runner] starts its git commands without these
-// variables, but the git commands of the MCP server keep them:
-//
-//   - With GIT_DIR set, a git command of the MCP server reads the HEAD,
-//     the refs, and the remotes of the repository that GIT_DIR names.
-//   - With GIT_COMMON_DIR set, the command reads HEAD at repo. It reads
-//     the refs and the remotes of the repository that GIT_COMMON_DIR
-//     names.
-//   - With GIT_REFERENCE_BACKEND set, the command reads HEAD and the
-//     refs from the ref store that the variable names, such as the git
-//     directory of another repository. It reads the remotes at repo.
-//
-// Every other variable that git rev-parse --local-env-vars prints
-// leaves the decision to the branch at repo. None of them points git at
-// the HEAD or the refs of another repository, so the MCP server still
-// pushes the branch at repo. For example, GIT_WORK_TREE and
-// GIT_INDEX_FILE change only the working tree and the index that git
-// reads. git sets GIT_INDEX_FILE and GIT_PREFIX for the hooks of a
-// commit in a main worktree. A Claude Code that such a hook starts
-// inherits both.
+// process does. That environment can name another repository, with
+// GIT_DIR, GIT_COMMON_DIR, GIT_REFERENCE_BACKEND, or another variable
+// that points git at the HEAD and the refs of one repository. A
+// [git.Runner] starts its git commands without these variables, and
+// the mcp-git server removes the same variables from its git commands.
+// Both processes then read the current branch of the repository at
+// repo.
 func repoBranch(ctx context.Context, repo string) (string, error) {
 	if !filepath.IsAbs(repo) {
 		return "", fmt.Errorf("%w: %q", errRelativeRepo, repo)
-	}
-
-	for _, name := range []string{"GIT_DIR", "GIT_COMMON_DIR", "GIT_REFERENCE_BACKEND"} {
-		_, set := os.LookupEnv(name)
-		if set {
-			return "", fmt.Errorf("%w: %s", errEnvironmentRepo, name)
-		}
 	}
 
 	branch, err := (&git.Runner{Dir: repo}).CurrentBranch(ctx)

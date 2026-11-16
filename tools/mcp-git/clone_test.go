@@ -3060,6 +3060,63 @@ func TestHandleCloneIgnoresConfigOfWorkingDirectory(t *testing.T) { //nolint:par
 	requireNotRun(t, marker)
 }
 
+// The environment of the server can set variables that point git at a
+// repository, such as GIT_DIR and GIT_WORK_TREE. git_clone must still
+// clone into the destination of the call, and a second call must pull
+// there. Both calls must leave the repository that the variables name
+// as it was.
+func TestHandleCloneSkipsRepositoryVariables(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// other stands for the repository that the variables name. Its
+	// setup does not run git commit in other. A commit starts git
+	// maintenance in the background, and maintenance writes under the
+	// git directory.
+	other := initWorkClone(t, initBareRepo(t))
+
+	for name, tc := range serverRepositoryEnvCases() { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			bare := initBareRepo(t)
+			work := initWorkClone(t, bare)
+			before := readTree(t, other)
+
+			h := &handler{allowFileURLs: true}
+			input := CloneInput{URL: bare, Dest: filepath.Join(t.TempDir(), "cloned")}
+
+			unset := setRepositoryEnv(t, other, tc)
+			result, _, err := h.handleClone(t.Context(), nil, input)
+
+			unset()
+
+			require.NoError(t, err)
+			assert.Equal(t, before, readTree(t, other), "the clone must not write the other repository")
+			require.False(t, result.IsError, resultText(t, result))
+			assert.Contains(t, resultText(t, result), "Cloned")
+			assert.FileExists(t, filepath.Join(input.Dest, "README"))
+			assert.Equal(t,
+				gitOut(t, "-C", bare, "rev-parse", "HEAD"),
+				gitOut(t, "-C", input.Dest, "rev-parse", "HEAD"),
+			)
+
+			commitFile(t, work, "remote.txt", "remote", "remote commit")
+			runGitCmds(t, [][]string{{"git", "-C", work, "push", "-q"}})
+
+			unset = setRepositoryEnv(t, other, tc)
+			result, _, err = h.handleClone(t.Context(), nil, input)
+
+			unset()
+
+			require.NoError(t, err)
+			assert.Equal(t, before, readTree(t, other), "the pull must not write the other repository")
+			require.False(t, result.IsError, resultText(t, result))
+			assert.Contains(t, resultText(t, result), "Pulled")
+			assert.FileExists(t, filepath.Join(input.Dest, "remote.txt"))
+			assert.Equal(t,
+				gitOut(t, "-C", bare, "rev-parse", "HEAD"),
+				gitOut(t, "-C", input.Dest, "rev-parse", "HEAD"),
+			)
+		})
+	}
+}
+
 // A second git_clone call pulls into the existing checkout, and the
 // caller can write the git config of that checkout.
 func TestHandleClonePullRefusesConfigCommands(t *testing.T) {

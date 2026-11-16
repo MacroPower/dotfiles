@@ -398,11 +398,13 @@ let
                     path in the `repoField` field, and tests that
                     branch. The test fails when git names no current
                     branch there, as on a detached HEAD, and when the
-                    path is relative. It also fails when the
-                    environment of hook-router sets `GIT_DIR`,
-                    `GIT_COMMON_DIR`, or `GIT_REFERENCE_BACKEND`. The
-                    MCP server inherits that variable and can push from
-                    the refs that it names.
+                    path is relative. hook-router reads the branch
+                    without `GIT_DIR`, `GIT_COMMON_DIR`,
+                    `GIT_REFERENCE_BACKEND`, and the other variables of
+                    its environment that name a repository. The MCP
+                    server of the rule must ignore these variables too.
+                    Otherwise the server acts on a branch that the test
+                    did not read.
                   - `true`: the field is the boolean true.
                   - `absentOrTrue`: the field is absent or the boolean
                     true.
@@ -3328,10 +3330,10 @@ in
         #
         # A call with no `ref` pushes the current branch of `repo`, so
         # hook-router asks git for that branch. The call prompts when
-        # git names no branch, as on a detached HEAD. It also prompts
-        # when the environment sets GIT_DIR, GIT_COMMON_DIR, or
-        # GIT_REFERENCE_BACKEND. mcp-git can then push from the refs
-        # that the variable names.
+        # git names no branch, as on a detached HEAD. hook-router and
+        # mcp-git both ignore GIT_DIR, GIT_COMMON_DIR,
+        # GIT_REFERENCE_BACKEND, and the other variables that name a
+        # repository, so both read the branch of `repo`.
         #
         # mcp-git skips every pre-push hook and never pushes a
         # submodule. It also refuses a remote on the local file

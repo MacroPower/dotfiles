@@ -776,25 +776,22 @@ func TestHandleMCPPush(t *testing.T) {
 }
 
 // An mcp__git__git_push call with no ref pushes the current branch of
-// the repository that the MCP server reads. The MCP server starts with
-// the environment of Claude Code, as hook-router does. With GIT_DIR
-// set, the git commands of the server read the HEAD, the refs, and the
-// remotes of the repository that GIT_DIR names. With GIT_COMMON_DIR
-// set, they read the refs and the remotes of the repository that
-// GIT_COMMON_DIR names. With GIT_REFERENCE_BACKEND set, they read HEAD
-// and the refs from the ref store that the variable names. Such a call
-// must get an ask, whichever of the two repositories is on a branch
-// with a conventional type.
+// the repository that the call names. The MCP server starts with the
+// environment of Claude Code, as hook-router does. That environment can
+// name another repository with GIT_DIR, GIT_COMMON_DIR, or
+// GIT_REFERENCE_BACKEND. The mcp-git server removes these variables
+// from its git commands, so it still pushes the branch of the
+// repository that the call names. The decision must follow that
+// branch, whichever of the two repositories is on a branch with a
+// conventional type.
 //
-// Every other variable leaves the decision to the branch of the
-// repository that the call names. Claude Code inherits config in
-// GIT_CONFIG_COUNT or in GIT_CONFIG_PARAMETERS, such as a
-// safe.directory entry. Only git config reads GIT_CONFIG, and git sets
-// GIT_PREFIX for a shell alias but never reads it. A Claude Code that a
-// commit hook in a main worktree starts inherits GIT_INDEX_FILE and
-// GIT_PREFIX from git. GIT_WORK_TREE changes the working tree of git,
-// not its repository.
-func TestHandleMCPPushAsksWhenEnvironmentNamesRepository(t *testing.T) { //nolint:paralleltest // t.Setenv
+// Claude Code inherits config in GIT_CONFIG_COUNT or in
+// GIT_CONFIG_PARAMETERS, such as a safe.directory entry. Only git
+// config reads GIT_CONFIG, and git sets GIT_PREFIX for a shell alias
+// but never reads it. A Claude Code that a commit hook in a main
+// worktree starts inherits GIT_INDEX_FILE and GIT_PREFIX from git.
+// GIT_WORK_TREE changes the working tree of git, not its repository.
+func TestHandleMCPPushReadsBranchOfCallRepository(t *testing.T) { //nolint:paralleltest // t.Setenv
 	const tool = "mcp__git__git_push"
 
 	logger := slog.New(slog.DiscardHandler)
@@ -820,25 +817,30 @@ func TestHandleMCPPushAsksWhenEnvironmentNamesRepository(t *testing.T) { //nolin
 			env:  map[string]string{"GIT_DIR": filepath.Join(fixRepo, ".git")},
 			want: "ask",
 		},
-		"call names a repository on a branch with a conventional type: ask": {
+		"call names a repository on a branch with a conventional type: allow": {
 			repo: fixRepo,
 			env:  map[string]string{"GIT_DIR": filepath.Join(mainRepo, ".git")},
+			want: "allow",
+		},
+		"common directory on a branch with a conventional type: ask": {
+			repo: mainRepo,
+			env:  map[string]string{"GIT_COMMON_DIR": filepath.Join(fixRepo, ".git")},
 			want: "ask",
 		},
-		"common directory: ask": {
+		"call names a repository on a branch with a conventional type, common directory: allow": {
 			repo: fixRepo,
 			env:  map[string]string{"GIT_COMMON_DIR": filepath.Join(mainRepo, ".git")},
-			want: "ask",
+			want: "allow",
 		},
 		"reference backend on a branch with a conventional type: ask": {
 			repo: mainRepo,
 			env:  map[string]string{"GIT_REFERENCE_BACKEND": "files://" + filepath.Join(fixRepo, ".git")},
 			want: "ask",
 		},
-		"call names a repository on a branch with a conventional type, reference backend: ask": {
+		"call names a repository on a branch with a conventional type, reference backend: allow": {
 			repo: fixRepo,
 			env:  map[string]string{"GIT_REFERENCE_BACKEND": "files://" + filepath.Join(mainRepo, ".git")},
-			want: "ask",
+			want: "allow",
 		},
 		"config count: allow": {
 			repo: fixRepo,
@@ -904,13 +906,12 @@ func TestHandleMCPPushAsksWhenEnvironmentNamesRepository(t *testing.T) { //nolin
 	}
 }
 
-// [repoBranch] must reject every path while the environment sets
-// GIT_DIR, GIT_COMMON_DIR, or GIT_REFERENCE_BACKEND. Each of them
-// points the git commands of the MCP server at the refs of another
-// repository. git rev-parse --local-env-vars does not print
-// GIT_REFERENCE_BACKEND, so the test adds it. Every other variable that
-// git prints must leave the answer to the branch of the path. Each case
-// sets one variable to the git directory of a second repository.
+// [repoBranch] must answer with the branch of its path, whatever
+// repository the environment names. The mcp-git server removes the
+// same variables from its git commands, so it pushes that branch. git
+// rev-parse --local-env-vars does not print GIT_REFERENCE_BACKEND, so
+// the test adds it. Each case sets one variable to the git directory
+// of a second repository.
 func TestRepoBranchEnvironmentRepository(t *testing.T) { //nolint:paralleltest // t.Setenv
 	const referenceBackend = "GIT_REFERENCE_BACKEND"
 
@@ -924,8 +925,6 @@ func TestRepoBranchEnvironmentRepository(t *testing.T) { //nolint:paralleltest /
 	if !slices.Contains(names, referenceBackend) {
 		names = append(names, referenceBackend)
 	}
-
-	rejected := []string{"GIT_DIR", "GIT_COMMON_DIR", referenceBackend}
 
 	repo := checkoutRepo(t, "fix/y")
 	other := checkoutRepo(t, "main")
@@ -950,13 +949,6 @@ func TestRepoBranchEnvironmentRepository(t *testing.T) { //nolint:paralleltest /
 			t.Setenv(name, value)
 
 			branch, err := repoBranch(t.Context(), repo)
-			if slices.Contains(rejected, name) {
-				require.ErrorIs(t, err, errEnvironmentRepo)
-				assert.ErrorContains(t, err, name)
-
-				return
-			}
-
 			require.NoError(t, err)
 			assert.Equal(t, "fix/y", branch)
 		})

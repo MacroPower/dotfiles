@@ -399,11 +399,27 @@
 //     over https. For a sparse clone without a depth, they include the
 //     fetch of the files of the sparse paths. The credential helpers
 //     of the config files still answer for every other host.
-//   - GIT_CONFIG: the server removes this variable from the
-//     environment of each git command that it runs. With the variable
-//     set, a git config command without a file option reads only the
-//     file that the variable names. Every other git command ignores
-//     the variable. The tools read the git config of a repository
-//     with git config. Without the variable, they read the config
-//     files that a fetch, a pull, and a push read.
+//   - GIT_DIR, GIT_WORK_TREE, and the other variables that point git
+//     at one repository: the server removes them from the environment
+//     of its git commands. With GIT_DIR set, git acts on the
+//     repository that the variable names, whatever path the command
+//     gives. Without the variables, every tool acts on the repository
+//     at the path of its call. git sets some of the variables for
+//     each command that it starts, such as a hook, and a server that
+//     the command starts inherits them. git rev-parse
+//     --local-env-vars prints the variables. The server keeps two
+//     variables of that list, GIT_CONFIG_PARAMETERS and
+//     GIT_CONFIG_COUNT. They pass config to every git command, and
+//     they name no repository.
+//   - GIT_REFERENCE_BACKEND: the server removes this variable as well,
+//     although git 2.56 leaves it out of the output of git rev-parse
+//     --local-env-vars. The variable names a ref store, and git reads
+//     HEAD and every ref from that store, whatever path the command
+//     gives.
+//   - GIT_CONFIG: the server removes this variable as well. With the
+//     variable set, a git config command without a file option reads
+//     only the file that the variable names. Every other git command
+//     ignores the variable. The tools read the git config of a
+//     repository with git config. Without the variable, they read the
+//     config files that a fetch, a pull, and a push read.
 package main
