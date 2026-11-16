@@ -317,6 +317,23 @@ $KUBECONFIG = $CLAUDE_KUBECTX_LOCAL : ~/.kube/config : $CLAUDE_KUBECTX_SIDECAR
   read-only to kubectl. It still carries only the exec-plugin
   recipe for external contexts.
 
+The wrapper creates `$CLAUDE_KUBECTX_DIR` for each session as the
+directory `claude-kubectx.<pid>`, where `<pid>` is the process id of
+Claude Code. On a Linux host, the directory lies in
+`$XDG_RUNTIME_DIR`, or in `/tmp` without that variable. On a Darwin
+host, it lies in `~/.local/state/claude-kubectx`, because macOS
+deletes each file under `/tmp` that nothing read or changed in the
+last three days. hook-router removes the directory at SessionEnd. At
+each SessionStart, it also removes each directory in the same parent
+whose process has exited.
+
+Sessions that end without SessionEnd, such as after a crash, leave
+their directories behind. When a later session gets the PID of such a
+directory, the SessionStart sweep skips the directory while that
+session runs. So the wrapper removes the directory of its own PID before it
+creates the directory, and it writes the `local.yaml` stub again. Each
+session starts with no `current-context` and no sidecar link.
+
 ### Collision precedence and the single-source invariant
 
 client-go is first-file-wins for both `current-context` and context
@@ -455,8 +472,8 @@ runs in this order:
    `context.Background` timeout.
 3. Unlink the socket file at `h.socketPath`.
 4. Unlink the scoped kubeconfig at `h.lastOutputPath`.
-5. Unlink the hook-router sidecar symlink. (Local TMPDIR; never
-   crosses the Lima boundary.)
+5. Unlink the hook-router sidecar symlink. The link lies in
+   `$CLAUDE_KUBECTX_DIR`, which never crosses the Lima boundary.
 
 SIGKILL leaks at most one SA + one kubeconfig file + one socket
 inode at the killed serve's slot. The leaked socket inode is

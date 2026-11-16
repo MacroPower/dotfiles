@@ -164,8 +164,9 @@ func sidecarSymlinkPath() string {
 //     of `~/.local/state/mcp-kubectx` declared in workmux's
 //     extra_mounts, so removal succeeds without any host-side
 //     shell-out.
-//  7. Unlink the hook-router sidecar symlink. It lives in the
-//     local TMPDIR and never crosses the Lima boundary.
+//  7. Unlink the hook-router sidecar symlink. It lives in a
+//     directory of the machine that runs this serve, which never
+//     crosses the Lima boundary.
 func (h *handler) sessionDir() func() {
 	// runResourceCleanup intentionally derives from context.Background.
 	// The serve's signal-rooted ctx is already canceled by the time
@@ -205,8 +206,10 @@ func (h *handler) sessionDir() func() {
 		bestEffortRemove("kubeconfig", outPath)
 		// Sidecar is symlink-only: parent dir is intentionally
 		// left in place because a peer serve under the same
-		// Claude PPID may still depend on it. TMPDIR is reaped
-		// at reboot.
+		// Claude PPID might still depend on it. hook-router
+		// removes the wrapper's $CLAUDE_KUBECTX_DIR at
+		// SessionEnd. The fallback dir of [sidecarSymlinkPath]
+		// lies in TMPDIR, which the host cleans.
 		bestEffortRemove("sidecar symlink", sidecarSymlinkPath())
 	}
 }

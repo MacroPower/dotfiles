@@ -1321,6 +1321,56 @@ let
     else
       "--run 'export KUBECONFIG=\"$CLAUDE_KUBECTX_LOCAL:$CLAUDE_KUBECTX_SIDECAR\"'";
 
+  # The claude wrapper creates the directory claude-kubectx.<pid> for
+  # each session and exports its path as CLAUDE_KUBECTX_DIR. The
+  # directory holds local.yaml, which records the Kubernetes context
+  # that the session selected. It also holds the kubeconfig link, which
+  # mcp-kubectx points at the scoped kubeconfig of that context.
+  # hook-router removes the directory when the session ends. At each
+  # session start, hook-router also removes each directory beside it
+  # whose process does not run.
+  #
+  # A session that ends without its SessionEnd hook, such as after a
+  # crash or a restart, leaves its directory behind. A later session
+  # can get the same PID, and the sweep at session start skips the
+  # directory of a PID that a process holds. So the wrapper removes the
+  # directory of its own PID before it creates the directory, and it
+  # writes a new local.yaml. Each session starts with no selected
+  # context and no kubeconfig link.
+  #
+  # This value names the parent of those directories on a Darwin host.
+  # On a Linux host, the value is null, and the wrapper takes the parent
+  # from the environment of each session. That parent is the runtime
+  # directory of the login, which XDG_RUNTIME_DIR names, or /tmp
+  # without that variable.
+  #
+  # macOS does not set XDG_RUNTIME_DIR, and a Darwin host cannot keep
+  # its cleanup of /tmp out of a directory, as the comment on cloneRoot
+  # describes. In /tmp, a session loses local.yaml when nothing reads or
+  # changes the file for more than three days. The Bash gate of
+  # hook-router then denies kubectl until the agent selects a context
+  # again. So a Darwin host keeps the directories in the state home,
+  # which macOS does not clean. A restart of the Mac empties /tmp but
+  # not the state home. So a leftover directory in the state home stays
+  # until the wrapper or the sweep removes it.
+  #
+  # ~/.local/state is a read path of the sandbox, and no write path of
+  # the sandbox holds this directory. So sandboxed commands read the
+  # files of a session and cannot change them, as in /tmp.
+  # ~/Library/Caches, where cloneRoot and claudeTmpDir lie, is a write
+  # path of the sandbox.
+  kubectxSessionParent =
+    if pkgs.stdenv.hostPlatform.isDarwin then "${config.xdg.stateHome}/claude-kubectx" else null;
+
+  # The command of the wrapper that exports CLAUDE_KUBECTX_DIR. The
+  # shell expands $$ to the process id of the wrapper. Claude Code runs
+  # as that process, because the wrapper replaces itself with it.
+  kubectxDirExport =
+    if kubectxSessionParent == null then
+      "export CLAUDE_KUBECTX_DIR=\"\${XDG_RUNTIME_DIR:-/tmp}/claude-kubectx.$$\""
+    else
+      "export CLAUDE_KUBECTX_DIR=${lib.escapeShellArg kubectxSessionParent}/claude-kubectx.$$";
+
   # Wrap claude with its invocation-time env so vars survive boundaries that
   # do not propagate the shell env (lima VMs, ssh without SendEnv, etc.).
   #
@@ -1346,11 +1396,12 @@ let
     postBuild = ''
       wrapProgram $out/bin/claude \
         --run 'if [ -n "''${KUBECONFIG-}" ]; then export KUBECONFIG_HOST="$KUBECONFIG"; fi' \
-        --run 'export CLAUDE_KUBECTX_DIR="''${XDG_RUNTIME_DIR:-/tmp}/claude-kubectx.$$"' \
+        --run ${lib.escapeShellArg kubectxDirExport} \
+        --run 'rm -rf "$CLAUDE_KUBECTX_DIR"' \
         --run 'mkdir -p "$CLAUDE_KUBECTX_DIR"' \
         --run 'export CLAUDE_KUBECTX_SIDECAR="$CLAUDE_KUBECTX_DIR/kubeconfig"' \
         --run 'export CLAUDE_KUBECTX_LOCAL="$CLAUDE_KUBECTX_DIR/local.yaml"' \
-        --run '[ -f "$CLAUDE_KUBECTX_LOCAL" ] || printf "apiVersion: v1\nkind: Config\n" > "$CLAUDE_KUBECTX_LOCAL"' \
+        --run 'printf "apiVersion: v1\nkind: Config\n" > "$CLAUDE_KUBECTX_LOCAL"' \
         ${kubectxKubeconfigRunArgs} \
         --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
         --set CLAUDE_CODE_NO_FLICKER 1 \
@@ -3186,6 +3237,26 @@ in
           macOS deletes each file under /tmp that nothing read or
           changed in the last three days, so a session scratchpad there
           loses single files. Set claudeTmpDir in home/claude.nix to a
+          directory outside /tmp for a Darwin host.
+        '';
+      }
+      {
+        # macOS deletes single files of the kubectx directory of a
+        # session under /tmp, and no setting keeps that cleanup out of a
+        # directory. The comment on kubectxSessionParent describes the
+        # files. Without a value, the wrapper keeps the directory in
+        # /tmp, because macOS does not set XDG_RUNTIME_DIR. This
+        # assertion fails the evaluation of a Darwin host that names no
+        # parent or a parent in /tmp.
+        assertion =
+          !pkgs.stdenv.hostPlatform.isDarwin
+          || (kubectxSessionParent != null && !(inTmp kubectxSessionParent));
+        message = ''
+          dotfiles.claude: the claude wrapper keeps the kubectx files of
+          each session in /tmp on this Darwin host. macOS deletes each
+          file under /tmp that nothing read or changed in the last three
+          days, so a session there loses the record of the context that
+          it selected. Set kubectxSessionParent in home/claude.nix to a
           directory outside /tmp for a Darwin host.
         '';
       }

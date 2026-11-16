@@ -15,8 +15,9 @@ import (
 
 // dirPrefix is the basename prefix that [RemoveSessionDir]
 // and [SweepOrphans] use to identify per-session Claude kubectx
-// directories. The Claude Code launcher wrapper writes the full path
-// as $XDG_RUNTIME_DIR/claude-kubectx.<pid> (falling back to /tmp).
+// directories. The Claude Code launcher wrapper names each directory
+// claude-kubectx.<pid>. [SweepParent] describes where the wrapper
+// creates the directory.
 const dirPrefix = "claude-kubectx."
 
 // kubeconfigContexts is the minimal kubeconfig subset the bash gate
@@ -221,9 +222,14 @@ func isSessionDir(path string) bool {
 // on SessionStart (best-effort) so a crashed session that skipped its
 // SessionEnd hook gets cleaned up the next time Claude starts.
 //
-// parent defaults to $XDG_RUNTIME_DIR (with /tmp fallback) so each
-// host's tmpfs gets swept in isolation: a directory created on one
-// machine via NFS would not match the local PID set anyway.
+// The sweep skips each directory whose PID a live process holds. When
+// a new session gets the PID of a crashed session, the launcher
+// wrapper removes the leftover directory before it creates its own.
+//
+// hook-router passes [SweepParent] as parent. The sweep compares each
+// PID with the processes of this host, so parent must hold the
+// directories of this host only. A directory that another machine
+// created over NFS names a PID of that machine.
 func SweepOrphans(parent string, logger *slog.Logger) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -281,15 +287,19 @@ func pidAlive(pid int) bool {
 	return !errors.Is(err, syscall.ESRCH)
 }
 
-// SweepParent returns the directory the launcher wrapper
-// writes per-session kubectx dirs into. The wrapper bakes the
-// resolved location into $CLAUDE_KUBECTX_DIR
-// ($XDG_RUNTIME_DIR/claude-kubectx.<pid>, falling back to /tmp), so
-// the parent of that value is the authoritative sweep root: deriving
-// it keeps the sweep aligned with where the wrapper actually wrote
-// even if hook-router's own $XDG_RUNTIME_DIR has since drifted.
-// Falls back to the wrapper's own resolution rule when the env var
-// is absent (an out-of-wrapper SessionStart).
+// SweepParent returns the directory in which the launcher wrapper
+// creates the per-session kubectx dirs. The wrapper exports the dir of
+// its session as $CLAUDE_KUBECTX_DIR, so the parent of that value is
+// the sweep root. On a Linux host, the wrapper creates the dir in
+// $XDG_RUNTIME_DIR, or in /tmp without that variable. On a Darwin
+// host, home/claude.nix names a fixed parent outside /tmp, because
+// macOS deletes old files under /tmp while their session still runs.
+//
+// The parent of $CLAUDE_KUBECTX_DIR keeps the sweep where the wrapper
+// wrote on each platform, even when hook-router's own
+// $XDG_RUNTIME_DIR differs from the wrapper's. Without
+// $CLAUDE_KUBECTX_DIR, as in a session that did not start through the
+// wrapper, SweepParent applies the Linux rule on every platform.
 func SweepParent() string {
 	if dir := os.Getenv("CLAUDE_KUBECTX_DIR"); dir != "" {
 		return filepath.Dir(dir)

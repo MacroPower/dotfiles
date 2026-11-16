@@ -475,6 +475,22 @@ mkdir -p ~/Library/Caches/claude-tmp
 mv -n "/private/tmp/claude-$(id -u)" ~/Library/Caches/claude-tmp/
 ```
 
+### Kubernetes contexts
+
+Each Darwin host keeps the kubectx files of a session outside `/tmp`. So a session keeps the Kubernetes context that it selected for as long as it runs. The `claude` wrapper creates the directory `~/.local/state/claude-kubectx/claude-kubectx.<pid>` for each session. That directory holds `local.yaml`, which records the context that the session selected, and the `kubeconfig` link to the scoped kubeconfig of that context. `kubectxSessionParent` in `home/claude.nix` names `~/.local/state/claude-kubectx`.
+
+The `tmp_cleaner` script of macOS deletes each file under `/tmp` that nothing read or changed in the last three days. In `/tmp`, a session loses `local.yaml` when nothing reads or changes the file for more than three days. The `hook-router` tool then denies each `kubectl` command of the session until the agent selects a context again. The evaluation of a Darwin host fails when `kubectxSessionParent` names no directory, or a directory in `/tmp`.
+
+The script does not clean `~/.local/state`, and a restart of the Mac does not empty it. So `hook-router` and the `claude` wrapper remove the directories in `~/.local/state/claude-kubectx`:
+
+- `hook-router` removes the directory of a session when the session ends.
+- At each session start, `hook-router` removes each directory whose process has exited.
+- The wrapper removes the directory of its own PID before it creates that directory. Sessions that end without the SessionEnd hook, such as after a crash or a restart, leave their directories behind. When a later session gets the PID of such a directory, it still starts with no selected context.
+
+The kubectx files do not lie in `~/Library/Caches`, where sandboxed commands can write. Sandboxed commands can read `~/.local/state`, and no write path of the sandbox holds `~/.local/state/claude-kubectx`. So they read the files of a session and cannot change them.
+
+To apply the setting, run `sudo task switch` on the Mac. Then restart each Claude Code session that started before the switch, because such a session still keeps its files in `/tmp/claude-kubectx.<pid>`.
+
 ## Sandbox VM
 
 Workmux runs sandboxed agents in a Lima VM that boots the NixOS configuration in `hosts/nixos/terrarium.nix`. `limactl list` shows the VM as `wm-<hash>`. The `dotfiles.claude.lima` option in the host's file under `hosts/darwin/` sets the CPUs, the memory, and the disk of the VM.
