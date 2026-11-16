@@ -13,8 +13,13 @@ import (
 // carrying only the fields the orphan-sweep classifier needs. The
 // List* methods on [Client] return slices of ResourceRef rather
 // than typed K8s objects so the interface stays narrow and fakes in
-// tests can be trivially small.
+// tests stay small.
 type ResourceRef struct {
+	// Created is the creationTimestamp of the object. The apiserver
+	// sets it from its own clock when it creates the object, and it
+	// keeps only whole seconds.
+	Created time.Time
+
 	// Labels are the full label set on the object.
 	Labels map[string]string
 

@@ -93,7 +93,9 @@
 //     RoleBindings, and ClusterRoleBindings labeled
 //     `managed-by=mcp-kubectx,host-id=<own>`, then deletes the
 //     orphans whose `instance-id` is absent from the
-//     --live-instance-id set. The record pass runs only without
+//     --live-instance-id set. It keeps each resource that the
+//     apiserver created after --live-as-of, the time of that set,
+//     whatever its `instance-id`. The record pass runs only without
 //     --context, and it covers every cluster of the host
 //     kubeconfig. It deletes the SA and the binding of each
 //     provision record of that kubeconfig whose instance id is
@@ -352,6 +354,11 @@
 // clusters hold resources. It lists the labeled resources for the
 // `host-id` of the serve, classifies each by `instance-id` against
 // the set of live serves, and best-effort-deletes the orphans.
+// A serve that starts after the calling serve takes the set is
+// missing from it, but it can provision before the list calls
+// answer. So the label pass keeps each resource that the apiserver
+// created after the calling serve took the set, with
+// [sweep.CreationSlack] for clock skew.
 // A resource tagged only with `managed-by` and no `host-id` names
 // no host, so the label pass skips it. Recovery is the manual
 // `kubectl delete` that the README documents.

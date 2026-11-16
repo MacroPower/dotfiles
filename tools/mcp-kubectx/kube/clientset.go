@@ -176,6 +176,7 @@ func (c *Clientset) ListServiceAccounts(
 	refs := make([]ResourceRef, 0, len(list.Items))
 	for i := range list.Items {
 		refs = append(refs, ResourceRef{
+			Created:   list.Items[i].CreationTimestamp.Time,
 			Namespace: list.Items[i].Namespace,
 			Name:      list.Items[i].Name,
 			Labels:    list.Items[i].Labels,
@@ -201,6 +202,7 @@ func (c *Clientset) ListRoleBindings(
 	refs := make([]ResourceRef, 0, len(list.Items))
 	for i := range list.Items {
 		refs = append(refs, ResourceRef{
+			Created:   list.Items[i].CreationTimestamp.Time,
 			Namespace: list.Items[i].Namespace,
 			Name:      list.Items[i].Name,
 			Labels:    list.Items[i].Labels,
@@ -226,8 +228,9 @@ func (c *Clientset) ListClusterRoleBindings(
 	refs := make([]ResourceRef, 0, len(list.Items))
 	for i := range list.Items {
 		refs = append(refs, ResourceRef{
-			Name:   list.Items[i].Name,
-			Labels: list.Items[i].Labels,
+			Created: list.Items[i].CreationTimestamp.Time,
+			Name:    list.Items[i].Name,
+			Labels:  list.Items[i].Labels,
 		})
 	}
 

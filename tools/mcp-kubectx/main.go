@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -198,9 +199,14 @@ func runServe(ctx context.Context, args []string) error {
 	// the sweep's classifier reads a coherent snapshot. The serve's
 	// own slot is included because the sidecar write above completed
 	// successfully and the listener is already in the LISTEN state.
+	// A serve that starts after DiscoverLive probes its slot is
+	// missing from the snapshot, so the sweep keeps each resource
+	// that the apiserver created after liveAsOf. liveAsOf precedes
+	// the probes, so each such serve starts after liveAsOf.
+	liveAsOf := time.Now()
 	liveSet := socket.DiscoverLive(ctx, h.socketSlots, guest)
 
-	h.sweepWG.Go(func() { h.runSweep(ctx, liveSet) })
+	h.sweepWG.Go(func() { h.runSweep(ctx, liveSet, liveAsOf) })
 
 	socket.Start(ctx, listener, &h.socketWG, h.handleSocketConn)
 

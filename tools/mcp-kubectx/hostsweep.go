@@ -93,13 +93,28 @@ var recordPassTimeout = 30 * time.Second
 //
 // --live-instance-id is repeatable. An empty list says that no
 // serve of this host is alive, so both passes delete every
-// resource of the host id that they find. When the calling serve
-// invokes [runHostSweep] from [*handler.runSweep], its own id is
-// always in the live set. The serve writes its sidecar before it
-// starts the sweep, and [socket.DiscoverLive] reads that sidecar.
-// An operator who passes zero --live-instance-id flags by hand
-// accepts the destructive semantics.
+// resource of the host id that they find. The label pass still
+// keeps the resources that the apiserver created after
+// --live-as-of. When the calling serve invokes [runHostSweep]
+// from [*handler.runSweep], its own id is always in the live set.
+// The serve writes its sidecar before it starts the sweep, and
+// [socket.DiscoverLive] reads that sidecar. An operator who passes
+// zero --live-instance-id flags by hand accepts the destructive
+// semantics.
+//
+// --live-as-of is the time at which the caller took the live set,
+// in RFC 3339 format. It defaults to the start of the sweep. A
+// serve that starts after that time is missing from the live set,
+// but it can create resources before the list calls of the label
+// pass answer. So the label pass keeps each resource that the
+// apiserver created at that time minus [sweep.CreationSlack] or
+// later. A time after the start of the sweep comes from a clock
+// that runs ahead of the clock of this host, such as the clock of
+// a Lima guest. The sweep then uses its own start instead, because
+// the caller took the live set before the sweep started.
 func runHostSweep(ctx context.Context, args []string) error {
+	started := time.Now()
+
 	fs := flag.NewFlagSet("host sweep", flag.ContinueOnError)
 
 	kubeconfigPath := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
@@ -122,9 +137,35 @@ func runHostSweep(ctx context.Context, args []string) error {
 		"instance id to preserve (repeatable; empty list = sweep every resource from this host)",
 	)
 
+	liveAsOf := started
+
+	fs.Func(
+		"live-as-of",
+		"RFC 3339 time at which the caller took the --live-instance-id set; "+
+			"the label pass keeps each resource created after it, with a minute of slack for clock skew "+
+			"(default: the start of the sweep)",
+		func(v string) error {
+			t, err := time.Parse(time.RFC3339, v)
+			if err != nil {
+				return err //nolint:wrapcheck // the flag package wraps it with the flag name
+			}
+
+			liveAsOf = t
+
+			return nil
+		},
+	)
+
 	err := fs.Parse(args)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrParseHostSweepFlags, err)
+	}
+
+	// The caller took the live set before the sweep started. A
+	// later time comes from a clock that runs ahead of the clock of
+	// this host.
+	if liveAsOf.After(started) {
+		liveAsOf = started
 	}
 
 	if *hostID == "" {
@@ -174,7 +215,7 @@ func runHostSweep(ctx context.Context, args []string) error {
 		releaseRecorded(ctx, records, sweptKubeconfig, dead)
 	})
 
-	sweepErr := sweepLabeled(ctx, sweptKubeconfig, *contextName, *hostID, live)
+	sweepErr := sweepLabeled(ctx, sweptKubeconfig, *contextName, *hostID, live, liveAsOf)
 
 	wg.Wait()
 
@@ -183,9 +224,10 @@ func runHostSweep(ctx context.Context, args []string) error {
 
 // sweepLabeled is the label pass of [runHostSweep]. It lists the
 // labeled resources of hostID on the cluster of contextName and
-// deletes each one whose instance id is not in live. An empty
-// contextName selects the current-context of the kubeconfig at
-// kubeconfigPath.
+// deletes each one whose instance id is not in live.
+// [sweep.CollectOrphans] keeps the resources that the apiserver
+// created after liveAsOf, the time of live. An empty contextName
+// selects the current-context of the kubeconfig at kubeconfigPath.
 //
 // It returns the error of [kubeconfig.Load], and [sweep.ErrList]
 // when every list call fails. Every other failure is logged and
@@ -194,6 +236,7 @@ func sweepLabeled(
 	ctx context.Context,
 	kubeconfigPath, contextName, hostID string,
 	live map[string]struct{},
+	liveAsOf time.Time,
 ) error {
 	cfg, err := kubeconfig.Load(kubeconfigPath)
 	if err != nil {
@@ -222,7 +265,7 @@ func sweepLabeled(
 		return nil
 	}
 
-	orphans, listErr := sweep.CollectOrphans(ctx, client, sweep.Selector(hostID), live)
+	orphans, listErr := sweep.CollectOrphans(ctx, client, sweep.Selector(hostID), live, liveAsOf)
 	if listErr != nil {
 		return listErr //nolint:wrapcheck // CollectOrphans already wraps sweep.ErrList
 	}
@@ -437,6 +480,11 @@ func forgetServiceAccount(
 // covers the cluster of every provision record of a dead serve
 // that names the host kubeconfig.
 //
+// liveAsOf is the time at which the serve took liveSet, and
+// runSweep passes it as --live-as-of. A serve that starts after
+// that time is missing from liveSet, so the label pass keeps each
+// resource that the apiserver created after liveAsOf.
+//
 // Refuses to invoke [runHostSweep] when liveSet is empty or does
 // not contain h.instanceID. Either case indicates degraded
 // discovery (sidecar read or dial probe failed for the own slot);
@@ -444,7 +492,7 @@ func forgetServiceAccount(
 // "manual recovery" semantics delete every peer-serve's
 // resources. The manual `host sweep` CLI keeps the
 // empty-live-set semantics so operator recovery still works.
-func (h *handler) runSweep(ctx context.Context, liveSet map[string]struct{}) {
+func (h *handler) runSweep(ctx context.Context, liveSet map[string]struct{}, liveAsOf time.Time) {
 	if len(liveSet) == 0 {
 		slog.WarnContext(ctx, "host sweep skipped: empty live instance set",
 			slog.String("host_id", h.hostID),
@@ -463,7 +511,10 @@ func (h *handler) runSweep(ctx context.Context, liveSet map[string]struct{}) {
 	}
 
 	args := h.kubeconfigArgs()
-	args = append(args, "--host-id", h.hostID)
+	args = append(args,
+		"--host-id", h.hostID,
+		"--live-as-of", liveAsOf.UTC().Format(time.RFC3339Nano),
+	)
 
 	for id := range liveSet {
 		args = append(args, "--live-instance-id", id)

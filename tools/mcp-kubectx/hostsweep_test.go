@@ -36,23 +36,57 @@ const (
 	testOtherHostID = "fedcba9876543210"
 )
 
+// testLiveAsOf is the --live-as-of time of the sweep fixtures that
+// pass one. testCreated is the creation time of each labeled
+// resource that a fixture expects the label pass to delete, an hour
+// before testLiveAsOf. Both lie before the start of every test. So
+// the sweep uses testLiveAsOf as the fixture gives it. A fixture
+// without --live-as-of gets the start of the sweep, which lies
+// after testCreated.
+var (
+	testLiveAsOf = time.Date(2020, time.January, 2, 12, 30, 0, 0, time.UTC)
+	testCreated  = testLiveAsOf.Add(-time.Hour)
+)
+
 // TestRunHostSweepEndToEnd exercises the full flag-parse +
-// classify + delete path with a fake client. Pins the contract
-// the serve goroutine relies on: passing the calling serve's id
-// via --live-instance-id preserves the resources tagged with
-// that id and deletes the rest.
+// classify + delete path with a fake client. It pins the contract
+// that the serve goroutine relies on. The sweep keeps the resources
+// tagged with an id of --live-instance-id, such as the id of the
+// calling serve. It keeps the resources that the apiserver created
+// after the time of --live-as-of. It deletes the rest.
 func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	fake := &kubetest.Fake{
 		ListSAResp: []kube.ResourceRef{
-			{Namespace: "ns", Name: "sa-live", Labels: map[string]string{serviceaccount.InstanceIDLabel: "live"}},
-			{Namespace: "ns", Name: "sa-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
-			{Namespace: "ns", Name: "sa-pre", Labels: map[string]string{}},
+			{
+				Created:   testCreated,
+				Namespace: "ns",
+				Name:      "sa-live",
+				Labels:    map[string]string{serviceaccount.InstanceIDLabel: "live"},
+			},
+			{
+				Created:   testCreated,
+				Namespace: "ns",
+				Name:      "sa-dead",
+				Labels:    map[string]string{serviceaccount.InstanceIDLabel: "dead"},
+			},
+			{Created: testCreated, Namespace: "ns", Name: "sa-pre", Labels: map[string]string{}},
+			{
+				Created:   testLiveAsOf.Add(time.Second),
+				Namespace: "ns",
+				Name:      "sa-late",
+				Labels:    map[string]string{serviceaccount.InstanceIDLabel: "late"},
+			},
 		},
 		ListRBResp: []kube.ResourceRef{
-			{Namespace: "ns", Name: "rb-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
+			{
+				Created:   testCreated,
+				Namespace: "ns",
+				Name:      "rb-dead",
+				Labels:    map[string]string{serviceaccount.InstanceIDLabel: "dead"},
+			},
 		},
 		ListCRBResp: []kube.ResourceRef{
-			{Name: "crb-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
+			{Created: testCreated, Name: "crb-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
 		},
 	}
 	withHostKubeClient(t, fake)
@@ -64,6 +98,7 @@ func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates p
 		"--context", "prod",
 		"--host-id", testHostID,
 		"--live-instance-id", "live",
+		"--live-as-of", testLiveAsOf.Format(time.RFC3339),
 	}))
 
 	require.Len(t, fake.ListedSAs, 1)
@@ -71,7 +106,7 @@ func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates p
 	assert.Contains(t, fake.ListedSAs[0], serviceaccount.HostIDLabel+"="+testHostID)
 
 	assert.Equal(t, []string{"ns/sa-dead"}, fake.DeletedSAs,
-		"only orphan SAs (dead instance, host-id matching) should be deleted")
+		"only orphan SAs (dead instance, host-id matching, created before the live set) should be deleted")
 	assert.Equal(t, []string{"ns/rb-dead"}, fake.DeletedRoleBindings)
 	assert.Equal(t, []string{"crb-dead"}, fake.DeletedClusterRoleBindings)
 }
@@ -139,8 +174,18 @@ func TestRunHostSweepResolvesCurrentContextWhenEmpty(t *testing.T) {
 func TestRunHostSweepEmptyLiveSetSweepsAll(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	fake := &kubetest.Fake{
 		ListSAResp: []kube.ResourceRef{
-			{Namespace: "ns", Name: "sa-a", Labels: map[string]string{serviceaccount.InstanceIDLabel: "a"}},
-			{Namespace: "ns", Name: "sa-b", Labels: map[string]string{serviceaccount.InstanceIDLabel: "b"}},
+			{
+				Created:   testCreated,
+				Namespace: "ns",
+				Name:      "sa-a",
+				Labels:    map[string]string{serviceaccount.InstanceIDLabel: "a"},
+			},
+			{
+				Created:   testCreated,
+				Namespace: "ns",
+				Name:      "sa-b",
+				Labels:    map[string]string{serviceaccount.InstanceIDLabel: "b"},
+			},
 		},
 	}
 	withHostKubeClient(t, fake)
@@ -188,7 +233,7 @@ func TestRunHostSweepToleratesPartialListForbidden(t *testing.T) {
 		ListSAErr: errors.New("forbidden"),
 		ListRBErr: errors.New("forbidden"),
 		ListCRBResp: []kube.ResourceRef{
-			{Name: "crb-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
+			{Created: testCreated, Name: "crb-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
 		},
 	}
 	withHostKubeClient(t, fake)
@@ -232,9 +277,9 @@ func TestRunHostSweepSurfacesErrListWhenAllFail(t *testing.T) {
 // TestHandlerRunSweepForwardsArgs pins the argv layout the serve
 // goroutine passes through runHost. The argv holds no --context,
 // because that flag limits the sweep to one cluster and turns off
-// its record pass. The argv holds --host-id and one
-// --live-instance-id flag per id. It holds --kubeconfig only when
-// the handler has a kubeconfig path.
+// its record pass. The argv holds --host-id, the time of the live
+// set as --live-as-of, and one --live-instance-id flag per id. It
+// holds --kubeconfig only when the handler has a kubeconfig path.
 func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 	t.Parallel()
 
@@ -255,7 +300,11 @@ func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 		},
 	}
 
-	h.runSweep(t.Context(), map[string]struct{}{"inst-a": {}, "inst-b": {}, "host-1-inst": {}})
+	// The fraction of a second pins that the flag keeps the whole
+	// time, in another zone than UTC.
+	liveAsOf := time.Date(2026, time.March, 4, 13, 30, 0, 123456789, time.FixedZone("CET", 3600))
+
+	h.runSweep(t.Context(), map[string]struct{}{"inst-a": {}, "inst-b": {}, "host-1-inst": {}}, liveAsOf)
 
 	assert.Equal(t, subSweep, got.sub)
 	assert.NotContains(t, got.args, "--context", "a --context would turn off the record pass of the sweep")
@@ -264,6 +313,13 @@ func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 	hostIDIdx := indexOf(got.args, "--host-id")
 	require.GreaterOrEqual(t, hostIDIdx, 0)
 	assert.Equal(t, "host-1", got.args[hostIDIdx+1])
+
+	asOfIdx := indexOf(got.args, "--live-as-of")
+	require.GreaterOrEqual(t, asOfIdx, 0)
+
+	gotAsOf, err := time.Parse(time.RFC3339, got.args[asOfIdx+1])
+	require.NoError(t, err)
+	assert.True(t, liveAsOf.Equal(gotAsOf), "--live-as-of %q must name %v", got.args[asOfIdx+1], liveAsOf)
 
 	// Count repeated --live-instance-id flags rather than asserting
 	// order; map iteration is unspecified.
@@ -298,7 +354,7 @@ func TestHandlerRunSweepIncludesKubeconfigWhenSet(t *testing.T) {
 		},
 	}
 
-	h.runSweep(t.Context(), map[string]struct{}{"host-1-inst": {}})
+	h.runSweep(t.Context(), map[string]struct{}{"host-1-inst": {}}, time.Now())
 
 	idx := indexOf(args, "--kubeconfig")
 	require.GreaterOrEqual(t, idx, 0)
@@ -322,7 +378,7 @@ func TestHandlerRunSweepLogsErrorWithoutPropagation(t *testing.T) {
 
 	// No panic, no return value to assert; reaching this line
 	// means the error did not propagate.
-	h.runSweep(t.Context(), map[string]struct{}{"host-1-inst": {}})
+	h.runSweep(t.Context(), map[string]struct{}{"host-1-inst": {}}, time.Now())
 }
 
 // TestHandlerRunSweepSkipsDegradedDiscovery pins both
@@ -362,7 +418,7 @@ func TestHandlerRunSweepSkipsDegradedDiscovery(t *testing.T) {
 				},
 			}
 
-			h.runSweep(t.Context(), tc.liveSet)
+			h.runSweep(t.Context(), tc.liveSet, time.Now())
 
 			assert.False(t, called, "degraded discovery must refuse to shell out")
 		})
@@ -386,8 +442,125 @@ func indexOf(s []string, needle string) int {
 func TestRunHostSweepFlagParseError(t *testing.T) {
 	t.Parallel()
 
-	err := runHostSweep(t.Context(), []string{"--bogus-flag"})
-	require.ErrorIs(t, err, ErrParseHostSweepFlags)
+	tests := map[string]struct {
+		args []string
+	}{
+		"unknown flag": {
+			args: []string{"--bogus-flag"},
+		},
+		"live-as-of is not an RFC 3339 time": {
+			args: []string{"--host-id", testHostID, "--live-as-of", "2026-03-04 12:30:00"},
+		},
+		"live-as-of is empty": {
+			args: []string{"--host-id", testHostID, "--live-as-of", ""},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := runHostSweep(t.Context(), tc.args)
+			require.ErrorIs(t, err, ErrParseHostSweepFlags)
+		})
+	}
+}
+
+// TestRunHostSweepKeepsServiceAccountOfLateServe pins that the label
+// pass never deletes the SA of a serve that started after the live
+// set. The calling serve takes the live set, and then a later serve
+// creates its SA while the list call of the label pass waits on the
+// cluster. The later serve is missing from the live set, but the
+// apiserver created its SA after --live-as-of. The apiserver keeps
+// only whole seconds of the creation time, so the fixture cuts the
+// time of the late SA to the second, which can put it before
+// --live-as-of.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepKeepsServiceAccountOfLateServe(t *testing.T) {
+	prod := &hookClient{Fake: &kubetest.Fake{
+		ListSAResp: []kube.ResourceRef{{
+			Created:   testCreated,
+			Namespace: "ns",
+			Name:      "claude-sa-dead",
+			Labels:    map[string]string{serviceaccount.InstanceIDLabel: testDeadID},
+		}},
+	}}
+
+	prod.beforeListSAs = func() {
+		prod.Lock()
+		defer prod.Unlock()
+
+		prod.ListSAResp = append(prod.ListSAResp, kube.ResourceRef{
+			Created:   time.Now().Truncate(time.Second),
+			Namespace: "ns",
+			Name:      "claude-sa-late",
+			Labels:    map[string]string{serviceaccount.InstanceIDLabel: testOtherDeadID},
+		})
+	}
+
+	withHostKubeClient(t, prod)
+
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	liveAsOf := time.Now()
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--context", "prod",
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+		"--live-as-of", liveAsOf.UTC().Format(time.RFC3339Nano),
+	}))
+
+	assert.Equal(t, []string{"ns/claude-sa-dead"}, prod.DeletedSAs,
+		"the SA of the late serve must survive the sweep")
+}
+
+// TestRunHostSweepLiveAsOfBoundedByStart pins the time that the
+// label pass compares with the creation time of each resource when
+// --live-as-of is missing or lies after the start of the sweep. The
+// sweep then uses its own start. A dead SA that the apiserver
+// created now survives the sweep, and a dead SA from an hour before
+// does not.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepLiveAsOfBoundedByStart(t *testing.T) {
+	tests := map[string]struct {
+		args []string
+	}{
+		"missing": {},
+		"after the start of the sweep": {
+			args: []string{"--live-as-of", time.Now().Add(time.Hour).Format(time.RFC3339)},
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			dead := map[string]string{serviceaccount.InstanceIDLabel: testDeadID}
+
+			fake := &kubetest.Fake{
+				ListSAResp: []kube.ResourceRef{
+					{Created: time.Now().Add(-time.Hour), Namespace: "ns", Name: "claude-sa-old", Labels: dead},
+					{Created: time.Now().Truncate(time.Second), Namespace: "ns", Name: "claude-sa-new", Labels: dead},
+				},
+			}
+			withHostKubeClient(t, fake)
+
+			kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+			args := []string{
+				"--kubeconfig", kubeconfigPath,
+				"--context", "prod",
+				"--host-id", testHostID,
+				"--live-instance-id", testInstanceID,
+			}
+
+			require.NoError(t, runHostSweep(t.Context(), append(args, tc.args...)))
+
+			assert.Equal(t, []string{"ns/claude-sa-old"}, fake.DeletedSAs)
+		})
+	}
 }
 
 // TestRunHostSweepIgnoresEmptyLiveID pins that an empty value
@@ -398,8 +571,18 @@ func TestRunHostSweepFlagParseError(t *testing.T) {
 func TestRunHostSweepIgnoresEmptyLiveID(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	fake := &kubetest.Fake{
 		ListSAResp: []kube.ResourceRef{
-			{Namespace: "ns", Name: "sa-a", Labels: map[string]string{serviceaccount.InstanceIDLabel: ""}},
-			{Namespace: "ns", Name: "sa-b", Labels: map[string]string{serviceaccount.InstanceIDLabel: "real-id"}},
+			{
+				Created:   testCreated,
+				Namespace: "ns",
+				Name:      "sa-a",
+				Labels:    map[string]string{serviceaccount.InstanceIDLabel: ""},
+			},
+			{
+				Created:   testCreated,
+				Namespace: "ns",
+				Name:      "sa-b",
+				Labels:    map[string]string{serviceaccount.InstanceIDLabel: "real-id"},
+			},
 		},
 	}
 	withHostKubeClient(t, fake)
@@ -686,6 +869,7 @@ func TestRunHostSweepLabelPassSurvivesUnreadableLedger(t *testing.T) {
 
 	prod := &kubetest.Fake{
 		ListSAResp: []kube.ResourceRef{{
+			Created:   testCreated,
 			Namespace: "ns",
 			Name:      "claude-sa-dead",
 			Labels:    map[string]string{serviceaccount.InstanceIDLabel: testDeadID},

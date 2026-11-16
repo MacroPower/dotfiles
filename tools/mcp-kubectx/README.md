@@ -575,16 +575,16 @@ Every provisioned SA and binding carries three labels:
   `instance-id`.
 
 Each `serve` launches a background `host sweep` at startup. It
-passes the sweep its own `host-id` and the live set, which holds the
-`instance-id` of each live `serve` of its env. It collects the live
-set from the live UDS sidecars across the slot pool. The sweep runs
-two passes at the same time, and both delete only resources of that
-`host-id`.
+passes the sweep its own `host-id`, the live set, and the time at
+which it took the live set. The live set holds the `instance-id` of
+each live `serve` of its env. The `serve` collects the live set from
+the live UDS sidecars across the slot pool. The sweep runs two passes
+at the same time, and both delete only resources of that `host-id`.
 
-| Pass   | Clusters                                                    | Deletes                                                               |
-| ------ | ----------------------------------------------------------- | --------------------------------------------------------------------- |
-| Label  | The cluster of the `current-context` in the host kubeconfig | Each labeled SA and binding whose `instance-id` is not live           |
-| Record | Each cluster of the host kubeconfig that a record names     | The SA and the binding of each record whose `instance-id` is not live |
+| Pass   | Clusters                                                    | Deletes                                                                                                                           |
+| ------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Label  | The cluster of the `current-context` in the host kubeconfig | Each labeled SA and binding whose `instance-id` is not live and that the apiserver created more than a minute before the live set |
+| Record | Each cluster of the host kubeconfig that a record names     | The SA and the binding of each record whose `instance-id` is not live                                                             |
 
 The label pass covers one cluster, because the labels do not say
 which other clusters hold resources of this host. A `serve`
@@ -600,7 +600,26 @@ The label pass runs these steps:
 2. For each result, it reads `mcp-kubectx/instance-id`. It keeps a
    resource without that label, because the label pass cannot tell
    which `serve` owns the resource. It keeps a resource whose value
-   is in the live set. It deletes every other resource, best-effort.
+   is in the live set.
+3. It keeps each resource that the apiserver created a minute or
+   less before the `serve` took the live set, or later. It deletes
+   every other resource, best-effort.
+
+The live set misses each `serve` that starts after the sweeping
+`serve` takes it. Such a `serve` can provision on the cluster before
+the list calls of the label pass answer, such as while a credential
+plugin or a slow apiserver holds the list calls. So the label pass
+compares the `creationTimestamp` of each resource with the time of
+the live set, less one minute. The minute covers the whole seconds of
+`creationTimestamp` and a clock of the apiserver that runs behind the
+clock of the `serve`. A resource of a dead `serve` that the apiserver
+created in that minute stays until the sweep of a later `serve`.
+
+`host sweep` takes the time of the live set from `--live-as-of`.
+When that time lies after the start of `host sweep`, the clock of
+the `serve`, such as the clock of a Lima guest, runs ahead of the
+clock of the host. The label pass then uses the start of `host sweep`
+instead.
 
 The record pass runs these steps:
 
@@ -768,7 +787,10 @@ Stop every running `serve` of the env first. Without
 `--live-instance-id` flags the sweep treats every `serve` as dead.
 The label pass then deletes every resource with the matching
 `host-id` and a non-empty `instance-id` label, and the record pass
-deletes the SA of every record of that `host-id`.
+deletes the SA of every record of that `host-id`. Without
+`--live-as-of`, the label pass still keeps each resource that the
+apiserver created a minute or less before `host sweep` started, or
+later.
 
 To sweep one cluster by label, name its context:
 

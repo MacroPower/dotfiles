@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
@@ -34,6 +35,17 @@ var (
 // apiserver, large enough to keep startup latency tight when a
 // backlog of orphans accumulates.
 const concurrency = 8
+
+// CreationSlack is the margin that [CollectOrphans] subtracts from
+// the time of the live set before it compares that time with the
+// creation time of each resource. The apiserver keeps only whole
+// seconds of the creation time, and its clock can run behind the
+// clock that took the live set. Either one makes a resource that the
+// apiserver created after the live set look older than the live set.
+// The slack keeps such a resource. A resource of a dead `serve` that
+// the apiserver created less than CreationSlack before the live set
+// stays until a later sweep.
+const CreationSlack = time.Minute
 
 // Kind labels the three resource families the sweep classifies.
 // Used only inside log lines so operators can disambiguate counters
@@ -77,21 +89,31 @@ type listResult struct {
 }
 
 // CollectOrphans lists each managed resource kind in parallel and
-// classifies every entry. Returns the candidates that should be
-// deleted. Per-kind list failures are logged at warn level and
-// produce an empty slice for that kind -- the sweep still attempts
-// the other kinds. The returned error is non-nil only when every
-// kind failed outright, in which case it wraps [ErrList] and the
-// orphan slice is empty. This lets callers surface a clear
-// total-failure mode while still tolerating partial RBAC gaps.
-// Listing in parallel collapses three apiserver round-trips into one
-// when the cluster is remote.
+// classifies every entry. It returns the candidates to delete.
+//
+// live holds the instance id of each `serve` that was alive at
+// liveAsOf. A `serve` that started after liveAsOf is missing from
+// live, but it can create resources before the list calls answer.
+// So CollectOrphans keeps each resource that the apiserver created
+// at liveAsOf minus [CreationSlack] or later, whatever its instance
+// id.
+//
+// CollectOrphans logs the failed list call of a kind at warn level
+// and classifies the kinds that it could list. It returns an error
+// only when every list call fails. The error then wraps [ErrList],
+// and the orphan slice is empty. So a caller can report a sweep that
+// listed nothing and still tolerate RBAC that forbids some kinds.
+// The parallel list calls cost one apiserver round-trip instead of
+// three when the cluster is remote.
 func CollectOrphans(
 	ctx context.Context,
 	client kube.Client,
 	selector string,
 	live map[string]struct{},
+	liveAsOf time.Time,
 ) ([]Candidate, error) {
+	cutoff := liveAsOf.Add(-CreationSlack)
+
 	listers := []struct {
 		fn   func(context.Context, string) ([]kube.ResourceRef, error)
 		kind Kind
@@ -134,7 +156,7 @@ func CollectOrphans(
 		}
 
 		for _, ref := range r.refs {
-			if shouldDelete(ref, live) {
+			if shouldDelete(ref, live, cutoff) {
 				orphans = append(orphans, Candidate{Ref: ref, Kind: r.kind})
 			}
 		}
@@ -147,13 +169,22 @@ func CollectOrphans(
 	return orphans, nil
 }
 
-// shouldDelete reports whether a single resource is orphan. A
-// resource is preserved when its instance id is in the live set, or
-// when the instance-id label is missing entirely (conservative:
-// pre-feature resources predate the sweep and have no way to
-// attribute themselves; the manual recovery path documented in the
-// README handles them). Otherwise it is an orphan.
-func shouldDelete(ref kube.ResourceRef, live map[string]struct{}) bool {
+// shouldDelete reports whether a single resource is orphan. It
+// keeps these resources:
+//
+//   - A resource without an instance-id label, or with an empty
+//     one. Resources from builds before the label cannot name the
+//     `serve` that owns them. The manual recovery that the README
+//     documents handles them.
+//   - A resource whose instance id is in the live set.
+//   - A resource that the apiserver created at cutoff or later. Its
+//     `serve` might have started after the caller took the live
+//     set.
+//   - A resource without a creation time, because shouldDelete
+//     cannot tell when the apiserver created it.
+//
+// Every other resource is orphan.
+func shouldDelete(ref kube.ResourceRef, live map[string]struct{}, cutoff time.Time) bool {
 	id, ok := ref.Labels[serviceaccount.InstanceIDLabel]
 	if !ok {
 		return false
@@ -165,8 +196,11 @@ func shouldDelete(ref kube.ResourceRef, live map[string]struct{}) bool {
 	}
 
 	_, isLive := live[id]
+	if isLive {
+		return false
+	}
 
-	return !isLive
+	return !ref.Created.IsZero() && ref.Created.Before(cutoff)
 }
 
 // DeleteOrphans deletes the classified orphan set with a bounded
