@@ -482,7 +482,7 @@ grep removed ~/Library/Logs/expire-claude-tmp.log
 The agent keeps these session directories, however old their files are:
 
 - The directory named by the current id of each session that runs.
-- Each directory that a process of the user uses. A process uses a directory when it holds the directory or a file under it open, or when its working directory lies there. The agent asks `lsof` for the open files. Each background command holds its output file open, so the directory of that file stays while the command runs.
+- Each directory that a process of the user uses. A process uses a directory when it holds the directory or a file under it open, or when its working directory lies there. The agent asks `lsof` for the open files. Each background command holds its output file open, so the directory of that file stays while the command runs. When `lsof` fails, the agent keeps only the directories of this kind that `lsof` named. The run then fails, and the log says that the agent cannot list the open files.
 - Each directory that holds a socket. macOS does not list the sockets that servers bind, so the agent cannot tell whether a server listens on a socket.
 - Each directory that the agent cannot read in full, such as a directory with the mode `000`. The agent runs as the user, so the run fails, and the log names the directory.
 

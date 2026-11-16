@@ -115,7 +115,9 @@
 #   On Linux, the tool reads the open files and the working directory of
 #   each process from /proc. It sees the processes of every user only
 #   when root runs it. Elsewhere, such as on macOS, the tool asks
-#   lsof, and the run fails when lsof fails.
+#   lsof. When lsof fails, this rule keeps only the session
+#   directories that lsof named. The run then fails, and the tool says
+#   on stderr that it cannot list the open files.
 #
 # Claude Code keeps the output of the background commands of a session
 # under the id that its process started with. After /clear, the
@@ -508,12 +510,27 @@ let
         return "$rc"
       }
 
+      # held_failed fails the run after held failed, and it says on
+      # stderr that the tool cannot list the open files. held runs in a
+      # command substitution, so it cannot record that it printed that
+      # line. held_failed prints the line only when neither its shell
+      # nor a parent shell printed it. So a run in which lsof fails each
+      # time prints one line.
+      held_named=
+      held_failed() {
+        status=1
+        if [ -z "$held_named" ]; then
+          echo "expire-claude-tmp: cannot list the open files with lsof, so a session directory that a process uses might go" >&2
+          held_named=1
+        fi
+      }
+
       # When the tool cannot tell which sessions run, it removes no
       # session directory.
       if ! started=$(running_sessions); then
         exit 1
       fi
-      opened=$(held) || status=1
+      opened=$(held) || held_failed
 
       # listed IDS NAME succeeds when a line of IDS holds NAME.
       listed() {
@@ -537,7 +554,7 @@ let
           status=1
           return 0
         fi
-        places=$(held) || status=1
+        places=$(held) || held_failed
         read_mounts
         listed "$ids" "$1" || listed "$places" "$2" || mounted "$2"
       }
@@ -1660,7 +1677,10 @@ let
           EOF
 
           # Where /proc does not exist, the run fails when lsof fails, and
-          # it still keeps each entry that lsof named. This copy of the
+          # it still keeps each entry that lsof named. The tool asks lsof
+          # at the start and again before it removes old. It says one
+          # time on stderr that it cannot list the open files, so the log
+          # of the service shows why the run failed. This copy of the
           # tool reads a /proc that does not exist, and it runs an lsof
           # that prints the open files and then fails. A process holds
           # the output file of output open.
@@ -1684,10 +1704,12 @@ let
             fail 'the copy of the tool reads /proc or does not run the lsof of the test'
           fi
           cutoff=$(mark)
-          if ./lsof-expire-claude-tmp lsof "@$cutoff" sessions >log; then
+          if ./lsof-expire-claude-tmp lsof "@$cutoff" sessions >log 2>err; then
             fail 'the run succeeds when lsof fails'
           fi
           kill "$holder"
+          [ "$(grep '^expire-claude-tmp: ' err)" = 'expire-claude-tmp: cannot list the open files with lsof, so a session directory that a process uses might go' ] ||
+            fail 'the run with an lsof that fails does not say exactly one time that it cannot list the open files'
           expect_tree "$root" 'the run with an lsof that fails does not keep exactly the session directory that lsof named' <<'EOF'
           ./-work-app
           ./-work-app/output
