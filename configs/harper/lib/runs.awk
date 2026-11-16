@@ -32,6 +32,12 @@
 # reason. A single list item, a `<br>`, or a rule therefore never
 # clears a finding.
 #
+# A horizontal rule repeats one mark, `-`, `*`, or `_`, three or more
+# times, with optional spaces between the marks (`---`, `* * *`). The
+# test reads the line before lib/markdown.awk blanks its code spans and
+# URLs. A list item that holds only an emphasized code span or URL,
+# such as ``- **`kubectl`**``, therefore counts as a list item.
+#
 # Words are tokens that hold a letter. The reader blanks code spans, so
 # a span counts as none. The title above a `=` or `-` underline counts
 # toward the run that the underline ends.
@@ -122,7 +128,7 @@ function pend_add(text,   n) {
   pend_words += n
 }
 
-function prose(text,   n) {
+function prose(text,   n, rule) {
   if (FILENAME != last_file) {
     settle()
     close_run()
@@ -142,8 +148,11 @@ function prose(text,   n) {
   last_line = FNR
   last_was_text = 0
 
+  # `raw` holds the line before clean() in lib/markdown.awk blanks it.
+  rule = raw ~ /^[ \t]*((-[ \t]*){3,}|(\*[ \t]*){3,}|(_[ \t]*){3,})$/
+
   # A list item, and the lines that continue it, extend a pending list.
-  if (in_list && text !~ /^[ \t]*([-*_][ \t]*){3,}$/) {
+  if (in_list && !rule) {
     if (pend_kind != "list") {
       settle()
       pend("list")
@@ -185,7 +194,7 @@ function prose(text,   n) {
     close_run()
     return
   }
-  if (text ~ /^[ \t]*</ || text ~ /^[ \t]*([-*_][ \t]*){3,}$/) {
+  if (text ~ /^[ \t]*</ || rule) {
     return
   }
 

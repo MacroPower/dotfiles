@@ -201,14 +201,6 @@ function clean(s,   t) {
       t = spaces(RLENGTH) substr(t, RLENGTH + 1)
     }
   }
-  # The trimmed URL can leave a line with only `-`, `*`, and `_` marks,
-  # such as `- *https://example.com*`. lib/runs.awk reads that line as a
-  # horizontal rule and not as a list item. On such a line, the blank
-  # takes the marks at the end of the URL with it. The line holds no
-  # word, so it loses no sentence end.
-  if (t ~ /^[ \t]*([-*_][ \t]*){3,}$/) {
-    t = blank(s, "https?://[^ \t<>)]*")
-  }
   return t
 }
 
@@ -288,6 +280,8 @@ in_comment {
 
 {
   in_indent = 0
+  # lib/runs.awk reads `raw` to find a horizontal rule, because clean()
+  # can leave a list item with only marks.
   raw = blank($0, "^([ \t]*>)+")
   if (raw ~ /^[ \t]*(```|~~~)/) {
     line = raw
