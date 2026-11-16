@@ -14,6 +14,7 @@ tasks:
       - hosts/nixos/terrarium.nix
       - hosts/nixos/lima-hardware.nix
       - hosts/nixos/default.nix
+      - hosts/nixos/clones.nix
       - hosts/shared.nix
     generates:
       - "{{.IMAGE_DIR}}/terrarium.qcow2"

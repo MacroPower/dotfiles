@@ -9,6 +9,7 @@
   imports = [
     ../shared.nix
     ../options.nix
+    ./clones.nix
   ];
 
   environment.enableAllTerminfo = true;

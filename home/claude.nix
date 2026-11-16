@@ -2962,6 +2962,26 @@ in
           test:
           ${lib.concatMapStrings (fault: "  - ${fault}\n") conditionalRuleOperandFaults}'';
       }
+      {
+        # The git bundle tells agents to clone into /tmp/git. A NixOS
+        # host cleans /tmp every day, and the cleanup deletes single
+        # files of those clones. The tmpfiles rule of
+        # hosts/nixos/clones.nix keeps the cleanup out of the
+        # directory. This assertion fails the evaluation of a NixOS
+        # host that has the bundle and lacks the rule. osConfig holds
+        # the tmpfiles rules only on a NixOS host.
+        assertion =
+          !(cfg.toolBundles.git.enable && osConfig ? systemd.tmpfiles.rules)
+          || lib.elem "x /tmp/git" osConfig.systemd.tmpfiles.rules;
+        message = ''
+          dotfiles.claude: toolBundles.git tells agents to clone into
+          /tmp/git, and this NixOS host has no systemd-tmpfiles rule
+          `x /tmp/git`. The daily cleanup of /tmp then deletes single
+          files of the clones. hosts/nixos/clones.nix sets the rule, and
+          hosts/nixos/default.nix imports that module. Import one of the
+          two files in the host module.
+        '';
+      }
     ];
 
     dotfiles.claude.skills = {

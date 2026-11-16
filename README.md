@@ -307,6 +307,27 @@ task update
 task switch
 ```
 
+### Clones
+
+Every NixOS host removes a clone under `/tmp/git` as a whole, so an agent finds every file of a clone or no clone at all. The OrbStack machine and the [sandbox VM](#sandbox-vm) are NixOS hosts too. Agents clone other repositories into `/tmp/git/<owner>/<repo>` and read them there. `hosts/nixos/default.nix` imports `hosts/nixos/clones.nix`, which holds the settings that keep the clones whole:
+
+- A `systemd-tmpfiles` rule keeps the daily cleanup of `/tmp` out of `/tmp/git`. That cleanup checks each file on its own and deletes a file that nothing read or changed in the last 10 days. Without the rule, a clone loses each file that no agent read and no fetch wrote in that time. The sandbox VM mounts the root filesystem with `noatime`, so a read leaves no trace on a file there. Without the rule, a clone in the VM keeps only the files of its last fetch.
+- `expire-clones.service` runs every day and removes each clone that nothing changed in the last 10 days. `cloneMaxAge` sets that span. Every fetch changes its clone, so each `mcp__git__git_clone` call that pulls a clone keeps it for 10 more days. Reads do not change a clone. The service leaves a clone alone while a clone, fetch, pull, or push call of the git MCP server works on it.
+
+The settings apply only on a host that keeps the `git` bundle of `dotfiles.claude.toolBundles` on, and the bundle is on by default. That bundle tells agents to clone into `/tmp/git`.
+
+`pkgs/expire-clones.nix` describes what counts as a clone and as a change. The build of each configuration runs the cleanup of `/tmp` on a sample clone, and it fails when the cleanup deletes a file of that clone. The evaluation of a NixOS host fails when the bundle is on and the host lacks the rule. To list the clones that the service removed, run this command on the host:
+
+```sh
+journalctl -u expire-clones.service -g removed
+```
+
+To apply the settings, run `task switch` on the host. For the OrbStack machine, run `task vm:switch` on the Mac. A clone that lost files to the cleanup of `/tmp` before the switch stays incomplete, and the service removes it 10 days after its last change. To remove every clone now, wait until no session reads a clone. Then run this command on the host:
+
+```sh
+rm -rf /tmp/git
+```
+
 ## NixOS (Orb)
 
 ### Bootstrap
@@ -457,23 +478,4 @@ An engine stays in the VM after every project moves to another Dagger version, a
 ```sh
 docker ps -a --filter name=dagger-engine-
 docker rm -fv dagger-engine-<version>
-```
-
-### Clones
-
-The VM removes a clone under `/tmp/git` as a whole, so an agent finds every file of a clone or no clone at all. Agents clone other repositories into `/tmp/git/<owner>/<repo>` and read them there. These settings in `hosts/nixos/terrarium.nix` keep the clones whole:
-
-- A `systemd-tmpfiles` rule keeps the daily cleanup of `/tmp` out of `/tmp/git`. That cleanup deletes each file that nothing read or changed in the last 10 days. The VM mounts the root filesystem with `noatime`, so a read leaves no trace on a file. Without the rule, the cleanup leaves a clone with only the files of its last fetch.
-- `expire-clones.service` runs every day and removes each clone that nothing changed in the last 10 days. `cloneMaxAge` sets that span. Every fetch changes its clone, so each `mcp__git__git_clone` call that pulls a clone keeps it for 10 more days. Reads do not change a clone. The service leaves a clone alone while a clone, fetch, pull, or push call of the git MCP server works on it.
-
-`pkgs/expire-clones.nix` describes what counts as a clone and as a change. The build of the configuration runs the cleanup of `/tmp` on a sample clone, and it fails when the cleanup deletes a file of that clone. To list the clones that the service removed, run this command in the VM:
-
-```sh
-journalctl -u expire-clones.service -g removed
-```
-
-Run `task switch` in the VM to apply the settings. A clone that lost files to the cleanup of `/tmp` before the switch stays incomplete, and the service removes it 10 days after its last change. To remove every clone now, wait until no session reads a clone. Then run this command in the VM:
-
-```sh
-rm -rf /tmp/git
 ```
