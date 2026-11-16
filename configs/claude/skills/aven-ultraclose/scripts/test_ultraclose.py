@@ -5315,6 +5315,10 @@ class LandTest(LandCase):
         hook = f'touch "$LOCK"; {self.HANG_ONCE}'
         with tempfile.TemporaryDirectory() as tmp:
             repo, env = self.start_task(tmp, "--step-timeout", "2", hook=hook)
+            # The output names the main checkout and the lock file by the
+            # real path of the repository, which is the path that git
+            # prints. A temporary directory can sit behind a symbolic link.
+            repo = repo.resolve()
             lock = Path(repo, ".git", "index.lock")
             env["LOCK"] = str(lock)
             head = git("rev-parse", "HEAD", cwd=repo, env=env)
