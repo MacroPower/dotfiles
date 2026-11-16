@@ -592,11 +592,229 @@ func TestRemoteToolsFailWhenSignalKillsWorkTreeLookup(t *testing.T) { //nolint:p
 			require.True(t, result.IsError, "the tool must fail")
 
 			text := resultText(t, result)
-			assert.Contains(t, text, "resolving the working tree of "+work+": running git: signal: killed")
+			assert.Contains(t, text, "opening the repository at "+work+": running git: signal: killed")
 			assert.NotContains(t, text, ErrNoWorkTree.Error())
 
 			requireEmptyDir(t, outside)
 			requireUnchanged(t, before, bare, work)
+		})
+	}
+}
+
+// recordGit puts a script on PATH that records the subcommand of each
+// git command and then runs git with the same arguments. It returns a
+// function that returns the recorded subcommands, in the order of the
+// starts. The subcommand is the first argument that is neither a
+// global option of git nor the value of one. The script records
+// "(none)" for a command without a subcommand, so each start of git
+// leaves a record. git puts the directory of its own programs first on
+// PATH, so the git processes that git starts do not reach the script.
+// recordGit sets an environment variable, so the test must not run in
+// parallel.
+func recordGit(t *testing.T) func() []string {
+	t.Helper()
+
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+
+	record := filepath.Join(t.TempDir(), "started")
+
+	// The case names each global option that takes its value from the
+	// next argument.
+	gitStandIn(t, "#!/bin/sh\n"+
+		"subcommand='(none)'\n"+
+		"value=\n"+
+		"for arg in \"$@\"; do\n"+
+		"\tif [ -n \"$value\" ]; then value=; continue; fi\n"+
+		"\tcase $arg in\n"+
+		"\t-C|-c|--git-dir|--work-tree|--namespace|--config-env|--attr-source) value=1 ;;\n"+
+		"\t-*) ;;\n"+
+		"\t*) subcommand=$arg; break ;;\n"+
+		"\tesac\n"+
+		"done\n"+
+		"printf '%s\\n' \"$subcommand\" >> '"+record+"'\n"+
+		"exec '"+git+"' \"$@\"\n")
+
+	return func() []string {
+		t.Helper()
+
+		started, err := os.ReadFile(record)
+		require.NoError(t, err)
+
+		return strings.Fields(string(started))
+	}
+}
+
+// Each git process that a call starts delays the call, and it delays
+// the call most on a host that scans each new process. A call of each
+// tool must therefore start only the git commands of its list, in the
+// order of the list. The last command does the work of the tool, and
+// every command before it is a check. A change that adds a check to a
+// call adds its command to the list of the tool. A git_clone call into
+// a clone of its URL pulls, and it runs the checks of git_clone before
+// the checks of git_pull.
+func TestRemoteToolsGitCommands(t *testing.T) { //nolint:paralleltest // t.Setenv
+	wants := map[string][]string{
+		"fetch":            {"rev-parse", "remote", "config", "fetch"},
+		"pull":             {"rev-parse", "remote", "config", "pull"},
+		"pull with rebase": {"rev-parse", "remote", "config", "pull"},
+		"push": {
+			"rev-parse", "remote", "symbolic-ref", "config", "rev-parse", "hook", "config", "push",
+		},
+	}
+
+	for toolName, rt := range remoteTools() { //nolint:paralleltest // t.Setenv
+		t.Run(toolName, func(t *testing.T) {
+			require.Contains(t, wants, toolName, "the test must list the git commands of the tool")
+
+			bare, work := rt.repos(t)
+			started := recordGit(t)
+
+			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			assert.Equal(t, wants[toolName], started())
+			rt.requireLanded(t, bare, work)
+		})
+	}
+
+	t.Run("clone that pulls", func(t *testing.T) {
+		rt := remoteTools()["pull"]
+		bare, work := rt.repos(t)
+		started := recordGit(t)
+
+		h := &handler{allowFileURLs: true}
+
+		result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: work})
+		require.NoError(t, err)
+		require.False(t, result.IsError, resultText(t, result))
+		assert.Contains(t, resultText(t, result), "Pulled latest changes in "+work)
+
+		want := []string{"rev-parse", "remote", "ls-remote", "rev-parse", "remote", "config", "pull"}
+		assert.Equal(t, want, started())
+		rt.requireLanded(t, bare, work)
+	})
+}
+
+// A call reads the git directory of the repository in the directory of
+// the call. The working tree must hold that git directory, so the call
+// reads the git directory again from the working tree. It must start a
+// second git command for that check only when the working tree is
+// another directory than the directory of the call. A call must also
+// work in a repository whose path holds a newline. It then reads each
+// path of the repository except the last with a git command of its
+// own. A call must keep the whitespace at the end of a path, because
+// git names the directory with that whitespace.
+func TestFetchReadsGitDirFromWorkTree(t *testing.T) { //nolint:paralleltest // t.Setenv
+	tcs := map[string]struct {
+		// repo returns the path of the call for the clone at work of
+		// the bare repository at bare. The path names a repository
+		// whose origin is bare after the call returns.
+		repo func(t *testing.T, bare, work string) string
+
+		// want lists the subcommand of each git command of the call.
+		want []string
+	}{
+		"call through a symbolic link to the working tree": {
+			repo: func(t *testing.T, _, work string) string {
+				t.Helper()
+
+				link := filepath.Join(t.TempDir(), "link")
+				require.NoError(t, os.Symlink(work, link))
+
+				return link
+			},
+			want: []string{"rev-parse", "remote", "config", "fetch"},
+		},
+		"call in a directory of the working tree": {
+			repo: func(t *testing.T, _, work string) string {
+				t.Helper()
+
+				dir := filepath.Join(work, "dir")
+				require.NoError(t, os.Mkdir(dir, 0o755))
+
+				return dir
+			},
+			want: []string{"rev-parse", "rev-parse", "remote", "config", "fetch"},
+		},
+		"call in a working tree whose path ends with a space": {
+			repo: func(t *testing.T, _, work string) string {
+				t.Helper()
+
+				moved := filepath.Join(t.TempDir(), "sp ace ")
+				require.NoError(t, os.Rename(work, moved))
+
+				return moved
+			},
+			want: []string{"rev-parse", "remote", "config", "fetch"},
+		},
+		"call in a working tree whose path holds a newline": {
+			repo: func(t *testing.T, _, work string) string {
+				t.Helper()
+
+				const name = "line\nbreak"
+
+				moved := filepath.Join(t.TempDir(), name)
+				require.NoError(t, os.Rename(work, moved))
+
+				return moved
+			},
+			want: []string{"rev-parse", "rev-parse", "rev-parse", "remote", "config", "fetch"},
+		},
+		// The check of the working tree reads only the git directory,
+		// and git prints that path alone.
+		"call in a directory of a working tree whose path holds a newline": {
+			repo: func(t *testing.T, _, work string) string {
+				t.Helper()
+
+				const name = "line\nbreak"
+
+				moved := filepath.Join(t.TempDir(), name)
+				require.NoError(t, os.Rename(work, moved))
+
+				dir := filepath.Join(moved, "dir")
+				require.NoError(t, os.Mkdir(dir, 0o755))
+
+				return dir
+			},
+			want: []string{"rev-parse", "rev-parse", "rev-parse", "rev-parse", "remote", "config", "fetch"},
+		},
+		// A bare repository has no working tree, so git prints only its
+		// two git directories.
+		"call in a bare repository whose path holds a newline": {
+			repo: func(t *testing.T, bare, _ string) string {
+				t.Helper()
+
+				const name = "line\nbreak"
+
+				parent := filepath.Join(t.TempDir(), name)
+				require.NoError(t, os.Mkdir(parent, 0o755))
+
+				mirror := filepath.Join(parent, "mirror.git")
+				require.NoError(t, os.Rename(initBareRepo(t), mirror))
+				appendGitConfig(t, mirror, remoteConfig("origin", bare))
+
+				return mirror
+			},
+			want: []string{"rev-parse", "rev-parse", "remote", "config", "fetch"},
+		},
+	}
+
+	rt := remoteTools()["fetch"]
+
+	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			bare, work := rt.repos(t)
+			repo := tc.repo(t, bare, work)
+			started := recordGit(t)
+
+			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, repo)
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			assert.Equal(t, tc.want, started())
+			rt.requireLanded(t, bare, repo)
 		})
 	}
 }

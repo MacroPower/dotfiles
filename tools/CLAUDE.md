@@ -39,7 +39,7 @@ Keep the count of git processes low when you add a test to `mcp-git`. Process st
 - Take each repository from a helper of `mcp-git/fixture_test.go`, such as `initRepos`, `initFeatureRepos`, or `initSubmoduleRepos`. Each helper copies a template that the test binary builds one time. When no helper fits, add a template to that file, and add its helper to `TestFixturesStartNoGit`.
 - Write the git config of a repository with `setConfig`, `appendGitConfig`, `setOriginURL`, and `unsetOriginURL`. Do not run `git config` in the setup of a test.
 - Give the remote of a clone a later commit with `pushRemoteCommit`. Do not commit and push from a second clone.
-- Each call of a tool starts several git processes. Cover each value of an input with a test of the function that reads the value. When one call of a tool can show several values, such as every config key that the tool refuses, set the values in one case.
+- Each call of a tool starts several git processes. `TestRemoteToolsGitCommands` lists them for `git_fetch`, `git_pull`, `git_push`, and a `git_clone` call that pulls. Cover each value of an input with a test of the function that reads the value. When one call of a tool can show several values, such as every config key that the tool refuses, set the values in one case.
 
 To count the git processes of one run, put a `git` script that records each start first on `PATH`:
 
@@ -54,7 +54,7 @@ GITCOUNT_FILE="$dir/count" PATH="$dir/shim:$PATH" go test -count=1 ./...
 wc -l < "$dir/count"
 ```
 
-The count was about 2,700 at the commit that added this section.
+The count was about 2,700 at the commit that added this section. It was about 2,280 at the commit that made `runRemote` read every path of a repository with one git command.
 
 ## mcp-destiny Game Data
 

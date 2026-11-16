@@ -775,7 +775,7 @@ func remoteNames(ctx context.Context, repo string) ([]string, error) {
 		names = appendUnique(names, strings.TrimSuffix(strings.TrimPrefix(url.key, "remote."), ".url"))
 	}
 
-	commonDir, err := gitCommonDir(ctx, repo)
+	commonDir, err := readRepoPath(ctx, repo, "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return nil, err
 	}

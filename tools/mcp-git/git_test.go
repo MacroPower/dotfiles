@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -225,32 +224,100 @@ func TestCheckRemoteInputs(t *testing.T) {
 	}
 }
 
-func TestGitCommonDir(t *testing.T) {
+// readRepoPaths must name the git directory, the common git directory,
+// and the working tree of each kind of repository. The calls share one
+// clone and run in order, because the last calls change its config.
+func TestReadRepoPaths(t *testing.T) {
 	t.Parallel()
+
+	// git names each path without a symbolic link.
+	resolve := func(path string) string {
+		resolved, err := filepath.EvalSymlinks(path)
+		require.NoError(t, err)
+
+		return resolved
+	}
 
 	bare := initBareRepo(t)
 	work := initWorkClone(t, bare)
 
-	want, err := filepath.EvalSymlinks(filepath.Join(work, ".git"))
-	require.NoError(t, err)
+	workTree := resolve(work)
+	gitDir := filepath.Join(workTree, ".git")
 
-	got, err := gitCommonDir(t.Context(), work)
+	got, err := readRepoPaths(t.Context(), work)
 	require.NoError(t, err)
-	assert.Equal(t, want, got)
+	assert.Equal(t, repoPaths{gitDir: gitDir, commonDir: gitDir, workTree: workTree}, got)
 
-	// A linked worktree's .git is a file pointing back at the main
-	// checkout; the common dir must resolve to the main git dir.
+	sub := filepath.Join(work, "dir")
+	require.NoError(t, os.Mkdir(sub, 0o755))
+
+	got, err = readRepoPaths(t.Context(), sub)
+	require.NoError(t, err)
+	assert.Equal(t, repoPaths{gitDir: gitDir, commonDir: gitDir, workTree: workTree}, got,
+		"a directory of the working tree resolves to its root")
+
+	// The .git entry of a linked worktree is a file that points at a
+	// git directory inside the git directory of the main checkout. The
+	// common git directory is the git directory of the main checkout.
 	wt := filepath.Join(t.TempDir(), "wt")
 	runGitCmds(t, [][]string{
 		{"git", "-C", work, "worktree", "add", "-b", "wt-branch", wt},
 	})
 
-	got, err = gitCommonDir(t.Context(), wt)
+	got, err = readRepoPaths(t.Context(), wt)
 	require.NoError(t, err)
-	assert.Equal(t, want, got)
+	assert.Equal(t,
+		repoPaths{gitDir: filepath.Join(gitDir, "worktrees", "wt"), commonDir: gitDir, workTree: resolve(wt)},
+		got,
+	)
 
-	_, err = gitCommonDir(t.Context(), t.TempDir())
-	require.ErrorIs(t, err, ErrNotRepo)
+	bareDir := resolve(bare)
+
+	got, err = readRepoPaths(t.Context(), bare)
+	require.NoError(t, err)
+	assert.Equal(t, repoPaths{gitDir: bareDir, commonDir: bareDir}, got, "a bare repository has no working tree")
+
+	got, err = readRepoPaths(t.Context(), filepath.Join(gitDir, "refs"))
+	require.NoError(t, err)
+	assert.Equal(t, repoPaths{gitDir: gitDir, commonDir: gitDir}, got,
+		"a directory inside a git directory has no working tree")
+
+	// The name of a directory can end with whitespace, such as a space
+	// or a tab, and each path keeps that whitespace.
+	spacedWork := filepath.Join(resolve(t.TempDir()), "work ")
+	require.NoError(t, os.Rename(initWorkClone(t, initBareRepo(t)), spacedWork))
+
+	spacedGitDir := filepath.Join(spacedWork, ".git")
+
+	got, err = readRepoPaths(t.Context(), spacedWork)
+	require.NoError(t, err)
+	assert.Equal(t, repoPaths{gitDir: spacedGitDir, commonDir: spacedGitDir, workTree: spacedWork}, got)
+
+	spacedBare := filepath.Join(resolve(t.TempDir()), "bare") + "\t"
+	require.NoError(t, os.Rename(initBareRepo(t), spacedBare))
+
+	got, err = readRepoPaths(t.Context(), spacedBare)
+	require.NoError(t, err)
+	assert.Equal(t, repoPaths{gitDir: spacedBare, commonDir: spacedBare}, got)
+
+	// core.worktree moves the working tree away from the path of the
+	// repository.
+	outside := resolve(t.TempDir())
+	setWorkTree(t, work, outside)
+
+	got, err = readRepoPaths(t.Context(), work)
+	require.NoError(t, err)
+	assert.Equal(t, repoPaths{gitDir: gitDir, commonDir: gitDir, workTree: outside}, got)
+
+	// git takes a repository that sets core.bare for one that has no
+	// working tree, and it prints a warning about core.worktree before
+	// it says so.
+	setConfig(t, work, "core.bare", "true")
+
+	got, err = readRepoPaths(t.Context(), work)
+	require.NoError(t, err)
+	assert.Equal(t, repoPaths{gitDir: gitDir, commonDir: gitDir}, got,
+		"a repository that sets core.bare has no working tree")
 }
 
 // unparseableConfig is git config text that holds a section header
@@ -260,11 +327,11 @@ const unparseableConfig = "[remote \"origin\"\n"
 
 // git exits with status 128 when it finds no repository from a
 // directory. It exits with the same status when it finds a repository
-// that it cannot open. gitCommonDir and absoluteGitDir must report a
-// missing repository only for the first failure. For every other
-// failure, the error must say that git could not open the repository,
-// and it must hold the message of git.
-func TestRepoPathErrors(t *testing.T) {
+// that it cannot open. readRepoPaths must report a missing repository
+// only for the first failure. For every other failure, the error must
+// say that git could not open the repository, and it must hold the
+// message of git.
+func TestReadRepoPathsErrors(t *testing.T) {
 	t.Parallel()
 
 	tcs := map[string]struct {
@@ -315,44 +382,37 @@ func TestRepoPathErrors(t *testing.T) {
 		},
 	}
 
-	paths := map[string]func(ctx context.Context, dir string) (string, error){
-		"gitCommonDir":   gitCommonDir,
-		"absoluteGitDir": absoluteGitDir,
-	}
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	for pathName, path := range paths {
-		for name, tc := range tcs {
-			t.Run(pathName+"/"+name, func(t *testing.T) {
-				t.Parallel()
+			dir := tc.dir(t)
 
-				dir := tc.dir(t)
+			_, err := readRepoPaths(t.Context(), dir)
+			require.Error(t, err)
 
-				_, err := path(t.Context(), dir)
-				require.Error(t, err)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				assert.EqualError(t, err, "not a git repository: "+dir)
 
-				if tc.err != nil {
-					require.ErrorIs(t, err, tc.err)
-					assert.EqualError(t, err, "not a git repository: "+dir)
+				return
+			}
 
-					return
-				}
+			require.NotErrorIs(t, err, ErrNotRepo)
 
-				require.NotErrorIs(t, err, ErrNotRepo)
-
-				message := err.Error()
-				assert.Contains(t, message, "opening the repository at "+dir+": running git: exit status 128: fatal: ")
-				assert.Contains(t, message, tc.want)
-				assert.NotContains(t, message, ErrNotRepo.Error())
-			})
-		}
+			message := err.Error()
+			assert.Contains(t, message, "opening the repository at "+dir+": running git: exit status 128: fatal: ")
+			assert.Contains(t, message, tc.want)
+			assert.NotContains(t, message, ErrNotRepo.Error())
+		})
 	}
 }
 
 // git translates its messages into the language of the locale, and
-// gitCommonDir reads the message of git to find a missing repository.
+// readRepoPaths reads the message of git to find a missing repository.
 // It must report a directory outside every repository as one, whatever
 // the locale of the server is.
-func TestGitCommonDirIgnoresLocale(t *testing.T) { //nolint:paralleltest // t.Setenv
+func TestReadRepoPathsIgnoresLocale(t *testing.T) { //nolint:paralleltest // t.Setenv
 	// LANGUAGE names the language of the messages in every locale
 	// except the C locale.
 	t.Setenv("LANGUAGE", "de")
@@ -372,14 +432,60 @@ func TestGitCommonDirIgnoresLocale(t *testing.T) { //nolint:paralleltest // t.Se
 		t.Skip("git does not translate its messages in this environment")
 	}
 
-	_, err = gitCommonDir(t.Context(), dir)
+	_, err = readRepoPaths(t.Context(), dir)
 	require.ErrorIs(t, err, ErrNotRepo)
 }
 
-// git can exit with an error and print nothing, and the server can
-// fail to start git. gitCommonDir must then report neither a missing
+// git translates its messages into the language of the locale.
+// readRepoPaths reads the message of git to find a repository that has
+// no working tree. It must report a bare repository as one, whatever
+// the locale of the server is.
+func TestReadRepoPathsWithoutWorkTreeIgnoresLocale(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// LANGUAGE names the language of the messages in every locale
+	// except the C locale.
+	t.Setenv("LANGUAGE", "de")
+	t.Setenv("LC_ALL", "en_US.UTF-8")
+
+	bare := initBareRepo(t)
+
+	// The check needs a git that prints a translated message here. git
+	// does not translate when it has no German messages, or when the
+	// host lacks the locale that LC_ALL names.
+	args := []string{"-C", bare, "rev-parse", "--show-toplevel"}
+	cmd := exec.CommandContext(t.Context(), "git", args...) //nolint:gosec // test helper
+
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err)
+
+	if strings.Contains(string(out), noWorkTreeMessage) {
+		t.Skip("git does not translate its messages in this environment")
+	}
+
+	got, err := readRepoPaths(t.Context(), bare)
+	require.NoError(t, err)
+	assert.Empty(t, got.workTree)
+	assert.NotEmpty(t, got.gitDir)
+}
+
+// gitDirLines is the line of a script that prints the two git
+// directories of a repository, as git rev-parse prints them before it
+// names the working tree.
+const gitDirLines = "printf '/repo/.git\\n/repo/.git\\n'\n"
+
+// newlineListing is the line of a script that prints the paths of a
+// checkout at "/line\nbreak" for the command that reads every path.
+// That command has seven arguments, and each command that reads one
+// path has fewer.
+const newlineListing = "if [ $# = 7 ]; then printf '/line\\nbreak/.git\\n/line\\nbreak/.git\\n/line\\nbreak\\n'; exit 0; fi\n"
+
+// A repository has no working tree only when git prints both git
+// directories and then says so. git can also fail for another reason.
+// For example, the kernel kills git to free memory, or the server
+// cannot start git. readRepoPaths must then return the failure,
+// because [handler.runRemote] skips the check of the working tree for
+// a repository that has none. The error must report neither a missing
 // repository nor an empty message of git.
-func TestGitCommonDirWithoutMessage(t *testing.T) { //nolint:paralleltest // t.Setenv
+func TestReadRepoPathsFailure(t *testing.T) { //nolint:paralleltest // t.Setenv
 	tcs := map[string]struct {
 		// git is the script that stands in for git. An empty script
 		// leaves PATH without git.
@@ -388,9 +494,36 @@ func TestGitCommonDirWithoutMessage(t *testing.T) { //nolint:paralleltest // t.S
 		// want is the cause that the error names after the path.
 		want string
 	}{
+		"signal kills git": {
+			git:  "#!/bin/sh\nkill -KILL $$\n",
+			want: "running git: signal: killed",
+		},
+		"signal kills git after it prints both git directories": {
+			git:  "#!/bin/sh\n" + gitDirLines + "kill -KILL $$\n",
+			want: "running git: signal: killed",
+		},
+		"signal kills the git command that reads one path": {
+			git:  "#!/bin/sh\n" + newlineListing + "kill -KILL $$\n",
+			want: "running git: signal: killed",
+		},
 		"git exits with an error and prints nothing": {
 			git:  "#!/bin/sh\nexit 128\n",
 			want: "running git: exit status 128",
+		},
+		"git prints another message": {
+			git:  "#!/bin/sh\necho \"fatal: cannot chdir to '': No such file or directory\" >&2\nexit 128\n",
+			want: "running git: exit status 128: fatal: cannot chdir to '': No such file or directory",
+		},
+		"git prints both git directories and another message": {
+			git:  "#!/bin/sh\n" + gitDirLines + "echo 'fatal: unable to read the index' >&2\nexit 128\n",
+			want: "running git: exit status 128: fatal: unable to read the index",
+		},
+		// git prints a path only after it opened the repository, so
+		// this message does not come from the option that names the
+		// working tree.
+		"git prints the message of a missing working tree and no path": {
+			git:  "#!/bin/sh\necho '" + noWorkTreeMessage + "' >&2\nexit 128\n",
+			want: "running git: exit status 128: " + noWorkTreeMessage,
 		},
 		"git cannot start": {
 			want: `running git: exec: "git": executable file not found in $PATH`,
@@ -403,9 +536,141 @@ func TestGitCommonDirWithoutMessage(t *testing.T) { //nolint:paralleltest // t.S
 
 			dir := t.TempDir()
 
-			_, err := gitCommonDir(t.Context(), dir)
+			got, err := readRepoPaths(t.Context(), dir)
 			require.NotErrorIs(t, err, ErrNotRepo)
-			assert.EqualError(t, err, "opening the repository at "+dir+": "+tc.want)
+			require.EqualError(t, err, "opening the repository at "+dir+": "+tc.want)
+			assert.Zero(t, got)
+		})
+	}
+}
+
+// The name of a directory can hold a newline, and git then prints its
+// path on more than one line. readRepoPaths must still return each
+// path whole. The name of each repository ends with a newline, so git
+// prints two newlines after a path, and only the second one ends the
+// path.
+func TestReadRepoPathsReadsNewline(t *testing.T) {
+	t.Parallel()
+
+	// parentName is the name of the directory that holds the
+	// repository, and repoName is the name of the repository.
+	const (
+		parentName = "line\nbreak"
+		repoName   = "repo\n"
+	)
+
+	tcs := map[string]struct {
+		// init creates a repository at the path at repo.
+		init func(t *testing.T, repo string)
+
+		// want returns the paths of the repository at repo, a path
+		// that holds no symbolic link.
+		want func(repo string) repoPaths
+	}{
+		"checkout": {
+			init: initRepoAt,
+			want: func(repo string) repoPaths {
+				gitDir := filepath.Join(repo, ".git")
+
+				return repoPaths{gitDir: gitDir, commonDir: gitDir, workTree: repo}
+			},
+		},
+		"bare repository": {
+			init: initEmptyBare,
+			want: func(repo string) repoPaths {
+				return repoPaths{gitDir: repo, commonDir: repo}
+			},
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			parent := filepath.Join(t.TempDir(), parentName)
+			require.NoError(t, os.Mkdir(parent, 0o755))
+
+			// git names each path without a symbolic link.
+			resolved, err := filepath.EvalSymlinks(parent)
+			require.NoError(t, err)
+
+			repo := filepath.Join(parent, repoName)
+			tc.init(t, repo)
+
+			got, err := readRepoPaths(t.Context(), repo)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want(filepath.Join(resolved, repoName)), got)
+		})
+	}
+}
+
+// git prints one path on a line for each option, and a path that holds
+// a newline on more than one line. readRepoPaths must refuse every
+// other listing, and it must not return the paths that such a listing
+// holds.
+func TestReadRepoPathsMalformedListing(t *testing.T) { //nolint:paralleltest // t.Setenv
+	tcs := map[string]struct {
+		// git is the script that stands in for git.
+		git string
+
+		// want returns the text that the error gives after
+		// [ErrPathList] for the directory at dir.
+		want func(dir string) string
+	}{
+		"no path": {
+			git: "#!/bin/sh\n",
+			want: func(dir string) string {
+				return "git printed 0 lines for the 3 paths of the repository at " + dir
+			},
+		},
+		"two paths without an error": {
+			git: "#!/bin/sh\n" + gitDirLines,
+			want: func(dir string) string {
+				return "git printed 2 lines for the 3 paths of the repository at " + dir
+			},
+		},
+		"last line without a newline": {
+			git: "#!/bin/sh\n" + gitDirLines + "printf /repo\n",
+			want: func(dir string) string {
+				return "git printed 2 lines for the 3 paths of the repository at " + dir
+			},
+		},
+		"message of a missing working tree after one path": {
+			git: "#!/bin/sh\necho /repo/.git\necho '" + noWorkTreeMessage + "' >&2\nexit 128\n",
+			want: func(dir string) string {
+				return "git printed 1 lines for the 2 paths of the repository at " + dir
+			},
+		},
+		"paths that do not make up a listing with a newline": {
+			git: "#!/bin/sh\n" + newlineListing + "echo /repo/.git\n",
+			want: func(dir string) string {
+				return "the paths that git printed one at a time for the repository at " + dir +
+					" do not make up the listing of its paths"
+			},
+		},
+		// The two git directories take up the whole listing, so the
+		// listing holds no working tree.
+		"paths that leave no working tree in a listing with a newline": {
+			git: "#!/bin/sh\n" + newlineListing +
+				"if [ $# = 4 ]; then printf '/line\\nbreak/.git\\n/line\\n'; exit 0; fi\n" +
+				"printf 'break/.git\\n/line\\nbreak\\n'\n",
+			want: func(dir string) string {
+				return "the paths that git printed one at a time for the repository at " + dir +
+					" do not make up the listing of its paths"
+			},
+		},
+	}
+
+	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			gitStandIn(t, tc.git)
+
+			dir := t.TempDir()
+
+			got, err := readRepoPaths(t.Context(), dir)
+			require.ErrorIs(t, err, ErrPathList)
+			require.EqualError(t, err, ErrPathList.Error()+": "+tc.want(dir))
+			assert.Zero(t, got)
 		})
 	}
 }
@@ -466,139 +731,93 @@ func TestCheckWorkTreeErrors(t *testing.T) {
 			repo := initConfigRepo(t, "")
 			tree := tc.tree(t)
 
-			err := (&handler{}).checkWorkTree(t.Context(), repo, tree)
+			// Each case fails before checkWorkTree compares the git
+			// directories, so paths names only the working tree.
+			err := (&handler{}).checkWorkTree(t.Context(), repo, repoPaths{workTree: tree})
 			require.ErrorIs(t, err, ErrDeniedWorkTree)
 			assert.ErrorContains(t, err, ErrDeniedWorkTree.Error()+tc.want(tree))
 		})
 	}
 }
 
-func TestGitWorkTree(t *testing.T) {
-	t.Parallel()
+// git finds the git directory of a call from the directory of the
+// call. When that directory is the working tree, another git command
+// there repeats the first, so checkWorkTree must start none. It must
+// ask git for every other working tree. PATH holds no git here, so a
+// check that starts git fails.
+func TestCheckWorkTreeStartsGitOnlyForAnotherDirectory(t *testing.T) { //nolint:paralleltest // t.Setenv
+	const noGit = `exec: "git": executable file not found in $PATH`
 
-	bare := initBareRepo(t)
-	work := initWorkClone(t, bare)
-
-	want, err := filepath.EvalSymlinks(work)
-	require.NoError(t, err)
-
-	got, err := gitWorkTree(t.Context(), work)
-	require.NoError(t, err)
-	assert.Equal(t, want, got)
-
-	sub := filepath.Join(work, "dir")
-	require.NoError(t, os.Mkdir(sub, 0o755))
-
-	got, err = gitWorkTree(t.Context(), sub)
-	require.NoError(t, err)
-	assert.Equal(t, want, got, "a directory of the working tree resolves to its root")
-
-	wt := filepath.Join(t.TempDir(), "wt")
-	runGitCmds(t, [][]string{
-		{"git", "-C", work, "worktree", "add", "-b", "wt-branch", wt},
-	})
-
-	wantWt, err := filepath.EvalSymlinks(wt)
-	require.NoError(t, err)
-
-	got, err = gitWorkTree(t.Context(), wt)
-	require.NoError(t, err)
-	assert.Equal(t, wantWt, got)
-
-	got, err = gitWorkTree(t.Context(), bare)
-	require.NoError(t, err)
-	assert.Empty(t, got, "a bare repository has no working tree")
-
-	// core.worktree moves the working tree away from the path of the
-	// repository.
-	outside, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	setWorkTree(t, work, outside)
-
-	got, err = gitWorkTree(t.Context(), work)
-	require.NoError(t, err)
-	assert.Equal(t, outside, got)
-
-	// git takes a repository that sets core.bare for one that has no
-	// working tree, and it prints a warning about core.worktree before
-	// it says so.
-	setConfig(t, work, "core.bare", "true")
-
-	got, err = gitWorkTree(t.Context(), work)
-	require.NoError(t, err)
-	assert.Empty(t, got, "a repository that sets core.bare has no working tree")
-}
-
-// git translates its messages into the language of the locale.
-// gitWorkTree reads the message of git to find a repository that has
-// no working tree. It must report a bare repository as one, whatever
-// the locale of the server is.
-func TestGitWorkTreeIgnoresLocale(t *testing.T) { //nolint:paralleltest // t.Setenv
-	// LANGUAGE names the language of the messages in every locale
-	// except the C locale.
-	t.Setenv("LANGUAGE", "de")
-	t.Setenv("LC_ALL", "en_US.UTF-8")
-
-	bare := initBareRepo(t)
-
-	// The check needs a git that prints a translated message here. git
-	// does not translate when it has no German messages, or when the
-	// host lacks the locale that LC_ALL names.
-	args := []string{"-C", bare, "rev-parse", "--show-toplevel"}
-	cmd := exec.CommandContext(t.Context(), "git", args...) //nolint:gosec // test helper
-
-	out, err := cmd.CombinedOutput()
-	require.Error(t, err)
-
-	if strings.Contains(string(out), noWorkTreeMessage) {
-		t.Skip("git does not translate its messages in this environment")
-	}
-
-	got, err := gitWorkTree(t.Context(), bare)
-	require.NoError(t, err)
-	assert.Empty(t, got)
-}
-
-// A repository has no working tree only when git says so. git can
-// also fail for another reason. For example, the kernel kills git to
-// free memory, or the server cannot start git. gitWorkTree must then
-// return the failure, because [handler.runRemote] skips the check of
-// the working tree for a repository that has none.
-func TestGitWorkTreeFailure(t *testing.T) { //nolint:paralleltest // t.Setenv
 	tcs := map[string]struct {
-		// git is the script that stands in for git. An empty script
-		// leaves PATH without git.
-		git string
+		// call returns the path of the call for the working tree at
+		// tree.
+		call func(t *testing.T, tree string) string
 
-		// want is the cause that the error names after the path.
-		want string
+		// starts is set when checkWorkTree must start git.
+		starts bool
 	}{
-		"signal kills git": {
-			git:  "#!/bin/sh\nkill -KILL $$\n",
-			want: "running git: signal: killed",
+		"call at the working tree": {
+			call: func(_ *testing.T, tree string) string { return tree },
 		},
-		"git exits with an error and prints nothing": {
-			git:  "#!/bin/sh\nexit 128\n",
-			want: "running git: exit status 128",
+		"call through a symbolic link to the working tree": {
+			call: func(t *testing.T, tree string) string {
+				t.Helper()
+
+				link := filepath.Join(t.TempDir(), "link")
+				require.NoError(t, os.Symlink(tree, link))
+
+				return link
+			},
 		},
-		"git prints another message": {
-			git:  "#!/bin/sh\necho \"fatal: cannot chdir to '': No such file or directory\" >&2\nexit 128\n",
-			want: "running git: exit status 128: fatal: cannot chdir to '': No such file or directory",
+		"call in a directory of the working tree": {
+			call: func(t *testing.T, tree string) string {
+				t.Helper()
+
+				dir := filepath.Join(tree, "dir")
+				require.NoError(t, os.Mkdir(dir, 0o755))
+
+				return dir
+			},
+			starts: true,
 		},
-		"git cannot start": {
-			want: `running git: exec: "git": executable file not found in $PATH`,
+		"call in another checkout": {
+			call: func(t *testing.T, _ string) string {
+				t.Helper()
+
+				return initRepo(t, t.TempDir())
+			},
+			starts: true,
+		},
+		"call at a path that names nothing": {
+			call: func(t *testing.T, _ string) string {
+				t.Helper()
+
+				return filepath.Join(t.TempDir(), "missing")
+			},
+			starts: true,
 		},
 	}
 
 	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
 		t.Run(name, func(t *testing.T) {
-			gitStandIn(t, tc.git)
+			// git names the working tree without a symbolic link.
+			tree, err := filepath.EvalSymlinks(initRepo(t, t.TempDir()))
+			require.NoError(t, err)
 
-			dir := t.TempDir()
+			abs := tc.call(t, tree)
+			paths := repoPaths{gitDir: filepath.Join(tree, ".git"), workTree: tree}
 
-			got, err := gitWorkTree(t.Context(), dir)
-			require.EqualError(t, err, "resolving the working tree of "+dir+": "+tc.want)
-			assert.Empty(t, got)
+			gitStandIn(t, "")
+
+			err = (&handler{}).checkWorkTree(t.Context(), abs, paths)
+			if !tc.starts {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorIs(t, err, ErrDeniedWorkTree)
+			assert.ErrorContains(t, err, noGit)
 		})
 	}
 }

@@ -117,6 +117,11 @@ var (
 	// repository.
 	ErrNoWorkTree = errors.New("repository has no working tree")
 
+	// ErrPathList is returned when git prints the paths of a repository
+	// in a listing that the server cannot read, such as a listing that
+	// lacks a path.
+	ErrPathList = errors.New("git path listing is malformed")
+
 	// ErrDeniedWorkTree is returned when the working tree of a
 	// repository does not hold the git directory of the repository,
 	// or when it lies inside a git directory.
@@ -254,9 +259,10 @@ type remoteOp struct {
 // override, as [repoConfig.check] describes. [handler.gitOptions] and
 // [handler.commandEnv] turn off the hooks and each other command.
 //
-// runRemote refuses a path outside every repository with [ErrNotRepo],
-// and [repoPath] describes the error for a repository that git cannot
-// open.
+// runRemote reads the git directories and the working tree of the
+// repository with [readRepoPaths]. It refuses a path outside every
+// repository with [ErrNotRepo], and readRepoPaths describes the error
+// for a repository that git cannot open.
 //
 // runRemote refuses a remote that the repository does not configure
 // with [ErrUnknownRemote], and [remoteURLs] describes the error for a
@@ -266,8 +272,12 @@ type remoteOp struct {
 // The config also names the working tree, with core.worktree.
 // runRemote refuses a working tree that [handler.checkWorkTree]
 // denies, and [handler.gitOptions] passes the path that runRemote
-// checked to git. [gitWorkTree] describes the error for a repository
-// whose working tree git cannot name.
+// checked to git.
+//
+// Each check that asks git starts a git process, and each start delays
+// the call. runRemote therefore reads every path of the repository
+// with one command, as [readRepoPaths] describes. It starts no command
+// for a fact that it already holds.
 func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	if d := h.effectiveTimeout(op.timeout); d > 0 {
 		var cancel context.CancelFunc
@@ -290,38 +300,33 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 		return "", destErr
 	}
 
-	commonDir, err := gitCommonDir(ctx, abs)
+	paths, err := readRepoPaths(ctx, abs)
 	if err != nil {
 		return "", err
 	}
 
 	// rev-parse walks upward, so a path under an allowed directory
 	// can resolve to a repository above it.
-	destErr = h.checkDest(commonDir)
+	destErr = h.checkDest(paths.commonDir)
 	if destErr != nil {
 		return "", destErr
+	}
+
+	if paths.workTree == "" && op.worktree {
+		return "", fmt.Errorf("%w: %s", ErrNoWorkTree, op.repo)
 	}
 
 	// core.worktree in the config of the repository names the working
 	// tree. git can therefore write a working tree that lies outside
 	// the path of the call.
-	workTree, err := gitWorkTree(ctx, abs)
-	if err != nil {
-		return "", err
-	}
-
-	if workTree == "" && op.worktree {
-		return "", fmt.Errorf("%w: %s", ErrNoWorkTree, op.repo)
-	}
-
-	if workTree != "" {
-		err = h.checkWorkTree(ctx, abs, workTree)
+	if paths.workTree != "" {
+		err = h.checkWorkTree(ctx, abs, paths)
 		if err != nil {
 			return "", fmt.Errorf("working tree of %s: %w", op.repo, err)
 		}
 	}
 
-	cleanup, err := acquireLock(filepath.Join(commonDir, "mcp-git"))
+	cleanup, err := acquireLock(filepath.Join(paths.commonDir, "mcp-git"))
 	if err != nil {
 		return "", err
 	}
@@ -397,7 +402,7 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 		return "", err
 	}
 
-	opts := h.gitOptions(op, abs, workTree, cfg.hooks)
+	opts := h.gitOptions(op, abs, paths.workTree, cfg.hooks)
 
 	out, err := h.runGit(ctx, slices.Concat(opts, args)...)
 	if err != nil && len(op.cleanupArgs) > 0 {
@@ -695,14 +700,19 @@ func (h *handler) runGit(ctx context.Context, args ...string) (string, error) {
 // remote URLs.
 func gitValue(ctx context.Context, args ...string) (string, error) {
 	out, _, err := gitOutput(ctx, gitEnv(), args...)
+	if err != nil {
+		return "", err
+	}
 
-	return out, err
+	return strings.TrimSpace(out), nil
 }
 
 // gitOutput runs git with args in the environment env, and it returns
-// the trimmed stdout of git. When git exits with an error, gitOutput
+// the stdout of git as git wrote it. When git exits with an error,
+// gitOutput returns the stdout that git wrote before the error, and it
 // also returns the trimmed stderr of git. The message of the returned
-// error never holds that text.
+// error holds neither text. gitOutput returns no output for a command
+// that ran into the timeout.
 func gitOutput(ctx context.Context, env []string, args ...string) (string, string, error) {
 	//nolint:gosec // G204: args are validated by the calling handler.
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -725,28 +735,10 @@ func gitOutput(ctx context.Context, env []string, args ...string) (string, strin
 			stderr = strings.TrimSpace(string(exitErr.Stderr))
 		}
 
-		return "", stderr, fmt.Errorf("running git: %w", err)
+		return string(out), stderr, fmt.Errorf("running git: %w", err)
 	}
 
-	return strings.TrimSpace(string(out)), "", nil
-}
-
-// repoPath runs git rev-parse with flags in the directory at dir, and
-// it returns the path that git prints. git finds the repository from
-// dir before it prints the path, so repoPath doubles as the repository
-// check. A directory outside every repository fails with [ErrNotRepo],
-// and [repoOpenError] describes the error for a repository that git
-// cannot open. repoPath runs git with messageLocale, because
-// [repoOpenError] reads the message of git.
-func repoPath(ctx context.Context, dir string, flags ...string) (string, error) {
-	args := slices.Concat([]string{"-C", dir, "rev-parse"}, flags)
-
-	out, message, err := gitOutput(ctx, append(gitEnv(), messageLocale), args...)
-	if err != nil {
-		return "", repoOpenError(dir, message, err)
-	}
-
-	return out, nil
+	return string(out), "", nil
 }
 
 // repoOpenError returns the error for a git rev-parse command that
@@ -784,63 +776,192 @@ func repoOpenError(path, message string, err error) error {
 	return fmt.Errorf("opening the repository at %s: %w: %s", path, err, truncateOutput(message))
 }
 
-// gitCommonDir returns the absolute common git directory for repo.
-// git walks up from repo, so a path inside a repository resolves to
-// that repository. A linked worktree resolves to the git directory of
-// the main checkout. [repoPath] describes the error for a path outside
-// every repository and for a repository that git cannot open.
-func gitCommonDir(ctx context.Context, repo string) (string, error) {
-	return repoPath(ctx, repo, "--path-format=absolute", "--git-common-dir")
+// repoPaths holds the paths that git names for one repository. Each
+// path is absolute.
+type repoPaths struct {
+	// gitDir is the git directory, and its path holds no symbolic
+	// link. A linked worktree has a git directory of its own, inside
+	// the common git directory.
+	gitDir string
+
+	// commonDir is the common git directory. For a linked worktree, it
+	// is the git directory of the main checkout.
+	commonDir string
+
+	// workTree is the working tree that git uses, or "" for a
+	// repository that has none, such as a bare repository. It is the
+	// value of core.worktree when the config of the repository sets
+	// that key.
+	workTree string
 }
 
-// gitWorkTree returns the absolute path of the working tree that git
-// uses for the repository at repo. The path is the value of
-// core.worktree when the config of the repository sets it. It returns
-// "" for a repository that has no working tree, such as a bare
-// repository.
+// readRepoPaths returns the paths that git names for the repository
+// that it finds from the directory at dir. git walks up from dir, so a
+// directory inside a repository resolves to that repository. git finds
+// the repository before it prints a path, so readRepoPaths doubles as
+// the repository check.
 //
-// git rev-parse exits with status 128 for such a repository. It exits
-// with the same status when it cannot read the git config, so only
-// its message names the cause. gitWorkTree therefore returns "" only
-// for a message that holds noWorkTreeMessage. It runs git with
-// messageLocale, because it reads that message.
+// One git rev-parse command prints every path, because each git
+// process that the server starts delays the call. git prints one path
+// on a line for each option, in the order of the options.
+// --path-format=absolute makes the common git directory an absolute
+// path, and git prints the same working tree with and without it.
+// --show-toplevel comes last, because git stops at that option in a
+// repository that has no working tree. git has then printed both git
+// directories, and it exits with status 128.
 //
-// gitWorkTree returns an error for every other failure of git. For
-// example, a signal kills git, or the server cannot start git.
-// [handler.runRemote] skips the check of the working tree for a
-// repository that has none, so gitWorkTree must not return "" for
-// such a failure. Except for a timeout, the error names repo and ends
-// with the message of git. git rev-parse does not read the remotes of
-// the git config, so the message holds no URL of a remote. When git
-// prints no message, the error ends with the error of
-// [exec.Cmd.Output] instead.
-func gitWorkTree(ctx context.Context, repo string) (string, error) {
+// git exits with the same status when it cannot open the repository,
+// so only its message names the cause. readRepoPaths therefore reads
+// the message, and it runs git with messageLocale. A repository has no
+// working tree only when git printed a path and the message holds
+// noWorkTreeMessage. [handler.runRemote] skips the check of the
+// working tree for a repository that has none. readRepoPaths must
+// therefore return an error for every other failure of git, such as a
+// signal that kills git.
+//
+// A directory outside every repository fails with [ErrNotRepo], and
+// [repoOpenError] describes the error for every other failure of git.
+//
+// The name of a directory can hold a newline, and git then prints its
+// path on more than one line. The listing then holds more lines than
+// paths, and [splitPathListing] finds where each path ends with one
+// more command for each path except the last. A listing that holds
+// fewer lines than paths fails with [ErrPathList].
+func readRepoPaths(ctx context.Context, dir string) (repoPaths, error) {
 	out, message, err := gitOutput(ctx, append(gitEnv(), messageLocale),
-		"-C", repo, "rev-parse", "--show-toplevel",
+		"-C", dir, "rev-parse",
+		"--absolute-git-dir", "--path-format=absolute", "--git-common-dir", "--show-toplevel",
 	)
-	if err == nil {
-		return out, nil
+
+	// git prints a path only after it opened the repository.
+	noWorkTree := err != nil && out != "" && strings.Contains(message, noWorkTreeMessage)
+
+	if err != nil && !noWorkTree {
+		return repoPaths{}, repoOpenError(dir, message, err)
 	}
 
-	if errors.Is(err, ErrTimeout) {
-		return "", err
+	// git prints both git directories, and then the working tree of a
+	// repository that has one.
+	want := 3
+	if noWorkTree {
+		want = 2
 	}
 
-	if strings.Contains(message, noWorkTreeMessage) {
-		return "", nil
+	// git ends each path with a newline. Without the last newline, the
+	// output holds one path on each line when no path holds a newline.
+	body, ended := strings.CutSuffix(out, "\n")
+	lines := strings.Split(body, "\n")
+
+	if !ended || len(lines) < want {
+		return repoPaths{}, fmt.Errorf(
+			"%w: git printed %d lines for the %d paths of the repository at %s",
+			ErrPathList, strings.Count(out, "\n"), want, dir,
+		)
 	}
 
-	if message == "" {
-		return "", fmt.Errorf("resolving the working tree of %s: %w", repo, err)
+	if len(lines) > want {
+		return splitPathListing(ctx, dir, out, noWorkTree)
 	}
 
-	return "", fmt.Errorf("resolving the working tree of %s: %w: %s", repo, err, truncateOutput(message))
+	paths := repoPaths{gitDir: lines[0], commonDir: lines[1]}
+
+	if !noWorkTree {
+		paths.workTree = lines[2]
+	}
+
+	return paths, nil
 }
 
-// checkWorkTree checks the working tree at workTree of the repository
-// at the absolute path abs. The working tree must lie under an allowed
-// directory, and it must hold the git directory of the repository. It
-// must also lie outside every git directory.
+// splitPathListing returns the paths of listing, which [readRepoPaths]
+// read for the repository at dir. noWorkTree is set when the
+// repository has no working tree. A path of listing holds a newline,
+// so the lines of listing do not show where each path ends.
+// splitPathListing therefore reads each path except the last with a
+// git command of its own, as [readRepoPath] does. The output of each
+// such command holds only its path. listing must start with those
+// paths, each with the newline that git prints after it. The rest of
+// listing is the last path and its newline, so splitPathListing starts
+// no command for the last path.
+//
+// splitPathListing fails with [ErrPathList] when the paths do not make
+// up listing, such as when the repository changed between the
+// commands. Each path that readRepoPaths returns is therefore a part
+// of the one listing, whether or not a path holds a newline.
+func splitPathListing(ctx context.Context, dir, listing string, noWorkTree bool) (repoPaths, error) {
+	// Each option prints one path, in the order of the listing. The
+	// option of the last path is left out.
+	options := [][]string{{"--absolute-git-dir"}}
+	if !noWorkTree {
+		options = append(options, []string{"--path-format=absolute", "--git-common-dir"})
+	}
+
+	paths := make([]string, 0, len(options)+1)
+	rest := listing
+
+	for _, flags := range options {
+		path, err := readRepoPath(ctx, dir, flags...)
+		if err != nil {
+			return repoPaths{}, err
+		}
+
+		var found bool
+
+		rest, found = strings.CutPrefix(rest, path+"\n")
+		if !found {
+			return repoPaths{}, pathListingError(dir)
+		}
+
+		paths = append(paths, path)
+	}
+
+	last, found := strings.CutSuffix(rest, "\n")
+	if !found {
+		return repoPaths{}, pathListingError(dir)
+	}
+
+	paths = append(paths, last)
+
+	split := repoPaths{gitDir: paths[0], commonDir: paths[1]}
+	if !noWorkTree {
+		split.workTree = paths[2]
+	}
+
+	return split, nil
+}
+
+// pathListingError returns the error of [splitPathListing] for a
+// listing of the paths of the repository at dir that the paths of
+// their own commands do not make up.
+func pathListingError(dir string) error {
+	return fmt.Errorf(
+		"%w: the paths that git printed one at a time for the repository at %s "+
+			"do not make up the listing of its paths",
+		ErrPathList, dir,
+	)
+}
+
+// readRepoPath runs git rev-parse with flags in the directory at dir,
+// and it returns the one path that git prints. git ends the path with a
+// newline, and readRepoPath removes only that newline, so a newline
+// inside the path stays. git runs with messageLocale, because
+// [repoOpenError] reads the message of git and describes the error.
+func readRepoPath(ctx context.Context, dir string, flags ...string) (string, error) {
+	args := slices.Concat([]string{"-C", dir, "rev-parse"}, flags)
+
+	out, message, err := gitOutput(ctx, append(gitEnv(), messageLocale), args...)
+	if err != nil {
+		return "", repoOpenError(dir, message, err)
+	}
+
+	return strings.TrimSuffix(out, "\n"), nil
+}
+
+// checkWorkTree checks the working tree of the repository at the
+// absolute path abs. paths holds the paths that [readRepoPaths]
+// returned for abs, and the repository has a working tree. The working
+// tree must lie under an allowed directory, and it must hold the git
+// directory of the repository. It must also lie outside every git
+// directory.
 //
 // The allowed directories can hold paths that the sandbox of the
 // caller cannot write, such as other checkouts and the hooks
@@ -853,12 +974,21 @@ func gitWorkTree(ctx context.Context, repo string) (string, error) {
 // cannot write. checkWorkTree therefore also refuses a working tree
 // inside a git directory, as [enclosingGitDir] finds it.
 //
+// git found the git directory of paths from the directory at abs. When
+// that directory is the working tree, as [sameDir] decides, a second
+// git command there repeats the first, so checkWorkTree starts none.
+// For every other working tree, checkWorkTree reads only the git
+// directory that git finds from the working tree, with
+// [readRepoPath], and it compares the two git directories.
+//
 // git can also fail to open a repository from the working tree. For
 // example, git finds a repository whose git config it cannot parse, or
 // core.worktree names a directory that does not exist. git then names
 // no git directory, so checkWorkTree refuses the working tree, and the
-// error ends with the error of [repoPath].
-func (h *handler) checkWorkTree(ctx context.Context, abs, workTree string) error {
+// error ends with the error of readRepoPath.
+func (h *handler) checkWorkTree(ctx context.Context, abs string, paths repoPaths) error {
+	workTree := paths.workTree
+
 	err := h.checkDest(workTree)
 	if err != nil {
 		return err
@@ -873,12 +1003,11 @@ func (h *handler) checkWorkTree(ctx context.Context, abs, workTree string) error
 		return fmt.Errorf("%w: %s lies inside the git directory %s", ErrDeniedWorkTree, workTree, enclosing)
 	}
 
-	gitDir, err := absoluteGitDir(ctx, abs)
-	if err != nil {
-		return err
+	if sameDir(abs, workTree) {
+		return nil
 	}
 
-	found, err := absoluteGitDir(ctx, workTree)
+	found, err := readRepoPath(ctx, workTree, "--absolute-git-dir")
 	if errors.Is(err, ErrTimeout) {
 		return err
 	}
@@ -891,20 +1020,29 @@ func (h *handler) checkWorkTree(ctx context.Context, abs, workTree string) error
 		return fmt.Errorf("%w: %w", ErrDeniedWorkTree, err)
 	}
 
-	if found != gitDir {
+	if found != paths.gitDir {
 		return fmt.Errorf("%w: git finds the git directory %s from %s", ErrDeniedWorkTree, found, workTree)
 	}
 
 	return nil
 }
 
-// absoluteGitDir returns the absolute path of the git directory that
-// git finds from the directory at dir. The path has no symbolic link.
-// A linked worktree has a git directory of its own, inside the common
-// git directory. [repoPath] describes the error for a directory
-// outside every repository and for a repository that git cannot open.
-func absoluteGitDir(ctx context.Context, dir string) (string, error) {
-	return repoPath(ctx, dir, "--absolute-git-dir")
+// sameDir reports whether the paths a and b name one directory. It
+// follows symbolic links, so two spellings of one directory count as
+// the same. It reports false when the OS cannot read one of the paths,
+// such as a path that names nothing.
+func sameDir(a, b string) bool {
+	infoA, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+
+	infoB, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+
+	return infoA.IsDir() && os.SameFile(infoA, infoB)
 }
 
 // enclosingGitDir returns the git directory that holds the directory
