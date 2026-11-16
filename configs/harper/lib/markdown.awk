@@ -22,6 +22,10 @@
 # before it reads the first line. A rule that a check puts ahead of the
 # include therefore reads the same lines.
 #
+# A bare URL never ends in an ASCII mark that closes a sentence, a
+# clause, a quote, a bracket, or emphasis. The period after the URL in
+# `Read https://example.com.` therefore still ends the sentence.
+#
 # gawk counts an offset in characters under a UTF-8 locale and in bytes
 # under the C locale that the nix build sandbox uses. Blanking writes
 # one space for each character or each byte that it removes. An offset
@@ -174,14 +178,35 @@ function strip_code(s,   out, i, L, c, n, j, m, found) {
   return out
 }
 
-function clean(s) {
+function clean(s,   t) {
   s = strip_code(s)
   s = blank(s, "<!--([^-]|-[^-])*-->")
   s = blank(s, "<(code|kbd|samp|pre)[^>]*>([^<]|<[^/])*</(code|kbd|samp|pre)>")
   s = blank(s, "<[A-Za-z][A-Za-z0-9+.-]*:[^ \t<>]*>")
   s = blank(s, "\\]\\([^) \t]*([ \t]+\"[^\"]*\")?\\)")
-  s = blank(s, "https?://[^ \t<>)]*")
-  return s
+  # A bare URL never ends in an ASCII mark that closes a sentence, a
+  # clause, a quote, a bracket, or emphasis. Each such mark after the
+  # URL stays in the text. A curly closing quote still goes with the
+  # URL, and ProseTypography reports a curly opening quote in front of
+  # the URL. awk picks the longest match, so the URL keeps the marks
+  # inside its path (`https://example.com/v1.2/guide`).
+  t = blank(s, "https?://([^ \t<>)]*[^ \t<>).,:;?!*_~\"'\\]])?")
+  # A `*` or a `:` that the URL leaves at the start of the line, as on a
+  # wrapped line that opens `https://example.com/* covers`, becomes a
+  # space too. Otherwise the checks read the line as a list item or as a
+  # definition (`: text`).
+  if (s !~ /^[ \t]*[*:]([ \t]|$)/ && match(t, /^[ \t]*[*:]([ \t]|$)/)) {
+    t = spaces(RLENGTH) substr(t, RLENGTH + 1)
+  }
+  # The trimmed URL can leave a line with only `-`, `*`, and `_` marks,
+  # such as `- *https://example.com*`. lib/runs.awk reads that line as a
+  # horizontal rule and not as a list item. On such a line, the blank
+  # takes the marks at the end of the URL with it. The line holds no
+  # word, so it loses no sentence end.
+  if (t ~ /^[ \t]*([-*_][ \t]*){3,}$/) {
+    t = blank(s, "https?://[^ \t<>)]*")
+  }
+  return t
 }
 
 # Returns the number of characters in s. Under the C locale, length()

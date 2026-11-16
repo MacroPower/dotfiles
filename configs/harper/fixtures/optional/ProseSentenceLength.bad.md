@@ -9,3 +9,7 @@ The parser accepts every common archive format, e.g. tar, zip, and gzip, and it 
 The scheduler retries a failed job three times with a growing delay between attempts, and the last failed attempt marks the job as dead for the operators on call.
 
 The proxy keeps one open connection to each upstream host that it contacted in the last minute, which gives a restarted upstream a fresh handshake on its next request.
+
+The proxy reads its routes from https://example.com/routes; it caches each route for one minute and reloads the whole file from the disk whenever the operator sends it a signal.
+
+The proxy reads the list of its routes from https://example.com/routes: it caches each route for one minute and reloads the whole file whenever the operator sends it a signal.

@@ -32,9 +32,9 @@
 # its comma within five words. The subject opens with a capitalized
 # determiner, a word that introduces a noun, such as `the`, `a`, or
 # `this`. `Each` and `Any` are determiners too. The subject can also be
-# a code span or a capitalized name, which needs `which` or `who` after
-# the comma. The aside ends at the next comma, and a lowercase word
-# after it must carry on the sentence.
+# a code span, a bare URL, or a capitalized name, which needs `which` or
+# `who` after the comma. The aside ends at the next comma, and a
+# lowercase word after it must carry on the sentence.
 #
 # False Positives
 #
@@ -169,8 +169,8 @@ function commas(n,   i, first, open, j, words) {
   }
   open = 0
   if (tok[1] ~ /^[^A-Za-z]*,$/ || (first == 1 && tok[1] ~ /^[^A-Za-z]*[A-Z][A-Za-z0-9]*,$/)) {
-    # A code span, which lib/markdown.awk blanks to a bare comma, or a
-    # name.
+    # A code span or a bare URL, which lib/markdown.awk blanks to a bare
+    # comma, or a name.
     if (word(2) ~ /^(which|who|whose)$/) {
       open = 1
     }

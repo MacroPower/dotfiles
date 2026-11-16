@@ -17,3 +17,5 @@ A failed task can retry twice.
 The worker reads `queue.toml`. A task runs on one worker.
 
 A new worker is `idle`. One task wakes it up.
+
+The worker reads https://example.com/queue. A task runs on one worker.

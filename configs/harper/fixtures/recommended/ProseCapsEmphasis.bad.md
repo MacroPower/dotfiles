@@ -15,3 +15,5 @@ NEVER edit the generated file.
 The flag accepts ONLY a path.
 
 DON'T run the migration twice.
+
+Set "https://example.com" first, and you MUST restart it.

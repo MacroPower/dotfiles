@@ -50,3 +50,5 @@ Flag|Effect
 :--|:--
 retry|The proxy retries each failed request once, and then it returns the error
 force|The loader skips the schema check and reads every file in the tree
+
+The proxy reads the list of upstream routes and their weights from https://example.com/routes. It caches each route for one minute, and it reloads the file on a signal.

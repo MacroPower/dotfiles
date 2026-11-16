@@ -31,12 +31,12 @@
 # three-period ellipsis (`an implicit "About..." in front`). Words after
 # the last sentence end count as one more sentence.
 #
-# lib/markdown.awk blanks code spans and link destinations to spaces,
-# so the period after a span or a link stands apart from the words. A
-# `.`, `?`, or `!` that stands apart ends the sentence in the same way,
-# and so does one after a number (`It defaults to 1.`). A sentence
-# counts only when it holds a word, so a code span with a period after
-# it is not a sentence of its own.
+# lib/markdown.awk blanks code spans, link destinations, and bare URLs
+# to spaces. The period after a span, a link, or a URL then stands apart
+# from the words. A `.`, `?`, or `!` that stands apart ends the sentence
+# in the same way, and so does one after a number (`It defaults to 1.`).
+# A sentence counts only when it holds a word, so a code span with a
+# period after it is not a sentence of its own.
 #
 # A run-in label in bold that ends in a period or a colon names the
 # paragraph's topic (`**Tutorial.** The learner's success`). Such a

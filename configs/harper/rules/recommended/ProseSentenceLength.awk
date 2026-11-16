@@ -46,7 +46,7 @@
 #
 # Measurement
 #
-# The rule hit 1,878 lines in the measure.py corpus, and 19 of 20
+# The rule hit 1,877 lines in the measure.py corpus, and 19 of 20
 # sampled hits read better as two sentences. The other hit was an error
 # of lib/sentences.awk at a Hugo shortcode. The first step named a split
 # point on 138 lines, and 15 of 20 sampled points were the right place

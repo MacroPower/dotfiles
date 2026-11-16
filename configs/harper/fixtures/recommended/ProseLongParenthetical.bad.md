@@ -3,3 +3,5 @@ The pool (which the scheduler sizes once at startup from the node count) holds t
 Each worker reads the queue (or the backlog, when the queue is empty and the flag is set) before it exits.
 
 The hook, which runs after every Write and Edit of a markdown file or a source file, tags each finding.
+
+https://example.com/docs, which the team moved to a new host in the spring of last year, now serves the guide.

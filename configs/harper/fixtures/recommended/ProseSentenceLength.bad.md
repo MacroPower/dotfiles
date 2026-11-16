@@ -33,3 +33,6 @@ Apache|The server reads the file at startup and serves it for each missing page 
 The scheduler retries a failed job three times with a growing delay between one attempt and the next one, but the last failed attempt marks the job as dead for the operators on call.
 
 The proxy keeps one open connection to each upstream host that it contacted during the last minute of traffic, which gives a restarted upstream a fresh handshake on the next request it receives.
+
+The proxy lets the browser load every script and every image of the site that the pattern
+https://example.com/* covers, and it blocks every request to the other hosts of the network in the default policy. <!-- same finding -->
