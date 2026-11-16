@@ -307,7 +307,7 @@ Cache key = module source code + argument values + parent object values. Any cha
 
 Function caching and layer caching are independent — even with `cache="never"`, unchanged internal steps (WithExec, etc.) still use layer caching.
 
-Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching. To keep that default when the `engineVersion` rises, Dagger writes `disableDefaultFunctionCaching = true` into the module config. Remove the flag after you review the caching of each function, and the functions take the 7-day default.
+Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching. To keep that default, add `disableDefaultFunctionCaching = true` to the module config before a manual edit or a generation raises the `engineVersion` to v0.19.4 or a later version. Neither the Dagger v1.0.0-beta.25 CLI nor Go SDK v1.6.0 adds the flag. [dagger-module.toml](references/architecture.md#dagger-moduletoml) in architecture.md covers how to raise the `engineVersion` and when generation raises it. Remove the flag after you review the caching of each function, and the functions take the 7-day default.
 
 ### Cache volumes (filesystem-level)
 Mount persistent caches for package managers and build caches:
@@ -385,7 +385,9 @@ func (m *MyModule) Build(ctx context.Context) error {
 }
 ```
 
-Do not return a `*dagger.Container` or another value from a check function. Dagger applies this rule to each module whose `engineVersion` is a 1.0 beta or a later version, and every module that `dagger module init` creates carries such a version. When a check function of such a module returns a value, Dagger fails to load the module with `check <Object>.<function> must return Void`. `Void` is the Dagger return type of a Go function that returns only `error`.
+Do not return a `*dagger.Container` or another value from a check function. Dagger applies this rule to each module that it loads at a 1.0 beta or a later version. When a check function of such a module returns a value, Dagger fails to load the module with `check <Object>.<function> must return Void`. `Void` is the Dagger return type of a Go function that returns only `error`.
+
+Every module that `dagger module init` creates loads at a 1.0 beta or a later version. Dagger loads a module on the Go runtime at the version that its `engineVersion` declares, and Go SDK v1.6.0 writes v1.0.0-beta.25 there. A module with a generated entrypoint declares no `engineVersion`, and Dagger loads it at the version of the engine. [dagger-module.toml](references/architecture.md#dagger-moduletoml) in architecture.md covers the two manifests.
 
 Dagger does not apply the rule to a module whose `engineVersion` is lower than 1.0, such as a `dagger.json` module of a 0.x project. A check function of such a module can return a `*dagger.Container`. Dagger then runs the container, and the check fails when a command of the container exits with a non-zero code. Return only `error` from each check function that you add to such a module, so that the module still loads after its `engineVersion` rises to 1.0.
 

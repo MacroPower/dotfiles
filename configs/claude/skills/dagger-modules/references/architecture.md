@@ -164,7 +164,7 @@ func (m *MyModule) FreshBuild(ctx context.Context, src *dagger.Directory) *dagge
 
 ### Backwards compatibility (pre-v0.19.4)
 
-Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching for all functions. To keep that default when the `engineVersion` rises, Dagger writes a flag into the module config. `dagger-module.toml` holds the flag in this form, and a 0.x `dagger.json` holds it as `"disableDefaultFunctionCaching": true`:
+Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching for all functions. To keep that default, add a flag to the module config before a manual edit or a generation raises the `engineVersion` to v0.19.4 or a later version. Neither the Dagger v1.0.0-beta.25 CLI nor Go SDK v1.6.0 adds the flag. [dagger-module.toml](#dagger-moduletoml) covers how to raise the `engineVersion` and when generation raises it. `dagger-module.toml` holds the flag in this form, and a 0.x `dagger.json` holds it as `"disableDefaultFunctionCaching": true`:
 
 ```toml
 disableDefaultFunctionCaching = true
@@ -565,7 +565,7 @@ Check functions are the key integration point with `dagger check`:
 - Must not require any arguments (optional args with defaults are fine)
 - Return only `error`, and the check fails when the error is not nil
 - To check a command, run the container with `Sync(ctx)` and return the error of `Sync`, as `Lint` does in the [example toolchain](#example-toolchain). `Sync` returns an error when the command exits with a non-zero code
-- Dagger fails to load a module whose `engineVersion` is a 1.0 beta or a later version when one of its check functions returns a value, such as a `*dagger.Container`. The error is `check <Object>.<function> must return Void`, and `Void` is the Dagger return type of a Go function that returns only `error`
+- A module that Dagger loads at a 1.0 beta or a later version fails to load when one of its check functions returns a value, such as a `*dagger.Container`. The error is `check <Object>.<function> must return Void`, and `Void` is the Dagger return type of a Go function that returns only `error`
 - Dagger does not apply that rule to a module whose `engineVersion` is lower than 1.0, such as a `dagger.json` module of a 0.x project. A check function of such a module can return a `*dagger.Container`. Dagger then runs the container, and the check fails when a command of the container exits with a non-zero code
 - Checks execute in parallel for maximum performance
 - Checks from toolchains are namespaced: `dagger check golangci-lint:lint`
@@ -1050,7 +1050,7 @@ Write your pipeline logic in Dagger Functions, not in CI YAML. The CI config sho
 
 ### dagger-module.toml
 
-`dagger-module.toml` is the manifest of one module. `dagger module init` creates it, and the SDK rewrites `engineVersion` and the `[[dependencies]]` entries each time it generates the module:
+`dagger-module.toml` is the manifest of one module. `dagger module init` creates it. This example is the manifest of a module on the Go runtime:
 
 ```toml
 name = "my-module"
@@ -1064,7 +1064,48 @@ name = "golang"
 source = "github.com/user/golang@v1.0.0"
 ```
 
-The `dagger.json` of a 0.x module holds the same fields as JSON, with the `runtime` table under the name `sdk`. The `dagger.json` of a 0.x project also lists its `toolchains`.
+Each time the SDK generates a module on the Go runtime, it rewrites the `[[dependencies]]` entries, and it keeps the version that `engineVersion` declares. To change the `engineVersion`, edit the field, and then run `dagger generate -y` to generate the bindings for that version.
+
+Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching. To keep that default, add `disableDefaultFunctionCaching = true` to the manifest before a manual edit or a generation raises the field to v0.19.4 or a later version. Neither the Dagger v1.0.0-beta.25 CLI nor Go SDK v1.6.0 adds the flag. Without the flag, each function without a `+cache` annotation takes the 7-day default. [Backwards compatibility (pre-v0.19.4)](#backwards-compatibility-pre-v0194) covers the flag.
+
+In the manifest of a module on the Go runtime, which holds a `[runtime]` table, Go SDK v1.6.0 writes the field in these cases:
+
+- New manifests get the Dagger release that the SDK targets, which is v1.0.0-beta.25.
+- Existing manifests that declare no `engineVersion` get the version of the running engine.
+- Existing manifests that declare `latest` or `current` get the version of the running engine.
+
+Dagger loads a module whose `engineVersion` is `latest` at the version of the running engine. So after the SDK generates such a module, the module stays at the version that the SDK wrote, and it stops following the engine. The SDK also adds a missing `v` prefix to a version, and it writes v0.11.9 in place of any other value that is not a version. These two rewrites write the version at which Dagger already loads the module.
+
+Dagger loads a module on the Go runtime at v0.9.9 when its manifest declares no `engineVersion`, and at v0.11.9 when the manifest declares `current`. So when the SDK generates such a module, it raises the field to the version of the running engine, such as v1.0.0-beta.25. Before you generate such a module, add `disableDefaultFunctionCaching = true` to keep the session caching default. Also make each check function return only `error`. A module that Dagger loads at a 1.0 beta or a later version fails to load when one of its check functions returns a value. [Check functions](#check-functions) covers the rule.
+
+Go SDK v1.6.0 puts a new module on the Go runtime only when the `dangEntrypoint` setting of the module is `false`. To create such a module, pass the setting to `dagger module init go` as a flag:
+
+```shell
+dagger module init go --name my-module --dang-entrypoint=false -y
+```
+
+The command records the setting under `[sdks.go.scopes."<path>".settings]` in `dagger.toml`, where `<path>` is the directory of the module, relative to the directory of `dagger.toml`. So each later generation keeps the module on the Go runtime.
+
+To set `dangEntrypoint = false` for every Go module of the workspace, put the key under `[modules.<sdk>.settings]`, where `<sdk>` is the module that the `module` key of `[sdks.go]` names. That module is `go-sdk` after `dagger module install dagger.io/sdk/go`, and `dagger-go-sdk` after `dagger workspace migrate`. The SDK then refuses to generate each module of the workspace that already loads through a generated entrypoint. The settings table of a scope overrides `[modules.<sdk>.settings]`. So to keep such a module, set `dangEntrypoint = true` in the settings table of its scope.
+
+Dagger v1.0.0-beta.25 rejects the key outside a `settings` table, such as directly under `[sdks.go]` or in the scope table itself. Dagger then fails to load the workspace, and the error names the key, such as `unknown field sdks.go.dangEntrypoint`.
+
+Without the setting, a new module loads through an entrypoint that the SDK generates in `internal/dagger/entrypoint/`. Go SDK v1.6.0 writes this manifest for such a module:
+
+```toml
+name = "my-module"
+include = []
+
+[entrypoint]
+kind = "dang"
+source = "./internal/dagger/entrypoint"
+```
+
+The manifest of a module with a generated entrypoint holds an `[entrypoint]` table in place of the `[runtime]` table, and it declares no `engineVersion`. Do not add the field to such a manifest. Dagger v1.0.0-beta.25 ignores the field there and loads the module at the version of the engine. The SDK removes the field when it generates the module again.
+
+Do not add `disableDefaultFunctionCaching` to the manifest of a module with a generated entrypoint. Go SDK v1.6.0 refuses to generate such a module, and the error says that `dagger-module.toml has settings a Dang entrypoint cannot carry`. Dagger v1.0.0-beta.25 ignores the flag in that manifest, so each function without a `+cache` annotation takes the 7-day default.
+
+The `dagger.json` of a 0.x module holds the fields of the Go runtime example as JSON, with the `runtime` table under the name `sdk`. The `dagger.json` of a 0.x project also lists its `toolchains`.
 
 ### dagger.toml
 

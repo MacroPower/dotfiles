@@ -193,7 +193,7 @@ func (m *MyModule) Build(ctx context.Context) error {
 }
 ```
 
-Do not return a `*dagger.Container` or another value from a check function. Dagger applies this rule to each module whose `engineVersion` is a 1.0 beta or a later version. When a check function of such a module returns a value, Dagger fails to load the module with `check <Object>.<function> must return Void`. [Check functions](architecture.md#check-functions) in architecture.md covers the modules whose `engineVersion` is lower than 1.0.
+Do not return a `*dagger.Container` or another value from a check function. Dagger applies this rule to each module that it loads at a 1.0 beta or a later version. When a check function of such a module returns a value, Dagger fails to load the module with `check <Object>.<function> must return Void`. [Check functions](architecture.md#check-functions) in architecture.md covers the modules whose `engineVersion` is lower than 1.0.
 
 ### When to include `context.Context`
 
