@@ -661,10 +661,11 @@ Repeat until the run ends:
    section says. In a turn that acts on such a landing, run this step only
    after an action that can let a task start. These actions are a triage
    that adds tasks, a move of leftover work as the Leftover work section
-   says, a `set <ref> noted`, a `set <ref> closed`, a `merged <ref>`, a
-   landing that you start, and a config change. The `next` of the landing
-   ran before those actions, so it missed each task that they add and each
-   slot that they free. Skip this step in a turn that takes none of those
+   says, a `merged <ref>`, a landing that you start, and a config change.
+   The commands `set <ref> noted`, `set <ref> closed`, `set <ref> landed`,
+   and `set <ref> pending` are such actions too. The `next` of the landing
+   ran before those actions, so it missed each task that they add or let
+   start. Skip this step in a turn that takes none of those
    actions, even after a triage that adds no task.
 2. Launch one Workflow per object:
    `Workflow({scriptPath: <script>, args: <object>})`. For `<script>`, pass
@@ -854,8 +855,11 @@ Act on the result as this table says:
 | `CHECKFAIL`, `COMMITFAIL` | The check or a commit hook failed. Find the cause in the failing output, and act on that cause. |
 | `CHECKTIMEOUT`, `COMMITTIMEOUT` | The check or the commit ran longer than the step timeout, and the landing stopped it. Find the cause in the last lines of the output, and act on that cause before you start another landing. |
 | `HEALTHFAIL` | The service that the check or a commit hook requires is down. Repair the service and land again. Do not sync the task. When the same task ends in `HEALTHFAIL` after the check or the commit a second time, read the log that the output names above the `RESULT` line, and do not land the task again. |
+| `NOWORKTREE` | The worktree of the task does not exist, and the output names its path. Find the cause, and act on that cause. |
 | `WTDIRTY` | An agent left files behind. Delete probe files and built binaries, commit real changes with `--no-verify`, and land again. |
+| `NOMSG` | In the run directory, `tasks/<ref>/msg.txt` does not exist, or it holds no text. Sync the task with a reason that asks for the commit message of the whole change. The sync agent then writes the message, and a reviewer checks it. |
 | `MSGHASREF`, `REFINDIFF` | Remove the task ref from the message or the code, and land again. |
+| `EMPTY` | The task branch holds no change against the base branch. Find the cause, and act on that cause. Do not sync the task. |
 | `LOGHASREF` | Only a landing with a `pr` target prints this result. A commit message of the task branch holds a task ref, and the push publishes each commit. Replace the commits of the branch with one commit, as the Pull requests section says, and land again. |
 | `BRANCHTAKEN` | Only a landing with a `pr` target prints this result. A branch blocks the name of the pull request branch, and the output names it. Act on the cause as the Pull requests section says. |
 | `DIRTY`, `NOTBASE`, `TREEMISMATCH`, `POSTDIRTY` | An agent or a hook changed the main checkout. Stop landing, find the cause, and repair the checkout before the next landing. |
@@ -933,6 +937,65 @@ before the next landing:
 2. Remove the lock file that the output names.
 3. Run the git command that failed again, in the main checkout.
 4. Run `git clean -fd` in the main checkout.
+
+`NOWORKTREE` shows that the task lost its worktree after its review, or
+that another landing of the task removed the worktree. Each landing checks
+the state of the task and sets it to `approved` before it waits for the
+landing lock. It looks for the worktree after it takes that lock. Every
+failed landing leaves the task `approved`, unless another landing of the
+task held the lock first and then landed or proposed the task.
+
+Every `approved` task keeps the files of its triage row, and each task that
+comes after it keeps waiting. The run also does not end while it holds an
+`approved` task. Read the `state` field of the task in `state.json`, and
+act on the cause as this table says:
+
+| Cause | Action |
+| --- | --- |
+| The task is `landed` or `proposed`. Another landing of the task held the landing lock while this landing waited for it, and that landing landed or proposed the task. | Take no action for this result. Act on the result of the other landing. |
+| The task is `approved`, and the base branch holds the commit of the task. An earlier landing recorded the commit, removed the worktree, and then stopped, such as when its `aven edit` failed. | Set the aven task to `done` with `aven edit <ref> --status done`, and run `ultraclose.py set <ref> landed`. |
+| The task is `approved`, and the base branch lacks the commit of the task. The Workflow of the task returned `approved` or `landable`, and the worktree went missing after that. | Run `git worktree prune` in the main checkout, which removes the record that git keeps of a deleted worktree. When the branch of the task still exists, run `git worktree add <worktree> <branch>` there, record the repair in `notes.md`, and land the task again. When the branch is gone as well, relaunch the task with `ultraclose.py args <ref>`. The relaunch starts from the base branch at the implementer. Land the task after its Workflow ends `approved` or `landable`, as the Loop table says. |
+
+In that table, `<worktree>` is the path that the output names. `<branch>`
+is the branch that the `branch` field of the task in `state.json` names,
+or `task/<ref>` for a task without that field. Every agent commits its
+work, so the branch holds the change that the reviewers approved. Each
+relaunch of the task adds a review cycle to that change. The relaunch of
+a `landable` task can also return its `followups` again, and you then
+file each follow-up a second time.
+
+`EMPTY` shows that the base branch already holds each change of the task
+branch, so the landing has nothing to commit or to propose. The task
+branch also holds the base branch, so a sync has nothing to merge. Look in
+the log of the base branch for the commit that made the change of the
+task, such as with `git log --oneline <base> -- <file>` for a file of its
+triage row.
+
+A relaunch of a proposed task can end in `EMPTY` while its pull request is
+still open. So read the `pr` field of the task in `state.json` before you
+close or note the task. When the field names a pull request, read the pull
+request with `mcp__github__pull_request_read`. When the pull request is
+open, close it before you close the task, as the Pull requests section says
+for a relaunch that ends `obsolete`. Before you note the task, leave the
+pull request open and add its address to the note, as that section says
+for a relaunch that ends `abandoned`. Act on the cause as this table says:
+
+| Cause | Action |
+| --- | --- |
+| Another commit made the same change, such as the commit of a task that covers this task. | Close the task as the Loop section says for the status `obsolete`, with that commit as the evidence. |
+| The commit comes from this task. An earlier landing recorded it and then failed, such as with `POSTDIRTY`, or the pull request of the task merged. | The task has landed. Set the aven task to `done` with `aven edit <ref> --status done`. Run `ultraclose.py set <ref> closed`, which removes the worktree and the branch. Then run `ultraclose.py set <ref> landed`. |
+| No commit of the base branch made the change, so the task branch holds no change of its own. | Read the `summary` and the `notes` of the Workflow result of the task. When they say that the task does not need a change, close the task as the Loop section says for the status `obsolete`. Otherwise run `git -C <worktree> reset -q --hard <base>` on the worktree of the task, and relaunch the task with `ultraclose.py args <ref>`. When the same task ends in `EMPTY` again, note the task. |
+
+`ultraclose.py args` starts a task at the implementer only when the task
+branch holds no commit that the base branch lacks. A branch whose commits
+cancel each other out still holds such commits. Without the reset, the
+relaunch of that task resumes at a review round. The reviewer then sees an
+empty diff with a `summary` that describes a change. The Workflow
+approved the empty branch once, and it can approve that branch again.
+
+When the remote holds the branch, such as for a task that records a pull
+request, the reset makes the next push replace commits there. So set
+`force_with_lease` on that push.
 
 When you fix something by hand before a landing, record the fix in
 `notes.md`, because no reviewer saw it.

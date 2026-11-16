@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Tests for ultraclose.py and close-task.js.
 
+The tests also check that SKILL.md gives the orchestrator an action for
+each result that the land command prints. They check that SKILL.md has
+the orchestrator run next after each set command that can let a task
+start.
+
 Run with: python3 test_ultraclose.py. The close-task.js tests run the
 script under Node, and they skip when node is not on PATH.
 """
 
+import ast
 import fcntl
 import itertools
 import json
@@ -6085,6 +6091,81 @@ class PullRequestTest(LandCase):
             message = refused("next", cwd=repo, env=env)
             self.assertIn(OWN_WORK, message)
             self.assertNotIn("pull request", message)
+
+
+def land_results():
+    """Each result that the land command can print.
+
+    The cmd_land function of ultraclose.py passes the result of each
+    failed landing to its fail() function. It passes the result of each
+    other landing to its record() function.
+    """
+    [land] = [
+        node
+        for node in ast.walk(ast.parse(SCRIPT.read_text()))
+        if isinstance(node, ast.FunctionDef) and node.name == "cmd_land"
+    ]
+    return {
+        call.args[0].value
+        for call in ast.walk(land)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id in ("fail", "record")
+        and call.args
+        and isinstance(call.args[0], ast.Constant)
+    }
+
+
+def landing_table():
+    """The results that each row of the result table of SKILL.md names.
+
+    The Landing section of SKILL.md holds the table. The first cell of
+    each row names the results of the row, each in code font.
+    """
+    _, landing = SKILL.read_text().split("\n## Landing\n")
+    _, table = landing.split("\n| Result | Action |\n| --- | --- |\n", 1)
+    rows = table.split("\n\n", 1)[0].splitlines()
+    return [re.findall(r"`([A-Z]+)`", row.split("|")[1]) for row in rows]
+
+
+def script_constant(name):
+    """The value that ultraclose.py assigns to a name at its top level."""
+    [value] = [
+        node.value
+        for node in ast.parse(SCRIPT.read_text()).body
+        if isinstance(node, ast.Assign)
+        and [target.id for target in node.targets if isinstance(target, ast.Name)]
+        == [name]
+    ]
+    return ast.literal_eval(value)
+
+
+def loop_step_one():
+    """The text of step 1 of the Loop section of SKILL.md."""
+    _, loop = SKILL.read_text().split("\n## Loop\n")
+    return loop.split("\n1. ", 1)[1].split("\n2. ", 1)[0]
+
+
+class SkillTest(unittest.TestCase):
+    """What SKILL.md tells the orchestrator about ultraclose.py."""
+
+    def test_landing_table_gives_one_action_for_each_result(self):
+        # The orchestrator finds no action for a result without a row,
+        # and two actions for a result that two rows name.
+        named = [result for row in landing_table() for result in row]
+        self.assertEqual(sorted(named), sorted(land_results()))
+
+    def test_loop_step_one_runs_next_after_each_set_that_frees_work(self):
+        # A task that leaves the locking states frees its files, and an
+        # inflight task also frees its slot. A settled task frees each
+        # task that comes after it, and next starts a pending task.
+        # Step 1 tells the orchestrator to skip next after each action
+        # that it does not name. So the freed work waits for a wake that
+        # might never come.
+        locking = script_constant("LOCKING")
+        freeing = {state for state in script_constant("STATES") if state not in locking}
+        named = set(re.findall(r"`set <ref> ([a-z]+)`", loop_step_one()))
+        self.assertEqual(freeing - named, set())
 
 
 # The Workflow tool runs the body of close-task.js inside an async
