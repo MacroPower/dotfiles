@@ -4191,11 +4191,12 @@ class LandTest(LandCase):
 
     A failed landing prints its result last. A landing with --next and the
     result OK then starts the next tasks. A landing that finds a change in
-    the main checkout after its commit lands its task and then fails. The
-    check and the commit hooks of a landing do not read the golangci-lint
-    cache that every checkout shares. A landing also records how long its
-    check and its commit took. It stops a check or a commit that runs
-    longer than the step timeout.
+    the main checkout after its commit lands its task and then fails. A
+    landing that fails on uncommitted changes lists them as git status
+    --porcelain prints them. The check and the commit hooks of a landing do
+    not read the golangci-lint cache that every checkout shares. A landing
+    also records how long its check and its commit took. It stops a check
+    or a commit that runs longer than the step timeout.
     """
 
     def test_result_line_comes_last(self):
@@ -4375,6 +4376,42 @@ class LandTest(LandCase):
             self.assertIn(f"{REF} is landed", refused("land", REF, cwd=repo, env=env))
             # The task that waited for the landed task can start.
             self.assertEqual(self.next_refs(repo, env), [self.OTHER])
+
+    def test_landing_lists_changes_as_git_prints_them(self):
+        # git status --porcelain starts the line of a tracked file with a
+        # space when the change of the file is not staged. An M in the
+        # first column marks a staged change, so the list keeps the space.
+        change = f"echo changed >{self.FILE}"
+        # name: (the init flags, the hook, the checkout where the test
+        # changes the file before the landing, the result). The checkout
+        # is None when a step of the landing changes the file.
+        cases = {
+            "a change of the main checkout": ([], "exit 0", "main", "DIRTY"),
+            "a change of the worktree": ([], "exit 0", "worktree", "WTDIRTY"),
+            "a change that the check makes": (
+                ["--check", change],
+                "exit 0",
+                None,
+                "WTDIRTY",
+            ),
+            "a change that the commit hook makes": ([], change, None, "POSTDIRTY"),
+        }
+        for name, (flags, hook, before, result) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, *flags, hook=hook)
+                if before == "main":
+                    # The main checkout tracks the file before the change.
+                    Path(repo, self.FILE).write_text("b\n")
+                    git("add", self.FILE, cwd=repo, env=env)
+                    git("commit", "-q", "--no-verify", "-m", "b", cwd=repo, env=env)
+                    Path(repo, self.FILE).write_text("changed\n")
+                elif before == "worktree":
+                    wt = Path(repo, ".claude", "worktrees", f"t-{REF}")
+                    Path(wt, self.FILE).write_text("changed\n")
+                status, lines = self.land(repo, env)
+                self.assertEqual(status, 2, lines)
+                self.assertEqual(lines[-1], f"RESULT {REF} {result}")
+                self.assertIn(f" M {self.FILE}", lines)
 
     def test_failed_next_keeps_result_of_landing(self):
         # The landing passes. Then the second task cannot start, because

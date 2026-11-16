@@ -531,6 +531,17 @@ def out(*cmd, cwd):
     return sh(*cmd, cwd=cwd).stdout.strip()
 
 
+def uncommitted(cwd):
+    """The uncommitted changes of a checkout, as git status --porcelain prints them.
+
+    The text is empty for a clean checkout. Each line starts with the two
+    status columns of its file. Git prints a space in the first column
+    for a change that is not staged, so the text keeps the leading space
+    of its first line.
+    """
+    return sh("git", "status", "--porcelain", cwd=cwd).stdout.rstrip("\n")
+
+
 def main_checkout():
     p = subprocess.run(
         ["git", "worktree", "list", "--porcelain"],
@@ -1822,7 +1833,7 @@ def cmd_set(a):
             # an earlier run can hold commits that no other branch holds.
             if not owns(run, a.ref):
                 print(f"kept worktree {wt}, which this run did not create")
-            elif out("git", "status", "--porcelain", cwd=wt):
+            elif uncommitted(wt):
                 print(f"kept dirty worktree {wt}")
             else:
                 sh("git", "worktree", "remove", wt, cwd=repo)
@@ -2395,7 +2406,7 @@ def cmd_land(a):
         # another landing of the task finds no change to commit. So the
         # task lands before the landing reports the changes that the
         # main checkout holds.
-        dirty = out("git", "status", "--porcelain", cwd=repo)
+        dirty = uncommitted(repo)
         sh("git", "worktree", "remove", "--force", wt, cwd=repo)
         sh("git", "branch", "-q", "-D", br, cwd=repo)
         sh("aven", "edit", ref, "--status", "done", cwd=repo)
@@ -2422,11 +2433,11 @@ def cmd_land(a):
         if not pr:
             if out("git", "branch", "--show-current", cwd=repo) != base:
                 fail("NOTBASE", f"the main checkout is not on {base}")
-            if dirty := out("git", "status", "--porcelain", cwd=repo):
+            if dirty := uncommitted(repo):
                 fail("DIRTY", dirty)
         if not Path(wt).exists():
             fail("NOWORKTREE", wt)
-        if dirty := out("git", "status", "--porcelain", cwd=wt):
+        if dirty := uncommitted(wt):
             fail("WTDIRTY", dirty)
         if not msg.exists() or not msg.read_text().strip():
             fail("NOMSG", str(msg))
@@ -2508,7 +2519,7 @@ def cmd_land(a):
             if rc:
                 require_health(f"after the check failed, see {log}")
                 fail("CHECKFAIL", tail(log))
-            if dirty := out("git", "status", "--porcelain", cwd=wt):
+            if dirty := uncommitted(wt):
                 fail("WTDIRTY", "the check changed files:\n" + dirty)
         if pr:
             propose(head)
