@@ -878,6 +878,11 @@ for a landed or a closed task. Every noted task takes a landing only after
 you relaunch it with `ultraclose.py args <ref>` and its Workflow ends
 `approved` or `landable`.
 
+`ultraclose.py land` checks the state again after it waits for the landing
+lock. So it prints the same error for a task that another landing landed
+or proposed during that wait. Take no action for that error, and act on
+the result of the other landing.
+
 To sync a task, relaunch it with
 `ultraclose.py args <ref> --sync '<reason and failing output>'`. A sync
 agent merges and adapts, and a reviewer checks the merge. Land the task
@@ -949,23 +954,17 @@ checkout above the `TIMES` line. The landing does not run `next`, so run
 `ultraclose.py next` after you repair the checkout.
 
 `NOWORKTREE` shows that the task lost its worktree after its review, or
-that another landing of the task removed the worktree. Each landing checks
-the state of the task and sets it to `approved` before it waits for the
-landing lock. It looks for the worktree after it takes that lock. A
-landing that ends in `NOWORKTREE` leaves the task `approved`, unless
-another landing of the task held the lock first and then landed or
-proposed the task.
-
-Every `approved` task keeps the files of its triage row, and each task that
-comes after it keeps waiting. The run also does not end while it holds an
-`approved` task. Read the `state` field of the task in `state.json`, and
-act on the cause as this table says:
+that an earlier landing of the task removed the worktree and then stopped
+before it set the task to `landed`. A landing that ends in `NOWORKTREE`
+leaves the task `approved`. Every `approved` task keeps the files of its
+triage row, and each task that comes after it keeps waiting. The run also
+does not end while it holds an `approved` task. Act on the cause as this
+table says:
 
 | Cause | Action |
 | --- | --- |
-| The task is `landed` or `proposed`. Another landing of the task held the landing lock while this landing waited for it, and that landing landed or proposed the task. | Take no action for this result. Act on the result of the other landing. |
-| The task is `approved`, and the base branch holds the commit of the task. An earlier landing recorded the commit, removed the worktree, and then stopped, such as when its `aven edit` failed. | Set the aven task to `done` with `aven edit <ref> --status done`, and run `ultraclose.py set <ref> landed`. |
-| The task is `approved`, and the base branch lacks the commit of the task. The Workflow of the task returned `approved` or `landable`, and the worktree went missing after that. | Run `git worktree prune` in the main checkout, which removes the record that git keeps of a deleted worktree. When the branch of the task still exists, run `git worktree add <worktree> <branch>` there, record the repair in `notes.md`, and land the task again. When the branch is gone as well, relaunch the task with `ultraclose.py args <ref>`. The relaunch starts from the base branch at the implementer. Land the task after its Workflow ends `approved` or `landable`, as the Loop table says. |
+| The base branch holds the commit of the task. An earlier landing recorded the commit, removed the worktree, and then stopped, such as when its `aven edit` failed. | Set the aven task to `done` with `aven edit <ref> --status done`, and run `ultraclose.py set <ref> landed`. |
+| The base branch lacks the commit of the task. The Workflow of the task returned `approved` or `landable`, and the worktree went missing after that. | Run `git worktree prune` in the main checkout, which removes the record that git keeps of a deleted worktree. When the branch of the task still exists, run `git worktree add <worktree> <branch>` there, record the repair in `notes.md`, and land the task again. When the branch is gone as well, relaunch the task with `ultraclose.py args <ref>`. The relaunch starts from the base branch at the implementer. Land the task after its Workflow ends `approved` or `landable`, as the Loop table says. |
 
 In that table, `<worktree>` is the path that the output names. `<branch>`
 is the branch that the `branch` field of the task in `state.json` names,

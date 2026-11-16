@@ -267,6 +267,11 @@ change that waits for a landing. Each refusal prints an error and no
 RESULT line, and it changes nothing. So a second landing of a landed
 task leaves the task landed, and the run still ends.
 
+Each landing waits for the landing lock while another landing runs. The
+land command checks the state of the task again after it takes the lock.
+So it also refuses a task that another landing of that task landed or
+proposed during the wait.
+
 The land command prints the failing output of a failed landing. The last
 line that a failed landing prints is the RESULT line. With --next, a
 landing with the result OK or PR runs the next command after it prints
@@ -2165,49 +2170,59 @@ def tail(path, n=40):
     return "\n".join(Path(path).read_text(errors="replace").splitlines()[-n:])
 
 
+def landable(st, ref):
+    """The task with the given ref, which the land command takes.
+
+    The command ends when the run holds no such task, or when the task
+    is neither inflight nor approved. No task in another state has a
+    change that waits for a landing. The error names the state of the
+    task, and it says what a task in that state needs.
+    """
+    t = st["tasks"].get(ref) or die(f"unknown task {ref}")
+    # The landing that proposed the task removed its worktree, so a
+    # second landing fails. The task must keep its state until then.
+    if t["state"] == "proposed":
+        die(
+            f"{ref} is proposed, so it waits for its pull request to merge."
+            " Record the merge with the merged command. To change the"
+            " pull request, relaunch the task with the args command, and"
+            " land it after its review"
+        )
+    if t["state"] not in LANDABLE:
+        # Each error says what a task in its state needs. A relaunch
+        # reopens a landed or a closed task, so only the error for a
+        # noted task names the args command.
+        hint = {
+            "pending": (
+                "The next command starts the task, and the landing follows"
+                " its review"
+            ),
+            "noted": (
+                "To make a new attempt at the task, relaunch it with the"
+                " args command, and land it after its review"
+            ),
+            "landed": "A landed task does not need a landing or a relaunch",
+            "closed": "A closed task does not need a landing or a relaunch",
+        }[t["state"]]
+        die(
+            f"{ref} is {t['state']}, so it has no change that waits for a"
+            " landing. The land command takes only an inflight task or an"
+            f" approved task, and it changed nothing. {hint}"
+        )
+    return t
+
+
 def cmd_land(a):
     repo = main_checkout()
     run = run_dir(repo)
     ref = a.ref
     with state(run) as st:
         cfg = st["config"]
-        if ref not in st["tasks"]:
-            die(f"unknown task {ref}")
-        t = st["tasks"][ref]
-        # The landing that proposed the task removed its worktree, so a
-        # second landing fails. The task must keep its state until then.
-        if t["state"] == "proposed":
-            die(
-                f"{ref} is proposed, so it waits for its pull request to merge."
-                " Record the merge with the merged command. To change the"
-                " pull request, relaunch the task with the args command, and"
-                " land it after its review"
-            )
         # A failed landing that leaves no commit on the base branch leaves
         # its task approved. An approved task keeps its file locks and
         # keeps the run from its end. So the command refuses each task
         # that has no change to land before it sets the state.
-        if t["state"] not in LANDABLE:
-            # Each error says what a task in its state needs. A relaunch
-            # reopens a landed or a closed task, so only the error for a
-            # noted task names the args command.
-            hint = {
-                "pending": (
-                    "The next command starts the task, and the landing follows"
-                    " its review"
-                ),
-                "noted": (
-                    "To make a new attempt at the task, relaunch it with the"
-                    " args command, and land it after its review"
-                ),
-                "landed": "A landed task does not need a landing or a relaunch",
-                "closed": "A closed task does not need a landing or a relaunch",
-            }[t["state"]]
-            die(
-                f"{ref} is {t['state']}, so it has no change that waits for a"
-                " landing. The land command takes only an inflight task or an"
-                f" approved task, and it changed nothing. {hint}"
-            )
+        t = landable(st, ref)
         # A task that waits for its landing frees its slot and keeps its
         # file locks.
         t["state"] = "approved"
@@ -2430,6 +2445,12 @@ def cmd_land(a):
     # stop it.
     pr = proposes(cfg)
     with locked(run / "land.lock"):
+        # Another landing of the task can hold the lock while this landing
+        # waits for it. That landing removes the worktree when it lands or
+        # proposes the task, and the task then has no change to land. So
+        # the command refuses the task as it does before the wait.
+        with state(run) as st:
+            landable(st, ref)
         if not pr:
             if out("git", "branch", "--show-current", cwd=repo) != base:
                 fail("NOTBASE", f"the main checkout is not on {base}")

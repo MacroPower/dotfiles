@@ -4047,6 +4047,11 @@ class LandCase(unittest.TestCase):
     HANG = f'echo "{WAITS}"; sh -c \'echo $$ >"$PROCESS"; exec sleep 30\''
     # A step whose first run hangs, and whose later runs pass.
     HANG_ONCE = f'test -e "$RAN" || {{ touch "$RAN"; {HANG}; }}'
+    # A step that records that it ran, and that passes after the test
+    # removes the record. Its landing holds the landing lock until then.
+    HOLD = 'touch "$RAN"; while test -e "$RAN"; do sleep 0.05; done'
+    # The Claude Code session of the second command of land_twice.
+    QUEUED = "queued"
 
     def start_task(self, tmp, *flags, hook="exit 0", checkout=None):
         """Start a run with one task that is ready to land.
@@ -4112,6 +4117,54 @@ class LandCase(unittest.TestCase):
             timeout=timeout,
         )
         return p.returncode, p.stdout.splitlines()
+
+    def land_twice(self, tmp, repo, env):
+        """Land the task with two commands that run at the same time.
+
+        The run has the check HOLD. The first command holds the landing
+        lock while its check runs, and the second command starts in that
+        time. The check passes after the second command sets the task to
+        approved. So the second command takes the lock after the first
+        landing ends. The second command has the --next flag.
+
+        Return the exit status, the standard output, and the standard
+        error of each command.
+        """
+        run, ran = Path(tmp, "run"), Path(env["RAN"])
+        land = [sys.executable, str(SCRIPT), "land", REF]
+        pipes = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True}
+        landings, results = [], []
+
+        def wait_for(done, problem):
+            deadline = time.monotonic() + 60
+            while not done():
+                self.assertLess(time.monotonic(), deadline, problem)
+                time.sleep(0.05)
+
+        try:
+            landings.append(subprocess.Popen(land, cwd=repo, env=env, **pipes))
+            wait_for(ran.exists, "the check of the first command did not start")
+            queued = in_session(env, self.QUEUED)
+            landings.append(
+                subprocess.Popen([*land, "--next"], cwd=repo, env=queued, **pipes)
+            )
+            # A landing saves the state of the run when it sets its task
+            # to approved, and the state then records its session.
+            wait_for(
+                lambda: state_of(run)["session"] == self.QUEUED,
+                "the second command did not set the task to approved",
+            )
+            ran.unlink()
+            for p in landings:
+                output, error = p.communicate(timeout=60)
+                results.append((p.returncode, output, error))
+        finally:
+            # A check that still runs ends without its record.
+            ran.unlink(missing_ok=True)
+            for p in landings:
+                p.kill()
+                p.wait()
+        return results
 
     def hung_process(self, env):
         """The ID of the process that a step that hangs waits for.
@@ -5132,8 +5185,10 @@ class LandableTest(LandCase):
 
     A landing sets its task to approved. An approved task keeps its file
     locks and keeps the run from its end. So the command refuses a task
-    in each other state before it changes the run. PullRequestTest covers
-    the proposed task.
+    in each other state before it changes the run. It checks the state a
+    second time after it takes the landing lock, because another landing
+    can land the task while the command waits for the lock.
+    PullRequestTest covers the proposed task.
     """
 
     # The text of each action that the error of a refusal can name. Each
@@ -5191,6 +5246,30 @@ class LandableTest(LandCase):
             self.assertIn(ENDED, lines)
             self.assertFalse([line for line in lines if line.startswith("approved ")])
             self.assertEqual(self.task_states(tmp), {REF: "landed"})
+
+    def test_landing_that_waited_for_lock_leaves_task_landed(self):
+        # The second landing passes the state check before it waits for
+        # the landing lock. The first landing lands the task during the
+        # wait, and it removes the worktree.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--check", self.HOLD)
+            first, second = self.land_twice(tmp, repo, env)
+            status, output, _ = first
+            self.assert_landed(repo, env, (status, output.splitlines()))
+            # The second landing prints the error of a landing that starts
+            # after the first one ends. It prints no RESULT line, and it
+            # does not run next.
+            status, output, message = second
+            self.assertEqual((status, output), (1, ""), message)
+            self.assertIn(f"{REF} is landed", message)
+            self.assertEqual(
+                self.actions(message), ["does not need a landing or a relaunch"]
+            )
+            log = git("log", "--format=%s", cwd=repo, env=env)
+            self.assertEqual(log.splitlines(), [self.SUBJECT, "init"])
+            self.assertEqual(git("status", "--porcelain", cwd=repo, env=env), "")
+            self.assertEqual(self.task_states(tmp), {REF: "landed"})
+            self.assertIn(ENDED, ultraclose("status", cwd=repo, env=env).splitlines())
 
     def test_task_without_change_to_land_takes_no_landing(self):
         # The run holds the task of start_task and a second task, which
@@ -5903,6 +5982,26 @@ class PullRequestTest(LandCase):
             self.assertIn("merged command", message)
             self.assertIn("args command", message)
             self.assertEqual(self.task(tmp), before)
+
+    def test_landing_that_waited_for_lock_leaves_task_proposed(self):
+        # The second landing passes the state check before it waits for
+        # the landing lock. The first landing proposes the task during
+        # the wait, and it removes the worktree.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--target", "pr", "--check", self.HOLD)
+            first, second = self.land_twice(tmp, repo, env)
+            status, output, _ = first
+            self.assertEqual((status, output.splitlines()[-1:]), (0, [self.RESULT]))
+            # The second landing prints the error of a landing that starts
+            # after the first one ends. It prints no RESULT line, and it
+            # does not run next.
+            status, output, message = second
+            self.assertEqual((status, output), (1, ""), message)
+            self.assertIn(f"{REF} is proposed", message)
+            self.assertIn("merged command", message)
+            task = self.task(tmp)
+            self.assertEqual((task["state"], task["branch"]), ("proposed", HEAD))
+            self.assertEqual(branches(repo, env), [HEAD, "main"])
 
     def test_merged_takes_only_proposed_task(self):
         with tempfile.TemporaryDirectory() as tmp:
