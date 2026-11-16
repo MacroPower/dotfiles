@@ -44,6 +44,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSourceToolchains(ctx) })
 	eg.Go(func() error { return m.TestTaskfileCommands(ctx) })
 	eg.Go(func() error { return m.TestVulnscanCachePragma(ctx) })
+	eg.Go(func() error { return m.TestVulnscanDatabaseLocked(ctx) })
 	eg.Go(func() error { return m.TestVulnscanEachCall(ctx) })
 	eg.Go(func() error { return m.TestVulnscanGrypeFailure(ctx) })
 	eg.Go(func() error { return m.TestVulnscanSarif(ctx) })

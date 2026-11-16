@@ -463,6 +463,24 @@ const (
 // `nix run nixpkgs#grype` command in that step also fails when nix
 // fails.
 //
+// The container mounts the cache volume grype-db at the cache
+// directory of grype, with the sharing mode locked. With that mode, the
+// engine runs the steps that mount the volume one at a time. So one
+// step downloads a missing or outdated database, and each later step
+// finds the database that the earlier step installed. The function
+// mounts the volume after the build of grype, so only the step that
+// runs grypeBin waits for the volume.
+//
+// With the default sharing mode, the steps that run grype at the same
+// time write to one directory. grype takes no lock on that directory,
+// so each of those steps downloads a missing or outdated database. To
+// install its download, grype deletes the directory of the installed
+// database and renames the directory of the download to that path. A
+// step fails when it opens the database between the delete and the
+// rename of another step. TestVulnscanDatabaseLocked in the test module
+// fails when a Go file of this module mounts the volume with another
+// sharing mode.
+//
 // Without a `fail-on-severity` setting in .grype.yaml, grype exits with
 // status 0 after each scan that it completes, whatever the scan finds.
 // With the setting, grype exits with status 2 after a scan with a
@@ -491,8 +509,9 @@ func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 	grypeConfig := m.Source.File(".grype.yaml")
 
 	return m.base().
-		WithMountedCache("/root/.cache/grype", dag.CacheVolume("grype-db")).
 		WithExec([]string{"nix", "build", "nixpkgs#grype", "--out-link", grypeLink}).
+		WithMountedCache("/root/.cache/grype", dag.CacheVolume("grype-db"),
+			dagger.ContainerWithMountedCacheOpts{Sharing: dagger.CacheSharingModeLocked}).
 		WithFile("/tmp/sbom.cdx.json", sbom).
 		WithFile("/tmp/.grype.yaml", grypeConfig).
 		WithEnvVariable(scanTimeEnv, time.Now().UTC().Format(time.RFC3339Nano)), nil
@@ -506,6 +525,10 @@ func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 // Dagger does not cache the report. Each call runs grype again, even
 // for a source that an earlier call scanned. grype then decides by its
 // db settings whether it downloads a newer vulnerability database.
+//
+// The engine runs the scans of Vulnscan and [Nix.VulnscanSarif] one at
+// a time. So a call that starts during the scan of another call waits
+// for that scan, and it finds the database that the scan left.
 // +cache="never"
 func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 	ctr, err := m.grypeBase(ctx)
