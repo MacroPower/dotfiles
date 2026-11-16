@@ -4,15 +4,18 @@
   buildNpmPackage,
   fetchFromGitHub,
   makeWrapper,
-  # Chromium runtime deps -- mirrors the `buildInputs + appendRunpaths` of
-  # nixpkgs' pkgs/development/web/playwright/chromium.nix at the same pin.
-  # We do NOT use nixpkgs' chromium binary itself (revision-locked to
-  # 1208 while alpha 1.61 expects 1224); we only borrow its dynamic-link
-  # dep closure to populate LD_LIBRARY_PATH so the alpha chromium that
-  # `playwright-cli install-browser chromium` downloads into
-  # ~/.cache/ms-playwright can exec on NixOS. Net cost on a typical
-  # NixOS host is small (most libs are already in the system closure);
-  # on a minimal headless host it's a few MiB of net-new paths.
+  runCommand,
+  jq,
+  # Chromium runtime deps. The list mirrors the `buildInputs +
+  # appendRunpaths` of nixpkgs' pkgs/development/web/playwright/chromium.nix
+  # at the same pin. We do not use nixpkgs' chromium binary itself, which
+  # is revision-locked to 1208, and alpha 1.61 expects 1224. We borrow
+  # only its dynamic-link dep closure to populate LD_LIBRARY_PATH. The
+  # alpha chromium that `playwright-cli install-browser chromium`
+  # downloads into ~/.cache/ms-playwright can then exec on NixOS. Net
+  # cost on a typical NixOS host is small, because most libs are already
+  # in the system closure. On a minimal headless host, it is a few MiB
+  # of net-new paths.
   alsa-lib,
   at-spi2-atk,
   atk,
@@ -42,7 +45,7 @@
 
 # Unlike pkgs/claude-powerline.nix (fetchurl + mkDerivation + tar), the
 # playwright-cli bin is a one-line `require('playwright-core/lib/tools/
-# cli-client/program')` shim -- we need npm to actually populate
+# cli-client/program')` shim, so we need npm to populate
 # node_modules/playwright-core. The alpha playwright dep predates
 # anything in nixpkgs, so we cannot symlink pkgs.playwright-test the
 # way playwright-mcp does upstream.
@@ -100,6 +103,29 @@ buildNpmPackage {
         ]
       }
   '';
+
+  # Runs pkgs/playwright-cli-update-test.sh, which tests
+  # pkgs/playwright-cli-update.sh on a copy of this file. The update
+  # script finds the version, the commit, and each hash of this file by
+  # the text around them. So the test also fails after an edit of this
+  # file that moves them out of the lines that the script reads. The
+  # test does not reach the network.
+  #
+  # To build the test by hand, run:
+  #
+  #   nix build --no-link --impure --expr '((builtins.getFlake (toString ./.))
+  #     .inputs.nixpkgs.legacyPackages.${builtins.currentSystem}.callPackage
+  #     ./pkgs/playwright-cli.nix { }).tests'
+  passthru.tests.update-script =
+    runCommand "playwright-cli-update-test" { nativeBuildInputs = [ jq ]; }
+      ''
+        mkdir pkgs
+        cp ${./playwright-cli-update-test.sh} pkgs/playwright-cli-update-test.sh
+        cp ${./playwright-cli-update.sh} pkgs/playwright-cli-update.sh
+        cp ${./playwright-cli.nix} pkgs/playwright-cli.nix
+        bash pkgs/playwright-cli-update-test.sh
+        touch $out
+      '';
 
   meta = {
     description = "Playwright CLI with SKILLS for browser automation by coding agents";
