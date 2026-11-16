@@ -921,19 +921,45 @@ class InitTest(unittest.TestCase):
             self.assertFalse((beside / "state.json").exists())
             self.assertEqual(os.listdir(beside / "tasks"), ["APP-0009"])
 
-    def test_retry_after_failed_init(self):
-        # Init fails after its checks when it cannot add the worktrees to
-        # the exclude file of the repository. git reads no global ignore
-        # file in the environment of the test, so it ignores no worktree,
-        # and init writes the exclude file.
+    def test_creates_info_directory_for_exclude_file(self):
+        # git init copies the info directory from its template directory,
+        # so a repository whose template directory holds no info directory
+        # has none. git reads no global ignore file in the environment of
+        # the test, so it ignores no worktree, and init writes the exclude
+        # file.
         with tempfile.TemporaryDirectory() as tmp:
             repo, env = new_repo(tmp)
             info = Path(repo, ".git", "info")
             shutil.rmtree(info, ignore_errors=True)
             run = Path(tmp, "run").resolve()
-            refused("init", "--run", str(run), cwd=repo, env=env)
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            self.assertEqual((info / "exclude").read_text(), ".claude/worktrees/\n")
+            # git check-ignore exits 0 only when a pattern ignores the path.
+            git("check-ignore", "-q", ".claude/worktrees/x", cwd=repo, env=env)
+            status = ultraclose("status", cwd=repo, env=env)
+            self.assertEqual(status.splitlines()[0], f"run={run}")
+
+    def test_retry_after_failed_init(self):
+        # Init fails when it cannot add the worktrees to the exclude file
+        # of the repository. git reads no global ignore file in the
+        # environment of the test, so it ignores no worktree, and init
+        # writes the exclude file. A file with the name of the info
+        # directory keeps init from the exclude file.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            info = Path(repo, ".git", "info")
+            shutil.rmtree(info, ignore_errors=True)
+            info.touch()
+            run = Path(tmp, "run").resolve()
+            message = refused("init", "--run", str(run), cwd=repo, env=env)
+            # git prints real paths, and init names the exclude file by
+            # the path that git prints.
+            exclude = Path(repo).resolve() / ".git" / "info" / "exclude"
+            cannot = "ultraclose: init cannot add the line .claude/worktrees/ to"
+            self.assertTrue(message.startswith(f"{cannot} {exclude}: "), message)
+            self.assertTrue(message.endswith("run init again\n"), message)
             self.assertFalse(run.exists())
-            info.mkdir()
+            info.unlink()
             ultraclose("init", "--run", str(run), cwd=repo, env=env)
             self.assertEqual(state_of(run)["tasks"], {})
             self.assertIn(".claude/worktrees/\n", (info / "exclude").read_text())

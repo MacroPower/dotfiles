@@ -1495,6 +1495,14 @@ def ignore_worktrees(repo):
     The worktrees sit inside the main checkout. Without the exclude
     entry, git lists them as files that it does not track, and the main
     checkout then never counts as clean.
+
+    When no ignore rule covers the worktrees, the function adds the
+    entry to the info/exclude file of the git directory. It creates the
+    info directory first when the repository has none. git init copies
+    that directory from its template directory, and a template directory
+    can hold no info directory. When the function cannot write the
+    entry, it ends the command with an error that names the exclude
+    file.
     """
     ignored = sh(
         "git", "check-ignore", "-q", ".claude/worktrees/x", cwd=repo, check=False
@@ -1503,8 +1511,18 @@ def ignore_worktrees(repo):
         common = out(
             "git", "rev-parse", "--path-format=absolute", "--git-common-dir", cwd=repo
         )
-        with open(Path(common, "info", "exclude"), "a") as f:
-            f.write(".claude/worktrees/\n")
+        exclude = Path(common, "info", "exclude")
+        try:
+            exclude.parent.mkdir(exist_ok=True)
+            with open(exclude, "a") as f:
+                f.write(".claude/worktrees/\n")
+        except OSError as e:
+            die(
+                f"init cannot add the line .claude/worktrees/ to {exclude}: {e}."
+                " Without that line, git lists each task worktree as an"
+                " untracked file of the main checkout. Remove the cause and run"
+                " init again"
+            )
 
 
 def upstream_of(repo, name):
