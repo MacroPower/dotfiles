@@ -13,3 +13,7 @@ A reader opens one rule file at a time.
 An entry expires after an hour.
 
 A failed task can retry twice.
+
+The worker reads `queue.toml`. A task runs on one worker.
+
+A new worker is `idle`. One task wakes it up.

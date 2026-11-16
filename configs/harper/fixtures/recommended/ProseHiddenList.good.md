@@ -13,3 +13,5 @@ The `--force` flag skips the check. It also hides the summary. The `--dry-run` f
 | `PublishDate` | Returns the publish date of the page.           |
 
 A node runs the kubelet. A node reports its status. A node joins one cluster.
+
+Run `make`. Run `make test`. Run `make lint`.

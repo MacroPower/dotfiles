@@ -12,8 +12,8 @@
 # plural subject or with `every`, and the fix does the same. The prose
 # skill keeps `a` and `an` for one instance that the sentence
 # introduces. The rule sits at Optional, because the check guesses the
-# verb from its spelling, and a sentence that names no class also
-# matches.
+# verb from its spelling, and a sentence that does not name a class
+# also matches.
 #
 # Expression
 #
@@ -25,12 +25,13 @@
 # sentence's first word.
 #
 # The check reports two forms. The first is an opening `a` or `an` with
-# a present-tense verb in the next four words (`A task is`, `A failed
-# task can retry`). Awk has no part-of-speech tagger, so a lowercase
-# word that ends in `s` counts as the verb. `is`, `has`, `can`, and the
-# other helping verbs in `helpers` count too. The scan stops at a comma
-# and at a word in `stops` that ties the subject to more words, such as
-# `of`, `with`, or `and`, so `A list of tasks` passes.
+# a present-tense verb in the next four words of the sentence (`A task
+# is`, `A failed task can retry`). Awk has no part-of-speech tagger, so
+# a lowercase word that ends in `s` counts as the verb. `is`, `has`,
+# `can`, and the other helping verbs in `helpers` count too. The scan
+# stops at a comma and at a word in `stops` that ties the subject to
+# more words, such as `of`, `with`, or `and`, so `A list of tasks`
+# passes.
 #
 # The check holds each finding of the first form until the paragraph
 # ends, and drops it when the text after it names the noun with `the`.
@@ -47,7 +48,7 @@
 # and `a`, `an`, `the`, or `one` follows it, the sentence names a term,
 # and no reader takes the subject for one particular task. Glossaries
 # open each entry this way, and the plural reads worse there (`Tasks are
-# units of work`). The skip drops 154 of 580 hits in the measure.py docs
+# units of work`). The skip drops 156 of 602 hits in the measure.py docs
 # corpus, and 20 of 20 sampled drops were definitions.
 #
 # A sentence that introduces one instance takes the same form as a claim
@@ -59,6 +60,10 @@
 # passes, and so does a quantity after the article (`A few seconds
 # later`).
 #
+# List labels and speaker labels that are the letter `a` read as the
+# article (`**(a)** You must give any other recipients`, `**A: That
+# sounds interesting!**`).
+#
 # Related Rules
 #
 # ProseHiddenList reports three sentences in a row that open with the
@@ -67,10 +72,12 @@
 #
 # Measurement
 #
-# The rule hit 424 lines in the measure.py docs corpus, and 18 of 20
-# sampled hits made a claim about a whole class. The misfires were a
-# list label (`(a)`) and a sentence that named no class (`A simple case
-# is to create one object`).
+# The rule hit 443 lines in the measure.py docs corpus, and 15 of 20
+# sampled hits made a claim about a whole class. Three misfires
+# introduced one instance (`A TLS certificate will be automatically
+# obtained for you`), and two did not name a class (`A simple case is
+# to create one object`, `A typical PostFilter implementation is
+# preemption`).
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseIndefiniteOpener: <message>
@@ -111,6 +118,11 @@ function flush(   i) {
   para = ""
 }
 
+# Returns 1 when tok ends a sentence.
+function ends_sentence(tok) {
+  return tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/
+}
+
 function verb(tok, word) {
   if (word ~ helpers) {
     return 1
@@ -145,6 +157,11 @@ function prose(text,   rest, pos, tok, col, word, base) {
       continue
     }
     if (tok !~ /[A-Za-z]/) {
+      if (!opening && ends_sentence(tok)) {
+        opening = 1
+        scan = 0
+        pending_def = 0
+      }
       continue
     }
     fresh = 0
@@ -195,7 +212,7 @@ function prose(text,   rest, pos, tok, col, word, base) {
         scan = 0
       }
     }
-    if (tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
+    if (ends_sentence(tok)) {
       opening = 1
       scan = 0
     }

@@ -25,6 +25,12 @@
 # spans, so `The --force flag skips` and `The --dry-run flag prints`
 # both open with `The flag`.
 #
+# A sentence of one word has no opening to compare, and a blanked code
+# span does not count as a word. Three sentences that each hold one verb
+# and a code span therefore pass, though they hide a list of commands
+# (``Run `make`. Run `make test`. Run `make lint`.``). The same
+# sentences in plain words draw a finding.
+#
 # Each finding names the line and column where the paragraph starts.
 #
 # False Positives
@@ -32,6 +38,13 @@
 # `then` alone narrates (`Then the pod restarts`), so two `then`
 # sentences pass. `now` stays out, because it marks a turn in an
 # argument (`Now say you have ten pods`).
+#
+# A `Finally` that continues a list from an earlier paragraph draws a
+# finding when another sentence of the paragraph opens with a sequence
+# word (`Finally, adding the device name can select one specific
+# device.`). Three sentences can also open the same way only after
+# lib/markdown.awk blanks their code spans (`The largest_i32 function
+# is`, `The largest_char function finds`, `The function bodies have`).
 #
 # Related Rules
 #
@@ -41,11 +54,9 @@
 #
 # Measurement
 #
-# The rule hit 20 lines in the measure.py docs corpus, and 15 of 20
-# sampled hits hid steps, parallel points, or cases. Three misfires
-# were plans of two steps (`First, we'll... Then, we'll...`). One
-# `Finally` continued a list from earlier paragraphs, and one run
-# matched only after lib/markdown.awk blanked its code spans.
+# The rule hit 27 lines in the measure.py docs corpus, and 17 of 20
+# sampled hits hid steps, parallel points, or cases. The three misfires
+# were plans of two steps (`First, we'll... Then, we'll...`).
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseHiddenList: <message>
@@ -87,8 +98,17 @@ function flush(   parts) {
   reset()
 }
 
+# Returns 1 when tok ends a sentence.
+function ends_sentence(tok) {
+  return tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/
+}
+
 # Ends the current sentence and compares its opening to the last one.
+# A sentence of one word has no opening to compare.
 function end_sentence() {
+  if (cur_words < 2) {
+    cur_key = ""
+  }
   # ProseIndefiniteOpener reports the sentences that open with `a` or
   # `an`, and its fix (a plural subject) differs from a list.
   if (cur_key ~ /^(a|an) /) {
@@ -135,6 +155,9 @@ function prose(text,   rest, pos, tok, col, word) {
       continue
     }
     if (tok !~ /[A-Za-z0-9]/) {
+      if (!opening && ends_sentence(tok)) {
+        end_sentence()
+      }
       continue
     }
     if (fresh) {
@@ -159,10 +182,7 @@ function prose(text,   rest, pos, tok, col, word) {
       cur_key = cur_words ? cur_key " " word : word
       cur_words++
     }
-    if (tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
-      if (cur_words < 2) {
-        cur_key = ""
-      }
+    if (ends_sentence(tok)) {
       end_sentence()
     }
   }

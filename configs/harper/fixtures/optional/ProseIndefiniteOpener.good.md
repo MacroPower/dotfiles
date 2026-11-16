@@ -20,3 +20,5 @@ A few seconds later, the pod restarts.
 A _leaf bundle_ is a directory that holds an index file.
 
 A common use case is the selection of random pages.
+
+A user ran `make`. It builds each target.
