@@ -939,6 +939,34 @@ class InitTest(unittest.TestCase):
             status = ultraclose("status", cwd=repo, env=env)
             self.assertEqual(status.splitlines()[0], f"run={run}")
 
+    def test_adds_exclude_entry_as_line_of_its_own(self):
+        # When the last line of the exclude file does not end with a
+        # newline, git reads an entry right after it as the end of the
+        # pattern of that line. The joined pattern matches neither the
+        # worktrees nor the paths that the line covers. Init writes a
+        # newline before the entry only after such a line.
+        cases = [
+            (b"*.log", b"*.log\n.claude/worktrees/\n"),
+            (b"*.log\n", b"*.log\n.claude/worktrees/\n"),
+            (b"", b".claude/worktrees/\n"),
+            # The byte 0xe9 alone is not valid UTF-8.
+            (b"*.log\n\xe9", b"*.log\n\xe9\n.claude/worktrees/\n"),
+        ]
+        for old, new in cases:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                exclude = Path(repo, ".git", "info", "exclude")
+                exclude.parent.mkdir(exist_ok=True)
+                exclude.write_bytes(old)
+                run = Path(tmp, "run").resolve()
+                ultraclose("init", "--run", str(run), cwd=repo, env=env)
+                self.assertEqual(exclude.read_bytes(), new)
+                # git check-ignore exits 0 only when a pattern ignores the
+                # path.
+                git("check-ignore", "-q", ".claude/worktrees/x", cwd=repo, env=env)
+                if old:
+                    git("check-ignore", "-q", "a.log", cwd=repo, env=env)
+
     def test_retry_after_failed_init(self):
         # Init fails when it cannot add the worktrees to the exclude file
         # of the repository. git reads no global ignore file in the

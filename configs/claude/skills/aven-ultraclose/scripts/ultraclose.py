@@ -1500,9 +1500,16 @@ def ignore_worktrees(repo):
     entry to the info/exclude file of the git directory. It creates the
     info directory first when the repository has none. git init copies
     that directory from its template directory, and a template directory
-    can hold no info directory. When the function cannot write the
-    entry, it ends the command with an error that names the exclude
-    file.
+    can hold no info directory.
+
+    The entry is a line of its own. When the last line of the exclude
+    file does not end with a newline, the function writes a newline
+    before the entry. Without that newline, git reads the entry as the
+    end of the pattern of the last line. The joined pattern matches
+    neither the worktrees nor the paths that the last line covers.
+
+    When the function cannot write the entry, it ends the command with
+    an error that names the exclude file.
     """
     ignored = sh(
         "git", "check-ignore", "-q", ".claude/worktrees/x", cwd=repo, check=False
@@ -1514,8 +1521,16 @@ def ignore_worktrees(repo):
         exclude = Path(common, "info", "exclude")
         try:
             exclude.parent.mkdir(exist_ok=True)
-            with open(exclude, "a") as f:
-                f.write(".claude/worktrees/\n")
+            # Binary mode reads the last byte of an exclude file in any
+            # encoding. Append mode sends each write to the end of the
+            # file, wherever the read stops.
+            with open(exclude, "ab+") as f:
+                entry = b".claude/worktrees/\n"
+                if f.seek(0, os.SEEK_END):
+                    f.seek(-1, os.SEEK_END)
+                    if f.read(1) != b"\n":
+                        entry = b"\n" + entry
+                f.write(entry)
         except OSError as e:
             die(
                 f"init cannot add the line .claude/worktrees/ to {exclude}: {e}."
