@@ -39,37 +39,6 @@ type Runner struct {
 	Dir string
 }
 
-// HasChanges reports whether there are code changes since baseSHA.
-// Falls back to checking working tree status if baseSHA is empty.
-// Returns false (not an error) if Dir is not a git repository.
-func (g *Runner) HasChanges(ctx context.Context, baseSHA string) (bool, error) {
-	names, err := repositoryEnv(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	err = g.command(ctx, names, "rev-parse", "--git-dir").Run()
-	if err != nil {
-		return false, nil // not a git repo
-	}
-
-	if baseSHA != "" {
-		err = g.command(ctx, names, "diff", "--quiet", baseSHA, "HEAD").Run()
-		if err != nil {
-			// exit code 1 means there are differences
-			return true, nil
-		}
-	}
-
-	// Also check working tree for uncommitted changes.
-	out, err := g.command(ctx, names, "status", "--porcelain").Output()
-	if err != nil {
-		return false, fmt.Errorf("git status: %w", err)
-	}
-
-	return len(strings.TrimSpace(string(out))) > 0, nil
-}
-
 // HeadSHA returns the current HEAD commit SHA.
 func (g *Runner) HeadSHA(ctx context.Context) (string, error) {
 	names, err := repositoryEnv(ctx)

@@ -84,17 +84,15 @@ func TestGitSkipsEnvironmentRepository(t *testing.T) {
 // repository the environment names. A shell that exports GIT_DIR points
 // every git command of its processes at one repository, and so does a
 // git hook. Each case points variables at a second repository. That
-// repository differs from the repository of Dir in its branch, in its
-// HEAD commit, in its index, and in its working tree.
+// repository differs from the repository of Dir in its branch and in
+// its HEAD commit.
 func TestRunnerSkipsEnvironmentRepository(t *testing.T) { //nolint:paralleltest // t.Setenv
 	names, err := gittest.RepositoryEnv(t.Context())
 	require.NoError(t, err)
 
 	// every points each variable that a Runner removes at the git
-	// directory. git rejects that value of some of the variables, such
-	// as GIT_INDEX_FILE, so a Runner that keeps one of them fails. A
-	// Runner keeps the variables that pass config, so every leaves them
-	// out.
+	// directory. A Runner keeps the variables that pass config, so
+	// every leaves them out.
 	every := map[string]string{referenceBackendEnv: ".git"}
 
 	for _, name := range names {
@@ -117,15 +115,6 @@ func TestRunnerSkipsEnvironmentRepository(t *testing.T) { //nolint:paralleltest 
 		"git directory and index file": {
 			"GIT_DIR":        ".git",
 			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
-		},
-		"index file": {
-			"GIT_INDEX_FILE": filepath.Join(".git", "index"),
-		},
-		"working tree": {
-			"GIT_WORK_TREE": ".",
-		},
-		"common directory": {
-			"GIT_COMMON_DIR": ".git",
 		},
 		// git rev-parse --local-env-vars does not print this variable.
 		"reference backend": {
@@ -155,11 +144,6 @@ func TestRunnerSkipsEnvironmentRepository(t *testing.T) { //nolint:paralleltest 
 			runGit(t, other, "add", ".")
 			runGit(t, other, "commit", "-m", "add file")
 
-			require.NoError(t, os.WriteFile(filepath.Join(other, "staged.txt"), []byte("staged\n"), 0o644))
-			runGit(t, other, "add", ".")
-
-			require.NoError(t, os.WriteFile(filepath.Join(other, "README.md"), []byte("changed\n"), 0o644))
-
 			// Each git command of the setup ran before this point. With
 			// the variables set, such a command acts on the second
 			// repository.
@@ -181,10 +165,6 @@ func TestRunnerSkipsEnvironmentRepository(t *testing.T) { //nolint:paralleltest 
 			sha, err := runner.HeadSHA(t.Context())
 			require.NoError(t, err)
 			assert.Equal(t, want, sha)
-
-			changed, err := runner.HasChanges(t.Context(), want)
-			require.NoError(t, err)
-			assert.False(t, changed)
 		})
 	}
 }
@@ -259,9 +239,6 @@ func TestRunnerKeepsEnvironmentConfig(t *testing.T) { //nolint:paralleltest // t
 
 			want := gitOutput(t, dir, "rev-parse", "HEAD")
 
-			// HasChanges reports this untracked file.
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644))
-
 			// git compares the entry with the path of the repository
 			// after it resolves links.
 			resolved, err := filepath.EvalSymlinks(dir)
@@ -291,17 +268,12 @@ func TestRunnerKeepsEnvironmentConfig(t *testing.T) { //nolint:paralleltest // t
 			sha, err := runner.HeadSHA(t.Context())
 			require.NoError(t, err)
 			assert.Equal(t, want, sha)
-
-			changed, err := runner.HasChanges(t.Context(), want)
-			require.NoError(t, err)
-			assert.True(t, changed)
 		})
 	}
 }
 
 // git prints the names of the variables that a [git.Runner] removes.
-// When git cannot run, each method must return that error. HasChanges
-// must not report the directory as one that holds no repository.
+// When git cannot run, each method must return that error.
 func TestRunnerWithoutGit(t *testing.T) { //nolint:paralleltest // t.Setenv
 	dir := initTestRepo(t)
 
@@ -316,10 +288,6 @@ func TestRunnerWithoutGit(t *testing.T) { //nolint:paralleltest // t.Setenv
 
 	_, err = runner.HeadSHA(t.Context())
 	require.ErrorIs(t, err, exec.ErrNotFound)
-
-	changed, err := runner.HasChanges(t.Context(), "")
-	require.ErrorIs(t, err, exec.ErrNotFound)
-	assert.False(t, changed)
 }
 
 func initTestRepo(t *testing.T) string {
@@ -367,96 +335,24 @@ func TestHeadSHA(t *testing.T) {
 	assert.Len(t, sha, 40)
 }
 
-func TestHasChanges_NoChanges(t *testing.T) {
+func TestHeadSHA_NotGitRepo(t *testing.T) {
 	t.Parallel()
 
-	dir := initTestRepo(t)
-	runner := &git.Runner{Dir: dir}
-	ctx := context.Background()
+	runner := &git.Runner{Dir: t.TempDir()}
 
-	sha, err := runner.HeadSHA(ctx)
-	require.NoError(t, err)
-
-	changed, err := runner.HasChanges(ctx, sha)
-	require.NoError(t, err)
-	assert.False(t, changed)
+	got, err := runner.HeadSHA(t.Context())
+	require.Error(t, err)
+	assert.Empty(t, got)
 }
 
-func TestHasChanges_WithCommit(t *testing.T) {
+func TestHeadSHA_MissingDir(t *testing.T) {
 	t.Parallel()
 
-	dir := initTestRepo(t)
-	runner := &git.Runner{Dir: dir}
-	ctx := context.Background()
+	runner := &git.Runner{Dir: filepath.Join(t.TempDir(), "missing")}
 
-	baseSHA, err := runner.HeadSHA(ctx)
-	require.NoError(t, err)
-
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644))
-
-	for _, args := range [][]string{
-		{"git", "add", "."},
-		{"git", "commit", "-m", "add file"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-
-		out, err := cmd.CombinedOutput()
-		require.NoError(t, err, "%s", out)
-	}
-
-	changed, err := runner.HasChanges(ctx, baseSHA)
-	require.NoError(t, err)
-	assert.True(t, changed)
-}
-
-func TestHasChanges_UncommittedChanges(t *testing.T) {
-	t.Parallel()
-
-	dir := initTestRepo(t)
-	runner := &git.Runner{Dir: dir}
-	ctx := context.Background()
-
-	sha, err := runner.HeadSHA(ctx)
-	require.NoError(t, err)
-
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644))
-
-	changed, err := runner.HasChanges(ctx, sha)
-	require.NoError(t, err)
-	assert.True(t, changed)
-}
-
-func TestHasChanges_EmptyBaseSHA(t *testing.T) {
-	t.Parallel()
-
-	dir := initTestRepo(t)
-	runner := &git.Runner{Dir: dir}
-	ctx := context.Background()
-
-	// No uncommitted changes, empty base SHA.
-	changed, err := runner.HasChanges(ctx, "")
-	require.NoError(t, err)
-	assert.False(t, changed)
-
-	// With uncommitted changes, empty base SHA.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644))
-
-	changed, err = runner.HasChanges(ctx, "")
-	require.NoError(t, err)
-	assert.True(t, changed)
-}
-
-func TestHasChanges_NotGitRepo(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	runner := &git.Runner{Dir: dir}
-	ctx := context.Background()
-
-	changed, err := runner.HasChanges(ctx, "abc123")
-	require.NoError(t, err)
-	assert.False(t, changed)
+	got, err := runner.HeadSHA(t.Context())
+	require.Error(t, err)
+	assert.Empty(t, got)
 }
 
 // runGit runs one git command in dir and fails the test when the

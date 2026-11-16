@@ -1,7 +1,6 @@
 // Package git shells out to the git CLI for the small set of
 // repository questions hook-router asks. It reports the current HEAD
-// commit, the current branch, and whether anything changed since a
-// baseline.
+// commit and the current branch.
 //
 // Each answer of a [Runner] is for the repository that git finds from
 // the directory of the Runner. Variables of the environment, such as
@@ -9,6 +8,6 @@
 // command of a process. A Runner starts its git commands without those
 // variables.
 //
-// A directory that is not a git repository is reported as "no
-// changes", not an error, so callers can run unconditionally.
+// Each method of a Runner returns an error when git fails, for example
+// in a directory that holds no repository.
 package git
