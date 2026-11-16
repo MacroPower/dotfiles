@@ -10,4 +10,9 @@
 // for as long as that serve runs. The binding name is derived from
 // the SA name by [BindingName] -- the single source of truth shared
 // by create and release so the two cannot drift.
+//
+// [Release] undoes the provisioning. It deletes the SA and the
+// binding, and it counts a resource that the cluster does not hold
+// as deleted. `host release` and the orphan sweep remove the
+// provision record of an SA only after [Release] returns nil.
 package serviceaccount

@@ -5,52 +5,109 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"path/filepath"
+	"sync"
+	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/ledger"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/sweep"
 )
 
+// recordPassTimeout caps the API calls of the record pass of
+// [runHostSweep] on one cluster. Without the cap, a cluster that
+// accepts a connection and never answers holds the sweep until
+// `serve` ends. The cap does not reach an exec credential plugin,
+// because client-go starts the plugin without the context of the
+// call. It is a package-level variable so that tests can shorten
+// it. Production code never changes it.
+//
+//nolint:grouper // tunable timeout, kept separate from the sentinel-error var block
+var recordPassTimeout = 30 * time.Second
+
 // runHostSweep is the body of the `host sweep` subcommand. It
-// lists every SA, RoleBinding, and ClusterRoleBinding labeled
+// deletes the SAs and bindings that dead `serve` instances of one
+// host id left behind. It runs two passes.
+//
+// The label pass covers one cluster. It lists every SA,
+// RoleBinding, and ClusterRoleBinding labeled
 // `managed-by=mcp-kubectx,host-id=<own>`, classifies each against
 // the set of live instance ids passed via --live-instance-id, and
-// deletes the orphans best-effort.
+// deletes the orphans best-effort. The cluster is the one of
+// --context. When --context is empty, it is the one of
+// `cfg.CurrentContext` in the loaded kubeconfig.
 //
-// Error contract: returns [ErrParseHostSweepFlags] on flag parse
-// failure, [ErrMissingHostID] when --host-id is empty,
-// [ErrInvalidHostID] when --host-id is not exactly 16 lowercase
-// hex characters, and [sweep.ErrList] only when every list call
-// fails outright (RBAC forbids cluster-wide list on all three
-// resource kinds). Partial list failures and all delete failures
-// are logged at warn level and swallowed because the next `serve`
-// startup retries the sweep anyway.
+// The record pass covers every cluster of the swept kubeconfig. It
+// reads the provision records of the host id from the ledger. It
+// takes each record whose instance id is not in the live set and
+// whose kubeconfig is the swept kubeconfig. For each of them it
+// deletes the recorded SA and binding through the context of the
+// record. It removes the record after the cluster holds neither
+// resource. A record whose deletes fail stays, so the next sweep
+// tries again. A record of another kubeconfig waits for a sweep with
+// --kubeconfig set to that path. The record pass runs only when
+// --context is empty, so that an explicit --context limits the whole
+// sweep to that cluster.
 //
-// The --host-id flag is required and format-checked; see
-// [ErrMissingHostID] and [ErrInvalidHostID] for the threat model
+// The record pass never loads the kubeconfig file that a record
+// names. A Lima guest can run `host select` with a --kubeconfig of
+// its choice through `workmux host-exec`. client-go runs the exec
+// credential plugin of each kubeconfig file that it loads. The
+// record pass of a host-side `serve` runs outside the sandbox of
+// `workmux host-exec`, so it loads only the kubeconfig that the
+// label pass loads too.
+//
+// The two passes run at the same time, and neither waits for the
+// other. The record pass works on the records that the ledger held
+// when the sweep started.
+//
+// Error contract: it returns these errors.
+//
+//   - [ErrParseHostSweepFlags] when the flags do not parse.
+//   - [ErrMissingHostID] when --host-id is empty.
+//   - [ErrInvalidHostID] when --host-id is not exactly 16
+//     lowercase hex characters.
+//   - An error when it cannot make the kubeconfig path absolute.
+//   - An error that wraps [kubeconfig.ErrLoad] when the label pass
+//     cannot load the kubeconfig.
+//   - [sweep.ErrList] only when every list call of the label pass
+//     fails outright, such as when RBAC forbids the cluster-wide
+//     list on all three resource kinds.
+//
+// It logs every other failure at warn level and swallows it,
+// because the next `serve` startup runs the sweep again. These
+// failures include a failed list call of some resource kinds, each
+// failed delete, and every failure of the record pass. An error of
+// the label pass does not stop the record pass, and the sweep
+// returns that error after both passes have ended.
+//
+// The --host-id flag is required and format-checked.
+// [ErrMissingHostID] and [ErrInvalidHostID] name the threat model
 // behind each check.
 //
-// --context may be empty; in that case [runHostSweep] resolves
-// `cfg.CurrentContext` from the loaded kubeconfig. If the
-// resolved context is still empty (unconfigured kubeconfig) the
-// sweep logs a warning and exits 0 -- startup never blocks on the
-// sweep.
+// When neither --context nor `cfg.CurrentContext` names a context
+// (unconfigured kubeconfig), the label pass logs a warning and
+// does nothing. Startup never blocks on the sweep.
 //
-// --live-instance-id is repeatable. Empty list means no live
-// serves on this host, which is destructive: every labeled
-// resource gets deleted. When the calling serve invokes
-// [runHostSweep] from [*handler.runSweep], its own id is always
-// in the live set (its sidecar was written before the sweep
-// kicked off and is observed by [socket.DiscoverLive]). Manual
-// operator invocation accepts this destructive semantics
-// explicitly by passing zero --live-instance-id flags.
+// --live-instance-id is repeatable. An empty list says that no
+// serve of this host is alive, so both passes delete every
+// resource of the host id that they find. When the calling serve
+// invokes [runHostSweep] from [*handler.runSweep], its own id is
+// always in the live set. The serve writes its sidecar before it
+// starts the sweep, and [socket.DiscoverLive] reads that sidecar.
+// An operator who passes zero --live-instance-id flags by hand
+// accepts the destructive semantics.
 func runHostSweep(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("host sweep", flag.ContinueOnError)
 
 	kubeconfigPath := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
 	contextName := fs.String(
 		"context", "",
-		"kubeconfig context to use (default: current-context from the loaded kubeconfig)",
+		"kubeconfig context of the one cluster to sweep by label "+
+			"(default: current-context from the loaded kubeconfig, "+
+			"plus the cluster of each provision record of the loaded kubeconfig)",
 	)
 	hostID := fs.String(
 		"host-id", "",
@@ -78,36 +135,6 @@ func runHostSweep(ctx context.Context, args []string) error {
 		return fmt.Errorf("%w: %q", ErrInvalidHostID, *hostID)
 	}
 
-	resolvedKubeconfig := resolveHostKubeconfigPath(*kubeconfigPath)
-
-	cfg, err := kubeconfig.Load(resolvedKubeconfig)
-	if err != nil {
-		return err //nolint:wrapcheck // Load already wraps kubeconfig.ErrLoad
-	}
-
-	resolvedContext := *contextName
-	if resolvedContext == "" {
-		resolvedContext = cfg.CurrentContext
-	}
-
-	if resolvedContext == "" {
-		slog.WarnContext(ctx, "host sweep skipped: no context resolved from kubeconfig",
-			slog.String("kubeconfig", resolvedKubeconfig),
-		)
-
-		return nil
-	}
-
-	client, err := hostKubeClient(resolvedKubeconfig, resolvedContext)
-	if err != nil {
-		slog.WarnContext(ctx, "host sweep build kube client",
-			slog.String("context", resolvedContext),
-			slog.Any("error", err),
-		)
-
-		return nil
-	}
-
 	live := make(map[string]struct{}, len(liveIDs))
 	for _, id := range liveIDs {
 		if id == "" {
@@ -117,9 +144,85 @@ func runHostSweep(ctx context.Context, args []string) error {
 		live[id] = struct{}{}
 	}
 
-	selector := sweep.Selector(*hostID)
+	// `host select` records the absolute path, so the record pass
+	// compares each record with the absolute path.
+	sweptKubeconfig, err := filepath.Abs(resolveHostKubeconfigPath(*kubeconfigPath))
+	if err != nil {
+		return fmt.Errorf("resolve kubeconfig path: %w", err)
+	}
 
-	orphans, listErr := sweep.CollectOrphans(ctx, client, selector, live)
+	// The record pass works on the records that exist now, before
+	// the first cluster call. The live set is a snapshot from the
+	// start of the calling serve, and a serve that starts later is
+	// not in it. Such a serve can add records while a pass waits
+	// on a slow cluster. The record pass must not read those
+	// records, because it takes every record of a serve outside the
+	// live set for the record of a dead serve.
+	records := hostLedger()
+
+	var dead []ledger.Record
+	if *contextName == "" {
+		dead = deadRecords(ctx, records, sweptKubeconfig, *hostID, live)
+	}
+
+	// The passes run at the same time. A label pass that waits on
+	// its cluster, for example for a credential plugin, then does
+	// not hold the record pass back.
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		releaseRecorded(ctx, records, sweptKubeconfig, dead)
+	})
+
+	sweepErr := sweepLabeled(ctx, sweptKubeconfig, *contextName, *hostID, live)
+
+	wg.Wait()
+
+	return sweepErr
+}
+
+// sweepLabeled is the label pass of [runHostSweep]. It lists the
+// labeled resources of hostID on the cluster of contextName and
+// deletes each one whose instance id is not in live. An empty
+// contextName selects the current-context of the kubeconfig at
+// kubeconfigPath.
+//
+// It returns the error of [kubeconfig.Load], and [sweep.ErrList]
+// when every list call fails. Every other failure is logged and
+// swallowed.
+func sweepLabeled(
+	ctx context.Context,
+	kubeconfigPath, contextName, hostID string,
+	live map[string]struct{},
+) error {
+	cfg, err := kubeconfig.Load(kubeconfigPath)
+	if err != nil {
+		return err //nolint:wrapcheck // Load already wraps kubeconfig.ErrLoad
+	}
+
+	if contextName == "" {
+		contextName = cfg.CurrentContext
+	}
+
+	if contextName == "" {
+		slog.WarnContext(ctx, "host sweep skipped the label pass: no context resolved from kubeconfig",
+			slog.String("kubeconfig", kubeconfigPath),
+		)
+
+		return nil
+	}
+
+	client, err := hostKubeClient(kubeconfigPath, contextName)
+	if err != nil {
+		slog.WarnContext(ctx, "host sweep build kube client",
+			slog.String("context", contextName),
+			slog.Any("error", err),
+		)
+
+		return nil
+	}
+
+	orphans, listErr := sweep.CollectOrphans(ctx, client, sweep.Selector(hostID), live)
 	if listErr != nil {
 		return listErr //nolint:wrapcheck // CollectOrphans already wraps sweep.ErrList
 	}
@@ -129,12 +232,210 @@ func runHostSweep(ctx context.Context, args []string) error {
 	return nil
 }
 
+// deadRecords returns the provision records of the host hostID
+// whose instance id is not in live and whose kubeconfig is
+// kubeconfigPath. Each of them names an SA that a dead `serve` left
+// behind, or that a dead `serve` released without removing the
+// record. It logs each other record of a dead instance and leaves
+// that record in the ledger. When it cannot read the ledger, it
+// logs the failure and returns no records, so the record pass does
+// nothing.
+func deadRecords(
+	ctx context.Context,
+	records *ledger.Ledger,
+	kubeconfigPath, hostID string,
+	live map[string]struct{},
+) []ledger.Record {
+	all, err := records.List()
+	if err != nil {
+		slog.WarnContext(ctx, "host sweep read provision records", slog.Any("error", err))
+
+		return nil
+	}
+
+	var dead []ledger.Record
+
+	for _, r := range all {
+		if r.HostID != hostID {
+			continue
+		}
+
+		if _, isLive := live[r.InstanceID]; isLive {
+			continue
+		}
+
+		// A guest can choose the kubeconfig of a record, so the
+		// record stays. [runHostSweep] says why.
+		if r.Kubeconfig != kubeconfigPath {
+			slog.InfoContext(ctx, "host sweep skipped provision record of another kubeconfig",
+				slog.String("kubeconfig", r.Kubeconfig),
+				slog.String("context", r.Context),
+				slog.String("namespace", r.Namespace),
+				slog.String("name", r.ServiceAccount),
+				slog.String("instance_id", r.InstanceID),
+			)
+
+			continue
+		}
+
+		dead = append(dead, r)
+	}
+
+	return dead
+}
+
+// releaseRecorded is the record pass of [runHostSweep]. For each
+// record in dead it deletes the recorded SA and binding, and then
+// it removes the record. It reaches the cluster through the context
+// of the record in the kubeconfig at kubeconfigPath. The records of
+// one context share one client, and their API calls share at most
+// [recordPassTimeout]. The contexts run in parallel, so a cluster
+// that does not answer delays no other cluster. It logs every
+// failure and leaves the record of the failure in place.
+func releaseRecorded(
+	ctx context.Context,
+	records *ledger.Ledger,
+	kubeconfigPath string,
+	dead []ledger.Record,
+) {
+	byContext := make(map[string][]ledger.Record)
+
+	for _, r := range dead {
+		byContext[r.Context] = append(byContext[r.Context], r)
+	}
+
+	var wg sync.WaitGroup
+
+	for contextName, group := range byContext {
+		wg.Go(func() {
+			releaseRecordedOn(ctx, records, kubeconfigPath, contextName, group)
+		})
+	}
+
+	wg.Wait()
+}
+
+// releaseRecordedOn handles the records of one context for
+// [releaseRecorded].
+func releaseRecordedOn(
+	ctx context.Context,
+	records *ledger.Ledger,
+	kubeconfigPath, contextName string,
+	group []ledger.Record,
+) {
+	ctx, cancel := context.WithTimeout(ctx, recordPassTimeout)
+	defer cancel()
+
+	client, err := hostKubeClient(kubeconfigPath, contextName)
+	if err != nil {
+		slog.WarnContext(ctx, "host sweep build kube client for provision records",
+			slog.String("kubeconfig", kubeconfigPath),
+			slog.String("context", contextName),
+			slog.Int("records", len(group)),
+			slog.Any("error", err),
+		)
+
+		return
+	}
+
+	for i, r := range group {
+		if ctx.Err() != nil {
+			slog.WarnContext(ctx, "host sweep ran out of time for provision records",
+				slog.String("kubeconfig", kubeconfigPath),
+				slog.String("context", contextName),
+				slog.Int("skipped", len(group)-i),
+			)
+
+			return
+		}
+
+		err := serviceaccount.Release(ctx, client, r.Namespace, r.ServiceAccount, r.ClusterScoped)
+		if err != nil {
+			slog.WarnContext(ctx, "host sweep release recorded service account",
+				slog.String("context", r.Context),
+				slog.String("namespace", r.Namespace),
+				slog.String("name", r.ServiceAccount),
+				slog.String("instance_id", r.InstanceID),
+				slog.Any("error", err),
+			)
+
+			continue
+		}
+
+		slog.InfoContext(ctx, "host sweep released recorded service account",
+			slog.String("context", r.Context),
+			slog.String("namespace", r.Namespace),
+			slog.String("name", r.ServiceAccount),
+			slog.String("instance_id", r.InstanceID),
+		)
+
+		removeRecord(ctx, records, r)
+	}
+}
+
+// removeRecord removes r from the ledger. A failure is logged and
+// swallowed. A record that stays costs a later sweep one release
+// that finds nothing on the cluster.
+func removeRecord(ctx context.Context, records *ledger.Ledger, r ledger.Record) {
+	err := records.Remove(r)
+	if err != nil {
+		slog.WarnContext(ctx, "remove provision record",
+			slog.String("context", r.Context),
+			slog.String("namespace", r.Namespace),
+			slog.String("name", r.ServiceAccount),
+			slog.Any("error", err),
+		)
+	}
+}
+
+// forgetServiceAccount removes every provision record of one SA
+// from the ledger. The arguments locate the SA the way a record
+// does. `host release` calls it after the cluster holds neither
+// the SA nor its binding. Every record of that SA is then stale,
+// whichever `serve` owns the record, so the caller does not name
+// an instance. Failures are logged and swallowed.
+func forgetServiceAccount(
+	ctx context.Context,
+	records *ledger.Ledger,
+	kubeconfigPath, contextName, namespace, saName string,
+) {
+	// `host select` records the absolute path.
+	absKubeconfig, err := filepath.Abs(kubeconfigPath)
+	if err != nil {
+		slog.WarnContext(ctx, "resolve kubeconfig path for provision records", slog.Any("error", err))
+
+		return
+	}
+
+	released := ledger.Record{
+		Kubeconfig:     absKubeconfig,
+		Context:        contextName,
+		Namespace:      namespace,
+		ServiceAccount: saName,
+	}
+
+	all, err := records.List()
+	if err != nil {
+		slog.WarnContext(ctx, "read provision records", slog.Any("error", err))
+
+		return
+	}
+
+	for _, r := range all {
+		if r.SameServiceAccount(released) {
+			removeRecord(ctx, records, r)
+		}
+	}
+}
+
 // runSweep shells out to `host sweep` with the calling serve's
 // host id and the discovered live-instance set. Failure is logged
 // at warn level and never propagated; startup is not blocked on a
 // successful sweep. --context is intentionally omitted from the
-// argv: no MCP `select` has happened yet, so the sweep resolves
-// `cfg.CurrentContext` itself from the host kubeconfig.
+// argv. Without it, the sweep covers the cluster of
+// `cfg.CurrentContext` in the host kubeconfig by label, and it
+// covers the cluster of every provision record of a dead serve
+// that names the host kubeconfig.
 //
 // Refuses to invoke [runHostSweep] when liveSet is empty or does
 // not contain h.instanceID. Either case indicates degraded

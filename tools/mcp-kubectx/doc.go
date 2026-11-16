@@ -33,8 +33,11 @@
 //     host extraction.
 //   - kube: the narrow [kube.Client] interface plus its client-go
 //     implementation; kubetest carries the recording fake.
-//   - serviceaccount: SA + binding provisioning, the label taxonomy,
-//     binding-name convention, and flag-level config validation.
+//   - serviceaccount: SA + binding provisioning and release, the
+//     label taxonomy, binding-name convention, and flag-level config
+//     validation.
+//   - ledger: the provision records on disk, one for each SA that a
+//     `serve` owns.
 //   - sweep: orphan classification and bounded best-effort deletion.
 //   - execplugin: both halves of the kubectl exec credential
 //     protocol (the user.exec block and the UDS fetch client).
@@ -53,7 +56,9 @@
 // stateless: argv in, JSON or text on stdout, exit. Their contract
 // matches `workmux host-exec` exactly so the `serve` shell-out
 // helper [*handler.defaultRunHost] is the single place that knows
-// about the guest/host distinction.
+// about the guest/host distinction. The provision records of the
+// ledger package are the only state that one `host *` call leaves
+// for a later one. The section "Lifecycle" describes them.
 //
 // # Subcommands
 //
@@ -69,22 +74,38 @@
 //     and socket path itself when --out-path / --socket-path are
 //     omitted, keyed off the --pid + --for-guest discriminator the
 //     serve forwards. Prints a JSON [HostSelectResult] on stdout.
+//     Before it creates the ServiceAccount for a `serve`, it adds
+//     the provision record of the ServiceAccount to the ledger.
 //   - host token: mints a fresh ServiceAccount token via
 //     TokenRequest and prints an [execplugin.Credential] JSON document.
 //     Reached internally by serve through [*handler.runHost], not
 //     directly by kubectl.
 //   - host release: deletes a ServiceAccount and its binding.
 //     Best-effort: always exits 0 so `serve` never retries the
-//     call across the rest of its lifetime.
-//   - host sweep: lists SAs, RoleBindings, and ClusterRoleBindings
-//     labeled `managed-by=mcp-kubectx,host-id=<own>`, then deletes
+//     call across the rest of its lifetime. After the cluster holds
+//     neither resource, it removes the provision records of the
+//     ServiceAccount from the ledger.
+//   - host sweep: deletes the SAs and bindings that dead `serve`
+//     instances of one host id left behind. It runs two passes at
+//     the same time. The label pass covers one cluster, which is the
+//     cluster of --context or, without that flag, of the
+//     current-context in the host kubeconfig. It lists SAs,
+//     RoleBindings, and ClusterRoleBindings labeled
+//     `managed-by=mcp-kubectx,host-id=<own>`, then deletes the
 //     orphans whose `instance-id` is absent from the
-//     --live-instance-id set. Best-effort: surfaces only
-//     [sweep.ErrList] on total list-call failure, returns nil
-//     otherwise. `serve` launches it as a background goroutine at
-//     startup; an operator can also invoke it directly. Requires
-//     cluster-wide list verb on the host kubeconfig; see the
-//     orphan-sweep section in README.md.
+//     --live-instance-id set. The record pass runs only without
+//     --context, and it covers every cluster of the host
+//     kubeconfig. It deletes the SA and the binding of each
+//     provision record of that kubeconfig whose instance id is
+//     absent from that set, on the cluster of the record.
+//     Best-effort: surfaces [kubeconfig.ErrLoad] when the label
+//     pass cannot load the host kubeconfig. It surfaces
+//     [sweep.ErrList] on total list-call failure of the label pass,
+//     and returns nil otherwise. `serve` launches it as a background
+//     goroutine at startup, and an operator can also invoke it
+//     directly. The label pass requires cluster-wide list verb on
+//     the host kubeconfig. See the orphan-sweep section in
+//     README.md.
 //   - exec-plugin: kubectl-facing UDS shim. Dials the per-`serve`
 //     socket, copies the response bytes (an [execplugin.Credential] JSON
 //     document) to stdout, and exits. Pure UDS client; never
@@ -198,6 +219,24 @@
 //     hostname or the call fails with [ErrAPIServerNotAllowed]
 //     before any K8s mutation.
 //
+// When the caller sets both --sa-instance-id and --sa-host-id,
+// `host select` writes the provision record of the SA before it
+// creates the SA. An id that is not 16 lowercase hex characters
+// then fails the call with [ledger.ErrInvalidID] before any K8s
+// mutation. When either id is empty, `host select` writes no
+// record.
+//
+// When the create fails, `host select` keeps the record in two
+// cases. In the first, a create call failed without a refusal from
+// the apiserver, for example after a lost connection or a timeout.
+// So the apiserver might have stored the SA or the binding. An
+// AlreadyExists answer counts as such a failure. After a storage
+// timeout, client-go sends the create again, and the retry of a
+// stored create gets AlreadyExists. In the second case, the binding
+// create failed and the rollback delete of the SA failed too. After
+// every other failure the cluster holds neither resource, and
+// `host select` removes the record.
+//
 // # host token flags
 //
 // Mints a short-lived ServiceAccount token via TokenRequest and
@@ -214,8 +253,12 @@
 // # host release flags
 //
 // Best-effort delete of a ServiceAccount and its binding. Always
-// exits 0 (transient API hiccups, NotFound, exec failures alike) so
-// `serve` never retries across its lifetime.
+// exits 0 (transient API hiccups and exec failures alike) so
+// `serve` never retries across its lifetime. A resource that the
+// cluster does not hold counts as deleted. After the cluster holds
+// neither resource, `host release` removes every provision record
+// that locates the ServiceAccount by the same kubeconfig path,
+// context, namespace, and name.
 //
 //   - --kubeconfig: path to the host kubeconfig file.
 //   - --context: kubeconfig context to use.
@@ -267,10 +310,13 @@
 //
 //   - Each SA that the serve had not released, and the binding of
 //     that SA. The startup sweep of a later serve in the same env,
-//     host or guest, deletes them. That sweep covers only the
-//     cluster of the current-context in the host kubeconfig. The
-//     sweep of the other env never deletes them, because each env
-//     labels its resources with a host-id of its own.
+//     host or guest, deletes them on whichever cluster they lie,
+//     when that serve uses the same host kubeconfig.
+//     The sweep of the other env never deletes them, because each
+//     env has a host-id of its own.
+//   - The provision record of each such SA, in the ledger directory
+//     on the host. The same sweep removes the record after it has
+//     deleted the SA and the binding.
 //   - The socket inode at the slot of the killed serve. The next
 //     serve that takes the slot detects the inode with the stale
 //     probe in [socket.Listen] and unlinks it before the bind.
@@ -288,21 +334,56 @@
 // Provisioned SAs and bindings carry three labels:
 // `app.kubernetes.io/managed-by=mcp-kubectx`,
 // `mcp-kubectx/host-id=<persistent>`, and
-// `mcp-kubectx/instance-id=<per-serve random>`. Every `serve` runs
-// a background `host sweep` at startup that lists labeled resources
-// for its own `host-id`, classifies each by `instance-id` against
-// the set of live serves (discovered through the per-slot UDS
-// sidecar in [socket.DiscoverLive]), and
-// best-effort-deletes the orphans. Resources tagged only with
-// `managed-by` and no `host-id` cannot be attributed to a specific
-// host, so the sweep skips them; recovery is the manual `kubectl
-// delete` documented in the README. The selector pins on
-// `host-id`, persisted per env as `host.id` or `guest.id` (see
-// [identity.LoadOrCreateHost]), so two operators on different machines
-// cannot delete each other's resources — and neither can host- and
-// guest-side serves on the same machine, which share the
-// bind-mounted state dir but cannot observe each other's live
-// sockets.
+// `mcp-kubectx/instance-id=<per-serve random>`. `host select` also
+// writes one provision record for each SA that it creates for a
+// `serve`. The record lies in the ledger directory on the host,
+// <host's $XDG_STATE_HOME>/mcp-kubectx-run/ledger, and it holds the
+// kubeconfig path, the context, the namespace, the SA name, and
+// the ids of the `serve`. `host release` removes the record after
+// it has deleted the SA and the binding.
+//
+// Every `serve` runs a background `host sweep` at startup, with
+// the set of live serves that it discovered through the per-slot
+// UDS sidecar in [socket.DiscoverLive]. The sweep runs two passes
+// at the same time.
+//
+// The label pass covers only the cluster of the current-context in
+// the host kubeconfig, because the labels do not say which other
+// clusters hold resources. It lists the labeled resources for the
+// `host-id` of the serve, classifies each by `instance-id` against
+// the set of live serves, and best-effort-deletes the orphans.
+// A resource tagged only with `managed-by` and no `host-id` names
+// no host, so the label pass skips it. Recovery is the manual
+// `kubectl delete` that the README documents.
+//
+// The record pass covers every cluster of the host kubeconfig. It
+// takes the provision records of the `host-id` whose `instance-id`
+// is not in the set of live serves. For each record it deletes the
+// SA and the binding through the context of the record, and then it
+// removes the record. A record whose deletes fail stays, so the
+// sweep of the next serve tries again.
+//
+// The record pass takes only the records that name the host
+// kubeconfig of the sweep. It never loads the kubeconfig file of a
+// record. A Lima guest can run `host select` through `workmux
+// host-exec` with a kubeconfig of its own. client-go runs the exec
+// credential plugin of each kubeconfig that it loads. The sweep of
+// a host-side serve runs outside the sandbox of `workmux
+// host-exec`, and so does each plugin that it runs. A record of
+// another kubeconfig stays until a sweep runs with `--kubeconfig`
+// set to that path.
+//
+// The sweep deletes an SA of a dead serve on a cluster other than
+// the current-context only through the record of the SA. For such
+// an SA without a record, recovery is the manual `mcp-kubectx host
+// sweep --context <ctx>` that the README documents.
+//
+// Both passes pin on `host-id`, persisted per env as `host.id` or
+// `guest.id` (see [identity.LoadOrCreateHost]). So two operators on
+// different machines cannot delete each other's resources. A
+// host-side serve and a guest-side serve on the same machine
+// cannot either, and neither side observes the live sockets of the
+// other.
 //
 // # Recursion guard
 //

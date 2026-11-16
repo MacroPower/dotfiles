@@ -366,6 +366,7 @@ func TestHostSelectOmitsInstanceAndHostLabelsWhenEmpty(t *testing.T) {
 func TestHostSelectAppliesInstanceAndHostLabels(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
 	withHostKubeClient(t, mock)
+	withHostLedger(t)
 
 	withHostStdout(t)
 
@@ -377,17 +378,17 @@ func TestHostSelectAppliesInstanceAndHostLabels(t *testing.T) { //nolint:paralle
 		"--kubeconfig", path,
 		"--out-path", outPath,
 		"--sa-role-name", "view",
-		"--sa-instance-id", "instance-xyz",
-		"--sa-host-id", "host-abc",
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
 	}))
 
 	require.Len(t, mock.CreatedSALabels, 1)
-	assert.Equal(t, "instance-xyz", mock.CreatedSALabels[0][serviceaccount.InstanceIDLabel])
-	assert.Equal(t, "host-abc", mock.CreatedSALabels[0][serviceaccount.HostIDLabel])
+	assert.Equal(t, testInstanceID, mock.CreatedSALabels[0][serviceaccount.InstanceIDLabel])
+	assert.Equal(t, testHostID, mock.CreatedSALabels[0][serviceaccount.HostIDLabel])
 
 	require.Len(t, mock.CreatedRoleBindingLabels, 1)
-	assert.Equal(t, "instance-xyz", mock.CreatedRoleBindingLabels[0][serviceaccount.InstanceIDLabel])
-	assert.Equal(t, "host-abc", mock.CreatedRoleBindingLabels[0][serviceaccount.HostIDLabel])
+	assert.Equal(t, testInstanceID, mock.CreatedRoleBindingLabels[0][serviceaccount.InstanceIDLabel])
+	assert.Equal(t, testHostID, mock.CreatedRoleBindingLabels[0][serviceaccount.HostIDLabel])
 }
 
 func TestHostSelectDefaultNamespace(t *testing.T) { //nolint:paralleltest // mutates package-level state

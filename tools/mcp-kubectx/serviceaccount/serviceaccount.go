@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
@@ -49,6 +50,22 @@ var (
 	ErrExpirationTooLong = errors.New("--sa-expiration exceeds maximum (86400)")
 	ErrCreateSA          = errors.New("create service account")
 	ErrCreateBinding     = errors.New("create role binding")
+	// ErrMaybeCreated marks a [CreateWithBinding] failure after which
+	// the cluster might hold the ServiceAccount or its binding. A
+	// create call failed, and [kube.IsRejected] does not count its
+	// error as a refusal, so the apiserver might have stored the
+	// object.
+	ErrMaybeCreated = errors.New("create might have succeeded")
+	// ErrRollback marks a [CreateWithBinding] failure that left the
+	// ServiceAccount on the cluster, because the delete that rolls
+	// the ServiceAccount back also failed.
+	ErrRollback = errors.New("roll back service account")
+	// ErrDeleteSA wraps a [Release] failure to delete the
+	// ServiceAccount.
+	ErrDeleteSA = errors.New("delete service account")
+	// ErrDeleteBinding wraps a [Release] failure to delete the
+	// binding.
+	ErrDeleteBinding = errors.New("delete role binding")
 )
 
 // Config holds ServiceAccount configuration parsed from flags.
@@ -107,10 +124,17 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// randomSuffix returns the 8-hex random suffix used in generated
-// ServiceAccount names.
-func randomSuffix() (string, error) {
-	return identity.RandomHex(4) //nolint:wrapcheck // RandomHex errors are self-describing
+// NewName returns a fresh ServiceAccount name, which is
+// `claude-sa-` and 8 random hex characters. The caller picks the
+// name before [CreateWithBinding] runs, so that it can record the
+// ServiceAccount before the cluster holds it.
+func NewName() (string, error) {
+	suffix, err := identity.RandomHex(4)
+	if err != nil {
+		return "", fmt.Errorf("generate name: %w", err)
+	}
+
+	return "claude-sa-" + suffix, nil
 }
 
 // createBinding creates either a ClusterRoleBinding or a RoleBinding
@@ -162,31 +186,34 @@ func BindingName(saName string) string {
 	return saName + "-binding"
 }
 
-// CreateWithBinding creates a fresh ServiceAccount and a Role or
-// ClusterRole binding for it. The caller selects the namespace via
-// [ResolveNamespace] and passes it in. Network IO only; no token
-// minting, no kubeconfig writing, no cleanup registration. The
-// binding name follows [BindingName] so callers can derive it from
-// the returned SA name.
+// CreateWithBinding creates the ServiceAccount saName and a Role or
+// ClusterRole binding for it. The caller picks the name with
+// [NewName] and the namespace with [ResolveNamespace]. The function
+// calls only the cluster. It mints no token, writes no kubeconfig,
+// and registers no cleanup. The binding name follows [BindingName],
+// so callers derive it from the SA name.
 //
-// instanceID and hostID are tagged on the created resources via
-// [InstanceIDLabel] and [HostIDLabel] so the orphan sweep can
-// attribute them to a specific live serve and host. An empty string
-// for either parameter omits that label entirely; this is the
-// contract the standalone `host select` CLI invocation relies on.
+// The created resources carry instanceID as [InstanceIDLabel] and
+// hostID as [HostIDLabel], so that the orphan sweep attributes them
+// to one `serve` and one host. An empty string for either parameter
+// omits that label. The standalone `host select` CLI invocation
+// relies on that contract.
+//
+// A failure leaves nothing on the cluster when its error wraps
+// neither [ErrMaybeCreated] nor [ErrRollback]. The error wraps
+// [ErrMaybeCreated] when a create call failed without a refusal
+// that [kube.IsRejected] accepts, for example after a lost
+// connection, a timeout, or an AlreadyExists answer. The cluster
+// might then hold the ServiceAccount, the binding, or both. The
+// error wraps [ErrRollback] when the binding fails and the delete
+// that rolls the ServiceAccount back fails too, so the
+// ServiceAccount stays.
 func CreateWithBinding(
 	ctx context.Context,
 	client kube.Client,
 	sa Config,
-	namespace, instanceID, hostID string,
-) (string, error) {
-	suffix, err := randomSuffix()
-	if err != nil {
-		return "", fmt.Errorf("generate name: %w", err)
-	}
-
-	saName := "claude-sa-" + suffix
-
+	namespace, saName, instanceID, hostID string,
+) error {
 	labels := map[string]string{ManagedByLabel: ManagedByValue}
 
 	if instanceID != "" {
@@ -197,31 +224,102 @@ func CreateWithBinding(
 		labels[HostIDLabel] = hostID
 	}
 
-	err = client.CreateServiceAccount(ctx, namespace, saName, labels)
+	err := client.CreateServiceAccount(ctx, namespace, saName, labels)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrCreateSA, err)
+		return createErr(ErrCreateSA, err)
 	}
 
 	err = createBinding(ctx, client, sa, namespace, BindingName(saName), saName, labels)
 	if err != nil {
-		// Roll back the SA best-effort: it carries the live serve's
-		// own instance-id, which shields it from every sweep for as
-		// long as this serve runs, and a failed select registers no
-		// release closure -- without the rollback it would strand
-		// until the next serve's startup sweep.
+		bindingErr := createErr(ErrCreateBinding, err)
+
+		// Roll back the SA best-effort. The SA carries the
+		// instance-id of the live serve, and that id shields it from
+		// every sweep for as long as the serve runs. A failed select
+		// registers no release closure. Without the rollback, the SA
+		// stays until a sweep after the serve ends.
 		delErr := client.DeleteServiceAccount(ctx, namespace, saName)
-		if delErr != nil {
+		if delErr != nil && !kube.IsNotFound(delErr) {
 			slog.WarnContext(ctx, "rollback service account after binding failure",
 				slog.String("namespace", namespace),
 				slog.String("name", saName),
 				slog.Any("error", delErr),
 			)
+
+			return fmt.Errorf("%w: %w: %w", bindingErr, ErrRollback, delErr)
 		}
 
-		return "", fmt.Errorf("%w: %w", ErrCreateBinding, err)
+		return bindingErr
 	}
 
-	return saName, nil
+	return nil
+}
+
+// createErr wraps the error err of a create call with the sentinel
+// of the step. It adds [ErrMaybeCreated] unless [kube.IsRejected]
+// reports a refusal, because the apiserver might then have stored
+// the object.
+//
+// An AlreadyExists answer gets [ErrMaybeCreated] too. After some
+// answers client-go sends a create again, and a retry after an
+// attempt that stored the object gets AlreadyExists. The
+// ServiceAccount name ends in 8 random hex characters, so an object
+// of another owner with that name is far rarer than such a retry.
+func createErr(sentinel, err error) error {
+	if kube.IsRejected(err) {
+		return fmt.Errorf("%w: %w", sentinel, err)
+	}
+
+	return fmt.Errorf("%w: %w: %w", sentinel, ErrMaybeCreated, err)
+}
+
+// Release deletes the ServiceAccount saName and its binding. The
+// two deletes do not depend on each other, so Release runs them in
+// parallel, and a failure of one does not stop the other. A
+// resource that the cluster does not hold counts as deleted.
+//
+// Release returns nil when the cluster holds neither resource
+// afterward. Otherwise the error wraps [ErrDeleteSA],
+// [ErrDeleteBinding], or both.
+func Release(
+	ctx context.Context,
+	client kube.Client,
+	namespace, saName string,
+	clusterScoped bool,
+) error {
+	bindingName := BindingName(saName)
+
+	var (
+		wg         sync.WaitGroup
+		bindingErr error
+		saErr      error
+	)
+
+	wg.Go(func() {
+		if clusterScoped {
+			bindingErr = client.DeleteClusterRoleBinding(ctx, bindingName)
+		} else {
+			bindingErr = client.DeleteRoleBinding(ctx, namespace, bindingName)
+		}
+	})
+
+	wg.Go(func() {
+		saErr = client.DeleteServiceAccount(ctx, namespace, saName)
+	})
+
+	wg.Wait()
+
+	var errs []error
+
+	if bindingErr != nil && !kube.IsNotFound(bindingErr) {
+		errs = append(errs, fmt.Errorf("%w: %w", ErrDeleteBinding, bindingErr))
+	}
+
+	if saErr != nil && !kube.IsNotFound(saErr) {
+		errs = append(errs, fmt.Errorf("%w: %w", ErrDeleteSA, saErr))
+	}
+
+	return errors.Join(errs...)
 }
 
 // Describe returns a short human-readable description of the

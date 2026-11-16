@@ -48,6 +48,12 @@ const maxSunPathLen = 103
 // (UDS-over-Lima-bind-mount semantics on macOS-host are unverified;
 // the safe design avoids the question entirely by hosting the
 // socket outside the bind mount).
+//
+// The main package keeps its ledger of provision records in a
+// subdirectory, because a Lima guest cannot write here through the
+// bind mount. A guest can still add records through `workmux
+// host-exec mcp-kubectx host select`, so `host sweep` handles only
+// the records of its own kubeconfig.
 func StateDir() string {
 	return statedir.Subdir("mcp-kubectx-run")
 }

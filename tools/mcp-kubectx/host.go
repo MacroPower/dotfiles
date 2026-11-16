@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/execplugin"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/ledger"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/socket"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statedir"
@@ -31,14 +31,34 @@ import (
 const allowAPIServerHostFlag = "allow-apiserver-host"
 
 // Package-level indirections used by the host subcommands. Tests
-// override these to inject a fake [kube.Client] and to capture
-// stdout without forking the binary.
+// override these to inject a fake [kube.Client], to capture stdout
+// without forking the binary, and to keep the provision records in
+// a temporary directory.
 var (
 	hostKubeClient = func(kubeconfigPath, context string) (kube.Client, error) {
 		return kube.NewClientset(kubeconfigPath, context)
 	}
 	hostStdout io.Writer = os.Stdout
+	// hostLedgerDir returns the directory of the provision
+	// records. The directory lies beside the sockets in
+	// [socket.StateDir] and not in [statedir.Dir], because a Lima
+	// guest can write to [statedir.Dir] of the host through the
+	// bind mount. So only the `host` subcommands write records.
+	// A guest can still run `host select` through `workmux
+	// host-exec` with a --kubeconfig of its choice. So `host
+	// sweep` handles only the records of the kubeconfig that it
+	// sweeps.
+	hostLedgerDir = func() string {
+		return filepath.Join(socket.StateDir(), "ledger")
+	}
 )
+
+// hostLedger returns the ledger of provision records that `host
+// select` adds to, and that `host release` and `host sweep` remove
+// from.
+func hostLedger() *ledger.Ledger {
+	return ledger.New(hostLedgerDir())
+}
 
 // splitLeadingPositional pulls the leading positional argument off
 // the front of an argv slice. host select expects `<context-name>
@@ -207,6 +227,17 @@ func (s *stringSliceFlag) Set(v string) error {
 // runHostSelect creates an SA + binding and writes a scoped
 // kubeconfig whose user.exec block points at `host token`. The
 // caller owns cleanup and on-demand token minting.
+//
+// When the caller passes both --sa-host-id and --sa-instance-id,
+// runHostSelect adds a provision record for the SA to the ledger
+// before it creates the SA. A later `host sweep` of the same
+// kubeconfig reads that record to delete the SA after the `serve`
+// that owns it has died, on whichever cluster the SA lies. With
+// both ids set, an id that is not 16 lowercase hex characters fails
+// the call with [ledger.ErrInvalidID] before any cluster-side
+// mutation. When the create fails, runHostSelect removes the record
+// only after a failure that left nothing on the cluster, such as a
+// create that RBAC forbids.
 func runHostSelect(ctx context.Context, args []string) error {
 	contextName, rest, err := splitLeadingPositional(args)
 	if err != nil {
@@ -303,7 +334,13 @@ func runHostSelect(ctx context.Context, args []string) error {
 		return fmt.Errorf("invalid service account config: %w", err)
 	}
 
-	hostKubeconfig := resolveHostKubeconfigPath(*kubeconfigPath)
+	// The path is absolute so that `host token`, `host release`, and
+	// a later `host sweep` read the same file from any working
+	// directory.
+	hostKubeconfig, err := filepath.Abs(resolveHostKubeconfigPath(*kubeconfigPath))
+	if err != nil {
+		return fmt.Errorf("resolve kubeconfig path: %w", err)
+	}
 
 	cfg, err := kubeconfig.Load(hostKubeconfig)
 	if err != nil {
@@ -361,8 +398,52 @@ func runHostSelect(ctx context.Context, args []string) error {
 
 	namespace := serviceaccount.ResolveNamespace(sa, found.Context.Namespace)
 
-	saName, err := serviceaccount.CreateWithBinding(ctx, client, sa, namespace, *saInstanceID, *saHostID)
+	saName, err := serviceaccount.NewName()
 	if err != nil {
+		return err //nolint:wrapcheck // NewName errors are self-describing
+	}
+
+	// The record goes to disk before the create call. A `host
+	// select` that dies between the two steps then leaves a record
+	// of an SA that does not exist, which a sweep removes, and never
+	// an SA that no record names. Without both ids no `serve` owns
+	// the SA, so no sweep can tell when to delete it.
+	records := hostLedger()
+	record := ledger.Record{
+		HostID:         *saHostID,
+		InstanceID:     *saInstanceID,
+		Kubeconfig:     hostKubeconfig,
+		Context:        contextName,
+		Namespace:      namespace,
+		ServiceAccount: saName,
+		ClusterScoped:  sa.ClusterScoped,
+	}
+	recorded := *saHostID != "" && *saInstanceID != ""
+
+	if recorded {
+		err = records.Add(record)
+		if err != nil {
+			return err //nolint:wrapcheck // Add already wraps with its sentinel errors
+		}
+	}
+
+	err = serviceaccount.CreateWithBinding(ctx, client, sa, namespace, saName, *saInstanceID, *saHostID)
+	if err != nil {
+		// The record goes only when the failed create left nothing
+		// on the cluster. After a create call that the apiserver did
+		// not refuse, the apiserver might have stored the SA or the
+		// binding. AlreadyExists counts as such a call, because
+		// client-go gets it when it sends the create again after an
+		// attempt that stored the object. A failed rollback leaves
+		// the SA. In each of these cases the record stays, so that a
+		// sweep after this `serve` ends deletes whatever the cluster
+		// holds.
+		leftOnCluster := errors.Is(err, serviceaccount.ErrMaybeCreated) ||
+			errors.Is(err, serviceaccount.ErrRollback)
+		if recorded && !leftOnCluster {
+			removeRecord(ctx, records, record)
+		}
+
 		return err //nolint:wrapcheck // CreateWithBinding already wraps with its sentinel errors
 	}
 
@@ -490,10 +571,16 @@ func runHostToken(ctx context.Context, args []string) error {
 }
 
 // runHostRelease deletes a ServiceAccount and its associated binding.
-// Always exits 0 after logging any errors -- transient API hiccups,
-// NotFound, and exec failures alike. Returning non-zero would
-// otherwise force serve to retry the cleanup over the entire process
-// lifetime, which is worse than the leak.
+// It logs each failure and always exits 0, for a transient API
+// failure and for an exec failure alike. A non-zero exit makes
+// serve retry the cleanup for the rest of its lifetime, and that
+// retry is worse than the leak.
+//
+// After the cluster holds neither the SA nor the binding,
+// runHostRelease removes the provision records of the SA from the
+// ledger. A resource that the cluster did not hold counts as
+// deleted. When a delete fails, the records stay, and a `host
+// sweep` deletes the SA after the `serve` that owns it has died.
 func runHostRelease(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("host release", flag.ContinueOnError)
 
@@ -521,7 +608,9 @@ func runHostRelease(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	client, err := hostKubeClient(resolveHostKubeconfigPath(*kubeconfigPath), *contextName)
+	hostKubeconfig := resolveHostKubeconfigPath(*kubeconfigPath)
+
+	client, err := hostKubeClient(hostKubeconfig, *contextName)
 	if err != nil {
 		slog.WarnContext(ctx, "build kube client for release",
 			slog.String("sa", *saName),
@@ -531,46 +620,19 @@ func runHostRelease(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	bindingName := serviceaccount.BindingName(*saName)
+	err = serviceaccount.Release(ctx, client, *namespace, *saName, *clusterScoped)
+	if err != nil {
+		slog.WarnContext(ctx, "release service account",
+			slog.String("namespace", *namespace),
+			slog.String("name", *saName),
+			slog.Bool("clusterScoped", *clusterScoped),
+			slog.Any("error", err),
+		)
 
-	// Binding and SA deletes are independent; running them in
-	// parallel halves the K8s API round-trips per release.
-	var wg sync.WaitGroup
+		return nil
+	}
 
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-
-		var err error
-		if *clusterScoped {
-			err = client.DeleteClusterRoleBinding(ctx, bindingName)
-		} else {
-			err = client.DeleteRoleBinding(ctx, *namespace, bindingName)
-		}
-
-		if err != nil {
-			slog.WarnContext(ctx, "delete binding",
-				slog.String("name", bindingName),
-				slog.Bool("clusterScoped", *clusterScoped),
-				slog.Any("error", err),
-			)
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-
-		err := client.DeleteServiceAccount(ctx, *namespace, *saName)
-		if err != nil {
-			slog.WarnContext(ctx, "delete service account",
-				slog.String("name", *saName),
-				slog.Any("error", err),
-			)
-		}
-	}()
-
-	wg.Wait()
+	forgetServiceAccount(ctx, hostLedger(), hostKubeconfig, *contextName, *namespace, *saName)
 
 	return nil
 }

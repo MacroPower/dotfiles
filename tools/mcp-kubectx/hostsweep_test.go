@@ -3,14 +3,20 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sort"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubetest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/ledger"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/sweep"
 )
@@ -19,6 +25,16 @@ import (
 // fixture. Centralized so [identity.Valid]'s format and the
 // fixtures cannot drift independently.
 const testHostID = "0123456789abcdef"
+
+// Well-formed instance ids for the fixtures that write provision
+// records. testInstanceID stands for a live `serve`, and the dead
+// ids stand for instances that left records behind.
+const (
+	testInstanceID  = "1111111111111111"
+	testDeadID      = "dead000000000001"
+	testOtherDeadID = "dead000000000002"
+	testOtherHostID = "fedcba9876543210"
+)
 
 // TestRunHostSweepEndToEnd exercises the full flag-parse +
 // classify + delete path with a fake client. Pins the contract
@@ -214,10 +230,11 @@ func TestRunHostSweepSurfacesErrListWhenAllFail(t *testing.T) {
 }
 
 // TestHandlerRunSweepForwardsArgs pins the argv layout the serve
-// goroutine passes through runHost. Missing --context is
-// deliberate (sweep resolves cfg.CurrentContext itself);
-// --host-id and one --live-instance-id flag per id must be
-// present; --kubeconfig is forwarded only when set.
+// goroutine passes through runHost. The argv holds no --context,
+// because that flag limits the sweep to one cluster and turns off
+// its record pass. The argv holds --host-id and one
+// --live-instance-id flag per id. It holds --kubeconfig only when
+// the handler has a kubeconfig path.
 func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 	t.Parallel()
 
@@ -241,7 +258,7 @@ func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 	h.runSweep(t.Context(), map[string]struct{}{"inst-a": {}, "inst-b": {}, "host-1-inst": {}})
 
 	assert.Equal(t, subSweep, got.sub)
-	assert.NotContains(t, got.args, "--context", "context resolution lives in runHostSweep")
+	assert.NotContains(t, got.args, "--context", "a --context would turn off the record pass of the sweep")
 	assert.NotContains(t, got.args, "--kubeconfig", "kubeconfig is omitted when handler kubeconfigPath is empty")
 
 	hostIDIdx := indexOf(got.args, "--host-id")
@@ -399,4 +416,559 @@ func TestRunHostSweepIgnoresEmptyLiveID(t *testing.T) { //nolint:paralleltest //
 	// sa-a was preserved by the empty-label rule.
 	// sa-b should still be deleted (real-id not in live set).
 	assert.Equal(t, []string{"ns/sa-b"}, fake.DeletedSAs)
+}
+
+// sweepRecord returns a provision record of testHostID for the SA
+// saName in the namespace ns. The record reaches its cluster
+// through contextName of the kubeconfig at kubeconfigPath.
+func sweepRecord(instanceID, kubeconfigPath, contextName, saName string) ledger.Record {
+	return ledger.Record{
+		HostID:         testHostID,
+		InstanceID:     instanceID,
+		Kubeconfig:     kubeconfigPath,
+		Context:        contextName,
+		Namespace:      "ns",
+		ServiceAccount: saName,
+	}
+}
+
+// TestRunHostSweepReleasesRecordedServiceAccounts pins the record
+// pass. A sweep without --context deletes the SA and the binding of
+// each record of a dead instance, on the cluster of that record,
+// and then removes the record. The current-context of the swept
+// kubeconfig is prod, so the label pass never reaches staging or
+// dev. The sweep keeps the records of a live instance, of another
+// host id, and of another kubeconfig file. It never builds a client
+// from another kubeconfig file.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepReleasesRecordedServiceAccounts(t *testing.T) {
+	prod, staging, dev := &kubetest.Fake{}, &kubetest.Fake{}, &kubetest.Fake{}
+
+	clients := withHostKubeClients(t, map[string]kube.Client{"prod": prod, "staging": staging, "dev": dev})
+	records := withHostLedger(t)
+
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	// A serve with another --kubeconfig writes a record of another
+	// file, and so does a guest that runs `host select` through
+	// `workmux host-exec`.
+	otherKubeconfig := writeTestKubeconfig(t, testKubeconfig())
+
+	deadOnStaging := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-dead")
+
+	deadOnDev := sweepRecord(testOtherDeadID, kubeconfigPath, "dev", "claude-sa-crb")
+	deadOnDev.ClusterScoped = true
+
+	otherFile := sweepRecord(testOtherDeadID, otherKubeconfig, "dev", "claude-sa-other-file")
+
+	liveOnStaging := sweepRecord(testInstanceID, kubeconfigPath, "staging", "claude-sa-live")
+
+	otherHost := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-foreign")
+	otherHost.HostID = testOtherHostID
+
+	addRecords(t, records, deadOnStaging, deadOnDev, otherFile, liveOnStaging, otherHost)
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+	}))
+
+	assert.Equal(t, []string{"ns/claude-sa-dead"}, staging.DeletedSAs)
+	assert.Equal(t, []string{"ns/claude-sa-dead-binding"}, staging.DeletedRoleBindings)
+	assert.Empty(t, staging.DeletedClusterRoleBindings)
+
+	assert.Equal(t, []string{"ns/claude-sa-crb"}, dev.DeletedSAs)
+	assert.Equal(t, []string{"claude-sa-crb-binding"}, dev.DeletedClusterRoleBindings)
+	assert.Empty(t, dev.DeletedRoleBindings)
+
+	assert.Empty(t, prod.DeletedSAs, "the label pass found nothing on the current-context cluster")
+
+	assert.ElementsMatch(t, []ledger.Record{otherFile, liveOnStaging, otherHost}, listRecords(t, records))
+
+	assert.ElementsMatch(t, []string{
+		kubeClientCall(kubeconfigPath, "prod"),
+		kubeClientCall(kubeconfigPath, "staging"),
+		kubeClientCall(kubeconfigPath, "dev"),
+	}, clients.Calls(), "each record must reach its cluster through the swept kubeconfig and its own context")
+}
+
+// TestRunHostSweepSkipsRecordOfGuestKubeconfig pins that the record
+// pass never builds a client from the kubeconfig file of a record.
+// A Lima guest can run `host select` through `workmux host-exec`
+// with a --kubeconfig of its choice and with the host id of the
+// host. client-go runs the exec credential plugin of each
+// kubeconfig file that it loads. The startup sweep of a host-side
+// serve runs outside the sandbox of `workmux host-exec`, with the
+// default kubeconfig. So the sweep must keep the record of the
+// guest and leave its file alone.
+//
+//nolint:paralleltest // mutates package-level state and the environment
+func TestRunHostSweepSkipsRecordOfGuestKubeconfig(t *testing.T) {
+	records := withHostLedger(t)
+	withHostStdout(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KUBECONFIG_HOST", "")
+	t.Setenv("KUBECONFIG", "")
+
+	defaultKubeconfig := filepath.Join(home, ".kube", "config")
+	require.Equal(t, defaultKubeconfig, resolveHostKubeconfigPath(""))
+
+	data, err := os.ReadFile(writeTestKubeconfig(t, testKubeconfig()))
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(defaultKubeconfig), 0o700))
+	require.NoError(t, os.WriteFile(defaultKubeconfig, data, 0o600))
+
+	guestKubeconfig := writeTestKubeconfig(t, testKubeconfig())
+
+	withHostKubeClients(t, map[string]kube.Client{"prod": &kubetest.Fake{}})
+
+	require.NoError(t, selectProd(t, guestKubeconfig,
+		"--sa-host-id", testHostID,
+		"--sa-instance-id", testDeadID,
+	))
+
+	guestRecords := listRecords(t, records)
+	require.Len(t, guestRecords, 1)
+	require.Equal(t, guestKubeconfig, guestRecords[0].Kubeconfig)
+
+	prod := &kubetest.Fake{}
+	clients := withHostKubeClients(t, map[string]kube.Client{"prod": prod})
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+	}))
+
+	assert.Equal(t, []string{kubeClientCall(defaultKubeconfig, "prod")}, clients.Calls(),
+		"only the label pass may build a client, from the default kubeconfig")
+	assert.Empty(t, prod.DeletedSAs)
+	assert.Equal(t, guestRecords, listRecords(t, records))
+}
+
+// TestRunHostSweepEmptyLiveSetReleasesEveryRecord pins the manual
+// recovery semantics of the record pass. Without a
+// --live-instance-id every record of the host id counts as dead.
+// The records of another host id stay.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepEmptyLiveSetReleasesEveryRecord(t *testing.T) {
+	staging := &kubetest.Fake{}
+
+	withHostKubeClients(t, map[string]kube.Client{"prod": &kubetest.Fake{}, "staging": staging})
+
+	records := withHostLedger(t)
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	otherHost := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-foreign")
+	otherHost.HostID = testOtherHostID
+
+	addRecords(t, records,
+		sweepRecord(testInstanceID, kubeconfigPath, "staging", "claude-sa-a"),
+		sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-b"),
+		otherHost,
+	)
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--host-id", testHostID,
+	}))
+
+	sort.Strings(staging.DeletedSAs)
+	assert.Equal(t, []string{"ns/claude-sa-a", "ns/claude-sa-b"}, staging.DeletedSAs)
+	assert.Equal(t, []ledger.Record{otherHost}, listRecords(t, records))
+}
+
+// TestRunHostSweepRecordFollowsCluster pins when the record pass
+// removes a record. The record goes only after the cluster holds
+// neither the SA nor the binding, so that the next sweep tries a
+// failed release again. A failure on one cluster does not keep the
+// sweep from the record of another cluster.
+func TestRunHostSweepRecordFollowsCluster(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		staging kube.Client
+		stays   bool
+	}{
+		"already gone": {
+			staging: &kubetest.Fake{
+				DeleteSAErr:          notFoundErr("serviceaccounts", "claude-sa-dead"),
+				DeleteRoleBindingErr: notFoundErr("rolebindings", "claude-sa-dead-binding"),
+			},
+		},
+		"SA delete fails": {
+			staging: &kubetest.Fake{DeleteSAErr: errors.New("timeout")},
+			stays:   true,
+		},
+		"binding delete fails": {
+			staging: &kubetest.Fake{DeleteRoleBindingErr: errors.New("forbidden")},
+			stays:   true,
+		},
+		"client cannot be built": {
+			stays: true,
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			dev := &kubetest.Fake{}
+
+			clientMap := map[string]kube.Client{"prod": &kubetest.Fake{}, "dev": dev}
+			if tc.staging != nil {
+				clientMap["staging"] = tc.staging
+			}
+
+			withHostKubeClients(t, clientMap)
+
+			records := withHostLedger(t)
+			kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+			onStaging := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-dead")
+			onDev := sweepRecord(testDeadID, kubeconfigPath, "dev", "claude-sa-dev")
+
+			addRecords(t, records, onStaging, onDev)
+
+			require.NoError(t, runHostSweep(t.Context(), []string{
+				"--kubeconfig", kubeconfigPath,
+				"--host-id", testHostID,
+				"--live-instance-id", testInstanceID,
+			}))
+
+			assert.Equal(t, []string{"ns/claude-sa-dev"}, dev.DeletedSAs)
+
+			if tc.stays {
+				assert.Equal(t, []ledger.Record{onStaging}, listRecords(t, records))
+			} else {
+				assert.Empty(t, listRecords(t, records))
+			}
+		})
+	}
+}
+
+// TestRunHostSweepContextLimitsSweepToOneCluster pins that an
+// explicit --context turns off the record pass. The operator named
+// one cluster, so the sweep touches no other cluster and keeps the
+// records.
+func TestRunHostSweepContextLimitsSweepToOneCluster(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	staging := &kubetest.Fake{}
+
+	clients := withHostKubeClients(t, map[string]kube.Client{"prod": &kubetest.Fake{}, "staging": staging})
+	records := withHostLedger(t)
+
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+	onStaging := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-dead")
+
+	addRecords(t, records, onStaging)
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--context", "prod",
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+	}))
+
+	assert.Empty(t, staging.DeletedSAs)
+	assert.Equal(t, []ledger.Record{onStaging}, listRecords(t, records))
+	assert.Equal(t, []string{kubeClientCall(kubeconfigPath, "prod")}, clients.Calls())
+}
+
+// TestRunHostSweepLabelPassSurvivesUnreadableLedger pins that the
+// label pass does not depend on the ledger. When the sweep cannot
+// read the provision records, the record pass does nothing. The
+// label pass still deletes the orphans of the current-context
+// cluster, and the sweep returns nil.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepLabelPassSurvivesUnreadableLedger(t *testing.T) {
+	withUnreadableHostLedger(t)
+
+	prod := &kubetest.Fake{
+		ListSAResp: []kube.ResourceRef{{
+			Namespace: "ns",
+			Name:      "claude-sa-dead",
+			Labels:    map[string]string{serviceaccount.InstanceIDLabel: testDeadID},
+		}},
+	}
+
+	clients := withHostKubeClients(t, map[string]kube.Client{"prod": prod})
+
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+	}))
+
+	assert.Equal(t, []string{"ns/claude-sa-dead"}, prod.DeletedSAs)
+	assert.Equal(t, []string{kubeClientCall(kubeconfigPath, "prod")}, clients.Calls())
+}
+
+// TestRunHostSweepRecordPassSurvivesLabelPass pins that the record
+// pass does not depend on the label pass. Each case stops the label
+// pass in another way, and the sweep still releases the recorded SA
+// and returns the error of the label pass.
+func TestRunHostSweepRecordPassSurvivesLabelPass(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	missing := filepath.Join(t.TempDir(), "missing-kubeconfig")
+
+	tests := map[string]struct {
+		prod       *kubetest.Fake
+		kubeconfig func(t *testing.T) string
+		err        error
+	}{
+		"every list call fails": {
+			prod: &kubetest.Fake{
+				ListSAErr:  errors.New("forbidden"),
+				ListRBErr:  errors.New("forbidden"),
+				ListCRBErr: errors.New("forbidden"),
+			},
+			err: sweep.ErrList,
+		},
+		"kubeconfig of the sweep is missing": {
+			kubeconfig: func(*testing.T) string { return missing },
+			err:        kubeconfig.ErrLoad,
+		},
+		"kubeconfig has no current-context": {
+			kubeconfig: func(t *testing.T) string {
+				t.Helper()
+
+				cfg := testKubeconfig()
+				cfg.CurrentContext = ""
+
+				return writeTestKubeconfig(t, cfg)
+			},
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			prod := tc.prod
+			if prod == nil {
+				prod = &kubetest.Fake{}
+			}
+
+			staging := &kubetest.Fake{}
+
+			withHostKubeClients(t, map[string]kube.Client{"prod": prod, "staging": staging})
+
+			records := withHostLedger(t)
+
+			sweptKubeconfig := writeTestKubeconfig(t, testKubeconfig())
+			if tc.kubeconfig != nil {
+				sweptKubeconfig = tc.kubeconfig(t)
+			}
+
+			// The factory of the test does not read the file, so
+			// the record pass reaches staging whatever stopped the
+			// label pass.
+			addRecords(t, records, sweepRecord(testDeadID, sweptKubeconfig, "staging", "claude-sa-dead"))
+
+			err := runHostSweep(t.Context(), []string{
+				"--kubeconfig", sweptKubeconfig,
+				"--host-id", testHostID,
+				"--live-instance-id", testInstanceID,
+			})
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, []string{"ns/claude-sa-dead"}, staging.DeletedSAs)
+			assert.Empty(t, listRecords(t, records))
+		})
+	}
+}
+
+// TestRunHostSweepIgnoresRecordsAddedDuringLabelPass pins that the
+// record pass works on the records that existed before the first
+// cluster call. The live set of the sweep is a snapshot. A serve
+// that starts after the snapshot is not in it, so its record looks
+// like the record of a dead instance. Such a serve adds its record
+// only after the sweep has started.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepIgnoresRecordsAddedDuringLabelPass(t *testing.T) {
+	records := withHostLedger(t)
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	late := sweepRecord(testOtherDeadID, kubeconfigPath, "staging", "claude-sa-late")
+
+	prod := &hookClient{Fake: &kubetest.Fake{}}
+	prod.beforeListSAs = func() { addRecords(t, records, late) }
+
+	staging := &kubetest.Fake{}
+
+	withHostKubeClients(t, map[string]kube.Client{"prod": prod, "staging": staging})
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+	}))
+
+	assert.Empty(t, staging.DeletedSAs, "an SA recorded after the sweep started must survive the sweep")
+	assert.Equal(t, []ledger.Record{late}, listRecords(t, records))
+}
+
+// TestRunHostSweepRecordPassDoesNotWaitForLabelPass pins that the
+// two passes run at the same time. The label pass of the test
+// waits in its list call until the record pass has started a
+// delete. A sweep that ends the label pass first leaves that list
+// call waiting until its timer ends the wait.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepRecordPassDoesNotWaitForLabelPass(t *testing.T) {
+	records := withHostLedger(t)
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	released := make(chan struct{})
+
+	staging := &hookClient{Fake: &kubetest.Fake{}}
+	staging.beforeDeleteSA = sync.OnceFunc(func() { close(released) })
+
+	sawRelease := false
+
+	prod := &hookClient{Fake: &kubetest.Fake{}}
+	prod.beforeListSAs = func() {
+		select {
+		case <-released:
+			sawRelease = true
+		case <-time.After(10 * time.Second):
+		}
+	}
+
+	withHostKubeClients(t, map[string]kube.Client{"prod": prod, "staging": staging})
+
+	addRecords(t, records, sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-dead"))
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+	}))
+
+	assert.True(t, sawRelease, "the record pass must start while the label pass still waits")
+	assert.Empty(t, listRecords(t, records))
+}
+
+// stalledClient stands for a cluster that accepts a request and
+// never answers. Its SA delete returns only when the context of the
+// call ends.
+type stalledClient struct {
+	*kubetest.Fake
+}
+
+func (c *stalledClient) DeleteServiceAccount(ctx context.Context, namespace, name string) error {
+	_ = c.Fake.DeleteServiceAccount(ctx, namespace, name) //nolint:errcheck // records the attempt only
+
+	<-ctx.Done()
+
+	return ctx.Err() //nolint:wrapcheck // the test double returns the bare context error
+}
+
+// TestRunHostSweepRecordPassTimeout pins the cap on the time that
+// the record pass spends on one cluster. A cluster that never
+// answers ends the pass for its records after [recordPassTimeout].
+// The pass does not start the remaining records of that cluster,
+// and every record of the cluster stays for the next sweep.
+func TestRunHostSweepRecordPassTimeout(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	prevTimeout := recordPassTimeout
+	recordPassTimeout = 200 * time.Millisecond
+
+	t.Cleanup(func() { recordPassTimeout = prevTimeout })
+
+	staging := &stalledClient{Fake: &kubetest.Fake{}}
+
+	withHostKubeClients(t, map[string]kube.Client{"prod": &kubetest.Fake{}, "staging": staging})
+
+	records := withHostLedger(t)
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	first := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-first")
+	second := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-second")
+
+	addRecords(t, records, first, second)
+
+	// The deadline of the test context is far past the cap, so a
+	// sweep that returns before it was ended by the cap.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+
+	require.NoError(t, runHostSweep(ctx, []string{
+		"--kubeconfig", kubeconfigPath,
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+	}))
+
+	require.NoError(t, ctx.Err(), "the cap must end the pass, not the deadline of the caller")
+
+	// On a slow machine the cap can pass before the first record
+	// starts, so the pass starts one record or none.
+	assert.LessOrEqual(t, len(staging.DeletedSAs), 1, "the pass must not start a record after the cap")
+	assert.ElementsMatch(t, []ledger.Record{first, second}, listRecords(t, records))
+}
+
+// meetingClient delays its SA delete until its peer has started an
+// SA delete too, or until the context of the call ends. Two such
+// clients finish only when their clusters run at the same time.
+type meetingClient struct {
+	*kubetest.Fake
+
+	started chan struct{}
+	peer    <-chan struct{}
+	once    sync.Once
+}
+
+func (c *meetingClient) DeleteServiceAccount(ctx context.Context, namespace, name string) error {
+	c.once.Do(func() { close(c.started) })
+
+	select {
+	case <-c.peer:
+	case <-ctx.Done():
+		return ctx.Err() //nolint:wrapcheck // the test double returns the bare context error
+	}
+
+	//nolint:wrapcheck // the test double passes the error of the fake through
+	return c.Fake.DeleteServiceAccount(ctx, namespace, name)
+}
+
+// TestRunHostSweepRecordPassRunsClustersInParallel pins that a
+// cluster that does not answer delays no other cluster. Each
+// client waits for the other one to start, so both releases succeed
+// only when the record pass works on both clusters at the same
+// time. A pass that takes one cluster after the other leaves the
+// record of the first cluster behind after the cap.
+//
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepRecordPassRunsClustersInParallel(t *testing.T) {
+	prevTimeout := recordPassTimeout
+	recordPassTimeout = 10 * time.Second
+
+	t.Cleanup(func() { recordPassTimeout = prevTimeout })
+
+	stagingStarted, devStarted := make(chan struct{}), make(chan struct{})
+
+	staging := &meetingClient{Fake: &kubetest.Fake{}, started: stagingStarted, peer: devStarted}
+	dev := &meetingClient{Fake: &kubetest.Fake{}, started: devStarted, peer: stagingStarted}
+
+	withHostKubeClients(t, map[string]kube.Client{"prod": &kubetest.Fake{}, "staging": staging, "dev": dev})
+
+	records := withHostLedger(t)
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
+
+	addRecords(t, records,
+		sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-staging"),
+		sweepRecord(testDeadID, kubeconfigPath, "dev", "claude-sa-dev"),
+	)
+
+	require.NoError(t, runHostSweep(t.Context(), []string{
+		"--kubeconfig", kubeconfigPath,
+		"--host-id", testHostID,
+		"--live-instance-id", testInstanceID,
+	}))
+
+	assert.Empty(t, listRecords(t, records))
 }
