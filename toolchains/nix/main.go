@@ -84,16 +84,22 @@ func (m *Nix) base() *dagger.Container {
 // files (e.g., OrbStack's /etc/nixos/orbstack.nix) unavailable in CI.
 // NixOS configs are still validated by the Build check via nix eval.
 // +check
-func (m *Nix) FlakeCheck() *dagger.Container {
+func (m *Nix) FlakeCheck(ctx context.Context) error {
 	wrapper := `{
   inputs.src.url = "path:/src";
   outputs = { src, ... }: builtins.removeAttrs src.outputs [ "nixosConfigurations" "inventory" ];
 }`
 
-	return m.base().
+	_, err := m.base().
 		WithNewFile("/tmp/check/flake.nix", wrapper).
 		WithWorkdir("/tmp/check").
-		WithExec([]string{"nix", "flake", "check", "--no-build", "--no-write-lock-file"})
+		WithExec([]string{"nix", "flake", "check", "--no-build", "--no-write-lock-file"}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("checking the flake: %w", err)
+	}
+
+	return nil
 }
 
 // hosts returns the list of darwinConfigurations defined in the flake.
@@ -768,14 +774,7 @@ func patchSarifLocations(
 func (m *Nix) All(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	eg.Go(func() error {
-		_, err := m.FlakeCheck().Sync(ctx)
-		if err != nil {
-			return fmt.Errorf("checking the flake: %w", err)
-		}
-
-		return nil
-	})
+	eg.Go(func() error { return m.FlakeCheck(ctx) })
 	eg.Go(func() error { return m.Build(ctx) })
 	eg.Go(func() error { return m.BuildHome(ctx) })
 	eg.Go(func() error { return m.Lint(ctx) })
