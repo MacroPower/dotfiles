@@ -20,11 +20,12 @@ This workflow bumps the lock, then reads what changed upstream. It applies the
 fixes that the bump requires, and it files each new feature worth adopting as
 an aven task.
 
-The expensive middle step (changelog reading) is fanned out to parallel read-only
-agents, one per changed input and one per installed package that a
-package-carrying input moved, so a full update stays fast. The main agent
-applies all edits itself, and research agents never touch the repo. So no two
-agents make conflicting edits, and the final judgment stays in one place.
+The main agent spreads the expensive middle step, changelog reading, across
+parallel read-only agents, so a full update stays fast. Each changed input gets
+one agent, and so does each installed package that a package-carrying input
+moved. The main agent applies all edits itself, and research agents never
+touch the repo. So no two agents make conflicting edits, and the final judgment
+stays in one place.
 
 ## Step 1: Preflight
 
@@ -52,15 +53,16 @@ Get structured per-input changes:
 task nix:lock-diff
 ```
 
-It diffs HEAD's `flake.lock` against the working tree (run
-`task nix:lock-diff -- <rev-or-file> [new-file]` to compare other points) and prints
-a JSON array of changed root inputs with repo, old/new rev, dates, and a compare
-URL. It leaves out transitive nodes (`flake-parts_2`, `systems_3`, ...) on
-purpose, because they are not actionable here.
+It diffs HEAD's `flake.lock` against the working tree and prints a JSON array of
+changed root inputs. Each entry holds the repo, the old and the new rev, their
+dates, and a compare URL. To compare other points, run
+`task nix:lock-diff -- <rev-or-file> [new-file]`. It leaves out transitive
+nodes (`flake-parts_2`, `systems_3`, ...) on purpose, because they are not
+actionable here.
 
 A rev range describes what moved in that input's own tree. For an input that
-exists to package other software, the range hides the bumps that matter, and
-Step 4 expands them through `task nix:pkg-diff`.
+packages other software, the range hides the bumps that matter, and Step 4
+expands them through `task nix:pkg-diff`.
 
 ## Step 4: Classify inputs
 
@@ -90,14 +92,16 @@ Narrow to it:
 task nix:pkg-diff
 ```
 
-It evaluates the flake's `inventory` output at HEAD and in the working tree and
-reports version changes for exactly the packages the host configs install
-(whichever input provides them - nixpkgs, NURs, custom `pkgs/`), plus version
-changes for the declared Homebrew casks and brews between the bumped tap revs.
-It runs two full inventory evals, so it takes a couple of minutes: start it in
-the background first, then spawn Step 5's agents while it runs. Start
-`task nix:build-plan` in the background at the same time. It takes longer
-still, and Step 7 reads its output.
+It evaluates the flake's `inventory` output at HEAD and in the working tree. It
+then reports the version changes of exactly the packages that the host configs
+install, from whichever input provides them, such as nixpkgs, llm-agents, a
+NUR, or `pkgs/`. It also reports the version changes of the declared Homebrew
+casks and brews between the old and the new tap revs.
+
+`task nix:pkg-diff` runs two full inventory evals, so it takes a couple of
+minutes. Start it in the background first, then spawn Step 5's agents while it
+runs. Start `task nix:build-plan` in the background at the same time. It takes
+longer still, and Step 7 reads its output.
 
 Triage its output package by package:
 
@@ -106,14 +110,14 @@ Triage its output package by package:
   under `configs/`, options beyond `enable` under `programs.<name>`, or settings
   a `home/` module generates. Add a wave 2 agent (Step 5) per such tool to read
   its own release notes for config-breaking changes and new config options.
-  Claude Code is the canonical case: `home/claude.nix` generates its settings,
-  hooks, and MCP config, and its minor and patch releases rename keys and add
-  features, so every `claude-code` bump gets an agent reading Claude Code's
-  release notes. The same rule covers fish, neovim, kitty, git, and every other
-  tool with config here.
-- Minor/patch bumps of leaf tools with no config here (a bare package entry or
-  a lone `enable = true`) do not need research; fold them into the final report as
-  a one-line version summary.
+  Claude Code is the canonical case, because `home/claude.nix` generates its
+  settings, hooks, and MCP config. Its minor and patch releases rename keys and
+  add features, so every `claude-code` bump gets an agent that reads Claude
+  Code's release notes. The same rule covers fish, neovim, kitty, git, and
+  every other tool with config here.
+- Minor and patch bumps of leaf tools do not need research. Leaf tools have no
+  config here beyond a bare package entry or a lone `enable = true`. Fold their
+  bumps into the final report as a one-line version summary.
 - Remaining nixpkgs breakage (evaluation failures, removed attributes) still
   surfaces in Step 7, and only then is it worth researching the specific
   failure (search NixOS/nixpkgs PRs and issues, or use the nixos MCP tools).
@@ -127,7 +131,7 @@ run:
 - **Wave 2**, from `task nix:pkg-diff`: one agent per package promoted in
   Step 4. Spawn it as soon as pkg-diff finishes, even while wave 1 reports
   are still arriving. Skipping this wave is the most common way this skill
-  fails; the final report then covers what llm-agents.nix or nixpkgs did to
+  fails. The final report then covers what llm-agents.nix or nixpkgs did to
   their packaging and says nothing about what Claude Code or neovim changed.
 
 Within a wave, spawn all general-purpose agents in a single message so they run
@@ -180,13 +184,15 @@ If the range is pure maintenance (CI, docs, its own dependency bumps) and
 CARRIED is empty, say so in one line and stop.
 ```
 
-For wave 2, adapt the template: name the tool, give its own upstream repo and
-the old -> new version range from pkg-diff instead of flake input revs, and
-point the agent at that tool's config in this repo (`home/`, `configs/`) as the
-usage to judge against. Never hand a wave 2 agent the carrying input's repo. A
-commit titled `claude-code: 2.1.0 -> 2.2.0` in llm-agents.nix is a pointer to
-a changelog, not a changelog; the agent reads anthropics/claude-code's release
-notes for that range.
+For wave 2, adapt the template to the tool. Name the tool and its own upstream
+repo. In place of the flake input revs, give the old and the new version from
+pkg-diff. Point the agent at that tool's config in this repo (`home/`,
+`configs/`) as the usage to judge against.
+
+Never hand a wave 2 agent the carrying input's repo. A commit titled
+`claude-code: 2.1.0 -> 2.2.0` in llm-agents.nix is a pointer to a changelog,
+not a changelog. So the agent reads anthropics/claude-code's release notes for
+that range.
 
 While agents run, do not busy-wait. End the turn and act on completion
 notifications as they arrive.

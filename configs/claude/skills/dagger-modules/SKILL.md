@@ -35,7 +35,7 @@ The Go SDK is a Dagger module, `dagger.io/sdk/go`, that a workspace installs. Th
 | --- | --- |
 | Go code patterns and examples | [go-patterns.md](references/go-patterns.md) |
 | Architecture, types, caching, services, LLM | [architecture.md](references/architecture.md) |
-| Common recipes (builds, containers, etc.) | [cookbook.md](references/cookbook.md) |
+| Common recipes, such as builds, containers, and secrets | [cookbook.md](references/cookbook.md) |
 
 Read these reference files when you need detailed code examples or deeper guidance on a specific topic.
 
@@ -195,7 +195,7 @@ dagger call my-module build --src=. terminal
 
 Run `dagger generate -y` after you add a function or change a signature. In a module with a generated entrypoint, also run it after your code names a `dagger.` type that the module did not use before. Commit the regenerated bindings with the change.
 
-`dagger call` and `dagger functions` take the install name of a module before the function name. The functions of the workspace main module take no module name, and the functions of a module that `-m <path>` loads take none either. The other examples in this skill leave the module name out.
+`dagger call` and `dagger functions` take the install name of a module before the function name. The functions of the workspace main module do not take a module name. The functions of a module that `-m <path>` loads do not take one either. The other examples in this skill leave the module name out.
 
 ### 5. Install Dependencies
 
@@ -400,7 +400,7 @@ See [architecture.md](references/architecture.md) for detailed caching guidance.
 
 ## Toolchains
 
-Toolchains are modules designed for direct consumption without writing code. They provide ready-to-use functions and checks, allowing teams to add CI/CD capabilities with zero Dagger code.
+Toolchains are modules designed for direct consumption without writing code. They provide ready-to-use functions and checks, so teams can add CI/CD capabilities with zero Dagger code.
 
 ```shell
 # Users install your toolchain into their workspace
@@ -425,7 +425,7 @@ A good toolchain:
 
 ### Writing check functions
 
-Annotate each check function with `// +check`. A check function takes no required argument, but it can take optional arguments that have defaults. It returns only `error`, and the check fails when the error is not nil. To check a command, run the container with `Sync(ctx)` and return the error of `Sync`. `Sync` returns an error when the command exits with a non-zero code. Each check in this example runs a command that way:
+Annotate each check function with `// +check`. A check function does not take any required argument, but it can take optional arguments that have defaults. It returns only `error`, and the check fails when the error is not nil. To check a command, run the container with `Sync(ctx)` and return the error of `Sync`. `Sync` returns an error when the command exits with a non-zero code. Each check in this example runs a command that way:
 
 ```go
 // Lint runs golangci-lint on the source code
@@ -455,7 +455,7 @@ func (m *MyModule) Build(ctx context.Context) error {
 
 Do not return a `*dagger.Container` or another value from a check function. Dagger applies this rule to each module that it loads at a 1.0 beta or a later version. When a check function of such a module returns a value, Dagger fails to load the module with `check <Object>.<function> must return Void`. `Void` is the Dagger return type of a Go function that returns only `error`.
 
-Every module that `dagger module init` creates loads at a 1.0 beta or a later version. Dagger loads a module on the Go runtime at the version that its `engineVersion` declares, and Go SDK v1.6.0 writes v1.0.0-beta.25 there. A module with a generated entrypoint declares no `engineVersion`, and Dagger loads it at the version of the engine. [dagger-module.toml](references/architecture.md#dagger-moduletoml) in architecture.md covers the two manifests.
+Every module that `dagger module init` creates loads at a 1.0 beta or a later version. Dagger loads a module on the Go runtime at the version that its `engineVersion` declares, and Go SDK v1.6.0 writes v1.0.0-beta.25 there. A module with a generated entrypoint does not declare an `engineVersion`, and Dagger loads it at the version of the engine. [dagger-module.toml](references/architecture.md#dagger-moduletoml) in architecture.md covers the two manifests.
 
 Dagger does not apply the rule to a module whose `engineVersion` is lower than 1.0, such as a `dagger.json` module of a 0.x project. A check function of such a module can return a `*dagger.Container`. Dagger then runs the container, and the check fails when a command of the container exits with a non-zero code. Return only `error` from each check function that you add to such a module, so that the module still loads after its `engineVersion` rises to 1.0.
 
@@ -539,7 +539,7 @@ Each `vault://` address has the form `vault://<mount>/<path>.<field>`. The first
 
 Always pass a full `<provider>://` scheme. Dagger 1.0 rejects a bare name such as `API_TOKEN`, and it rejects the short form `env:API_TOKEN`.
 
-Function arguments (including secret references) can be persisted as user-defaults in a local `.env` file (named `MODULE_ARG` or `TYPE_FUNC_ARG`, case-insensitive). Dagger stores the *reference* (for example, `env://API_TOKEN`), never the raw secret value, so the `.env` holds no secret material.
+You can persist function arguments, including secret references, as user-defaults in a local `.env` file. Name each variable `MODULE_ARG` or `TYPE_FUNC_ARG`. Dagger matches the names without regard to case. Dagger stores the *reference* (for example, `env://API_TOKEN`), never the raw secret value, so the `.env` does not hold any secret material.
 
 By default, secrets with identical plaintext share cache entries. For rotating secrets that should still share cache, use a `cacheKey`:
 
@@ -675,11 +675,11 @@ func (t *Tests) All(ctx context.Context) error {
 }
 ```
 
-**Testable examples**: Create an `examples/go/` module that both showcases usage and acts as integration tests. These serve as documentation on daggerverse.dev and improve module discoverability.
+**Testable examples**: Create an `examples/go/` module that both shows usage and acts as integration tests. These serve as documentation on daggerverse.dev and improve module discoverability.
 
 ## Publishing
 
-1. Describe the module in the comment that opens `main.go`, above the `package` clause. Dagger publishes the comment as the description of a module on the Go runtime. Go SDK v1.6.0 publishes no description for a module with a generated entrypoint
+1. Describe the module in the comment that opens `main.go`, above the `package` clause. Dagger publishes the comment as the description of a module on the Go runtime. Go SDK v1.6.0 does not publish a description for a module with a generated entrypoint
 2. Document functions with Go comments (they become API docs)
 3. Run `dagger generate -y` and commit the generated code, because Dagger loads a published module from its committed bindings
 4. Tag with semver: `git tag v1.0.0 && git push --tags`
@@ -687,7 +687,7 @@ func (t *Tests) All(ctx context.Context) error {
 
 ## Changesets
 
-Functions can return a `*dagger.Changeset` to represent file modifications that should be applied back to the source directory. This is useful for code generation, formatting, and other source-modifying operations. Annotate a generator with `// +generate` to register it with the `dagger generate` command:
+Functions can return a `*dagger.Changeset` to represent file modifications for the Dagger CLI to apply to the source directory. This is useful for code generation, formatting, and other source-modifying operations. Annotate a generator with `// +generate` to register it with the `dagger generate` command:
 
 ```go
 // Generate runs go generate and returns changes to apply
@@ -746,7 +746,7 @@ Dagger pipelines run identically locally and in CI. Write pipeline logic in Dagg
 | Custom types | Group related data and functions | [go-patterns.md](references/go-patterns.md) |
 | Service binding | Test against databases, APIs | [architecture.md](references/architecture.md) |
 | Cache volumes | Speed up package manager installs | [architecture.md](references/architecture.md) |
-| LLM agents | AI-powered code generation/review | [architecture.md](references/architecture.md) |
+| LLM agents | AI-powered code generation and review | [architecture.md](references/architecture.md) |
 | Error inspection | Handle exec failures gracefully | [go-patterns.md](references/go-patterns.md) |
 | Changesets | Return source modifications from functions | SKILL.md (above) |
 | Mount vs copy | `WithMountedDirectory` (fast, temp) vs `WithDirectory` (persisted) | [cookbook.md](references/cookbook.md) |
