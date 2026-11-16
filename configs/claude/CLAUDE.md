@@ -29,3 +29,12 @@ description: >-
 
 Note how the contents of `taskfile` are not enumerated. We focus ONLY on giving
 info about when/where/why the model should load the skill.
+
+## Vendored Skills
+
+You may edit the files of `skills/playwright-cli/` in place. They are the skill
+files of the playwright-cli release that `pkgs/playwright-cli.nix` names, with
+local edits. `pkgs/playwright-cli-update.sh` replaces them with the skill files
+of the latest release, and it makes each local edit again in those files. When
+a local edit conflicts with that release, the script prints the edit and fails.
+The comment at the top of the script describes its options.
