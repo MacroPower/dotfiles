@@ -82,10 +82,11 @@
 # the user cannot write ROOT.
 #
 # The tool keeps each clone of an owner directory that it entered and
-# cannot read. The run then fails and names the owner directory. A user
-# other than root can enter a directory with the mode 300 and cannot
-# read it. When the tool cannot read ROOT, it keeps every entry there,
-# and the run fails and names ROOT.
+# cannot read. The run then fails and names the owner directory. Without
+# a user namespace, a user other than root can enter a directory with
+# the mode 300 that the user owns and cannot read it. When the tool
+# cannot read ROOT, it keeps every entry there, and the run fails and
+# names ROOT.
 #
 # The tool leaves a clone alone while mcp-git, the git MCP server, holds
 # a lock on it. A git_clone call holds a flock on the file <clone>.lock

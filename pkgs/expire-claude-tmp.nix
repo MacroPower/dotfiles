@@ -32,17 +32,17 @@
 #
 # When the tool cannot enter a project directory, it keeps each session
 # directory there, and the run fails and names the project directory.
-# A user other than root cannot enter a project directory whose mode
-# keeps that user out. The tool also refuses a project directory when a
-# symbolic link or another directory took its place after the tool
-# examined it.
+# Without a user namespace, a user other than root cannot enter a
+# project directory whose mode keeps that user out. The tool also
+# refuses a project directory when a symbolic link or another directory
+# took its place after the tool examined it.
 #
 # The tool also keeps each session directory of a project directory
 # that it entered and cannot read. The run then fails and names the
-# project directory. A user other than root can enter a directory with
-# the mode 300 and cannot read it. When the tool cannot read
-# DIR/claude-<uid>, it keeps every entry there, and the run fails and
-# names that directory.
+# project directory. Without a user namespace, a user other than root
+# can enter a directory with the mode 300 that the user owns and cannot
+# read it. When the tool cannot read DIR/claude-<uid>, it keeps every
+# entry there, and the run fails and names that directory.
 #
 # Root can mount a directory from anywhere in the tree, and
 # `rm --one-file-system` crosses a bind mount of the same file system.
@@ -106,8 +106,9 @@
 #   as `sessionId`. When a file does not name both, the tool cannot tell
 #   which sessions run. It then removes no session directory and fails.
 #   The tool also removes no session directory and fails when it cannot
-#   read SESSIONS. A user other than root cannot read a directory with
-#   the mode 300 or 000. No session runs when SESSIONS does not exist.
+#   read SESSIONS. Without a user namespace, a user other than root
+#   cannot read a directory with the mode 300 or 000. No session runs
+#   when SESSIONS does not exist.
 # - Each session directory that a process holds open or has as its
 #   working directory, and each session directory that holds such a
 #   file or directory. A background command holds its output file open.
