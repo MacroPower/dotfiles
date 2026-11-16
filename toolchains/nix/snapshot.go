@@ -24,13 +24,13 @@ type cdxComponent struct {
 // ghSnapshot is the GitHub dependency submission API payload.
 // https://docs.github.com/en/rest/dependency-graph/dependency-submission
 type ghSnapshot struct {
-	Version   int                    `json:"version"`
-	Scanned   string                 `json:"scanned"`
-	SHA       string                 `json:"sha"`
-	Ref       string                 `json:"ref"`
-	Job       ghJob                  `json:"job"`
-	Detector  ghDetector             `json:"detector"`
-	Manifests map[string]ghManifest  `json:"manifests"`
+	Version   int                   `json:"version"`
+	Scanned   string                `json:"scanned"`
+	SHA       string                `json:"sha"`
+	Ref       string                `json:"ref"`
+	Job       ghJob                 `json:"job"`
+	Detector  ghDetector            `json:"detector"`
+	Manifests map[string]ghManifest `json:"manifests"`
 }
 
 // ghJob identifies the CI run that produced the snapshot.
@@ -96,8 +96,8 @@ func buildDependencySnapshot(cdx cdxBOM, sha, ref, correlator, runURL string) gh
 		},
 		Manifests: map[string]ghManifest{
 			"nix-closure": {
-				Name: "nix-closure",
-				File: &ghManifestFile{SourceLocation: "flake.nix"},
+				Name:     "nix-closure",
+				File:     &ghManifestFile{SourceLocation: "flake.nix"},
 				Resolved: resolved,
 			},
 		},

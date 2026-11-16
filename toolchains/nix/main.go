@@ -267,7 +267,9 @@ func (m *Nix) Build(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Lint checks formatting and lint rules via treefmt (nixfmt, deadnix, statix).
+// Lint checks formatting and lint rules via treefmt.
+//
+// treefmt runs nixfmt, deadnix, statix, shfmt, prettier, and gofmt.
 // +check
 func (m *Nix) Lint(ctx context.Context) error {
 	_, err := m.base().
@@ -288,7 +290,9 @@ func (m *Nix) Editorconfig(ctx context.Context) error {
 	return err
 }
 
-// Format applies all auto-fixes via treefmt (nixfmt, deadnix, statix).
+// Format applies all auto-fixes via treefmt.
+//
+// treefmt runs nixfmt, deadnix, statix, shfmt, prettier, and gofmt.
 // +generate
 func (m *Nix) Format() *dagger.Changeset {
 	fixed := m.base().

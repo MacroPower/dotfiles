@@ -43,12 +43,12 @@ func (m *Tests) AllFull(ctx context.Context) error {
 // ghSnapshot is the subset of the GitHub dependency snapshot format
 // needed to validate [Nix.DependencySnapshot] output.
 type ghSnapshot struct {
-	Version   int                    `json:"version"`
-	SHA       string                 `json:"sha"`
-	Ref       string                 `json:"ref"`
-	Job       ghJob                  `json:"job"`
-	Detector  ghDetector             `json:"detector"`
-	Manifests map[string]ghManifest  `json:"manifests"`
+	Version   int                   `json:"version"`
+	SHA       string                `json:"sha"`
+	Ref       string                `json:"ref"`
+	Job       ghJob                 `json:"job"`
+	Detector  ghDetector            `json:"detector"`
+	Manifests map[string]ghManifest `json:"manifests"`
 }
 
 type ghJob struct {

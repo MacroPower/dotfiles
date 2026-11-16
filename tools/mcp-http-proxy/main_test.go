@@ -85,8 +85,8 @@ func TestProxyRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	var (
-		initializePostSeen   atomic.Bool
-		postAfterInitialize  atomic.Int32
+		initializePostSeen    atomic.Bool
+		postAfterInitialize   atomic.Int32
 		protoVersionAfterInit atomic.Value // string
 	)
 

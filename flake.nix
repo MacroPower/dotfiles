@@ -120,6 +120,7 @@
             statix.enable = true;
             shfmt.enable = true;
             prettier.enable = true;
+            gofmt.enable = true;
           };
 
           checks =

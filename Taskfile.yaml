@@ -191,7 +191,7 @@ tasks:
       - task: nix:format
 
   lint:
-    desc: Check formatting and lint (nixfmt, deadnix, statix via treefmt)
+    desc: Check formatting and lint (nixfmt, deadnix, statix, shfmt, prettier, gofmt via treefmt)
     cmds:
       - task: nix:lint
 

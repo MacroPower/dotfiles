@@ -2,7 +2,7 @@ version: "3"
 
 tasks:
   lint:
-    desc: Check formatting and lint (nixfmt, deadnix, statix via treefmt)
+    desc: Check formatting and lint (nixfmt, deadnix, statix, shfmt, prettier, gofmt via treefmt)
     cmds:
       - dagger check nix:lint
 
