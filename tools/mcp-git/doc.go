@@ -167,6 +167,14 @@
 // the config commands of the other repository, because it does not
 // inherit the options of the server.
 //
+// git_fetch, git_pull, and git_push also refuse a remote that has no
+// URL. The git config defines such a remote when it sets another key
+// of the remote, such as remote.<name>.fetch, and stores no URL in
+// remote.<name>.url. The error says that the remote has no URL, and it
+// names that key. git pushes to the push URLs of a remote, so git_push
+// refuses the remote only when remote.<name>.pushurl stores no URL
+// either. Its error names both keys.
+//
 // # Connections
 //
 // Git sends a credential over the https connection to the host of the

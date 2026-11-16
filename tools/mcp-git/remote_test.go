@@ -24,6 +24,9 @@ type remoteTool struct {
 	// lacks.
 	local bool
 
+	// failure is the error that wraps each failure of the tool.
+	failure error
+
 	// op holds the fields of the [remoteOp] that the tool runs for
 	// the remote origin. A test that calls git itself sets the
 	// repository.
@@ -42,6 +45,7 @@ func remoteTools() map[string]remoteTool {
 	return map[string]remoteTool{
 		"fetch": {
 			upstream: true,
+			failure:  ErrFetch,
 			op:       remoteOp{remote: defaultRemote, args: buildFetchArgs(defaultRemote, FetchInput{})},
 			call: func(ctx context.Context, h *handler, repo string) (*mcp.CallToolResult, any, error) {
 				return h.handleFetch(ctx, nil, FetchInput{Repo: repo})
@@ -54,6 +58,7 @@ func remoteTools() map[string]remoteTool {
 		},
 		"pull": {
 			upstream: true,
+			failure:  ErrPull,
 			op: remoteOp{
 				remote:   defaultRemote,
 				worktree: true,
@@ -71,6 +76,7 @@ func remoteTools() map[string]remoteTool {
 		"pull with rebase": {
 			upstream: true,
 			local:    true,
+			failure:  ErrPull,
 			op: remoteOp{
 				remote:      defaultRemote,
 				worktree:    true,
@@ -89,7 +95,8 @@ func remoteTools() map[string]remoteTool {
 			},
 		},
 		"push": {
-			local: true,
+			local:   true,
+			failure: ErrPush,
 			op: remoteOp{
 				remote: defaultRemote,
 				push:   true,
@@ -692,6 +699,167 @@ func TestRemoteToolsRefuseDeniedURL(t *testing.T) {
 				assert.NotContains(t, text, script, "error must name the remote, never its URL")
 
 				requireNotRun(t, marker)
+				rt.requireNotLanded(t, bare, work)
+			})
+		}
+	}
+}
+
+// The git config can define a remote without a URL. git then uses the
+// name of the remote as its URL, and the server refuses that name as a
+// URL. The error must say that the remote has no URL. It must not say
+// that the remote has a URL of a scheme that the server refuses.
+func TestRemoteToolsRefuseRemoteWithoutURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		noURL     = "remote has no URL: origin: the git config stores no URL in remote.origin.url"
+		noPushURL = noURL + " and no push URL in remote.origin.pushurl"
+	)
+
+	// An empty value of remote.<name>.url or remote.<name>.pushurl
+	// clears the URLs that the git config stores before it, in git
+	// 2.46 and later.
+	tcs := map[string]struct {
+		// remote removes the URL of the origin remote of the clone at
+		// work. bare is the path of the bare repository.
+		remote func(t *testing.T, work, bare string)
+
+		// pushURL is set when the remote keeps the path of the bare
+		// repository as its push URL.
+		pushURL bool
+	}{
+		"remote that lost its URL": {
+			remote: func(t *testing.T, work, _ string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{{"git", "-C", work, "config", "--unset", "remote.origin.url"}})
+			},
+		},
+		"empty value clears the URL": {
+			remote: func(t *testing.T, work, _ string) {
+				t.Helper()
+
+				appendGitConfig(t, work, remoteNamed("origin", ""))
+			},
+		},
+		"push URL and no URL": {
+			remote: func(t *testing.T, work, bare string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{
+					{"git", "-C", work, "config", "--unset", "remote.origin.url"},
+					{"git", "-C", work, "config", "remote.origin.pushurl", bare},
+				})
+			},
+			pushURL: true,
+		},
+		"empty values clear the URL and the push URL": {
+			remote: func(t *testing.T, work, bare string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{{"git", "-C", work, "config", "remote.origin.pushurl", bare}})
+				appendGitConfig(t, work, "[remote \"origin\"]\n\turl =\n\tpushurl =\n")
+			},
+		},
+	}
+
+	for toolName, rt := range remoteTools() {
+		for name, tc := range tcs {
+			t.Run(toolName+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				bare, work := rt.repos(t)
+
+				tc.remote(t, work, bare)
+
+				// git pushes to the push URLs of a remote, so a remote
+				// with a push URL and no URL still takes a push.
+				if rt.op.push && tc.pushURL {
+					result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+					require.NoError(t, err)
+					require.False(t, result.IsError, resultText(t, result))
+
+					rt.requireLanded(t, bare, work)
+
+					return
+				}
+
+				want := rt.failure.Error() + ": " + noURL
+				if rt.op.push {
+					want = rt.failure.Error() + ": " + noPushURL
+				}
+
+				// A server that allows every URL has no URL to connect
+				// to either.
+				for _, h := range []*handler{{}, {allowFileURLs: true}} {
+					result, _, err := rt.call(t.Context(), h, work)
+					require.NoError(t, err)
+					require.True(t, result.IsError, "the tool must refuse the remote")
+
+					assert.Equal(t, want, resultText(t, result))
+				}
+
+				rt.requireNotLanded(t, bare, work)
+			})
+		}
+	}
+}
+
+// The git config can store the name of a remote as its URL. git reads
+// the same URL for that remote as for a remote without a URL. The
+// remote has a URL, so the error must still say that the server
+// refuses the URL.
+func TestRemoteToolsRefuseStoredRemoteName(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		// cmds stores the name origin as a URL of the origin remote of
+		// the clone at work.
+		cmds func(work string) [][]string
+
+		// push is set when only a push reads the URL.
+		push bool
+	}{
+		"URL": {
+			cmds: func(work string) [][]string {
+				return [][]string{{"git", "-C", work, "config", "remote.origin.url", "origin"}}
+			},
+		},
+		"push URL and no URL": {
+			cmds: func(work string) [][]string {
+				return [][]string{
+					{"git", "-C", work, "config", "--unset", "remote.origin.url"},
+					{"git", "-C", work, "config", "remote.origin.pushurl", "origin"},
+				}
+			},
+			push: true,
+		},
+	}
+
+	for toolName, rt := range remoteTools() {
+		for name, tc := range tcs {
+			if tc.push && !rt.op.push {
+				continue
+			}
+
+			t.Run(toolName+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				bare, work := rt.repos(t)
+
+				runGitCmds(t, tc.cmds(work))
+
+				result, _, err := rt.call(t.Context(), &handler{}, work)
+				require.NoError(t, err)
+				require.True(t, result.IsError, "the tool must refuse the remote")
+
+				assert.Equal(t,
+					rt.failure.Error()+": "+ErrDeniedURL.Error()+
+						": remote origin has a URL that is not https, ssh, or user@host:path",
+					resultText(t, result),
+				)
+
 				rt.requireNotLanded(t, bare, work)
 			})
 		}

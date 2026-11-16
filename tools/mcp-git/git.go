@@ -81,6 +81,10 @@ var (
 	// configured in the repository.
 	ErrUnknownRemote = errors.New("unknown remote")
 
+	// ErrNoRemoteURL is returned when a remote of the repository has
+	// no URL. For a push, the remote also has no push URL.
+	ErrNoRemoteURL = errors.New("remote has no URL")
+
 	// remoteNamePattern matches the remote names accepted by
 	// [checkRemoteName]. It is deliberately narrower than git's own
 	// rules so that no URL form can pass as a remote name.
@@ -151,6 +155,9 @@ type remoteOp struct {
 // override, as [repoConfig.check] describes. [handler.gitOptions] and
 // [handler.commandEnv] turn off the hooks and each other command.
 //
+// runRemote refuses a remote that has no URL with [ErrNoRemoteURL], as
+// [remoteLacksURL] decides.
+//
 // The config also names the working tree, with core.worktree.
 // runRemote refuses a working tree that [handler.checkWorkTree]
 // denies, and [handler.gitOptions] passes the path that runRemote
@@ -217,6 +224,18 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	urls, err := remoteURLs(ctx, abs, op.remote, op.push)
 	if err != nil {
 		return "", err
+	}
+
+	// git uses the name of a remote without a URL as its URL, and
+	// checkURL refuses that name. This check comes first, so that the
+	// error does not say that the remote has a URL.
+	lacksURL, err := remoteLacksURL(ctx, abs, op.remote, urls[0], op.push)
+	if err != nil {
+		return "", err
+	}
+
+	if lacksURL {
+		return "", noRemoteURLError(op.remote, op.push)
 	}
 
 	// git reaches a repository on the local file system by starting
@@ -799,6 +818,73 @@ func remoteURLs(ctx context.Context, repo, remote string, push bool) ([]string, 
 	}
 
 	return strings.Split(out, "\n"), nil
+}
+
+// remoteLacksURL reports whether remote has no URL in the repository
+// at repo. url is the first URL that [remoteURLs] returns for the
+// remote. When push is set, url is a push URL, and remoteLacksURL
+// reports whether the remote has no URL and no push URL.
+//
+// The git config defines a remote without a URL when it stores no URL
+// in remote.<name>.url and sets another key of the remote.
+// remote.<name>.pushurl and remote.<name>.fetch are such keys. git
+// uses the name of a remote without a URL as its URL, so git remote
+// get-url prints the name and exits with status 0. git pushes to the
+// push URLs of a remote, and to its URLs when it has no push URL. A
+// remote that has a push URL and no URL therefore still takes a push.
+//
+// The git config can also store the name of the remote as its URL.
+// remoteLacksURL therefore reads remote.<name>.url when url is the
+// name of the remote, and for a push it also reads
+// remote.<name>.pushurl. [configValue] returns the last value that the
+// config stores for a key. An empty value clears the URLs that the
+// config stores before it, in git 2.46 and later. The config therefore
+// stores no URL under a key when configValue returns "".
+//
+// git applies the url.<base>.insteadOf rewrites to the name as well,
+// and for a push the url.<base>.pushInsteadOf rewrites. When a rewrite
+// changes the name, git reads another URL for the remote than its
+// name, and it connects to that URL. remoteLacksURL then returns
+// false.
+//
+// A file under .git/remotes or .git/branches can also store the name
+// of the remote as its URL. git reads the same URL for that remote as
+// for a remote without a URL, and remoteLacksURL returns true for
+// both remotes.
+func remoteLacksURL(ctx context.Context, repo, remote, url string, push bool) (bool, error) {
+	if url != remote {
+		return false, nil
+	}
+
+	keys := []string{"remote." + remote + ".url"}
+	if push {
+		keys = append(keys, "remote."+remote+".pushurl")
+	}
+
+	for _, key := range keys {
+		stored, err := configValue(ctx, repo, key)
+		if err != nil {
+			return false, err
+		}
+
+		if stored != "" {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+// noRemoteURLError returns the [ErrNoRemoteURL] error for remote. The
+// error names the key of the git config that stores no URL. For a
+// push, it also names the key that stores no push URL.
+func noRemoteURLError(remote string, push bool) error {
+	detail := "the git config stores no URL in remote." + remote + ".url"
+	if push {
+		detail += " and no push URL in remote." + remote + ".pushurl"
+	}
+
+	return fmt.Errorf("%w: %s: %s", ErrNoRemoteURL, remote, detail)
 }
 
 // checkRemoteInputs validates the fields shared by the remote

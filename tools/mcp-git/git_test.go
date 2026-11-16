@@ -424,6 +424,144 @@ func TestConfigValue(t *testing.T) {
 	}
 }
 
+// fetchOnlyOrigin is git config text that defines the origin remote
+// with a fetch refspec and without a URL.
+const fetchOnlyOrigin = "[remote \"origin\"]\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+
+// git uses the name of a remote without a URL as its URL. The git
+// config can also store that name as a URL of the remote, and a
+// rewrite can change the name. remoteLacksURL must return true only
+// for a remote that has no URL to connect to.
+func TestRemoteLacksURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		fetchURL = aliasPrefix + "a.git"
+		pushURL  = aliasPrefix + "p.git"
+
+		// namedPushURL stores the name of the origin remote as its
+		// push URL, and no URL.
+		namedPushURL = "[remote \"origin\"]\n\tpushurl = origin\n"
+
+		// rewrite and pushRewrite change the name origin to a URL
+		// under aliasPrefix.
+		rewrite     = "[url \"" + aliasPrefix + "\"]\n\tinsteadOf = ori\n"
+		pushRewrite = "[url \"" + aliasPrefix + "\"]\n\tpushInsteadOf = ori\n"
+	)
+
+	// originURLs returns git config text that stores a URL and a push
+	// URL for the origin remote. An empty value clears the URLs that
+	// the git config stores before it, in git 2.46 and later.
+	originURLs := func(url, pushURL string) string {
+		return "[remote \"origin\"]\n\turl = " + url + "\n\tpushurl = " + pushURL + "\n"
+	}
+
+	tcs := map[string]struct {
+		config string
+		remote string
+		push   bool
+		want   bool
+	}{
+		"URL": {
+			config: remoteNamed("origin", fetchURL),
+		},
+		"URL, for a push": {
+			config: remoteNamed("origin", fetchURL),
+			push:   true,
+		},
+		"push URL and no URL": {
+			config: pushOnlyOrigin,
+			want:   true,
+		},
+		"push URL and no URL, for a push": {
+			config: pushOnlyOrigin,
+			push:   true,
+		},
+		"fetch refspec and no URL": {
+			config: fetchOnlyOrigin,
+			want:   true,
+		},
+		"fetch refspec and no URL, for a push": {
+			config: fetchOnlyOrigin,
+			push:   true,
+			want:   true,
+		},
+		"empty value clears the URL": {
+			config: remoteNamed("origin", fetchURL) + remoteNamed("origin", ""),
+			want:   true,
+		},
+		"empty values clear the URL and the push URL, for a push": {
+			config: originURLs(fetchURL, pushURL) + originURLs("", ""),
+			push:   true,
+			want:   true,
+		},
+		"empty value clears only the URL, for a push": {
+			config: originURLs(fetchURL, pushURL) + remoteNamed("origin", ""),
+			push:   true,
+		},
+		"empty value clears only the push URL, for a push": {
+			config: originURLs(fetchURL, pushURL) + "[remote \"origin\"]\n\tpushurl =\n",
+			push:   true,
+		},
+		"URL is the name of the remote": {
+			config: remoteNamed("origin", "origin"),
+		},
+		"URL is the name of the remote, for a push": {
+			config: remoteNamed("origin", "origin"),
+			push:   true,
+		},
+		"push URL is the name of the remote": {
+			config: namedPushURL,
+			want:   true,
+		},
+		"push URL is the name of the remote, for a push": {
+			config: namedPushURL,
+			push:   true,
+		},
+		"rewrite changes the name": {
+			config: fetchOnlyOrigin + rewrite,
+		},
+		"rewrite changes the name, for a push": {
+			config: fetchOnlyOrigin + rewrite,
+			push:   true,
+		},
+		"push rewrite changes the name": {
+			config: fetchOnlyOrigin + pushRewrite,
+			want:   true,
+		},
+		"push rewrite changes the name, for a push": {
+			config: fetchOnlyOrigin + pushRewrite,
+			push:   true,
+		},
+		"name with a dot": {
+			config: "[remote \"up.stream\"]\n\tfetch = +refs/heads/*:refs/remotes/up.stream/*\n",
+			remote: "up.stream",
+			want:   true,
+		},
+		"name with a dot, for a push": {
+			config: "[remote \"up.stream\"]\n\tpushurl = " + pushURL + "\n",
+			remote: "up.stream",
+			push:   true,
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := initConfigRepo(t, tc.config)
+			remote := remoteOrDefault(tc.remote)
+
+			urls, err := remoteURLs(t.Context(), repo, remote, tc.push)
+			require.NoError(t, err)
+
+			got, err := remoteLacksURL(t.Context(), repo, remote, urls[0], tc.push)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestGitOptions(t *testing.T) {
 	t.Parallel()
 
