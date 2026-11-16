@@ -672,13 +672,19 @@ func TestCommandEnv(t *testing.T) {
 			// so the values of the server must come last.
 			assert.Equal(t, "GIT_ALLOW_PROTOCOL="+tt.want, lastEnv(env, "GIT_ALLOW_PROTOCOL"))
 			assert.Equal(t, hookSwitchEnv+"=false", lastEnv(env, hookSwitchEnv))
-			assert.Contains(t, env, "GIT_TERMINAL_PROMPT=0")
+			assert.Equal(t, "GIT_TERMINAL_PROMPT=0", lastEnv(env, "GIT_TERMINAL_PROMPT"))
 		})
 	}
 }
 
 // lastEnv returns the last entry of env that sets the variable name,
 // or "" when env does not set it.
+//
+// A test must assert on the entry that lastEnv returns, never on the
+// whole of env. testify prints the values of a failed assertion, and
+// env holds the environment of the test process with its secrets,
+// such as GH_TOKEN. A failed assertion on env therefore writes those
+// secrets to the test log.
 func lastEnv(env []string, name string) string {
 	var last string
 
@@ -1034,18 +1040,18 @@ func TestGitEnvDefaultSSHCommand(t *testing.T) { //nolint:paralleltest // t.Sete
 	t.Setenv("GIT_SSH_COMMAND", "")
 
 	env := gitEnv()
-	assert.Contains(t, env, "GIT_TERMINAL_PROMPT=0")
-	assert.Contains(t, env, "GIT_EDITOR=true")
-	assert.Contains(t, env, "GIT_SEQUENCE_EDITOR=true")
-	assert.Contains(t, env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+	assert.Equal(t, "GIT_TERMINAL_PROMPT=0", lastEnv(env, "GIT_TERMINAL_PROMPT"))
+	assert.Equal(t, "GIT_EDITOR=true", lastEnv(env, "GIT_EDITOR"))
+	assert.Equal(t, "GIT_SEQUENCE_EDITOR=true", lastEnv(env, "GIT_SEQUENCE_EDITOR"))
+	assert.Equal(t, "GIT_SSH_COMMAND=ssh -o BatchMode=yes", lastEnv(env, "GIT_SSH_COMMAND"))
 }
 
 func TestGitEnvPreservesSSHCommand(t *testing.T) { //nolint:paralleltest // t.Setenv
 	t.Setenv("GIT_SSH_COMMAND", "ssh -i /custom/key")
 
-	env := gitEnv()
-	assert.Contains(t, env, "GIT_SSH_COMMAND=ssh -i /custom/key")
-	assert.NotContains(t, env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+	// gitEnv appends each entry that it adds. The last entry is
+	// therefore the inherited entry only when gitEnv adds no default.
+	assert.Equal(t, "GIT_SSH_COMMAND=ssh -i /custom/key", lastEnv(gitEnv(), "GIT_SSH_COMMAND"))
 }
 
 // unsetEnv removes the variable name from the environment for the
@@ -1066,8 +1072,8 @@ func TestGitEnvSetsConfigCommands(t *testing.T) { //nolint:paralleltest // t.Set
 	unsetEnv(t, "GIT_PROXY_COMMAND")
 
 	env := gitEnv()
-	assert.Contains(t, env, "GIT_ASKPASS=")
-	assert.Contains(t, env, "GIT_PROXY_COMMAND=")
+	assert.Equal(t, "GIT_ASKPASS=", lastEnv(env, "GIT_ASKPASS"))
+	assert.Equal(t, "GIT_PROXY_COMMAND=", lastEnv(env, "GIT_PROXY_COMMAND"))
 }
 
 // git reads SSH_ASKPASS after core.askPass, so gitEnv moves its value
@@ -1076,7 +1082,7 @@ func TestGitEnvKeepsSSHAskpass(t *testing.T) { //nolint:paralleltest // t.Setenv
 	unsetEnv(t, "GIT_ASKPASS")
 	t.Setenv("SSH_ASKPASS", "/usr/bin/askpass")
 
-	assert.Contains(t, gitEnv(), "GIT_ASKPASS=/usr/bin/askpass")
+	assert.Equal(t, "GIT_ASKPASS=/usr/bin/askpass", lastEnv(gitEnv(), "GIT_ASKPASS"))
 }
 
 func TestGitEnvPreservesConfigCommands(t *testing.T) { //nolint:paralleltest // t.Setenv
@@ -1139,8 +1145,6 @@ func TestGitEnvRemovesConfigFile(t *testing.T) { //nolint:paralleltest // t.Sete
 				"commandEnv": (&handler{}).commandEnv(),
 			}
 
-			// lastEnv returns one entry, so a failure does not print
-			// the whole environment and its secrets.
 			for source, env := range envs {
 				assert.Empty(t, lastEnv(env, "GIT_CONFIG"), source)
 				assert.Equal(t, "GIT_CONFIG_GLOBAL=/custom/gitconfig", lastEnv(env, "GIT_CONFIG_GLOBAL"), source)
