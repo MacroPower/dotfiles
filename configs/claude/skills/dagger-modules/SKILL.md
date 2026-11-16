@@ -181,6 +181,7 @@ Do not run a command from the left column with the 1.0 CLI. It fails, or it does
 | `dagger uninstall <name>` removes a dependency | `dagger module client rm <TARGET> --sdk=go` removes a dependency. `dagger uninstall <name>` removes a module from the workspace. |
 | `dagger update <name>` updates a dependency | Fails. `dagger module client update` updates the dependencies of a module, `dagger module update` updates an installed module, and `dagger lock update` refreshes `dagger.lock`. |
 | `dagger toolchain install <ref>` | Removed. `dagger install <ref>` installs the module in the workspace. |
+| `dagger up` starts the services of the functions marked `// +up` | `dagger start` starts the service of every function that returns a `*dagger.Service` and does not require an argument, with or without the pragma. `dagger up` is a hidden alias of `dagger start`. |
 | `dagger` with no arguments starts the interactive shell | Prints usage. `dagger -c '...'` and `dagger <file>` run Dagger Shell scripts. |
 
 ### Projects
@@ -194,7 +195,7 @@ Run 'dagger workspace migrate' when ready. More info: https://docs.dagger.io/ref
 
 The commands of this skill behave as follows in a 0.x project:
 
-- `dagger call`, `dagger functions`, `dagger check`, and `dagger generate` work. Dagger loads the modules and the toolchains from `dagger.json`.
+- `dagger call`, `dagger functions`, `dagger check`, `dagger generate`, and `dagger start` work. Dagger loads the modules and the toolchains from `dagger.json`.
 - Dagger regenerates the bindings of a `dagger.json` module each time it loads the module. Changed functions do not need a generate step, and the `.gitignore` of the module keeps the generated files out of git.
 - The commands that install or remove modules, or that change the dependencies of a module, fail with `workspace is using legacy dagger.json config; run dagger workspace migrate first`. `dagger install`, `dagger uninstall`, `dagger module install`, and `dagger module client add` are among them. `dagger module init go` fails with `unknown command "go" for "dagger module init"`, because the CLI reads the SDKs of `dagger module init` from `dagger.toml`.
 - `dagger workspace migrate` works, and it writes `dagger.toml` and the `dagger-module.toml` of each module that it converts. [Migration](#migration) says when to run it.
@@ -433,7 +434,8 @@ func (m *MyModule) Test(ctx context.Context) (string, error) {
 `AsService` options: `UseEntrypoint: true` runs the container's default entrypoint; `Args: []string{...}` specifies a custom command.
 
 Key patterns:
-- **Expose to host**: `dagger call my-service up --ports 8080:80`
+- **Expose to host**: `dagger start` runs every function that returns a `*dagger.Service` and does not require an argument, and `dagger start -l` lists those functions
+- **Expose one service**: `dagger call my-service up --ports 8080:80`
 - **Accept host services**: `dagger call test --db=tcp://localhost:5432`
 - **Custom hostnames**: `svc.WithHostname("mydb")` for service-to-service communication
 - **Explicit lifecycle**: `svc.Start(ctx)` / `svc.Stop(ctx)` for precise control

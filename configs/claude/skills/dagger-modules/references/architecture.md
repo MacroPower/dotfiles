@@ -242,11 +242,58 @@ func (m *MyModule) Fetch(ctx context.Context) (string, error) {
 
 ### Exposing to host
 
+`dagger start` runs the services of the workspace and forwards the ports that they expose to the host. The command runs until you stop it with Ctrl+C. It takes the names of the services to start, and `-l` lists the services:
+
+```shell
+dagger start             # every service of the workspace
+dagger start database    # only the services that you name
+dagger start -l          # list the services and start none
+```
+
+Every function that returns a `*dagger.Service` and does not require an argument is a service. The function does not need a pragma, so `dagger start` runs the `Database` and `HttpServer` functions in [Creating services](#creating-services). The objects that the main object returns can hold services too. `dagger start -l` lists the `Database` service of the object that an `Infra` function returns as `infra/database`.
+
+The name of a service is its function name in kebab case. A service of a module that is not the workspace main module carries the install name of the module first, as in `my-module/database`.
+
+`dagger start` also runs each function that returns a service only for other functions to bind, such as `Database`, which `Test` binds in [Binding services](#binding-services). To keep a service out of `dagger start` and `dagger start -l`, list it under `up.skip` in the `[modules.<name>]` entry of its module in `dagger.toml`:
+
+```toml
+[modules.my-module]
+source = ".dagger/modules/my-module"
+up.skip = ["database", "infra/database"]
+```
+
+Each entry of `up.skip` names a service without the module name, and a pattern can use `*` to match many names. 0.x projects list those services in the `ignoreServices` of the toolchain entry in `dagger.json`.
+
+A service that no `[ports.<host-port>]` table names opens each of its ports under the same number on the host. To use other host ports, add `[ports.<host-port>]` tables to `dagger.toml`. The `backendService` key of each table names the service as `<module>:<service>`, and its `backendPort` key holds the port of the service. After a table names a service, `dagger start` opens only the host ports of the tables that name it. `dagger start` fails with `port collision detected` when two of the services that it starts claim the same host port. In that case, name the services to start, or map one of them to another host port.
+
+0.x projects have no `dagger.toml`. Do not create one to map a port, because Dagger then loads only the modules of `dagger.toml` and stops loading the toolchains of `dagger.json`. In a 0.x project, list the mappings in the `portMappings` of the toolchain entry in `dagger.json`:
+
+```json
+{
+  "toolchains": [
+    {
+      "name": "web-app",
+      "source": "toolchains/web-app",
+      "portMappings": {
+        "web": ["3000:80"]
+      },
+      "ignoreServices": ["redis", "infra:database"]
+    }
+  ]
+}
+```
+
+Each key of `portMappings` names a service of the toolchain without the toolchain name, and each value lists `<host-port>:<service-port>` pairs. The mappings replace the same-number ports of the service, as a `[ports.<host-port>]` table does. `ignoreServices` names services the same way, and Dagger reads it as the `up.skip` of the toolchain. A colon or a slash can separate the parts of a name, as in `infra:database`.
+
+Dagger reads `portMappings` and `ignoreServices` only from the entries of `toolchains`. A 0.x `dagger.json` that defines a module of its own through its `name` and `sdk` keys has no key that skips or remaps the services of that module. To leave one of those services out, name the services to start, as in `dagger start web`. To give one of them another host port, run `dagger call <function> up --ports <host-port>:<service-port>`.
+
+To expose the service that one function returns, call `up` on the service. This form also reaches a function that requires arguments, and `--ports` maps a host port to a port of the service:
+
 ```shell
 dagger call database up --ports 5432:5432
 ```
 
-Experimental: annotate service-returning functions with `// +up` and run `dagger up` to start all of a workspace's services on the host at once, instead of the per-function `dagger call <svc> up` form above.
+Dagger 0.x named the command `dagger up`, and it ran only the functions that carry the `// +up` pragma. Dagger 1.0 accepts the command and the pragma as well, but `dagger --help` lists only `dagger start`, and a service does not need the pragma.
 
 ### Accepting host services
 
