@@ -1249,7 +1249,8 @@ let
   expireClonesLog = "${config.home.homeDirectory}/Library/Logs/expire-clones.log";
 
   # The expire-claude-tmp agent writes one line here for each session
-  # directory that it removes.
+  # directory that it removes. It also names each session directory
+  # that it cannot remove here.
   expireClaudeTmpLog = "${config.home.homeDirectory}/Library/Logs/expire-claude-tmp.log";
 
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''

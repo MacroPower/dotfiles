@@ -78,12 +78,16 @@ in
     # files of the processes of every user. The tool never follows a
     # symbolic link out of the directory. It keeps each session
     # directory that holds a mount, so it does not delete the files of
-    # the source of a bind mount. ProtectSystem and ProtectHome also
-    # keep the service from writing outside tmpDir. The service
-    # must see the /tmp, the network namespace, and the processes of the
-    # host. So it sets none of PrivateTmp, PrivateNetwork, PrivatePIDs,
-    # PrivateUsers, and ProtectProc. In a user namespace of its own, the
-    # service cannot read the open files of the processes of the host.
+    # the source of a bind mount. When the tool keeps a session
+    # directory that it cannot remove, the run fails and names the
+    # directory by its path.
+    #
+    # ProtectSystem and ProtectHome also keep the service from writing
+    # outside tmpDir. The service must see the /tmp, the network
+    # namespace, and the processes of the host. So it sets none of
+    # PrivateTmp, PrivateNetwork, PrivatePIDs, PrivateUsers, and
+    # ProtectProc. In a user namespace of its own, the service cannot
+    # read the open files of the processes of the host.
     systemd.services.expire-claude-tmp = {
       description = "Remove the session directories of Claude Code under ${tmpDir} that nothing changed in ${maxAge}";
       serviceConfig = {

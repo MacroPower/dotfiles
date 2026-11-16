@@ -117,6 +117,20 @@
 # deletes it. The tool prints one line for each session directory that
 # it removes.
 #
+# The run fails when the tool keeps a session directory that it cannot
+# remove, and it names that directory by its path on stderr. For
+# example, the tool cannot remove these session directories:
+#
+# - A session directory that it cannot read in full. A user other than
+#   root cannot read a directory with the mode 000.
+# - A session directory that it cannot rename, such as a session
+#   directory in a project directory that the user cannot write.
+# - A session directory that holds a file that it cannot delete. A
+#   user other than root cannot delete a file in a directory with the
+#   mode 755 that another uid owns. The session directory stays under
+#   its new name, and each later run fails until the tool can delete
+#   it.
+#
 # With --fallback TMP, the tool also keeps the directory
 # TMP/claude-<uid>. Claude Code gives a sandboxed command that directory
 # as TMPDIR when the path of DIR/claude-<uid> is too long for a Unix
@@ -331,31 +345,30 @@ let
         any_socket=1
       fi
 
-      # changed NAME PATH succeeds when the entry NAME of the current
+      # changed NAME REL succeeds when the entry NAME of the current
       # directory, or a file or directory under it, changed after the
       # cutoff. It also succeeds when the tree holds the socket of a
-      # server that listens. PATH is the absolute path of NAME, which the
-      # kernel names the sockets by. When find fails, changed succeeds
-      # and the run fails, so a tree that find cannot read in full stays.
-      # find does not enter a mount of another file system.
+      # server that listens. REL is the path of the entry under the
+      # directory of Claude Code. The kernel names the sockets by the
+      # absolute path of the entry. When find fails, changed succeeds,
+      # names the entry, and fails the run. So a tree that find cannot
+      # read in full stays. find does not enter a mount of another file
+      # system.
       changed() {
-        local hit socket
+        local hit socket path=$abs/$2 match=(-newerct "@$cutoff")
         if [ -n "$any_socket" ]; then
-          hit=$(find "./$1" -xdev \( -newerct "@$cutoff" -o -type s \) -print -quit) || {
-            status=1
-            return 0
-          }
-        else
-          hit=$(find "./$1" -xdev -newerct "@$cutoff" -print -quit) || {
-            status=1
-            return 0
-          }
+          match=(\( -newerct "@$cutoff" -o -type s \))
         fi
+        hit=$(find "./$1" -xdev "''${match[@]}" -print -quit) || {
+          echo "expire-claude-tmp: cannot read $name/$2 in full, so it stays" >&2
+          status=1
+          return 0
+        }
         if [ -n "$hit" ]; then
           return 0
         fi
         while IFS= read -r socket; do
-          if { [ "$socket" = "$2" ] || [[ $socket == "$2"/* ]]; } && [ -S "$socket" ]; then
+          if { [ "$socket" = "$path" ] || [[ $socket == "$path"/* ]]; } && [ -S "$socket" ]; then
             return 0
           fi
         done <<<"$live_sockets"
@@ -368,7 +381,8 @@ let
       # tree holds a mount point. rm cannot empty a directory that its
       # owner cannot write, such as a directory of the Go module cache.
       # So for a user other than root, the second attempt first lets the
-      # owner write each directory.
+      # owner write each directory. When the second attempt fails too,
+      # delete names the entry and fails.
       delete() {
         read_mounts
         if mounted "$2"; then
@@ -378,7 +392,9 @@ let
         if [ "$EUID" -ne 0 ]; then
           chmod -R u+rwX -- "$1" || true
         fi
-        rm -rf --one-file-system -- "$1"
+        rm -rf --one-file-system -- "$1" && return
+        echo "expire-claude-tmp: cannot delete $name/$2, so it stays" >&2
+        return 1
       }
 
       shopt -s nullglob dotglob
@@ -493,11 +509,12 @@ let
       # before the removal still loses it. A directory moves onto an
       # empty directory that mktemp made, so the rename fails when another
       # entry took the place of that directory. --no-copy keeps mv from
-      # copying a tree that it cannot rename, such as a mount point. The
-      # renamed directory stays when delete fails.
+      # copying a tree that it cannot rename, such as a mount point.
+      # When expire cannot remove or rename the entry, it names the entry
+      # and fails the run. The renamed directory stays when delete fails.
       expire() {
         local trash trash_rel
-        if listed "$started" "$1" || listed "$opened" "$2" || mounted "$2" || changed "$1" "$abs/$2"; then
+        if listed "$started" "$1" || listed "$opened" "$2" || mounted "$2" || changed "$1" "$2"; then
           return
         fi
         if [ -L "$1" ] || [ ! -d "$1" ]; then
@@ -505,11 +522,13 @@ let
             return
           fi
           if ! rm -f -- "$1"; then
+            echo "expire-claude-tmp: cannot remove $name/$2, so it stays" >&2
             status=1
             return
           fi
         else
           if ! trash=$(mktemp -d .expired.XXXXXX); then
+            echo "expire-claude-tmp: cannot rename $name/$2, so it stays" >&2
             status=1
             return
           fi
@@ -519,6 +538,7 @@ let
           fi
           if ! mv --no-copy -T -- "$1" "$trash"; then
             rmdir -- "$trash" || true
+            echo "expire-claude-tmp: cannot rename $name/$2, so it stays" >&2
             status=1
             return
           fi
@@ -825,39 +845,78 @@ let
           fi
 
           # Root reads every directory, so find fails only for another
-          # user. The session directory stays, and the run fails, so the
-          # log of the service shows the directory that stays.
+          # user. The session directory stays. The run fails and names
+          # the session directory by its path, so the log of the service
+          # shows the directory that stays. The run still removes the
+          # other session directory.
           if [ "$uid" != 0 ]; then
-            session "unreadable/claude-$uid/-work-app/old"
-            mkdir "unreadable/claude-$uid/-work-app/old/private"
-            chmod 000 "unreadable/claude-$uid/-work-app/old/private"
-            if expire-claude-tmp unreadable now sessions 2>/dev/null; then
+            root=unreadable/claude-$uid
+            session "$root/-work-app/old"
+            mkdir "$root/-work-app/old/private"
+            chmod 000 "$root/-work-app/old/private"
+            session "$root/-work-app/stale"
+            cutoff=$(mark)
+            if expire-claude-tmp unreadable "@$cutoff" sessions >log 2>err; then
               fail 'the run succeeds when it cannot read a session directory in full'
             fi
-            [ -e "unreadable/claude-$uid/-work-app/old/scratchpad/notes.md" ] ||
+            [ -e "$root/-work-app/old/scratchpad/notes.md" ] && [ -d "$root/-work-app/old/private" ] ||
               fail 'the tool removes a session directory that it cannot read in full'
-            chmod 700 "unreadable/claude-$uid/-work-app/old/private"
+            grep -qxF "expire-claude-tmp: cannot read $root/-work-app/old in full, so it stays" err ||
+              fail 'the run does not name the session directory that it cannot read in full'
+            expect_log "$root" 'the run does not remove exactly the session directory that it can read' <<'EOF'
+          -work-app/stale
+          EOF
+            chmod 700 "$root/-work-app/old/private"
           fi
 
           # The run goes on past a session directory that it cannot
-          # remove. The user cannot rename an entry of a project directory
-          # that the user cannot write. Root ignores the mode, so this
-          # case runs only for another user. The glob sorts the project
-          # directory that the user cannot write first.
+          # rename, and the run fails and names the session directory by
+          # its path. The user cannot rename an entry of a project
+          # directory that the user cannot write. Root ignores the mode,
+          # so this case runs only for another user. The glob sorts the
+          # project directory that the user cannot write first.
           if [ "$uid" != 0 ]; then
             root=immovable/claude-$uid
             session "$root/-work-app/frozen"
             session "$root/-work-lib/stale"
             chmod 555 "$root/-work-app"
             cutoff=$(mark)
-            if expire-claude-tmp immovable "@$cutoff" sessions >log 2>/dev/null; then
-              fail 'the run succeeds when it cannot remove a session directory'
+            if expire-claude-tmp immovable "@$cutoff" sessions >log 2>err; then
+              fail 'the run succeeds when it cannot rename a session directory'
             fi
             [ -e "$root/-work-app/frozen/scratchpad/notes.md" ] && [ -e "$root/-work-app/frozen/tasks/a1.output" ] ||
-              fail 'the run deletes a file of a session directory that it cannot remove'
+              fail 'the run deletes a file of a session directory that it cannot rename'
+            grep -qxF "expire-claude-tmp: cannot rename $root/-work-app/frozen, so it stays" err ||
+              fail 'the run does not name the session directory that it cannot rename'
             [ ! -e "$root/-work-lib/stale" ] ||
-              fail 'the run stops at a session directory that it cannot remove'
+              fail 'the run stops at a session directory that it cannot rename'
             expect_log "$root" 'the run does not name exactly the session directory that it removed' <<'EOF'
+          -work-lib/stale
+          EOF
+            chmod u+w "$root/-work-app"
+          fi
+
+          # The run goes on past a file that it cannot remove, and the
+          # run fails and names the file by its path. The user cannot
+          # remove a file of a project directory that the user cannot
+          # write. Root ignores the mode, so this case runs only for
+          # another user. The glob sorts the project directory that the
+          # user cannot write first.
+          if [ "$uid" != 0 ]; then
+            root=unremovable/claude-$uid
+            mkdir -p "$root/-work-app"
+            echo notes >"$root/-work-app/notes.txt"
+            session "$root/-work-lib/stale"
+            chmod 555 "$root/-work-app"
+            cutoff=$(mark)
+            if expire-claude-tmp unremovable "@$cutoff" sessions >log 2>err; then
+              fail 'the run succeeds when it cannot remove a file'
+            fi
+            [ -e "$root/-work-app/notes.txt" ] ||
+              fail 'the run removes a file of a project directory that the user cannot write'
+            grep -qxF "expire-claude-tmp: cannot remove $root/-work-app/notes.txt, so it stays" err ||
+              fail 'the run does not name the file that it cannot remove'
+            expect_log "$root" 'the run does not name exactly the session directory that it removed past a file that it cannot remove' <<'EOF'
           -work-lib/stale
           EOF
             chmod u+w "$root/-work-app"
@@ -928,7 +987,9 @@ let
           # A session directory that the tool renamed and cannot delete
           # stays under its new name. The run fails and names both names,
           # and it does not log the directory as removed. This copy of the
-          # tool runs an rm that fails for each renamed directory.
+          # tool runs an rm that fails for each renamed directory. A later
+          # run of the copy keeps the renamed directory, fails, and names
+          # it. A run of the tool then deletes it.
           root=undeletable/claude-$uid
           session "$root/-work-app/stale"
           mkdir wrapped-rm
@@ -956,6 +1017,59 @@ let
             fail 'the run does not keep the session directory that it cannot delete under its new name'
           grep -qxF "expire-claude-tmp: $root/-work-app/stale stays as ''${left[0]}" err ||
             fail 'the run does not name the session directory that stays under its new name'
+          grep -qxF "expire-claude-tmp: cannot delete ''${left[0]}, so it stays" err ||
+            fail 'the run does not name the renamed session directory that it cannot delete'
+          if ./rm-expire-claude-tmp undeletable "@$cutoff" sessions >log 2>err; then
+            fail 'a later run succeeds when it still cannot delete a renamed session directory'
+          fi
+          [ ! -s log ] && [ -e "''${left[0]}/scratchpad/notes.md" ] ||
+            fail 'a later run does not keep the renamed session directory that it cannot delete'
+          [ "$(cat err)" = "expire-claude-tmp: cannot delete ''${left[0]}, so it stays" ] ||
+            fail 'a later run does not name exactly the renamed session directory that it cannot delete'
+          expire-claude-tmp undeletable "@$cutoff" sessions >log ||
+            fail 'the run after a run that left a renamed session directory fails'
+          expect_tree "$root" 'the run does not delete the renamed session directory that an earlier run left' <<'EOF'
+          ./-work-app
+          EOF
+
+          # mktemp can make the directory .expired.<random>, and the
+          # rename onto it can fail after that. The session directory
+          # then stays under its name, and the tool removes the empty
+          # directory. The run fails and names the session directory by
+          # its path. This copy of the tool runs an mv that fails for
+          # each rename to .expired.<random>.
+          root=unmovable/claude-$uid
+          session "$root/-work-app/stale"
+          mkdir wrapped-mv
+          cat >wrapped-mv/mv <<EOF
+          #!${runtimeShell}
+          for arg; do last=\$arg; done
+          case \$last in
+            .expired.*) exit 1 ;;
+          esac
+          exec ${coreutils}/bin/mv "\$@"
+          EOF
+          chmod +x wrapped-mv/mv
+          sed "s|^export PATH=\"|&$here/wrapped-mv:|" ${expire-claude-tmp}/bin/expire-claude-tmp >mv-expire-claude-tmp
+          chmod +x mv-expire-claude-tmp
+          grep -q "^export PATH=\"$here/wrapped-mv:" mv-expire-claude-tmp ||
+            fail 'the copy of the tool does not run the mv of the test'
+          cutoff=$(mark)
+          if ./mv-expire-claude-tmp unmovable "@$cutoff" sessions >log 2>err; then
+            fail 'the run succeeds when mv cannot rename a session directory'
+          fi
+          [ ! -s log ] ||
+            fail 'the run logs a session directory that mv cannot rename as removed'
+          grep -qxF "expire-claude-tmp: cannot rename $root/-work-app/stale, so it stays" err ||
+            fail 'the run does not name the session directory that mv cannot rename'
+          expect_tree "$root" 'the run does not keep exactly the session directory that mv cannot rename' <<'EOF'
+          ./-work-app
+          ./-work-app/stale
+          ./-work-app/stale/scratchpad
+          ./-work-app/stale/scratchpad/notes.md
+          ./-work-app/stale/tasks
+          ./-work-app/stale/tasks/a1.output
+          EOF
 
           # A session can start again while find reads its directory, and
           # its start writes nothing there. A process can open a file of

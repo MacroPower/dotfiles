@@ -367,6 +367,12 @@ The `claude` wrapper of `home/claude.nix` sets `CLAUDE_CODE_TMPDIR` to `/tmp`. W
 journalctl -u expire-claude-tmp.service -g removed
 ```
 
+When a run cannot remove a session directory, it keeps the directory, names it by its path, and fails. To list those directories, run this command on the host:
+
+```sh
+journalctl -u expire-claude-tmp.service -g stay
+```
+
 To apply the settings, run `task switch` on the host. For the OrbStack machine, run `task vm:switch` on the Mac. A session directory that lost files to the cleanup of `/tmp` before the switch stays incomplete. After the switch, the first run of the service keeps the directory named by the current id of each session that runs. It removes each other session directory whose last change is more than 10 days old.
 
 ## NixOS (Orb)
@@ -479,6 +485,12 @@ The agent keeps these session directories, however old their files are:
 - Each directory that a process of the user uses. A process uses a directory when it holds the directory or a file under it open, or when its working directory lies there. The agent asks `lsof` for the open files. Each background command holds its output file open, so the directory of that file stays while the command runs.
 - Each directory that holds a socket. macOS does not list the sockets that servers bind, so the agent cannot tell whether a server listens on a socket.
 - Each directory that the agent cannot read in full, such as a directory with the mode `000`. The agent runs as the user, so the run fails, and the log names the directory.
+
+The agent runs as the user, so it cannot remove every old session directory. It keeps each session directory of a project directory that the user cannot write. When a session directory holds a file that the user cannot delete, the agent renames the session directory to `.expired.<random>` and keeps the renamed directory. In each case the run fails and names the session directory by its path. To list the session directories that the runs kept and named, run this command on the Mac:
+
+```sh
+grep stay ~/Library/Logs/expire-claude-tmp.log
+```
 
 Claude Code keeps the output of the background commands of a session under the id that its process started with. On macOS, Claude Code 2.1.319 holds that directory open only while it writes there. After `/clear` gives a session another id, the agent removes that directory 10 days after its last change, even while the session runs. A background command that still runs keeps the directory.
 
