@@ -267,11 +267,11 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
-	t.Run("PreToolUse Bash: denied git stash", func(t *testing.T) {
+	t.Run("PreToolUse Bash: denied git push", func(t *testing.T) {
 		t.Parallel()
 
 		input := makeInput(map[string]any{
-			"command": "git stash",
+			"command": "git push",
 		})
 
 		var stdout bytes.Buffer
@@ -288,7 +288,7 @@ func TestRun(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "PreToolUse", hso["hookEventName"])
 		assert.Equal(t, "deny", hso["permissionDecision"])
-		assert.Contains(t, hso["permissionDecisionReason"], "git stash")
+		assert.Contains(t, hso["permissionDecisionReason"], "git push")
 	})
 
 	t.Run("PreToolUse Bash: denied kubectl without kubeconfig", func(t *testing.T) {
@@ -459,11 +459,11 @@ func TestRun(t *testing.T) {
 		assert.Contains(t, hso["permissionDecisionReason"], "kubectx")
 	})
 
-	t.Run("PreToolUse Bash: denied git stash with git clone", func(t *testing.T) {
+	t.Run("PreToolUse Bash: denied git push with a local git clone", func(t *testing.T) {
 		t.Parallel()
 
 		input := makeInput(map[string]any{
-			"command": "git stash && git clone URL dest",
+			"command": "git push && git clone ../other dest",
 		})
 
 		var stdout bytes.Buffer
@@ -891,7 +891,7 @@ func TestRun(t *testing.T) {
 		// emit a deny decision, so empty stdout proves the unknown
 		// event never got there.
 		input := makeInput(map[string]any{
-			"command": "git stash",
+			"command": "git push",
 		})
 
 		var stdout bytes.Buffer

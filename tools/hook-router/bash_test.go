@@ -126,7 +126,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(bashInput(t, "git stash", nil), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "git push", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -135,6 +135,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 		hso, ok := result["hookSpecificOutput"].(map[string]any)
 		require.True(t, ok)
 		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Equal(t, pushDeniedReason, hso["permissionDecisionReason"])
 	})
 
 	t.Run("autoAllow=true, git fetch: deny redirects to the MCP tool", func(t *testing.T) {
@@ -274,6 +275,42 @@ func TestHandleBashAutoAllow(t *testing.T) {
 		assert.Equal(t, "allow", hso["permissionDecision"])
 		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
 	})
+
+	// The git bundle carries no stash rule, so each stash form runs in
+	// Bash.
+	stash := map[string]struct {
+		command string
+	}{
+		"bare git stash": {
+			command: "git stash",
+		},
+		"git stash push": {
+			command: `git stash push --include-untracked -m "workmux rebase"`,
+		},
+		"git stash pop": {
+			command: "git stash pop",
+		},
+	}
+
+	for name, tc := range stash {
+		t.Run("autoAllow=true, "+name+": falls through to auto-allow", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config{
+				commandRules: canonicalRules(),
+				autoAllow:    true,
+			}
+
+			var stdout bytes.Buffer
+
+			err := handleBash(bashInput(t, tc.command, nil), &stdout, cfg, logger)
+			require.NoError(t, err)
+
+			hso := preToolDecision(t, &stdout)
+			assert.Equal(t, "allow", hso["permissionDecision"])
+			assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+		})
+	}
 
 	t.Run("autoAllow=false, ask match: ask emitted", func(t *testing.T) {
 		t.Parallel()
@@ -792,7 +829,7 @@ func TestHandleBashSleepGuard(t *testing.T) {
 			wantSleepReason: true,
 		},
 		"cmdrules deny wins over the sleep guard": {
-			command:  "git stash; sleep 300",
+			command:  "git push; sleep 300",
 			wantDeny: true,
 		},
 		"guard runs before the early-returning kubectx branch": {
@@ -890,7 +927,7 @@ func TestHandleBashRmGuard(t *testing.T) {
 			wantRmReason: true,
 		},
 		"cmdrules deny wins over the rm guard": {
-			command:  "git stash; rm -rf $X/",
+			command:  "git push; rm -rf $X/",
 			wantDeny: true,
 		},
 		"guard runs before the early-returning kubectx branch": {
@@ -977,7 +1014,7 @@ func TestHandleBashMessageLint(t *testing.T) {
 			wantLintReason: true,
 		},
 		"cmdrules deny wins over the message lint": {
-			command:  `git stash; git commit -m "This is deliberate."`,
+			command:  `git push; git commit -m "This is deliberate."`,
 			lint:     flagDeliberate,
 			wantDeny: true,
 		},

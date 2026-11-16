@@ -22,7 +22,6 @@ const testPID = "12345"
 // the copies here exist so the handler-level integration tests can
 // assert against the same decisions production emits.
 const (
-	stashDeniedReason        = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
 	cloneDeniedReason        = "Direct git clone of a remote URL is blocked. Use mcp__git__git_clone instead. A clone from a local path runs in Bash."
 	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git fetch ../other main`."
 	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead. That tool refuses a remote on the local file system. Pull from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git pull ../other main`."
@@ -68,12 +67,6 @@ func canonicalRules() *cmdrules.Engine {
 			Command: "git",
 			Args:    []string{"remote", "update"},
 			Reason:  remoteUpdateDeniedReason,
-		},
-		{
-			Command: "git",
-			Args:    []string{"stash"},
-			Except:  []string{"pop", "apply", "list", "show", "branch", "drop", "clear"},
-			Reason:  stashDeniedReason,
 		},
 		{
 			Command: "kubectx",

@@ -23,7 +23,6 @@ func mustParse(t *testing.T, command string) *syntax.File {
 }
 
 const (
-	stashDeniedReason        = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
 	cloneDeniedReason        = "Direct git clone of a remote URL is blocked. Use mcp__git__git_clone instead. A clone from a local path runs in Bash."
 	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git fetch ../other main`."
 	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead. That tool refuses a remote on the local file system. Pull from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git pull ../other main`."
@@ -70,12 +69,6 @@ func canonicalRules() *cmdrules.Engine {
 			Command: "git",
 			Args:    []string{"remote", "update"},
 			Reason:  remoteUpdateDeniedReason,
-		},
-		{
-			Command: "git",
-			Args:    []string{"stash"},
-			Except:  []string{"pop", "apply", "list", "show", "branch", "drop", "clear"},
-			Reason:  stashDeniedReason,
 		},
 		{
 			Command: "kubectx",
@@ -193,8 +186,23 @@ func TestParseCommandRules(t *testing.T) {
 	}
 }
 
-func TestCommandRulesCheck_GitStash(t *testing.T) {
+// TestCommandRulesCheck_Except pins the Except matcher semantics on a
+// deny rule for a git subcommand. No rule of home/claude.nix denies git
+// stash, so the test builds its own engine around a git stash deny
+// rule.
+func TestCommandRulesCheck_Except(t *testing.T) {
 	t.Parallel()
+
+	const reason = "git stash save form"
+
+	rules := cmdrules.New([]cmdrules.Rule{
+		{
+			Command: "git",
+			Args:    []string{"stash"},
+			Except:  []string{"pop", "apply", "list", "show", "branch", "drop", "clear"},
+			Reason:  reason,
+		},
+	})
 
 	tests := map[string]struct {
 		input string
@@ -202,57 +210,57 @@ func TestCommandRulesCheck_GitStash(t *testing.T) {
 	}{
 		"bare git stash": {
 			input: "git stash",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git stash push": {
 			input: "git stash push",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git stash push with path": {
 			input: "git stash push -- file.go",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git stash save": {
 			input: `git stash save "wip"`,
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git stash -k": {
 			input: "git stash -k",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git stash --keep-index": {
 			input: "git stash --keep-index",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git stash in pipeline": {
 			input: "git stash || echo fail",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git stash in subshell": {
 			input: "(git stash)",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git -C dir stash (tightened)": {
 			input: "git -C /tmp stash",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git -c key=val stash (tightened)": {
 			input: "git -c user.name=x stash",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git --git-dir flag stash (tightened)": {
 			input: "git --git-dir=/x stash",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		"git -C quoted dir stash": {
 			input: `git -C "$dir" stash`,
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		// `--keep-index` is the candidate slot (no flag-skipping
 		// between args and except) and isn't in except, so deny.
 		"git stash --keep-index pop denies": {
 			input: "git stash --keep-index pop",
-			want:  stashDeniedReason,
+			want:  reason,
 		},
 		// `pop` is the candidate slot here, so allow.
 		"git stash pop --keep-index allows": {
@@ -296,8 +304,6 @@ func TestCommandRulesCheck_GitStash(t *testing.T) {
 			input: "git help stash",
 		},
 	}
-
-	rules := canonicalRules()
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -640,9 +646,16 @@ func TestCommandRulesCheck_GitRemoteOps(t *testing.T) {
 		"no match: git remote add": {
 			input: "git remote add origin git@github.com:o/r.git",
 		},
-		"no overlap: git stash push": {
-			input: "git stash push",
-			want:  stashDeniedReason,
+		// The git bundle carries no stash rule, so each stash form
+		// falls through.
+		"no match: bare git stash": {
+			input: "git stash",
+		},
+		"no match: git stash push": {
+			input: "git stash push --include-untracked -m wip",
+		},
+		"no match: git stash pop": {
+			input: "git stash pop",
 		},
 		"no match: git ls-remote": {
 			input: "git ls-remote origin",
