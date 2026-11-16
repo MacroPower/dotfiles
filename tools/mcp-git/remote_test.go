@@ -490,7 +490,7 @@ func TestRemoteToolsRefuseForeignWorkTree(t *testing.T) {
 		"hooks directory of another repository": func(t *testing.T, other, work string) (string, string) {
 			t.Helper()
 
-			hooks := filepath.Join(initRepo(t, other), ".git", "hooks")
+			hooks := makeHooksDir(t, filepath.Join(initRepo(t, other), ".git"))
 			setWorkTree(t, work, hooks)
 
 			return work, hooks
@@ -536,7 +536,7 @@ func TestRemoteToolsRefuseForeignWorkTree(t *testing.T) {
 			gitDir := plantGitFile(t, initRepo(t, other), work)
 			changeHead(t, gitDir)
 
-			hooks := filepath.Join(gitDir, "hooks")
+			hooks := makeHooksDir(t, gitDir)
 			setWorkTree(t, work, hooks)
 
 			return work, hooks
@@ -590,6 +590,19 @@ func initRepo(t *testing.T, parent string) string {
 	runGitCmds(t, [][]string{{"git", "init", "-q", repo}})
 
 	return repo
+}
+
+// makeHooksDir creates the hooks directory of the git directory at
+// gitDir, and it returns the path of the hooks directory. git init and
+// git clone copy the hooks directory from the template directory, and
+// [TestMain] gives git an empty template directory.
+func makeHooksDir(t *testing.T, gitDir string) string {
+	t.Helper()
+
+	hooks := filepath.Join(gitDir, "hooks")
+	require.NoError(t, os.MkdirAll(hooks, 0o755))
+
+	return hooks
 }
 
 // setWorkTree sets core.worktree in the config of the repository at

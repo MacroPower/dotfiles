@@ -28,20 +28,36 @@ var testGitEnv = map[string]string{
 	// git -c passes its config in this variable to each command
 	// that git starts, such as the command of git rebase --exec.
 	"GIT_CONFIG_PARAMETERS": "",
+	// The variable names the template directory, and it takes
+	// precedence over the init.templateDir key of the config. With
+	// an empty value, git init and git clone copy no file.
+	"GIT_TEMPLATE_DIR": "",
 }
 
-// TestMain keeps the git config and the repository of the developer
-// from every test. The tests run git in their setup and through the
-// handlers, and keys of the git config change what git does. For
-// example, a plain git clone names its remote after
-// clone.defaultRemoteName. Each git command of the tests therefore
-// skips the system config, reads an empty global config, and reads no
-// config from the environment. Each git config command of the tests
-// reads and writes the config of the repository, not a file that the
-// environment names. A test that needs a global config points
+// TestMain keeps the git config, the template directory, and the
+// repository of the developer from every test. The tests run git in
+// their setup and through the handlers, and keys of the git config
+// change what git does. For example, a plain git clone names its
+// remote after clone.defaultRemoteName. Each git command of the tests
+// therefore skips the system config, reads an empty global config, and
+// reads no config from the environment. Each git config command of the
+// tests reads and writes the config of the repository, not a file that
+// the environment names. A test that needs a global config points
 // GIT_CONFIG_GLOBAL at a file of its own, as [setGlobalConfig] does. A
 // test that needs config from the environment sets GIT_CONFIG_COUNT
 // and its numbered variables, as [TestReadUserHooks] does.
+//
+// git init and git clone copy the files of the template directory,
+// such as its hooks, into each repository that they create. The git
+// commit of a test setup then runs those hooks. The init.templateDir
+// key of the config names the template directory, and the
+// GIT_TEMPLATE_DIR variable takes precedence over the key. TestMain
+// sets the variable to an empty value, so git init and git clone copy
+// no file. Each repository of the tests therefore starts without a
+// hooks directory. A test that needs that directory creates it, as
+// [makeHooksDir] and [writeHookIn] do. A test that needs a template
+// directory sets GIT_TEMPLATE_DIR itself, as
+// [TestHandleCloneSkipsHooks] does.
 //
 // Variables of the environment also point git at a repository. With
 // GIT_DIR set, git -C <dir> acts on the repository that GIT_DIR names.
@@ -252,6 +268,82 @@ func TestGitSkipsEnvironmentConfig(t *testing.T) {
 			require.NoError(t, err, "%s", out)
 		})
 	}
+}
+
+// [TestMain] gives git an empty template directory. git init and git
+// clone must therefore copy no hook of the template directory that
+// GIT_TEMPLATE_DIR names. The git commands of the tests must run no
+// hook of that directory.
+//
+// TestMain sets the variable when the test binary starts, so a test
+// that sets it names a template directory again. The test therefore
+// starts the test binary again in an environment that names a template
+// directory with hooks, as the shell of a developer can. The new
+// process runs only this test, and probeEnv makes the test run the
+// setup of a test instead of starting a process.
+func TestGitSkipsTemplateDirectory(t *testing.T) {
+	t.Parallel()
+
+	// probeEnv marks the process that this test started.
+	const probeEnv = "MCP_GIT_TEST_TEMPLATE_PROBE"
+
+	if os.Getenv(probeEnv) != "" {
+		// The setup of most tests starts with these commands. They
+		// create a bare repository and clones of it, and they commit
+		// and push.
+		bare := initBareRepo(t)
+		work := initWorkClone(t, bare)
+
+		// The setup fires only some of the events of git. git copies
+		// the hooks of a template directory into the hooks directory
+		// of a new repository. A repository without that directory
+		// therefore holds no hook of any event.
+		assert.NoDirExists(t, filepath.Join(bare, "hooks"))
+		assert.NoDirExists(t, filepath.Join(work, ".git", "hooks"))
+
+		return
+	}
+
+	binary, err := os.Executable()
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	template := filepath.Join(dir, "template")
+	ran := filepath.Join(dir, "ran")
+
+	// git fires these events for the commands of a test setup, such
+	// as git add, git commit, git clone, and git push. A push fires
+	// events in the clone and in the bare repository that receives
+	// the push.
+	events := []string{
+		"pre-commit",
+		"prepare-commit-msg",
+		"commit-msg",
+		"post-commit",
+		"post-checkout",
+		"post-index-change",
+		"reference-transaction",
+		"pre-push",
+		"pre-receive",
+		"update",
+		"post-receive",
+		"post-update",
+	}
+
+	// Each hook creates the file ran.
+	for _, event := range events {
+		writeHookIn(t, filepath.Join(template, "hooks"), event, "#!/bin/sh\ntouch '"+ran+"'\n")
+	}
+
+	cmd := exec.CommandContext(t.Context(), binary, "-test.run=^"+t.Name()+"$")
+	cmd.Env = slices.Concat(os.Environ(), []string{"GIT_TEMPLATE_DIR=" + template, probeEnv + "=1"})
+
+	out, err := cmd.CombinedOutput()
+
+	// A process that fails can still run a hook, so the test reports
+	// both.
+	assert.NoFileExists(t, ran, "git ran a hook of the template directory")
+	require.NoError(t, err, "%s", out)
 }
 
 // [TestMain] unsets each variable of the environment that points git

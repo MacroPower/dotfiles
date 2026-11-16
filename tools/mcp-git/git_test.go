@@ -363,14 +363,14 @@ func TestEnclosingGitDir(t *testing.T) {
 		"linked worktree":                       {dir: wt},
 		"plain directory":                       {dir: t.TempDir()},
 		"git directory":                         {dir: gitDir, want: gitDir},
-		"hooks directory":                       {dir: filepath.Join(gitDir, "hooks"), want: gitDir},
+		"hooks directory":                       {dir: makeHooksDir(t, gitDir), want: gitDir},
 		"bare repository":                       {dir: bare, want: bare},
 		"git directory of a linked worktree":    {dir: wtGitDir, want: wtGitDir},
-		"hooks directory, HEAD moved aside":     {dir: filepath.Join(headless, "hooks"), want: headless},
+		"hooks directory, HEAD moved aside":     {dir: makeHooksDir(t, headless), want: headless},
 		"directory named .git":                  {dir: named, want: named},
 		"directory inside .GIT":                 {dir: filepath.Join(upper, "hooks"), want: upper},
 		"bare repository, HEAD links to no ref": {dir: missingRef, want: missingRef},
-		"bare repository, HEAD links to a dir":  {dir: filepath.Join(refsDir, "hooks"), want: refsDir},
+		"bare repository, HEAD links to a dir":  {dir: makeHooksDir(t, refsDir), want: refsDir},
 	}
 
 	for name, tt := range tests {
