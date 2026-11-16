@@ -31,6 +31,13 @@
 # symbolic link or another directory took its place after the tool
 # examined it.
 #
+# The tool also keeps each session directory of a project directory
+# that it entered and cannot read. The run then fails and names the
+# project directory. A user other than root can enter a directory with
+# the mode 300 and cannot read it. When the tool cannot read
+# DIR/claude-<uid>, it keeps every entry there, and the run fails and
+# names that directory.
+#
 # Root can mount a directory from anywhere in the tree, and
 # `rm --one-file-system` crosses a bind mount of the same file system.
 # So the tool keeps each entry that is a mount point or that holds one.
@@ -92,7 +99,9 @@
 #   The file names the process of the session as `pid` and the session
 #   as `sessionId`. When a file does not name both, the tool cannot tell
 #   which sessions run. It then removes no session directory and fails.
-#   No session runs when SESSIONS does not exist.
+#   The tool also removes no session directory and fails when it cannot
+#   read SESSIONS. A user other than root cannot read a directory with
+#   the mode 300 or 000. No session runs when SESSIONS does not exist.
 # - Each session directory that a process holds open or has as its
 #   working directory, and each session directory that holds such a
 #   file or directory. A background command holds its output file open.
@@ -249,12 +258,30 @@ let
           [ "$want" = "directory $(stat -c %d:%i .)" ]
       }
 
+      # readable succeeds when the tool can read the entries of the
+      # current directory. The tool lists the entries of a directory
+      # with a glob. A glob matches nothing in a directory that the
+      # shell cannot read, and it reports no error. So the tool calls
+      # readable before it lists a directory. find reads the directory
+      # for the -empty test, and it fails when it cannot read the
+      # directory.
+      readable() {
+        find . -maxdepth 0 -empty >/dev/null 2>&1
+      }
+
       # Every user can create an entry in a directory such as /tmp. A
       # symbolic link there leads the tool into the directory of its
       # target, and the tool removes the old entries of that directory.
       # Claude Code refuses such a directory too.
       if ! enter "$name" || [ "$(stat -c %u .)" != "$uid" ]; then
         echo "expire-claude-tmp: $name is not a directory of the user $uid" >&2
+        exit 1
+      fi
+
+      # The tool sees no entry of a directory that it cannot read, so
+      # every entry stays.
+      if ! readable; then
+        echo "expire-claude-tmp: cannot read $name, so its session directories stay" >&2
         exit 1
       fi
 
@@ -408,8 +435,15 @@ let
       # runs. It fails when a file of SESSIONS does not name a process
       # and a session. Claude Code removes the file of a session that
       # exits, so a file that is gone after the read names no session.
+      # It also fails when SESSIONS exists and the tool cannot list its
+      # files. cd fails when the tool cannot enter SESSIONS, and
+      # readable fails when the tool cannot read it.
       running_sessions() {
         local file line
+        if { [ -e "$sessions" ] || [ -L "$sessions" ]; } && ! (cd -- "$sessions" 2>/dev/null && readable); then
+          echo "expire-claude-tmp: cannot read $sessions, so every session directory stays" >&2
+          return 1
+        fi
         for file in "$sessions"/*.json; do
           line=$(jq -r 'select((.pid | type) == "number" and (.sessionId | type) == "string") | "\(.pid) \(.sessionId)"' "$file" 2>/dev/null) || line=
           if [[ ! $line =~ ^([0-9]+)\ ([^[:space:]]+)$ ]]; then
@@ -592,11 +626,16 @@ let
           continue
         fi
         # The subshell keeps the change of directory to itself. It exits
-        # with the status 2 when it cannot enter the project directory.
+        # with the status 2 when it cannot enter the project directory
+        # or cannot read it.
         rc=0
         (
           if ! enter "$entry"; then
             echo "expire-claude-tmp: cannot enter $name/$entry, so its session directories stay" >&2
+            exit 2
+          fi
+          if ! readable; then
+            echo "expire-claude-tmp: cannot read $name/$entry, so its session directories stay" >&2
             exit 2
           fi
           sweep "$entry"
@@ -609,7 +648,8 @@ let
         # changed after the cutoff, so a later run removes it. When find
         # fails, the project directory stays, and the tool names it and
         # fails the run. The subshell already named a project directory
-        # that it cannot enter.
+        # that it cannot enter or cannot read. find fails for a
+        # directory that it cannot read.
         if ! find "./$entry" -maxdepth 0 -empty ! -newerct "@$cutoff" -delete; then
           if [ "$rc" -ne 2 ]; then
             echo "expire-claude-tmp: cannot remove $name/$entry, so it stays" >&2
@@ -830,6 +870,31 @@ let
             fail 'the tool removes a session directory when it cannot tell which sessions run'
           rm sessions/1.json
 
+          # A glob matches no file of a sessions directory that the tool
+          # cannot read, so the tool cannot tell which sessions run. The
+          # run removes no session directory, and it fails and names the
+          # sessions directory by its path. The user can enter a
+          # directory with the mode 300 and cannot read it. The user can
+          # neither enter nor read a directory with the mode 000. Root
+          # ignores the mode, so this case runs only for another user.
+          if [ "$uid" != 0 ]; then
+            root=unlisted-sessions/claude-$uid
+            session "$root/-work-app/running"
+            register "$live" running
+            for mode in 300 000; do
+              chmod "$mode" sessions
+              if expire-claude-tmp unlisted-sessions now "$here/sessions" >log 2>err; then
+                fail "the run succeeds when it cannot read a sessions directory with the mode $mode"
+              fi
+              chmod 700 sessions
+              [ -e "$root/-work-app/running/scratchpad/notes.md" ] && [ ! -s log ] ||
+                fail "the run removes a session directory when it cannot read a sessions directory with the mode $mode"
+              [ "$(cat err)" = "expire-claude-tmp: cannot read $here/sessions, so every session directory stays" ] ||
+                fail "the run does not name exactly the sessions directory with the mode $mode"
+            done
+            rm "sessions/$live.json"
+          fi
+
           expire-claude-tmp missing now sessions ||
             fail 'the tool fails when the directory of Claude Code does not exist'
 
@@ -994,6 +1059,53 @@ let
             expect_log "$root" 'the run does not name exactly the session directory that it removed past a project directory that it cannot enter' <<'EOF'
           -work-lib/stale
           EOF
+          fi
+
+          # The run goes on past a project directory that it can enter
+          # and cannot read. A glob matches no entry of that project
+          # directory, so the tool sees no session directory there.
+          # Each session directory there stays, and the run fails and
+          # names the project directory by its path. The tool does not
+          # report that it cannot remove the project directory. The user
+          # can enter a directory with the mode 300 and cannot read it.
+          # Root ignores the mode, so this case runs only for another
+          # user. The glob sorts the project directory that the user
+          # cannot read first.
+          if [ "$uid" != 0 ]; then
+            root=unlisted/claude-$uid
+            session "$root/-work-app/old"
+            session "$root/-work-lib/stale"
+            chmod 300 "$root/-work-app"
+            cutoff=$(mark)
+            if expire-claude-tmp unlisted "@$cutoff" sessions >log 2>err; then
+              fail 'the run succeeds when it cannot read a project directory'
+            fi
+            chmod 700 "$root/-work-app"
+            [ -e "$root/-work-app/old/scratchpad/notes.md" ] ||
+              fail 'the run removes a session directory of a project directory that it cannot read'
+            [ "$(grep '^expire-claude-tmp: ' err)" = "expire-claude-tmp: cannot read $root/-work-app, so its session directories stay" ] ||
+              fail 'the run does not name exactly the project directory that it cannot read'
+            expect_log "$root" 'the run does not name exactly the session directory that it removed past a project directory that it cannot read' <<'EOF'
+          -work-lib/stale
+          EOF
+          fi
+
+          # The tool keeps every entry of the directory of Claude Code
+          # when it can enter that directory and cannot read it. The
+          # run fails and names the directory by its path. Root ignores
+          # the mode, so this case runs only for another user.
+          if [ "$uid" != 0 ]; then
+            root=unlisted-top/claude-$uid
+            session "$root/-work-app/old"
+            chmod 300 "$root"
+            if expire-claude-tmp unlisted-top now sessions >log 2>err; then
+              fail 'the run succeeds when it cannot read the directory of Claude Code'
+            fi
+            chmod 700 "$root"
+            [ -e "$root/-work-app/old/scratchpad/notes.md" ] && [ ! -s log ] ||
+              fail 'the run removes a session directory when it cannot read the directory of Claude Code'
+            [ "$(cat err)" = "expire-claude-tmp: cannot read $root, so its session directories stay" ] ||
+              fail 'the run does not name exactly the directory of Claude Code that it cannot read'
           fi
 
           # A process of the user can put a symbolic link in the place of

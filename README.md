@@ -347,7 +347,7 @@ Every NixOS host removes a session directory of Claude Code as a whole. So a ses
 
 The service keeps these session directories, however old their files are:
 
-- The directory named by the current id of each session that runs. Claude Code keeps one file in `~/.claude/sessions` for each session that runs, and the service reads those files. When the service cannot read one of them, it removes no session directory and fails.
+- The directory named by the current id of each session that runs. Claude Code keeps one file in `~/.claude/sessions` for each session that runs, and the service reads those files. When the service cannot read that directory or one of its files, it removes no session directory and fails.
 - Each directory that a process uses. A process uses a directory when it holds the directory or a file under it open, or when its working directory lies there. The service reads the open files and the working directories from `/proc`. Each background command holds its output file open, so the directory of that file stays while the command runs.
 - Each directory that holds the socket of a server that listens, such as a `tmux` server that a command started. The cleanup of `/tmp` keeps such a socket too. The service finds those servers in `/proc/net/unix`, which lists only the sockets of its own network namespace.
 

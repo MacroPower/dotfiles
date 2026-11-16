@@ -74,6 +74,12 @@
 # stderr. A user other than root cannot remove an owner directory when
 # the user cannot write ROOT.
 #
+# The tool keeps each clone of an owner directory that it entered and
+# cannot read. The run then fails and names the owner directory. A user
+# other than root can enter a directory with the mode 300 and cannot
+# read it. When the tool cannot read ROOT, it keeps every entry there,
+# and the run fails and names ROOT.
+#
 # The tool leaves a clone alone while mcp-git, the git MCP server, holds
 # a lock on it. A git_clone call holds a flock on the file <clone>.lock
 # beside the clone. A fetch, pull, or push holds a flock on mcp-git.lock
@@ -165,6 +171,17 @@ let
           [ "$want" = "directory $(stat -c %d:%i .)" ]
       }
 
+      # readable succeeds when the tool can read the entries of the
+      # current directory. The tool lists the entries of a directory
+      # with a glob. A glob matches nothing in a directory that the
+      # shell cannot read, and it reports no error. So the tool calls
+      # readable before it lists a directory. find reads the directory
+      # for the -empty test, and it fails when it cannot read the
+      # directory.
+      readable() {
+        find . -maxdepth 0 -empty >/dev/null 2>&1
+      }
+
       # Every user can create an entry in a directory such as /tmp. A
       # tool that follows a symbolic link there removes the old entries
       # of the directory of the target. So the tool refuses a ROOT that
@@ -185,6 +202,13 @@ let
       # directory. So the tool refuses a ROOT that is a repository.
       if repository .; then
         echo "expire-clones: $name is a repository, not a directory of clones" >&2
+        exit 1
+      fi
+
+      # The tool sees no entry of a directory that it cannot read, so
+      # every entry stays.
+      if ! readable; then
+        echo "expire-clones: cannot read $name, so its clones stay" >&2
         exit 1
       fi
 
@@ -441,11 +465,16 @@ let
           continue
         fi
         # The subshell keeps the change of directory to itself. It exits
-        # with the status 2 when it cannot enter the owner directory.
+        # with the status 2 when it cannot enter the owner directory or
+        # cannot read it.
         rc=0
         (
           if ! enter "$entry"; then
             echo "expire-clones: cannot enter $name/$entry, so its clones stay" >&2
+            exit 2
+          fi
+          if ! readable; then
+            echo "expire-clones: cannot read $name/$entry, so its clones stay" >&2
             exit 2
           fi
           sweep "$entry"
@@ -458,7 +487,8 @@ let
         # the cutoff, so a later run removes it. When find fails, the
         # owner directory stays, and the tool names it and fails the
         # run. The subshell already named an owner directory that it
-        # cannot enter.
+        # cannot enter or cannot read. find fails for a directory that
+        # it cannot read.
         if ! find "./$entry" -maxdepth 0 -empty ! -newerct "@$cutoff" -delete; then
           if [ "$rc" -ne 2 ]; then
             echo "expire-clones: cannot remove $name/$entry, so it stays" >&2
@@ -867,6 +897,49 @@ let
             expect_log closed 'the run does not name exactly the clone that it removed past an owner directory that it cannot enter' <<'EOF'
           owner/stale
           EOF
+          fi
+
+          # The run goes on past an owner directory that it can enter
+          # and cannot read. A glob matches no entry of that owner
+          # directory, so the tool sees no clone there. Each clone there
+          # stays, and the run fails and names the owner directory by
+          # its path. The tool does not report that it cannot remove the
+          # owner directory. The user can enter a directory with the
+          # mode 300 and cannot read it. Root ignores the mode, so this
+          # case runs only for another user. The glob sorts the owner
+          # directory that the user cannot read first.
+          if [ "$uid" != 0 ]; then
+            clone unlisted/frozen/repo
+            clone unlisted/owner/stale
+            chmod 300 unlisted/frozen
+            cutoff=$(mark)
+            if expire-clones unlisted "@$cutoff" >log 2>err; then
+              fail 'the run succeeds when it cannot read an owner directory'
+            fi
+            chmod 700 unlisted/frozen
+            [ -e unlisted/frozen/repo/README ] ||
+              fail 'the run removes a clone of an owner directory that it cannot read'
+            [ "$(grep '^expire-clones: ' err)" = 'expire-clones: cannot read unlisted/frozen, so its clones stay' ] ||
+              fail 'the run does not name exactly the owner directory that it cannot read'
+            expect_log unlisted 'the run does not name exactly the clone that it removed past an owner directory that it cannot read' <<'EOF'
+          owner/stale
+          EOF
+          fi
+
+          # The tool keeps every entry of ROOT when it can enter ROOT
+          # and cannot read it. The run fails and names ROOT. Root
+          # ignores the mode, so this case runs only for another user.
+          if [ "$uid" != 0 ]; then
+            clone unlisted-root/owner/old
+            chmod 300 unlisted-root
+            if expire-clones unlisted-root now >log 2>err; then
+              fail 'the run succeeds when it cannot read the directory of the clones'
+            fi
+            chmod 700 unlisted-root
+            [ -e unlisted-root/owner/old/README ] && [ ! -s log ] ||
+              fail 'the run removes a clone when it cannot read the directory of the clones'
+            [ "$(cat err)" = 'expire-clones: cannot read unlisted-root, so its clones stay' ] ||
+              fail 'the run does not name exactly the directory of the clones that it cannot read'
           fi
 
           # A clone that the tool renamed and cannot delete stays under
