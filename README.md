@@ -326,7 +326,7 @@ The service keeps each clone that holds a mount, so it does not delete the files
 journalctl -u expire-clones.service -g removed
 ```
 
-When a run cannot remove an old clone, it keeps the clone, names it, and fails. To list those clones, run this command on the host:
+When a run cannot remove an old clone, it keeps the clone, names it, and fails. It does the same for an empty owner directory that it cannot remove. To list those clones and directories, run this command on the host:
 
 ```sh
 journalctl -u expire-clones.service -g stay
@@ -367,7 +367,7 @@ The `claude` wrapper of `home/claude.nix` sets `CLAUDE_CODE_TMPDIR` to `/tmp`. W
 journalctl -u expire-claude-tmp.service -g removed
 ```
 
-When a run cannot remove a session directory, it keeps the directory, names it by its path, and fails. To list those directories, run this command on the host:
+When a run cannot remove a session directory, it keeps the directory, names it by its path, and fails. It does the same for an empty project directory that it cannot remove. To list those directories, run this command on the host:
 
 ```sh
 journalctl -u expire-claude-tmp.service -g stay
@@ -453,13 +453,13 @@ The script does not clean `~/Library/Caches`, so a launchd agent bounds the clon
 grep removed ~/Library/Logs/expire-clones.log
 ```
 
-The agent runs as the user, so it cannot remove every clone. It keeps a clone that holds a directory that the user cannot read. When a clone holds a file that the user cannot delete, the agent renames the clone to `.expired.<random>` and keeps the renamed directory. In both cases the run fails and names the clone. To list those clones, run this command on the Mac:
+The agent runs as the user, so it cannot remove every clone. It keeps a clone that holds a directory that the user cannot read. When a clone holds a file that the user cannot delete, the agent renames the clone to `.expired.<random>` and keeps the renamed directory. In both cases the run fails and names the clone. It does the same for an empty owner directory that it cannot remove, such as when the user cannot write the clone directory. To list those clones and directories, run this command on the Mac:
 
 ```sh
 grep stay ~/Library/Logs/expire-clones.log
 ```
 
-Delete each of those clones by hand. Use `sudo` when a file of the clone belongs to another user.
+Delete each of those clones and directories by hand. Use `sudo` when a file of the clone belongs to another user.
 
 To apply the settings, run `sudo task switch` on the Mac. Then restart each Claude Code session that started before the switch, because such a session still clones into `/tmp/git`. The switch leaves the clones in `/tmp/git` where they are. macOS deletes their files, and it empties `/tmp` at each restart. To remove them now, run this command on the Mac:
 
@@ -486,7 +486,7 @@ The agent keeps these session directories, however old their files are:
 - Each directory that holds a socket. macOS does not list the sockets that servers bind, so the agent cannot tell whether a server listens on a socket.
 - Each directory that the agent cannot read in full, such as a directory with the mode `000`. The agent runs as the user, so the run fails, and the log names the directory.
 
-The agent runs as the user, so it cannot remove every old session directory. It keeps each session directory of a project directory that the user cannot write. When a session directory holds a file that the user cannot delete, the agent renames the session directory to `.expired.<random>` and keeps the renamed directory. In each case the run fails and names the session directory by its path. To list the session directories that the runs kept and named, run this command on the Mac:
+The agent runs as the user, so it cannot remove every old session directory. It keeps each session directory of a project directory that the user cannot write. When a session directory holds a file that the user cannot delete, the agent renames the session directory to `.expired.<random>` and keeps the renamed directory. In each case the run fails and names the session directory by its path. It does the same for an empty project directory that it cannot remove, such as when the user cannot write `~/Library/Caches/claude-tmp/claude-<uid>`. To list the directories that the runs kept and named, run this command on the Mac:
 
 ```sh
 grep stay ~/Library/Logs/expire-claude-tmp.log

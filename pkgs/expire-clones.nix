@@ -69,6 +69,11 @@
 #   another uid. This clone stays under its new name, and each later
 #   run fails until the tool can delete it.
 #
+# The run also fails when the tool keeps an empty owner directory that
+# it cannot remove. The tool names that directory by its path on
+# stderr. A user other than root cannot remove an owner directory when
+# the user cannot write ROOT.
+#
 # The tool leaves a clone alone while mcp-git, the git MCP server, holds
 # a lock on it. A git_clone call holds a flock on the file <clone>.lock
 # beside the clone. A fetch, pull, or push holds a flock on mcp-git.lock
@@ -435,18 +440,31 @@ let
         if mounted "$entry" at; then
           continue
         fi
-        # The subshell keeps the change of directory to itself.
+        # The subshell keeps the change of directory to itself. It exits
+        # with the status 2 when it cannot enter the owner directory.
+        rc=0
         (
           if ! enter "$entry"; then
             echo "expire-clones: cannot enter $name/$entry, so its clones stay" >&2
-            exit 1
+            exit 2
           fi
           sweep "$entry"
           exit "$status"
-        ) || status=1
+        ) || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          status=1
+        fi
         # An owner directory that lost a clone in this run changed after
-        # the cutoff, so a later run removes it.
-        find "./$entry" -maxdepth 0 -empty ! -newerct "@$cutoff" -delete || status=1
+        # the cutoff, so a later run removes it. When find fails, the
+        # owner directory stays, and the tool names it and fails the
+        # run. The subshell already named an owner directory that it
+        # cannot enter.
+        if ! find "./$entry" -maxdepth 0 -empty ! -newerct "@$cutoff" -delete; then
+          if [ "$rc" -ne 2 ]; then
+            echo "expire-clones: cannot remove $name/$entry, so it stays" >&2
+          fi
+          status=1
+        fi
       done
 
       exit "$status"
@@ -795,6 +813,60 @@ let
           owner/stale
           EOF
             chmod u+w unremovable/frozen
+          fi
+
+          # The run goes on past an empty owner directory that it cannot
+          # remove. The owner directory stays, and the run fails and
+          # names the owner directory by its path. The user cannot
+          # remove an entry of a ROOT that the user cannot write. Root
+          # ignores the mode, so this case runs only for another user.
+          # The glob sorts the empty owner directory first. The other
+          # owner directory changes when it loses its clone, so it stays
+          # too.
+          if [ "$uid" != 0 ]; then
+            mkdir -p unwritable/empty
+            clone unwritable/owner/stale
+            chmod 555 unwritable
+            cutoff=$(mark)
+            if expire-clones unwritable "@$cutoff" >log 2>err; then
+              fail 'the run succeeds when it cannot remove an empty owner directory'
+            fi
+            [ "$(grep '^expire-clones: ' err)" = 'expire-clones: cannot remove unwritable/empty, so it stays' ] ||
+              fail 'the run does not name exactly the empty owner directory that it cannot remove'
+            expect_tree unwritable 'the run does not keep exactly the two owner directories' <<'EOF'
+          ./empty
+          ./owner
+          EOF
+            expect_log unwritable 'the run does not name exactly the clone that it removed past an empty owner directory that it cannot remove' <<'EOF'
+          owner/stale
+          EOF
+            chmod u+w unwritable
+          fi
+
+          # The run goes on past an owner directory that it cannot
+          # enter. Each clone there stays, and the run fails and names
+          # the owner directory by its path. find cannot read that owner
+          # directory, and the tool still names the directory only one
+          # time. The user cannot enter a directory with the mode 000.
+          # Root ignores the mode, so this case runs only for another
+          # user. The glob sorts the owner directory that the user
+          # cannot enter first.
+          if [ "$uid" != 0 ]; then
+            clone closed/frozen/repo
+            clone closed/owner/stale
+            chmod 000 closed/frozen
+            cutoff=$(mark)
+            if expire-clones closed "@$cutoff" >log 2>err; then
+              fail 'the run succeeds when it cannot enter an owner directory'
+            fi
+            chmod 700 closed/frozen
+            [ -e closed/frozen/repo/README ] ||
+              fail 'the run removes a clone of an owner directory that it cannot enter'
+            [ "$(grep '^expire-clones: ' err)" = 'expire-clones: cannot enter closed/frozen, so its clones stay' ] ||
+              fail 'the run does not name the owner directory whose mode keeps the user out exactly one time'
+            expect_log closed 'the run does not name exactly the clone that it removed past an owner directory that it cannot enter' <<'EOF'
+          owner/stale
+          EOF
           fi
 
           # A clone that the tool renamed and cannot delete stays under

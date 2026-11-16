@@ -131,6 +131,11 @@
 #   its new name, and each later run fails until the tool can delete
 #   it.
 #
+# The run also fails when the tool keeps an empty project directory
+# that it cannot remove. The tool names that directory by its path on
+# stderr. A user other than root cannot remove a project directory
+# when the user cannot write DIR/claude-<uid>.
+#
 # With --fallback TMP, the tool also keeps the directory
 # TMP/claude-<uid>. Claude Code gives a sandboxed command that directory
 # as TMPDIR when the path of DIR/claude-<uid> is too long for a Unix
@@ -586,18 +591,31 @@ let
         if mounted "$entry" at; then
           continue
         fi
-        # The subshell keeps the change of directory to itself.
+        # The subshell keeps the change of directory to itself. It exits
+        # with the status 2 when it cannot enter the project directory.
+        rc=0
         (
           if ! enter "$entry"; then
             echo "expire-claude-tmp: cannot enter $name/$entry, so its session directories stay" >&2
-            exit 1
+            exit 2
           fi
           sweep "$entry"
           exit "$status"
-        ) || status=1
+        ) || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          status=1
+        fi
         # A project directory that lost a session directory in this run
-        # changed after the cutoff, so a later run removes it.
-        find "./$entry" -maxdepth 0 -empty ! -newerct "@$cutoff" -delete || status=1
+        # changed after the cutoff, so a later run removes it. When find
+        # fails, the project directory stays, and the tool names it and
+        # fails the run. The subshell already named a project directory
+        # that it cannot enter.
+        if ! find "./$entry" -maxdepth 0 -empty ! -newerct "@$cutoff" -delete; then
+          if [ "$rc" -ne 2 ]; then
+            echo "expire-claude-tmp: cannot remove $name/$entry, so it stays" >&2
+          fi
+          status=1
+        fi
       done
 
       exit "$status"
@@ -922,12 +940,43 @@ let
             chmod u+w "$root/-work-app"
           fi
 
+          # The run goes on past an empty project directory that it
+          # cannot remove. The project directory stays, and the run
+          # fails and names the project directory by its path. The user
+          # cannot remove an entry of a directory that the user cannot
+          # write. Root ignores the mode, so this case runs only for
+          # another user. The glob sorts the empty project directory
+          # first. The other project directory changes when it loses
+          # its session directory, so it stays too.
+          if [ "$uid" != 0 ]; then
+            root=unwritable/claude-$uid
+            mkdir -p "$root/-work-app"
+            session "$root/-work-lib/stale"
+            chmod 555 "$root"
+            cutoff=$(mark)
+            if expire-claude-tmp unwritable "@$cutoff" sessions >log 2>err; then
+              fail 'the run succeeds when it cannot remove an empty project directory'
+            fi
+            [ "$(grep '^expire-claude-tmp: ' err)" = "expire-claude-tmp: cannot remove $root/-work-app, so it stays" ] ||
+              fail 'the run does not name exactly the empty project directory that it cannot remove'
+            expect_tree "$root" 'the run does not keep exactly the two project directories' <<'EOF'
+          ./-work-app
+          ./-work-lib
+          EOF
+            expect_log "$root" 'the run does not name exactly the session directory that it removed past an empty project directory that it cannot remove' <<'EOF'
+          -work-lib/stale
+          EOF
+            chmod u+w "$root"
+          fi
+
           # The run goes on past a project directory that it cannot
           # enter. Each session directory there stays, and the run fails
-          # and names the project directory by its path. The user cannot
-          # enter a directory with the mode 000. Root ignores the mode,
-          # so this case runs only for another user. The glob sorts the
-          # project directory that the user cannot enter first.
+          # and names the project directory by its path. find cannot
+          # read that project directory, and the tool still names the
+          # directory only one time. The user cannot enter a directory
+          # with the mode 000. Root ignores the mode, so this case runs
+          # only for another user. The glob sorts the project directory
+          # that the user cannot enter first.
           if [ "$uid" != 0 ]; then
             root=closed/claude-$uid
             session "$root/-work-app/old"
@@ -940,8 +989,8 @@ let
             chmod 700 "$root/-work-app"
             [ -e "$root/-work-app/old/scratchpad/notes.md" ] ||
               fail 'the run removes a session directory of a project directory that it cannot enter'
-            grep -qxF "expire-claude-tmp: cannot enter $root/-work-app, so its session directories stay" err ||
-              fail 'the run does not name the project directory whose mode keeps the user out'
+            [ "$(grep '^expire-claude-tmp: ' err)" = "expire-claude-tmp: cannot enter $root/-work-app, so its session directories stay" ] ||
+              fail 'the run does not name the project directory whose mode keeps the user out exactly one time'
             expect_log "$root" 'the run does not name exactly the session directory that it removed past a project directory that it cannot enter' <<'EOF'
           -work-lib/stale
           EOF
