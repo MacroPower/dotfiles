@@ -17,15 +17,20 @@
 # symbolic link, a repository, or the directory of another user.
 #
 # When root runs the tool with --user, the tool reads and removes every
-# file of a clone. The user cannot read or remove some of those files,
-# such as a directory with the mode 000 or a file that a container
-# wrote with another uid. The processes of the user can write each
-# directory of the tree, and they can replace a directory with a
-# symbolic link at any time. So the tool changes into ROOT and into
-# each owner directory, and it checks that it entered the directory
-# that it examined. It names each entry by its name in the directory
-# that it entered. So find, mv, and rm never follow a symbolic link out
-# of the tree.
+# file of a clone. Without a user namespace, a tool that runs as the
+# user cannot read some of those files, such as a directory with the
+# mode 000. It cannot remove others, such as a file in a directory with
+# the mode 755 that a container made with another uid.
+#
+# The processes of the user can write each directory of the tree that
+# the user owns. Through a user namespace, they can also write each
+# directory of a subordinate uid of the user, such as a directory that a
+# rootless container made. They can replace a directory there with a
+# symbolic link at any time. So the tool changes into ROOT and into each
+# owner directory, and it checks that it entered the directory that it
+# examined. It names each entry by its name in the directory that it
+# entered. So find, mv, and rm never follow a symbolic link out of the
+# tree.
 #
 # Root can mount a directory from anywhere in the tree, and
 # `rm --one-file-system` crosses a bind mount of the same file system.
@@ -61,13 +66,15 @@
 # it names that clone on stderr. For example, the tool cannot remove
 # these clones:
 #
-# - A clone that it cannot read in full. A user other than root cannot
-#   read a directory with the mode 000.
+# - A clone that it cannot read in full. Without a user namespace, a
+#   user other than root cannot read a directory with the mode 000.
 # - A clone that it cannot rename, such as a clone in an owner
 #   directory that the user cannot write.
-# - A clone that holds a file that it cannot delete, such as a file of
-#   another uid. This clone stays under its new name, and each later
-#   run fails until the tool can delete it.
+# - A clone that holds a file that it cannot delete. Without a user
+#   namespace, a user other than root cannot delete a file in a
+#   directory with the mode 755 that another uid owns. The clone stays
+#   under its new name, and each later run fails until the tool can
+#   delete it.
 #
 # The run also fails when the tool keeps an empty owner directory that
 # it cannot remove. The tool names that directory by its path on

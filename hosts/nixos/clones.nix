@@ -80,16 +80,17 @@ in
     # what counts as a clone.
     #
     # The service runs as root, as systemd-tmpfiles does. So it reads a
-    # directory whose mode keeps the user out. It also removes the
-    # files that the user cannot remove, such as the files that a
-    # rootless container wrote with a subordinate uid. A service that
-    # runs as the user keeps each clone that holds such a directory or
-    # such a file. With --user, the tool refuses a cloneRoot that is a
+    # directory whose mode keeps the user out. It also removes the files
+    # that it cannot remove as the user, such as a file in a directory
+    # with the mode 755 that a rootless container made with a
+    # subordinate uid. A service that runs as the user keeps each clone
+    # that holds a directory that it cannot read or a file that it
+    # cannot remove. With --user, the tool refuses a cloneRoot that is a
     # symbolic link or that belongs to another user. The tool never
     # walks or removes the target of a symbolic link. It keeps each
     # clone that holds a mount, so it does not delete the files of the
-    # source of a bind mount. When the tool keeps a clone that it
-    # cannot remove, the run fails and names the clone.
+    # source of a bind mount. When the tool keeps a clone that it cannot
+    # remove, the run fails and names the clone.
     #
     # ProtectSystem and ProtectHome also keep the service from writing
     # outside cloneRoot. The hyphen before cloneRoot lets the service

@@ -316,7 +316,7 @@ Every NixOS host removes a clone under `/tmp/git` as a whole, so an agent finds 
 
 The settings apply only on a host that keeps the `git` bundle of `dotfiles.claude.toolBundles` on, and the bundle is on by default. On a Linux host, that bundle tells agents to clone into `/tmp/git`.
 
-The service runs as root, as the cleanup of `/tmp` does. So it reads a directory whose mode keeps the user out. It also removes the files that the user cannot remove, such as the files that a rootless container wrote with a subordinate uid. It removes a symbolic link in `/tmp/git` and keeps the files of the target, and systemd lets it write only in `/tmp/git`.
+The service runs as root, as the cleanup of `/tmp` does. So it reads a directory whose mode keeps the user out. It also removes the files that it cannot remove as the user, such as a file in a directory with the mode 755 that a rootless container made with a subordinate uid. It removes a symbolic link in `/tmp/git` and keeps the files of the target, and systemd lets it write only in `/tmp/git`.
 
 The service keeps each clone that holds a mount, so it does not delete the files of the source of a bind mount. It also keeps each owner directory that is a mount point. The cleanup of `/tmp` skips such a mount too. Until someone removes the mount, each run fails and names the directory that holds it.
 
@@ -355,7 +355,7 @@ Claude Code keeps the output of the background commands of a session under the i
 
 The service removes the directory of a session that does not run 10 days after the last change to the directory. A session that you resume after that time finds none of its earlier scratchpad files.
 
-The service runs as root, as the cleanup of `/tmp` does. So it removes the files that the user cannot remove, such as the files that a rootless container wrote with a subordinate uid. It never follows a symbolic link out of `/tmp/claude-<uid>`, and systemd lets it write only in `/tmp`.
+The service runs as root, as the cleanup of `/tmp` does. So it removes the files that it cannot remove as the user, such as a file in a directory with the mode 755 that a rootless container made with a subordinate uid. It never follows a symbolic link out of `/tmp/claude-<uid>`, and systemd lets it write only in `/tmp`.
 
 The service keeps each session directory that holds a mount, so it does not delete the files of the source of a bind mount. It also keeps each project directory that is a mount point. The cleanup of `/tmp` skips such a mount too. Until someone removes the mount, each run fails and names the directory that holds it.
 

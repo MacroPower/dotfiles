@@ -15,14 +15,20 @@
 # as Claude Code does.
 #
 # When root runs the tool with --user, the tool reads and removes every
-# file of a session directory. The user cannot remove some of those
-# files, such as a file that a container wrote with another uid. The
-# processes of the user can write each directory of the tree, and they
-# can replace a directory with a symbolic link at any time. So the tool
-# changes into DIR/claude-<uid> and into each project directory, and it
-# checks that it entered the directory that it examined. It names each
-# entry by its name in the directory that it entered, so it never
-# follows a symbolic link out of the tree.
+# file of a session directory. Without a user namespace, a tool that
+# runs as the user cannot remove some of those files. For example, it
+# cannot remove a file in a directory with the mode 755 that a
+# container made with another uid.
+#
+# The processes of the user can write each directory of the tree that
+# the user owns. Through a user namespace, they can also write each
+# directory of a subordinate uid of the user, such as a directory that a
+# rootless container made. They can replace a directory there with a
+# symbolic link at any time. So the tool changes into DIR/claude-<uid>
+# and into each project directory, and it checks that it entered the
+# directory that it examined. It names each entry by its name in the
+# directory that it entered, so it never follows a symbolic link out of
+# the tree.
 #
 # When the tool cannot enter a project directory, it keeps each session
 # directory there, and the run fails and names the project directory.
@@ -130,15 +136,16 @@
 # remove, and it names that directory by its path on stderr. For
 # example, the tool cannot remove these session directories:
 #
-# - A session directory that it cannot read in full. A user other than
-#   root cannot read a directory with the mode 000.
+# - A session directory that it cannot read in full. Without a user
+#   namespace, a user other than root cannot read a directory with the
+#   mode 000.
 # - A session directory that it cannot rename, such as a session
 #   directory in a project directory that the user cannot write.
-# - A session directory that holds a file that it cannot delete. A
-#   user other than root cannot delete a file in a directory with the
-#   mode 755 that another uid owns. The session directory stays under
-#   its new name, and each later run fails until the tool can delete
-#   it.
+# - A session directory that holds a file that it cannot delete.
+#   Without a user namespace, a user other than root cannot delete a
+#   file in a directory with the mode 755 that another uid owns. The
+#   session directory stays under its new name, and each later run
+#   fails until the tool can delete it.
 #
 # The run also fails when the tool keeps an empty project directory
 # that it cannot remove. The tool names that directory by its path on

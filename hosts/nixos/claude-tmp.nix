@@ -72,15 +72,15 @@ in
     # a use.
     #
     # The service runs as root, as systemd-tmpfiles does. So it removes
-    # the files that the user cannot remove, such as the files that a
-    # rootless container wrote with a subordinate uid. It also reads a
-    # directory whose mode keeps the user out, and it reads the open
-    # files of the processes of every user. The tool never follows a
-    # symbolic link out of the directory. It keeps each session
-    # directory that holds a mount, so it does not delete the files of
-    # the source of a bind mount. When the tool keeps a session
-    # directory that it cannot remove, the run fails and names the
-    # directory by its path.
+    # the files that it cannot remove as the user, such as a file in a
+    # directory with the mode 755 that a rootless container made with a
+    # subordinate uid. It also reads a directory whose mode keeps the
+    # user out, and it reads the open files of the processes of every
+    # user. The tool never follows a symbolic link out of the
+    # directory. It keeps each session directory that holds a mount, so
+    # it does not delete the files of the source of a bind mount. When
+    # the tool keeps a session directory that it cannot remove, the run
+    # fails and names the directory by its path.
     #
     # ProtectSystem and ProtectHome also keep the service from writing
     # outside tmpDir. The service must see the /tmp, the network
