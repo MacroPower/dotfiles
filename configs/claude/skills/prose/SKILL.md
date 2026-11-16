@@ -60,11 +60,15 @@ semicolon, and never put a colon between two clauses. If the words
 after a colon have their own subject and verb, end the sentence there
 with a period, or join the clauses with `because` or `so`.
 
-Do not end a sentence on a participle tacked on after a comma (`,
-returning an error`, `, ensuring the cache stays warm`). Do not wrap a
-claim in `not only X but Y`. Do not hedge a claim. State it or drop it.
-Put a negation on the verb, so `does not need npm` rather than `needs
-no npm`, and `does not match any check` rather than `matches no check`.
+State each claim in its plain form.
+
+- Do not end a sentence on a participle tacked on after a comma (`,
+  returning an error`, `, ensuring the cache stays warm`).
+- Do not wrap a claim in `not only X but Y`.
+- Do not hedge a claim. State it or drop it.
+- Put a negation on the verb, so `does not need npm` rather than `needs
+  no npm`, and `does not match any check` rather than `matches no
+  check`.
 
 Point `this` and `which` at a noun, never at a whole clause. In `This
 means the pool is empty`, the reader has to pick which part of the last
