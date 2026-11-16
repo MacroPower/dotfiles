@@ -19,4 +19,9 @@
 // skips the rotation, because the holder is rotating the log. A process
 // that takes the lock checks the size again, so two processes that saw
 // the same full log rotate it one time.
+//
+// The rotator unlocks the lock file before it closes the file. A process
+// that the rotating process starts during a rotation holds a copy of the
+// lock descriptor until its exec. The unlock releases the lock for that
+// copy, so the next rotation does not find the lock held.
 package logrotate

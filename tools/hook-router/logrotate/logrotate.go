@@ -85,7 +85,7 @@ func (r *Rotator) Rotate() (bool, error) {
 		return false, err
 	}
 
-	unlock, err := r.lock()
+	lock, err := r.lock()
 	if errors.Is(err, errLocked) {
 		return false, nil
 	}
@@ -94,7 +94,7 @@ func (r *Rotator) Rotate() (bool, error) {
 		return false, err
 	}
 
-	defer unlock()
+	defer unlock(lock)
 
 	return r.rotateLocked()
 }
@@ -135,10 +135,10 @@ func (r *Rotator) full() (bool, error) {
 	return info.Mode().IsRegular() && info.Size() >= r.maxBytes, nil
 }
 
-// lock takes the exclusive rotation lock without waiting and returns
-// the function that releases it. It returns [errLocked] when another
-// process holds the lock.
-func (r *Rotator) lock() (func(), error) {
+// lock opens the lock file and takes the exclusive rotation lock on it
+// without waiting. The caller releases the lock with [unlock]. It
+// returns [errLocked] when another process holds the lock.
+func (r *Rotator) lock() (*os.File, error) {
 	f, err := os.OpenFile(r.path+".lock", os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("opening rotation lock: %w", err)
@@ -156,10 +156,22 @@ func (r *Rotator) lock() (func(), error) {
 		return nil, fmt.Errorf("taking rotation lock: %w", err)
 	}
 
-	return func() {
-		// Closing the descriptor releases the lock.
-		_ = f.Close() //nolint:errcheck // Nothing can act on a close error here.
-	}, nil
+	return f, nil
+}
+
+// unlock releases the rotation lock that [*Rotator.lock] took on f, and
+// closes f.
+//
+// A flock belongs to the open file description. A process that this
+// process starts gets a copy of the descriptor of f and keeps the copy
+// until its exec. The close of f alone leaves the lock with that copy,
+// and a rotation before that exec finds the lock held and skips. The
+// explicit unlock releases the lock for every copy.
+func unlock(f *os.File) {
+	//nolint:errcheck,gosec // Nothing can act on an unlock error here. G115: a file descriptor fits in an int.
+	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+
+	_ = f.Close() //nolint:errcheck // Nothing can act on a close error here.
 }
 
 // shift moves every rotated file one number up, starting from the

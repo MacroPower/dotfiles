@@ -3,10 +3,12 @@ package logrotate_test
 import (
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 
@@ -455,6 +457,12 @@ func TestRotateSkipsWhenLockHeld(t *testing.T) {
 	assert.False(t, rotated)
 	assert.Equal(t, map[string]string{logName: "current"}, readFiles(t, dir))
 
+	// A process that a parallel test starts might hold a copy of the
+	// descriptor, and that copy keeps the lock through the close. The
+	// explicit unlock releases the lock for every copy.
+	//
+	//nolint:gosec // G115: a file descriptor fits in an int.
+	require.NoError(t, syscall.Flock(int(lock.Fd()), syscall.LOCK_UN))
 	require.NoError(t, lock.Close())
 
 	rotated, err = r.Rotate()
@@ -462,6 +470,69 @@ func TestRotateSkipsWhenLockHeld(t *testing.T) {
 
 	assert.True(t, rotated)
 	assert.Equal(t, map[string]string{logName + ".1": "current"}, readFiles(t, dir))
+}
+
+func TestRotateWhileProcessesStart(t *testing.T) {
+	t.Parallel()
+
+	// A started process copies the descriptors of the test process and
+	// keeps the copies until its exec. Only a start in the middle of a
+	// rotation copies the lock descriptor. This count of starts makes a
+	// run without such a copy improbable.
+	const starts = 50
+
+	path := filepath.Join(t.TempDir(), logName)
+	r := logrotate.New(path, logrotate.WithMaxBytes(1), logrotate.WithBackups(1))
+
+	var (
+		wg        sync.WaitGroup
+		stop      atomic.Bool
+		rotations int
+		skipped   int
+		rotateErr error
+	)
+
+	// The goroutine fills the log and rotates it until the test has
+	// started every process. No other process rotates this log, so each
+	// rotation must find the lock free.
+	wg.Go(func() {
+		for !stop.Load() {
+			rotateErr = os.WriteFile(path, []byte("full"), 0o644)
+			if rotateErr != nil {
+				return
+			}
+
+			var rotated bool
+
+			rotated, rotateErr = r.Rotate()
+			if rotateErr != nil {
+				return
+			}
+
+			rotations++
+
+			if !rotated {
+				skipped++
+			}
+		}
+	})
+
+	var startErr error
+
+	for range starts {
+		startErr = exec.CommandContext(t.Context(), "true").Run()
+		if startErr != nil {
+			break
+		}
+	}
+
+	stop.Store(true)
+	wg.Wait()
+
+	require.NoError(t, startErr)
+	require.NoError(t, rotateErr)
+
+	assert.Zerof(t, skipped, "%d of %d rotations found the lock held", skipped, rotations)
 }
 
 func TestRotateConcurrent(t *testing.T) {

@@ -3,6 +3,7 @@ package logrotate
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,4 +65,37 @@ func TestRotateLocked(t *testing.T) {
 			assert.Equal(t, tc.before, files, "the rotated files stay as the other process left them")
 		})
 	}
+}
+
+func TestUnlockReleasesCopiedDescriptor(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "router.log")
+	require.NoError(t, os.WriteFile(path, []byte("full"), 0o644))
+
+	r := New(path, WithMaxBytes(1))
+
+	lock, err := r.lock()
+	require.NoError(t, err)
+
+	// A process that this process starts holds a copy of the lock
+	// descriptor until its exec. The descriptor that dup returns refers
+	// to the same open file description as that copy.
+	//
+	//nolint:gosec // G115: a file descriptor fits in an int.
+	copied, err := syscall.Dup(int(lock.Fd()))
+	require.NoError(t, err)
+
+	syscall.CloseOnExec(copied)
+
+	t.Cleanup(func() {
+		assert.NoError(t, syscall.Close(copied))
+	})
+
+	unlock(lock)
+
+	rotated, err := r.Rotate()
+	require.NoError(t, err)
+
+	assert.True(t, rotated, "the copy does not hold the lock after the unlock")
 }
