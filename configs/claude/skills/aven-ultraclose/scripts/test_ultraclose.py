@@ -109,8 +109,10 @@ def refused(*args, cwd, env, script=SCRIPT, timeout=None):
 # ref that it does not know. The list command ignores its filters. It
 # prints the recorded tasks and saves its arguments, one per line. The
 # edit command fails while the AVEN_ANSWERS directory holds the file
-# edit.fails. Otherwise it adds its arguments to the file edit.args, as
-# one line. Every other command prints one word.
+# edit.fails. The edit command of one task also fails while that
+# directory holds the file REF.edit.fails, where REF is the ref of the
+# task. Otherwise the command adds its arguments to the file edit.args,
+# as one line. Every other command prints one word.
 AVEN_STUB = """\
 #!/bin/sh
 case "$1 $2" in
@@ -133,7 +135,7 @@ case "$1 $2" in
     cat "$AVEN_ANSWERS/list.json"
     ;;
 "edit "*)
-    if [ -e "$AVEN_ANSWERS/edit.fails" ]; then
+    if [ -e "$AVEN_ANSWERS/edit.fails" ] || [ -e "$AVEN_ANSWERS/$2.edit.fails" ]; then
         echo "Error: the database is locked" >&2
         exit 1
     fi
@@ -4245,11 +4247,13 @@ class LandTest(LandCase):
     A failed landing prints its result last. A landing with --next and the
     result OK then starts the next tasks. A landing that finds a change in
     the main checkout after its commit lands its task and then fails. A
-    landing that fails on uncommitted changes lists them as git status
-    --porcelain prints them. The check and the commit hooks of a landing do
-    not read the golangci-lint cache that every checkout shares. A landing
-    also records how long its check and its commit took. It stops a check
-    or a commit that runs longer than the step timeout.
+    landing whose commit is on the base branch also lands its task when
+    aven then fails to set the aven task to done. A landing that fails on
+    uncommitted changes lists them as git status --porcelain prints them.
+    The check and the commit hooks of a landing do not read the
+    golangci-lint cache that every checkout shares. A landing also records
+    how long its check and its commit took. It stops a check or a commit
+    that runs longer than the step timeout.
     """
 
     def test_result_line_comes_last(self):
@@ -4484,6 +4488,93 @@ class LandTest(LandCase):
             self.assertEqual(
                 self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
             )
+
+    def test_lands_task_that_aven_does_not_set_to_done(self):
+        # The aven stub fails each edit command of the task of the
+        # landing, as aven does with a locked database. The base branch
+        # holds the commit by then, so the task lands, and the second
+        # task, which waits for it, can start.
+        # name: (the land flags, the tasks that the landing starts)
+        cases = {
+            "a landing without --next": ([], []),
+            "a landing with --next": (["--next"], [self.OTHER]),
+        }
+        for name, (flags, started) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp)
+                self.add_other(tmp, repo, env, after=[REF])
+                Path(env["AVEN_ANSWERS"], f"{REF}.edit.fails").touch()
+                status, lines = self.land(repo, env, *flags)
+                # The failure status sends the caller to the report.
+                self.assertEqual(status, 1, lines)
+                # The report comes before the TIMES line. It names the
+                # aven command, and it holds the error of aven.
+                self.assertEqual(
+                    lines[:3],
+                    [
+                        f"aven edit {REF} --status done failed:",
+                        "Error: the database is locked",
+                        "The task landed, but the aven task is still open. Run"
+                        " the aven command again.",
+                    ],
+                )
+                listed = self.after_result(lines[3:])
+                self.assertEqual(
+                    git("log", "-1", "--format=%s", cwd=repo, env=env),
+                    self.SUBJECT,
+                )
+                # Only a landing with --next prints a list.
+                self.assertEqual(bool(listed), bool(flags), lines)
+                inputs = json.loads("\n".join(listed) or "[]")
+                self.assertEqual([t["task"]["ref"] for t in inputs], started)
+                self.assertEqual(
+                    self.task_states(tmp),
+                    {REF: "landed", self.OTHER: "inflight" if started else "pending"},
+                )
+                # The aven task of the landing is still active.
+                active = [f"{ref} --status active" for ref in (REF, *started)]
+                self.assertEqual(aven_edits(env), active)
+                # A second landing finds a landed task. It does not look
+                # for the worktree that the first landing removed.
+                self.assertIn(
+                    f"{REF} is landed", refused("land", REF, cwd=repo, env=env)
+                )
+
+    def test_dirty_checkout_lands_task_that_aven_does_not_set_to_done(self):
+        # The commit hook leaves a file in the main checkout, and the aven
+        # stub fails each edit command of the task of the landing. The
+        # base branch holds the commit of the task by then.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, hook="touch left.txt")
+            self.add_other(tmp, repo, env, after=[REF])
+            Path(env["AVEN_ANSWERS"], f"{REF}.edit.fails").touch()
+            status, lines = self.land(repo, env, "--next")
+            self.assertEqual(status, 2, lines)
+            # The report of the aven command comes first. The output then
+            # names the commit and the file, and the RESULT line comes
+            # last.
+            self.assertEqual(
+                lines[:3],
+                [
+                    f"aven edit {REF} --status done failed:",
+                    "Error: the database is locked",
+                    "The task landed, but the aven task is still open. Run the"
+                    " aven command again.",
+                ],
+            )
+            commit = git("log", "-1", "--format=%h %s", cwd=repo, env=env)
+            self.assertIn(f"{REF} landed as {commit}", lines[3])
+            self.assertEqual(lines[4], "?? left.txt")
+            self.assertRegex(lines[5], r"^TIMES commit=\S+$")
+            self.assertEqual(lines[6:], [f"RESULT {REF} POSTDIRTY"])
+            # The task landed, its aven task is still active, and the
+            # landing did not run next.
+            self.assertEqual(branches(repo, env), ["main"])
+            self.assertEqual(aven_edits(env), [f"{REF} --status active"])
+            self.assertEqual(
+                self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
+            )
+            self.assertIn(f"{REF} is landed", refused("land", REF, cwd=repo, env=env))
 
     def test_next_reports_leftover_work_after_landing(self):
         # An earlier run left the branch of the second task. The landing

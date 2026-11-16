@@ -845,11 +845,26 @@ When a landing fails, the `RESULT` line is the last line that the command
 prints. The last lines of the failing output come before it. The run
 directory holds the full output of each step in `logs/<ref>.<step>.log`.
 
+A landing with a branch target sets the aven task to `done` after the
+commit, and that `aven edit` command can fail, such as with a locked
+database. The base branch holds the commit by then, so the task lands with
+the result `OK` or `POSTDIRTY`. After `OK`, the `--next` flag runs `next`,
+and the command exits with a failure status. Both results print the failed
+`aven edit` command and its error before the `TIMES` line:
+
+```text
+aven edit APP-7KQ9 --status done failed:
+Error: the database is locked
+The task landed, but the aven task is still open. Run the aven command again.
+TIMES check=1m22s (median 1m24s) commit=18s (median 18s)
+RESULT APP-7KQ9 OK 1a2b3c4 fix: retry a timeout
+```
+
 Act on the result as this table says:
 
 | Result | Action |
 | --- | --- |
-| `OK` | Launch one Workflow per object of the list that follows the `RESULT` line, as the Loop section says. Skip each object whose task you relaunched after the landing started. When an error follows the line instead of the list, the task landed and `next` failed. Repair the cause of the error, and run `ultraclose.py next`. |
+| `OK` | Launch one Workflow per object of the list that follows the `RESULT` line, as the Loop section says. Skip each object whose task you relaunched after the landing started. When an error follows the line instead of the list, the task landed and `next` failed. Repair the cause of the error, and run `ultraclose.py next`. When a line before the `TIMES` line says that `aven edit` failed, the task landed and its aven task is open. Run `aven edit <ref> --status done`. |
 | `PR` | Only a landing with a `pr` target prints this result. Act on the list that follows the `RESULT` line as for `OK`. Then push the branch and open the pull request, as the Pull requests section says. |
 | `CONFLICT` | The base branch moved under the task. Sync the task. |
 | `CHECKFAIL`, `COMMITFAIL` | The check or a commit hook failed. Find the cause in the failing output, and act on that cause. |
@@ -863,7 +878,7 @@ Act on the result as this table says:
 | `LOGHASREF` | Only a landing with a `pr` target prints this result. A commit message of the task branch holds a task ref, and the push publishes each commit. Replace the commits of the branch with one commit, as the Pull requests section says, and land again. |
 | `BRANCHTAKEN` | Only a landing with a `pr` target prints this result. A branch blocks the name of the pull request branch, and the output names it. Act on the cause as the Pull requests section says. |
 | `DIRTY`, `NOTBASE`, `TREEMISMATCH` | An agent or a hook changed the main checkout. Stop landing, find the cause, and repair the checkout before the next landing. |
-| `POSTDIRTY` | The task landed, and the main checkout then held a change that the commit did not record. Stop landing, find the cause, and repair the checkout before the next landing. Then run `ultraclose.py next`. Do not land the task again. |
+| `POSTDIRTY` | The task landed, and the main checkout then held a change that the commit did not record. Stop landing, find the cause, and repair the checkout before the next landing. When a line before the `TIMES` line says that `aven edit` failed, run `aven edit <ref> --status done`. Then run `ultraclose.py next`. Do not land the task again. |
 
 Every landing with a `pr` target leaves the main checkout alone, and it
 records no commit on the base branch. So it never prints `DIRTY`,
@@ -963,7 +978,7 @@ table says:
 
 | Cause | Action |
 | --- | --- |
-| The base branch holds the commit of the task. An earlier landing recorded the commit, removed the worktree, and then stopped, such as when its `aven edit` failed. | Set the aven task to `done` with `aven edit <ref> --status done`, and run `ultraclose.py set <ref> landed`. |
+| The base branch holds the commit of the task. An earlier landing recorded the commit, removed the worktree, and then stopped, such as when a signal ended the command. | Set the aven task to `done` with `aven edit <ref> --status done`, and run `ultraclose.py set <ref> landed`. |
 | The base branch lacks the commit of the task. The Workflow of the task returned `approved` or `landable`, and the worktree went missing after that. | Run `git worktree prune` in the main checkout, which removes the record that git keeps of a deleted worktree. When the branch of the task still exists, run `git worktree add <worktree> <branch>` there, record the repair in `notes.md`, and land the task again. When the branch is gone as well, relaunch the task with `ultraclose.py args <ref>`. The relaunch starts from the base branch at the implementer. Land the task after its Workflow ends `approved` or `landable`, as the Loop table says. |
 
 In that table, `<worktree>` is the path that the output names. `<branch>`

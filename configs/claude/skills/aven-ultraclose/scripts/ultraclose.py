@@ -290,6 +290,14 @@ aven task to done, and sets the task to landed, as a landing with the
 result OK does. Its failing output names the commit and lists the
 changes of the main checkout.
 
+The aven command that sets the aven task to done can fail, such as with
+a locked database. The base branch holds the commit by then, so the task
+still lands with the result OK or POSTDIRTY. The landing prints the
+failed aven command and its output before the TIMES line, and the aven
+task stays open until the caller runs the aven command again. After such
+a landing with the result OK, --next runs next after the RESULT line,
+and the land command then exits with a failure status.
+
 The land command sets GOLANGCI_LINT_CACHE for the check and for the
 commit, so that neither step reads the golangci-lint cache that every
 checkout shares. golangci-lint 2.12 reports the cached issues of another
@@ -2362,6 +2370,10 @@ def cmd_land(a):
         After the commit, the main checkout can hold a change that the
         commit did not record. The task still lands, and the landing
         then fails with the result POSTDIRTY.
+
+        Return whether aven set its task to done. The base branch holds
+        the commit before the aven command runs. So when that command
+        fails, the landing prints it, and the task lands.
         """
         head = out("git", "rev-parse", "HEAD", cwd=repo)
 
@@ -2424,7 +2436,18 @@ def cmd_land(a):
         dirty = uncommitted(repo)
         sh("git", "worktree", "remove", "--force", wt, cwd=repo)
         sh("git", "branch", "-q", "-D", br, cwd=repo)
-        sh("aven", "edit", ref, "--status", "done", cwd=repo)
+        # aven can fail here, such as with a locked database. A landing
+        # that stops at that failure leaves an approved task without a
+        # worktree, and no second landing can land that task. So the
+        # landing reports the failure and goes on.
+        edit = ("aven", "edit", ref, "--status", "done")
+        marked = sh(*edit, cwd=repo, check=False)
+        if marked.returncode:
+            print(
+                f"{' '.join(edit)} failed:\n{marked.stdout}{marked.stderr}".rstrip()
+                + "\nThe task landed, but the aven task is still open. Run the"
+                " aven command again."
+            )
         with state(run) as st:
             st["tasks"][ref]["state"] = "landed"
         commit = out("git", "log", "-1", "--format=%h %s", cwd=repo)
@@ -2439,6 +2462,7 @@ def cmd_land(a):
         # flush writes the result to the output before next runs, so the
         # result stays there when the caller stops the command during next.
         print(f"RESULT {ref} OK {commit}", flush=True)
+        return not marked.returncode
 
     # Every landing that proposes a pull request leaves the main checkout
     # alone. So neither the branch nor the changes of the main checkout
@@ -2542,14 +2566,22 @@ def cmd_land(a):
                 fail("CHECKFAIL", tail(log))
             if dirty := uncommitted(wt):
                 fail("WTDIRTY", "the check changed files:\n" + dirty)
+        # Whether the landing did each of its steps. A landing that
+        # commits lands its task also when aven does not set the aven
+        # task to done.
+        finished = True
         if pr:
             propose(head)
         else:
-            squash()
+            finished = squash()
     # Each failed landing exits before this line. The landing lock is free
     # here, so a queued landing does not wait for the tasks that start.
     if a.next:
         fill_slots(run)
+    # The landing printed the aven command that failed above its RESULT
+    # line. The failure status sends the caller to that output.
+    if not finished:
+        sys.exit(1)
 
 
 def proposed(st, ref, command):
