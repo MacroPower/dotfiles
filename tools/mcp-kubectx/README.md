@@ -468,11 +468,17 @@ runs in this order:
    `sync.WaitGroup` for in-flight per-connection handlers to
    return. This is required so no handler is mid-token-mint when
    the next steps unlink files.
-2. Drain registered SA release closures with a 30-second
+2. `drainSweep` waits for the background `host sweep` goroutine to
+   return, for at most 30 seconds. The timeout keeps a hung
+   `host sweep` subprocess from blocking shutdown. When the wait
+   times out, `serve` logs a warning and runs the next step.
+3. Drain registered SA release closures with a 30-second
    `context.Background` timeout.
-3. Unlink the socket file at `h.socketPath`.
-4. Unlink the scoped kubeconfig at `h.lastOutputPath`.
-5. Unlink the hook-router sidecar symlink. The link lies in
+4. Unlink the socket file at `h.socketPath`.
+5. Unlink the per-slot sidecar file at `<socket-path>.id`, which
+   holds the `instance-id` of this `serve`.
+6. Unlink the scoped kubeconfig at `h.lastOutputPath`.
+7. Unlink the hook-router sidecar symlink. The link lies in
    `$CLAUDE_KUBECTX_DIR`, which never crosses the Lima boundary.
 
 SIGKILL leaks at most one SA + one kubeconfig file + one socket
@@ -487,8 +493,9 @@ next slot.
 The SA + binding leak is reclaimed by the orphan sweep that runs
 on every `serve` startup. See [Orphan sweep](#orphan-sweep) below.
 
-The behaviors above are pinned by the `TestSelect*`, `TestSessionDir*`,
-and `TestServeSocket*` test families.
+The `TestSelect*`, `TestSessionDir*`, `TestDrainSweep*`, and
+`TestServeSocket*` test families pin the behaviors that this section
+describes.
 
 ## Orphan sweep
 
