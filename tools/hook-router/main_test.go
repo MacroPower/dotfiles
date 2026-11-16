@@ -31,6 +31,11 @@ import (
 // command of the tests therefore skips the system config and reads an
 // empty global config, and git init copies no template.
 //
+// git also reads the global ignore file and the global attributes file
+// of the developer. When the ignore file names README.md, the git add
+// of a test setup skips the file, and the git commit after it fails.
+// Each git command of the tests therefore finds neither file.
+//
 // Variables of the environment point git at a repository. With GIT_DIR
 // set, a git command acts on the repository that GIT_DIR names, not on
 // the repository of its working directory. The setup of a test then
@@ -45,10 +50,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// [TestMain] makes git skip the system config, the global config, and
-// the template directory of the developer. The git commands of the
-// tests must therefore read no key of that config, and they must run
-// no hook of the developer.
+// [TestMain] makes git skip the system config, the global config, the
+// template directory, the global ignore file, and the global
+// attributes file of the developer. The git commands of the tests must
+// therefore read no key of that config and no line of those two files.
+// They must also run no hook of the developer.
 func TestGitSkipsDeveloperConfig(t *testing.T) {
 	t.Parallel()
 

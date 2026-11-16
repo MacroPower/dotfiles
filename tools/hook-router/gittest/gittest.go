@@ -26,6 +26,15 @@ const configProbeEnv = "HOOK_ROUTER_GITTEST_CONFIG_PROBE"
 // [CheckConfigEnv] sets.
 const canaryKey = "gittest.developerConfig"
 
+// canaryAttribute names an attribute that only the attributes file of
+// a case of [CheckConfigEnv] sets.
+const canaryAttribute = "gittest-developer"
+
+// canaryPath names the path that a process of a case of
+// [CheckConfigEnv] passes to git check-ignore and to git check-attr.
+// The file does not exist.
+const canaryPath = "canary.txt"
+
 // configEnv holds each variable that [IsolateEnv] sets, with its
 // value. With GIT_CONFIG_NOSYSTEM set, git skips the system config.
 // With GIT_CONFIG_GLOBAL set, git reads the file that the variable
@@ -37,10 +46,21 @@ const canaryKey = "gittest.developerConfig"
 // git clone copy the files of the template directory, such as its
 // hooks, into each repository that they create. With the variable set
 // to an empty value, they copy no file.
+//
+// git reads a global ignore file and a global attributes file for
+// every repository. The core.excludesFile key and the
+// core.attributesFile key of the config name those files, and the
+// empty global config sets neither key. git then looks for the files
+// git/ignore and git/attributes in the directory that XDG_CONFIG_HOME
+// names. It looks in the .config directory of the home directory only
+// when the variable is unset or empty. With the variable set to the
+// null device, git finds neither file, because no file exists below
+// the null device.
 var configEnv = map[string]string{
 	"GIT_CONFIG_NOSYSTEM": "1",
 	"GIT_CONFIG_GLOBAL":   os.DevNull,
 	"GIT_TEMPLATE_DIR":    "",
+	"XDG_CONFIG_HOME":     os.DevNull,
 }
 
 // RepositoryEnv returns the name of each variable of the environment
@@ -68,6 +88,12 @@ func RepositoryEnv(ctx context.Context) ([]string, error) {
 // that pass config to git, such as GIT_CONFIG_COUNT and
 // GIT_CONFIG_PARAMETERS. A git command of the process therefore reads
 // only the config of the repository that it acts on.
+//
+// IsolateEnv also points XDG_CONFIG_HOME at the null device. git then
+// finds no global ignore file and no global attributes file. A git add
+// of a test setup therefore adds each file that the setup wrote. Every
+// other program of the process that reads XDG_CONFIG_HOME finds no
+// config file either.
 func IsolateEnv(ctx context.Context) error {
 	// git reads the system config and the global config before it
 	// prints the names of RepositoryEnv. It stops at a config file
@@ -207,26 +233,32 @@ func CheckRepositoryEnv(t *testing.T, setup func(t *testing.T)) {
 
 // CheckConfigEnv fails t when the TestMain of its test package leaves
 // git to read the system config, the global config, or the template
-// directory of the developer. One top-level test of each test package
-// that runs git calls it. setup runs git commands that the tests of the
-// package run, such as the commands that create a repository with one
-// commit.
+// directory of the developer. It also fails t when git still finds the
+// global ignore file or the global attributes file of the developer.
+// One top-level test of each test package that runs git calls it.
+// setup runs git commands that the tests of the package run, such as
+// the commands that create a repository with one commit.
 //
 // TestMain sets its variables when the test binary starts, so a test
 // that sets them again undoes the work of TestMain. CheckConfigEnv
 // therefore starts the test binary again for each of its cases. The
 // new process runs only the test that called CheckConfigEnv. In that
 // process, CheckConfigEnv checks that git config does not find a key
-// of the config file of the case, and it runs setup. The case then
-// checks that git ran no hook of the case.
+// of the config file of the case. It also checks that git ignores no
+// path and sets no attribute of the case in a new repository. It then
+// runs setup. The case then checks that git ran no hook of the case.
 //
-// The environment of each case leads git to a config file or to a
-// template directory of the case. A config file sits in one of the
-// places where git looks for the system config or the global config.
-// It names a directory of hooks in core.hooksPath, and it makes git
-// commit sign each commit with a program that fails. A template
-// directory holds the hooks in its hooks directory, and git init
-// copies them into each repository that it creates.
+// The environment of each case leads git to a file or to a template
+// directory of the case. A config file sits in one of the places where
+// git looks for the system config or the global config. It names a
+// directory of hooks in core.hooksPath, and it makes git commit sign
+// each commit with a program that fails. A template directory holds
+// the hooks in its hooks directory, and git init copies them into each
+// repository that it creates. An ignore file or an attributes file
+// sits in one of the places where git looks for the global ignore file
+// or the global attributes file. The ignore file ignores every path,
+// so a git add of setup adds no file. The attributes file sets an
+// attribute of the case on every path.
 //
 // [CheckRepositoryEnv] covers the variables that pass config to git,
 // because [RepositoryEnv] lists them.
@@ -234,19 +266,9 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 	t.Helper()
 
 	if os.Getenv(configProbeEnv) != "" {
-		// git config exits 1 when no config sets the key, and only
-		// the config file of the case sets canaryKey. setup stops the
-		// test when a git command fails, so this check runs first.
-		cmd := exec.CommandContext(t.Context(), "git", "config", "--get", canaryKey)
-		cmd.Dir = t.TempDir()
-
-		_, err := cmd.Output()
-
-		var exitErr *exec.ExitError
-		if assert.ErrorAs(t, err, &exitErr, "git read the config of the developer") {
-			assert.Equal(t, 1, exitErr.ExitCode(), "%s", exitErr.Stderr)
-		}
-
+		// setup stops the test when a git command fails, so the
+		// checks of the files of the case run first.
+		checkDeveloperFiles(t)
 		setup(t)
 
 		return
@@ -257,15 +279,27 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 
 	run := "-test.run=^" + t.Name() + "$"
 
+	// ignore ignores every path, and attributes sets canaryAttribute
+	// on every path.
+	const (
+		ignore     = "*\n"
+		attributes = "* " + canaryAttribute + "\n"
+	)
+
 	tcs := map[string]struct {
-		// env names the variable that leads git to the config file or
-		// to the template directory.
+		// env names the variable that leads git to the file or to the
+		// template directory of the case.
 		env string
-		// file is the path of the config file inside the directory
-		// that env names. It is empty when env names the config file.
+		// file is the path of the file inside the directory that env
+		// names. It is empty when env names the file.
 		file string
+		// content is the content of the ignore file or of the
+		// attributes file of the case. It is empty when the case
+		// writes a config file or a template directory.
+		content string
 		// template is true when env names a template directory. The
-		// case then writes no config file.
+		// case then writes only the hooks of that directory, and no
+		// config file, ignore file, or attributes file.
 		template bool
 	}{
 		"system config": {
@@ -289,6 +323,30 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 			env:      "GIT_TEMPLATE_DIR",
 			template: true,
 		},
+		// git reads the core.excludesFile key and the
+		// core.attributesFile key from the config, which the config
+		// cases cover. Without the keys, git reads the files of these
+		// cases.
+		"ignore file in the XDG directory": {
+			env:     "XDG_CONFIG_HOME",
+			file:    filepath.Join("git", "ignore"),
+			content: ignore,
+		},
+		"ignore file in the home directory": {
+			env:     "HOME",
+			file:    filepath.Join(".config", "git", "ignore"),
+			content: ignore,
+		},
+		"attributes file in the XDG directory": {
+			env:     "XDG_CONFIG_HOME",
+			file:    filepath.Join("git", "attributes"),
+			content: attributes,
+		},
+		"attributes file in the home directory": {
+			env:     "HOME",
+			file:    filepath.Join(".config", "git", "attributes"),
+			content: attributes,
+		},
 	}
 
 	for name, tc := range tcs {
@@ -305,29 +363,44 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 				require.NoError(t, os.MkdirAll(dir, 0o755))
 			}
 
-			if tc.template {
+			switch {
+			case tc.template:
 				writeHooks(t, filepath.Join(path, "hooks"), ran)
-			} else {
+			case tc.content != "":
+				file := filepath.Join(path, tc.file)
+
+				require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+				require.NoError(t, os.WriteFile(file, []byte(tc.content), 0o644))
+
+			default:
 				hooks := filepath.Join(dev, "hooks")
 
 				writeHooks(t, hooks, ran)
 				writeConfig(t, filepath.Join(path, tc.file), hooks)
 			}
 
-			// Each case names a home directory, an XDG directory, and
-			// a system config of its own. The process inherits no
-			// template directory, so only the template directory case
-			// names one. When TestMain leaves git to read the config
-			// and the template directory, the process therefore reads
+			// Each case names a home directory and a system config of
+			// its own. The process inherits no template directory, so
+			// only the template directory case names one. When
+			// TestMain leaves git to read the files and the template
+			// directory of the developer, the process therefore reads
 			// those of the case. It runs no hook of the developer who
 			// runs the tests.
 			env := []string{
 				"HOME=" + home,
-				"XDG_CONFIG_HOME=" + xdg,
 				"GIT_CONFIG_SYSTEM=" + os.DevNull,
-				tc.env + "=" + path,
-				configProbeEnv + "=1",
 			}
+
+			// git reads the .config directory of the home directory
+			// only when XDG_CONFIG_HOME is unset or empty. The process
+			// inherits no XDG_CONFIG_HOME, and a case that names the
+			// home directory leaves the variable unset. Every other
+			// case names an XDG directory of its own.
+			if tc.env != "HOME" {
+				env = append(env, "XDG_CONFIG_HOME="+xdg)
+			}
+
+			env = append(env, tc.env+"="+path, configProbeEnv+"=1")
 
 			//nolint:gosec // G204: binary is the test binary itself.
 			cmd := exec.CommandContext(t.Context(), binary, run)
@@ -343,11 +416,64 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 	}
 }
 
+// checkDeveloperFiles fails t when git reads the config file, the
+// ignore file, or the attributes file of a case of [CheckConfigEnv].
+// It runs in the process that the case started.
+func checkDeveloperFiles(t *testing.T) {
+	t.Helper()
+
+	// git config exits 1 when no config sets the key, and only the
+	// config file of a case sets canaryKey.
+	cmd := exec.CommandContext(t.Context(), "git", "config", "--get", canaryKey)
+	cmd.Dir = t.TempDir()
+
+	_, err := cmd.Output()
+
+	var configErr *exec.ExitError
+	if assert.ErrorAs(t, err, &configErr, "git read the config of the developer") {
+		assert.Equal(t, 1, configErr.ExitCode(), "%s", configErr.Stderr)
+	}
+
+	// git check-ignore and git check-attr run only in a repository.
+	// A new repository ignores no path and sets no attribute, so only
+	// a file of a case changes what the two commands report.
+	dir := t.TempDir()
+
+	cmd = exec.CommandContext(t.Context(), "git", "init", "--quiet")
+	cmd.Dir = dir
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%v: %s", cmd.Args, out)
+
+	// git check-ignore exits 1 when no pattern ignores the path.
+	// Otherwise it prints the file that holds the pattern.
+	cmd = exec.CommandContext(t.Context(), "git", "check-ignore", "--verbose", canaryPath)
+	cmd.Dir = dir
+
+	out, err = cmd.Output()
+
+	var ignoreErr *exec.ExitError
+	if assert.ErrorAs(t, err, &ignoreErr, "git read the ignore file of the developer: %s", out) {
+		assert.Equal(t, 1, ignoreErr.ExitCode(), "%s", ignoreErr.Stderr)
+	}
+
+	// git check-attr prints unspecified as the value of an attribute
+	// that no attributes file sets for the path.
+	cmd = exec.CommandContext(t.Context(), "git", "check-attr", canaryAttribute, "--", canaryPath)
+	cmd.Dir = dir
+
+	out, err = cmd.Output()
+	require.NoError(t, err, "%v", cmd.Args)
+
+	want := canaryPath + ": " + canaryAttribute + ": unspecified\n"
+	assert.Equal(t, want, string(out), "git read the attributes file of the developer")
+}
+
 // environWithoutConfigEnv returns the environment of the process
 // without the variables of configEnv. The process holds them after its
 // TestMain called [IsolateEnv]. A process that inherits them skips the
-// config file and the template directory of each case, whatever its
-// own TestMain does.
+// files and the template directory of each case, whatever its own
+// TestMain does.
 func environWithoutConfigEnv() []string {
 	return slices.DeleteFunc(os.Environ(), func(entry string) bool {
 		name, _, _ := strings.Cut(entry, "=")

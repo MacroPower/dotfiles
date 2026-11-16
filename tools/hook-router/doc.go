@@ -136,7 +136,8 @@
 // composes them.
 //
 // The gittest subpackage serves the tests, and no engine imports it.
-// It keeps the git config, the template directory, and the repository
-// of the developer out of the tests. Each test package that runs git
-// imports it.
+// It keeps the git config, the template directory, the global ignore
+// file, the global attributes file, and the repository of the
+// developer from the tests. Each test package that runs git imports
+// it.
 package main

@@ -32,17 +32,24 @@ var testGitEnv = map[string]string{
 	// precedence over the init.templateDir key of the config. With
 	// an empty value, git init and git clone copy no file.
 	"GIT_TEMPLATE_DIR": "",
+	// git looks for the files git/ignore and git/attributes in the
+	// directory that this variable names. It looks in the .config
+	// directory of the home directory only when the variable is unset
+	// or empty. No file exists below the null device, so git finds
+	// neither file.
+	"XDG_CONFIG_HOME": os.DevNull,
 }
 
-// TestMain keeps the git config, the template directory, and the
-// repository of the developer from every test. The tests run git in
-// their setup and through the handlers, and keys of the git config
-// change what git does. For example, a plain git clone names its
-// remote after clone.defaultRemoteName. Each git command of the tests
-// therefore skips the system config, reads an empty global config, and
-// reads no config from the environment. Each git config command of the
-// tests reads and writes the config of the repository, not a file that
-// the environment names. A test that needs a global config points
+// TestMain keeps the git config, the template directory, the global
+// ignore file, the global attributes file, and the repository of the
+// developer from every test. The tests run git in their setup and
+// through the handlers, and keys of the git config change what git
+// does. For example, a plain git clone names its remote after
+// clone.defaultRemoteName. Each git command of the tests therefore
+// skips the system config, reads an empty global config, and reads no
+// config from the environment. Each git config command of the tests
+// reads and writes the config of the repository, not a file that the
+// environment names. A test that needs a global config points
 // GIT_CONFIG_GLOBAL at a file of its own, as [setGlobalConfig] does. A
 // test that needs config from the environment sets GIT_CONFIG_COUNT
 // and its numbered variables, as [TestReadUserHooks] does.
@@ -58,6 +65,16 @@ var testGitEnv = map[string]string{
 // [makeHooksDir] and [writeHookIn] do. A test that needs a template
 // directory sets GIT_TEMPLATE_DIR itself, as
 // [TestHandleCloneSkipsHooks] does.
+//
+// git also reads a global ignore file and a global attributes file for
+// every repository. The core.excludesFile key and the
+// core.attributesFile key name those files, and the empty global
+// config sets neither key. git then looks for the files in the
+// directory that XDG_CONFIG_HOME names, or in the .config directory of
+// the home directory. When the ignore file names README, the git add
+// of a test setup skips the file, and the git commit after it fails.
+// TestMain therefore points XDG_CONFIG_HOME at the null device, and
+// git finds neither file.
 //
 // Variables of the environment also point git at a repository. With
 // GIT_DIR set, git -C <dir> acts on the repository that GIT_DIR names.
@@ -344,6 +361,132 @@ func TestGitSkipsTemplateDirectory(t *testing.T) {
 	// both.
 	assert.NoFileExists(t, ran, "git ran a hook of the template directory")
 	require.NoError(t, err, "%s", out)
+}
+
+// [TestMain] makes git find no global ignore file and no global
+// attributes file of the developer. The git commands of the tests must
+// therefore ignore no path and set no attribute that those files name.
+// The setup of a test must commit the file that it writes.
+//
+// TestMain sets XDG_CONFIG_HOME when the test binary starts, so a test
+// that sets the variable leads git to the files again. Each case
+// therefore starts the test binary again. The environment of the new
+// process leads git to an ignore file or to an attributes file of the
+// case, as the environment of a developer does. The new process runs
+// only this test. probeEnv makes the test check a path in a new
+// repository and run the setup of a test instead of starting a
+// process.
+func TestGitSkipsDeveloperIgnoreAndAttributes(t *testing.T) {
+	t.Parallel()
+
+	// probeEnv marks a process that a case of this test started.
+	const probeEnv = "MCP_GIT_TEST_IGNORE_PROBE"
+
+	// attribute names an attribute that only the attributes file of a
+	// case sets.
+	const attribute = "mcp-git-test-developer"
+
+	if os.Getenv(probeEnv) != "" {
+		// git check-ignore and git check-attr run only in a
+		// repository. A new repository ignores no path and sets no
+		// attribute, so only a file of a case changes what the two
+		// commands report.
+		repo := t.TempDir()
+
+		runGitCmds(t, [][]string{{"git", "-C", repo, "init", "--quiet"}})
+
+		// git check-ignore exits 1 when no pattern ignores the path.
+		// Otherwise it prints the file that holds the pattern.
+		cmd := exec.CommandContext(t.Context(), "git", "-C", repo, "check-ignore", "--verbose", "README")
+
+		var exitErr *exec.ExitError
+
+		out, err := cmd.Output()
+		require.ErrorAs(t, err, &exitErr, "git check-ignore found %q", out)
+		assert.Equal(t, 1, exitErr.ExitCode())
+
+		// git check-attr prints unspecified as the value of an
+		// attribute that no attributes file sets for the path.
+		got := gitOut(t, "-C", repo, "check-attr", attribute, "--", "README")
+		assert.Equal(t, "README: "+attribute+": unspecified", got)
+
+		// The setup of most tests starts with these commands. They
+		// write the README file, and their git add adds every file
+		// that git does not ignore.
+		work := initWorkClone(t, initBareRepo(t))
+		assert.Equal(t, "init", gitOut(t, "-C", work, "log", "--format=%s"))
+
+		return
+	}
+
+	binary, err := os.Executable()
+	require.NoError(t, err)
+
+	run := "-test.run=^" + t.Name() + "$"
+
+	// This process holds the XDG_CONFIG_HOME of TestMain, and each new
+	// process inherits the environment of this process. git looks in
+	// the home directory only when the variable is unset or empty, so
+	// the environment of each case starts without the variable.
+	environ := slices.DeleteFunc(os.Environ(), func(entry string) bool {
+		return strings.HasPrefix(entry, "XDG_CONFIG_HOME=")
+	})
+
+	// ignore ignores every path, and attributes sets attribute on
+	// every path.
+	const (
+		ignore     = "*\n"
+		attributes = "* " + attribute + "\n"
+	)
+
+	tcs := map[string]struct {
+		// env names the variable that leads git to the file.
+		env string
+		// file is the path of the file inside the directory that env
+		// names.
+		file string
+		// content is the content of the file.
+		content string
+	}{
+		"ignore file in the XDG directory": {
+			env:     "XDG_CONFIG_HOME",
+			file:    filepath.Join("git", "ignore"),
+			content: ignore,
+		},
+		"ignore file in the home directory": {
+			env:     "HOME",
+			file:    filepath.Join(".config", "git", "ignore"),
+			content: ignore,
+		},
+		"attributes file in the XDG directory": {
+			env:     "XDG_CONFIG_HOME",
+			file:    filepath.Join("git", "attributes"),
+			content: attributes,
+		},
+		"attributes file in the home directory": {
+			env:     "HOME",
+			file:    filepath.Join(".config", "git", "attributes"),
+			content: attributes,
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			file := filepath.Join(dir, tc.file)
+
+			require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+			require.NoError(t, os.WriteFile(file, []byte(tc.content), 0o644))
+
+			cmd := exec.CommandContext(t.Context(), binary, run)
+			cmd.Env = slices.Concat(environ, []string{tc.env + "=" + dir, probeEnv + "=1"})
+
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", out)
+		})
+	}
 }
 
 // [TestMain] unsets each variable of the environment that points git

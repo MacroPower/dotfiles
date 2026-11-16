@@ -55,10 +55,12 @@ func TestIsolateEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
 	}
 
 	// The shell of a developer can name a global config file, turn the
-	// system config on, and name a template directory.
+	// system config on, and name a template directory and an XDG
+	// directory.
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "0")
 	t.Setenv("GIT_TEMPLATE_DIR", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	require.NoError(t, gittest.IsolateEnv(t.Context()))
 
@@ -77,6 +79,11 @@ func TestIsolateEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
 	template, set := os.LookupEnv("GIT_TEMPLATE_DIR")
 	assert.True(t, set, "GIT_TEMPLATE_DIR is unset")
 	assert.Empty(t, template)
+
+	// git looks for the global ignore file and the global attributes
+	// file below the home directory when the variable is unset or
+	// empty.
+	assert.Equal(t, os.DevNull, os.Getenv("XDG_CONFIG_HOME"))
 }
 
 // git reads the global config before it lists the variables, and it
@@ -188,7 +195,8 @@ func TestCheckRepositoryEnvStopsBeforeCases(t *testing.T) {
 }
 
 // [TestMain] makes git skip the system config, the global config, and
-// the template directory of the developer, so the check passes.
+// the template directory of the developer. It also hides the global
+// ignore file and the global attributes file, so the check passes.
 func TestCheckConfigEnv(t *testing.T) {
 	t.Parallel()
 
@@ -196,10 +204,13 @@ func TestCheckConfigEnv(t *testing.T) {
 }
 
 // [gittest.CheckConfigEnv] must fail every one of its cases when
-// TestMain leaves git to read the system config, the global config,
-// and the template directory. Together the failures must report a key
-// that git config read from the config file of a case and a hook that
-// git ran from the hooks directory of a case.
+// TestMain leaves the environment as it is. git then reads the system
+// config, the global config, the template directory, the global ignore
+// file, and the global attributes file of each case. Together the
+// failures must report a key that git config read from the config file
+// of a case and a hook that git ran from the hooks directory of a
+// case. They must also report a path that the ignore file of a case
+// ignores and an attribute that the attributes file of a case sets.
 func TestCheckConfigEnvFindsLeak(t *testing.T) {
 	t.Parallel()
 
@@ -211,6 +222,8 @@ func TestCheckConfigEnvFindsLeak(t *testing.T) {
 	assert.NotContains(t, out, "--- PASS: "+checked+"/")
 	assert.Contains(t, out, "git read the config of the developer")
 	assert.Contains(t, out, "git ran a hook of the developer")
+	assert.Contains(t, out, "git read the ignore file of the developer")
+	assert.Contains(t, out, "git read the attributes file of the developer")
 }
 
 // runLeaking starts the test binary again with leakEnv and env set,
