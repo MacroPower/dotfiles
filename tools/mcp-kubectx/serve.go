@@ -209,7 +209,9 @@ func (h *handler) sessionDir() func() {
 		// Claude PPID might still depend on it. hook-router
 		// removes the wrapper's $CLAUDE_KUBECTX_DIR at
 		// SessionEnd. The fallback dir of [sidecarSymlinkPath]
-		// lies in TMPDIR, which the host cleans.
+		// lies in the TMPDIR of the machine that runs this
+		// serve. No hook removes that dir, so it stays until
+		// that machine cleans its TMPDIR.
 		bestEffortRemove("sidecar symlink", sidecarSymlinkPath())
 	}
 }
