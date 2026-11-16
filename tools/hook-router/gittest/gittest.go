@@ -35,6 +35,11 @@ const canaryAttribute = "gittest-developer"
 // The file does not exist.
 const canaryPath = "canary.txt"
 
+// noFormat is the value that a case of [CheckConfigEnv] gives to a
+// variable that [formatEnv] lists. It names no format, so a git init
+// that reads the variable fails.
+const noFormat = "gittest-no-format"
+
 // configEnv holds each variable that [IsolateEnv] sets, with its
 // value. With GIT_CONFIG_NOSYSTEM set, git skips the system config.
 // With GIT_CONFIG_GLOBAL set, git reads the file that the variable
@@ -61,6 +66,32 @@ var configEnv = map[string]string{
 	"GIT_CONFIG_GLOBAL":   os.DevNull,
 	"GIT_TEMPLATE_DIR":    "",
 	"XDG_CONFIG_HOME":     os.DevNull,
+}
+
+// formatEnv returns the name of each variable that [IsolateEnv] unsets
+// and that [RepositoryEnv] does not list. Each variable selects a
+// format of the repositories that git init creates. GIT_DEFAULT_HASH
+// names the object format, such as sha256, and it takes precedence
+// over the init.defaultObjectFormat key of the config.
+// GIT_DEFAULT_REF_FORMAT names the format of the ref storage, such as
+// reftable, and it takes precedence over the init.defaultRefFormat
+// key. The empty global config sets neither key.
+//
+// GIT_REFERENCE_BACKEND names the ref storage of every repository that
+// git opens, and it takes precedence over the extensions.refStorage key
+// of the repository. git init creates the ref storage that the
+// variable names, whatever format GIT_DEFAULT_REF_FORMAT names. A
+// value such as files:///path/to/repo/.git also points git at the refs
+// of another repository.
+//
+// Without the variables, git init creates each repository in the
+// default formats of the installed git.
+func formatEnv() []string {
+	return []string{
+		"GIT_DEFAULT_HASH",
+		"GIT_DEFAULT_REF_FORMAT",
+		"GIT_REFERENCE_BACKEND",
+	}
 }
 
 // RepositoryEnv returns the name of each variable of the environment
@@ -94,6 +125,12 @@ func RepositoryEnv(ctx context.Context) ([]string, error) {
 // of a test setup therefore adds each file that the setup wrote. Every
 // other program of the process that reads XDG_CONFIG_HOME finds no
 // config file either.
+//
+// IsolateEnv also unsets GIT_DEFAULT_HASH, GIT_DEFAULT_REF_FORMAT, and
+// GIT_REFERENCE_BACKEND. git init then creates each repository in the
+// default formats of the installed git. With GIT_DEFAULT_HASH set to
+// sha256, an object name has 64 characters, and a test that expects
+// the 40 characters of a SHA-1 object name fails.
 func IsolateEnv(ctx context.Context) error {
 	// git reads the system config and the global config before it
 	// prints the names of RepositoryEnv. It stops at a config file
@@ -111,10 +148,12 @@ func IsolateEnv(ctx context.Context) error {
 		return err
 	}
 
-	for _, name := range names {
+	for _, name := range slices.Concat(names, formatEnv()) {
 		// git reads an empty value of some of these variables. For
 		// example, a git config command writes the file that
 		// GIT_CONFIG names, and it fails when the value names no file.
+		// git init reads the format that a variable of formatEnv
+		// names, and it fails when the value names no format.
 		// IsolateEnv therefore unsets each variable.
 		err := os.Unsetenv(name)
 		if err != nil {
@@ -235,30 +274,40 @@ func CheckRepositoryEnv(t *testing.T, setup func(t *testing.T)) {
 // git to read the system config, the global config, or the template
 // directory of the developer. It also fails t when git still finds the
 // global ignore file or the global attributes file of the developer.
-// One top-level test of each test package that runs git calls it.
-// setup runs git commands that the tests of the package run, such as
-// the commands that create a repository with one commit.
+// It fails t as well when TestMain leaves a variable to the
+// environment that selects a format of the repositories that git init
+// creates. One top-level test of each test package that runs git calls
+// it. setup runs git commands that the tests of the package run, such
+// as the commands that create a repository with one commit.
 //
 // TestMain sets its variables when the test binary starts, so a test
 // that sets them again undoes the work of TestMain. CheckConfigEnv
 // therefore starts the test binary again for each of its cases. The
-// new process runs only the test that called CheckConfigEnv. In that
-// process, CheckConfigEnv checks that git config does not find a key
-// of the config file of the case. It also checks that git ignores no
-// path and sets no attribute of the case in a new repository. It then
-// runs setup. The case then checks that git ran no hook of the case.
+// new process runs only the test that called CheckConfigEnv.
 //
-// The environment of each case leads git to a file or to a template
-// directory of the case. A config file sits in one of the places where
-// git looks for the system config or the global config. It names a
-// directory of hooks in core.hooksPath, and it makes git commit sign
-// each commit with a program that fails. A template directory holds
-// the hooks in its hooks directory, and git init copies them into each
-// repository that it creates. An ignore file or an attributes file
-// sits in one of the places where git looks for the global ignore file
-// or the global attributes file. The ignore file ignores every path,
-// so a git add of setup adds no file. The attributes file sets an
-// attribute of the case on every path.
+// In the new process, CheckConfigEnv checks that the environment holds
+// no variable that selects a format. It checks that git config does
+// not find a key of the config file of the case. It also checks that
+// git ignores no path and sets no attribute of the case in a new
+// repository. It then runs setup. The case then checks that git ran no
+// hook of the case.
+//
+// The environment of a format case gives GIT_DEFAULT_HASH,
+// GIT_DEFAULT_REF_FORMAT, or GIT_REFERENCE_BACKEND a value that names
+// no format. A git init that reads the variable fails, whatever
+// formats the installed git creates by default.
+//
+// The environment of every other case leads git to a file or to a
+// template directory of the case. A config file sits in one of the
+// places where git looks for the system config or the global config.
+// It names a directory of hooks in core.hooksPath, and it makes git
+// commit sign each commit with a program that fails. A template
+// directory holds the hooks in its hooks directory, and git init
+// copies them into each repository that it creates. An ignore file or
+// an attributes file sits in one of the places where git looks for the
+// global ignore file or the global attributes file. The ignore file
+// ignores every path, so a git add of setup adds no file. The
+// attributes file sets an attribute of the case on every path.
 //
 // [CheckRepositoryEnv] covers the variables that pass config to git,
 // because [RepositoryEnv] lists them.
@@ -267,7 +316,9 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 
 	if os.Getenv(configProbeEnv) != "" {
 		// setup stops the test when a git command fails, so the
-		// checks of the files of the case run first.
+		// checks of the environment and of the files of the case run
+		// first.
+		checkFormatEnv(t)
 		checkDeveloperFiles(t)
 		setup(t)
 
@@ -288,7 +339,7 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 
 	tcs := map[string]struct {
 		// env names the variable that leads git to the file or to the
-		// template directory of the case.
+		// template directory of the case, or that selects a format.
 		env string
 		// file is the path of the file inside the directory that env
 		// names. It is empty when env names the file.
@@ -301,6 +352,10 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 		// case then writes only the hooks of that directory, and no
 		// config file, ignore file, or attributes file.
 		template bool
+		// format is true when env selects a format of the
+		// repositories that git init creates. The case then gives env
+		// the value noFormat, and it writes no file.
+		format bool
 	}{
 		"system config": {
 			env: "GIT_CONFIG_SYSTEM",
@@ -347,6 +402,22 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 			file:    filepath.Join(".config", "git", "attributes"),
 			content: attributes,
 		},
+		// git reads the init.defaultObjectFormat key and the
+		// init.defaultRefFormat key from the config, which the config
+		// cases cover. The variables of these cases select the
+		// formats outside the config.
+		"object format": {
+			env:    "GIT_DEFAULT_HASH",
+			format: true,
+		},
+		"ref format": {
+			env:    "GIT_DEFAULT_REF_FORMAT",
+			format: true,
+		},
+		"ref backend": {
+			env:    "GIT_REFERENCE_BACKEND",
+			format: true,
+		},
 	}
 
 	for name, tc := range tcs {
@@ -363,7 +434,12 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 				require.NoError(t, os.MkdirAll(dir, 0o755))
 			}
 
+			// value is the value of the variable that env names.
+			value := path
+
 			switch {
+			case tc.format:
+				value = noFormat
 			case tc.template:
 				writeHooks(t, filepath.Join(path, "hooks"), ran)
 			case tc.content != "":
@@ -400,7 +476,7 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 				env = append(env, "XDG_CONFIG_HOME="+xdg)
 			}
 
-			env = append(env, tc.env+"="+path, configProbeEnv+"=1")
+			env = append(env, tc.env+"="+value, configProbeEnv+"=1")
 
 			//nolint:gosec // G204: binary is the test binary itself.
 			cmd := exec.CommandContext(t.Context(), binary, run)
@@ -413,6 +489,18 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 			assert.NoFileExists(t, ran, "git ran a hook of the developer")
 			require.NoError(t, err, "%s", out)
 		})
+	}
+}
+
+// checkFormatEnv fails t when the environment holds a variable that
+// [formatEnv] lists. It runs in the process that a case of
+// [CheckConfigEnv] started.
+func checkFormatEnv(t *testing.T) {
+	t.Helper()
+
+	for _, name := range formatEnv() {
+		_, set := os.LookupEnv(name)
+		assert.False(t, set, "TestMain left %s set", name)
 	}
 }
 

@@ -87,6 +87,14 @@ var testGitEnv = map[string]string{
 // the directory of the command. A test that needs one of the variables
 // sets it for a call of the server alone, as [setRepositoryEnv]
 // describes.
+//
+// Variables of the environment also select the formats of the
+// repositories that git init creates. With GIT_DEFAULT_HASH set to
+// sha256, an object name has 64 characters. git update-index then
+// rejects the SHA-1 object name of 40 characters that the setup of
+// [TestHandlePushRunsNoSubmoduleFetch] passes to it. TestMain
+// therefore unsets each variable that [formatEnv] lists, and git init
+// creates each repository in the default formats of the installed git.
 func TestMain(m *testing.M) {
 	for name, value := range testGitEnv {
 		err := os.Setenv(name, value)
@@ -103,7 +111,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	for _, name := range names {
+	for _, name := range slices.Concat(names, formatEnv()) {
 		if _, ok := testGitEnv[name]; ok {
 			continue
 		}
@@ -112,8 +120,10 @@ func TestMain(m *testing.M) {
 		// example, a git config command without a file option reads
 		// and writes the file that GIT_CONFIG names in place of the
 		// config of the repository. An empty value names no file, and
-		// git config then fails to write. TestMain therefore unsets
-		// each variable.
+		// git config then fails to write. git init reads the format
+		// that a variable of formatEnv names, and it fails when the
+		// value names no format. TestMain therefore unsets each
+		// variable.
 		err := os.Unsetenv(name)
 		if err != nil {
 			panic(err)
@@ -121,6 +131,29 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(m.Run())
+}
+
+// formatEnv returns the name of each variable that [TestMain] unsets
+// and that [repositoryEnv] does not list. Each variable selects a
+// format of the repositories that git init creates. GIT_DEFAULT_HASH
+// names the object format, such as sha256, and it takes precedence
+// over the init.defaultObjectFormat key of the config.
+// GIT_DEFAULT_REF_FORMAT names the format of the ref storage, such as
+// reftable, and it takes precedence over the init.defaultRefFormat
+// key. The empty global config sets neither key.
+//
+// GIT_REFERENCE_BACKEND names the ref storage of every repository that
+// git opens, and it takes precedence over the extensions.refStorage key
+// of the repository. git init creates the ref storage that the
+// variable names, whatever format GIT_DEFAULT_REF_FORMAT names. A
+// value such as files:///path/to/repo/.git also points git at the refs
+// of another repository.
+func formatEnv() []string {
+	return []string{
+		"GIT_DEFAULT_HASH",
+		"GIT_DEFAULT_REF_FORMAT",
+		"GIT_REFERENCE_BACKEND",
+	}
 }
 
 // repositoryEnv returns the name of each variable of the environment
@@ -637,6 +670,69 @@ func TestGitSkipsEnvironmentRepository(t *testing.T) {
 			// A process that fails can still write to the repository,
 			// so the test reports both.
 			assert.Equal(t, before, readTree(t, dev))
+			require.NoError(t, err, "%s", out)
+		})
+	}
+}
+
+// [TestMain] unsets each variable of the environment that selects a
+// format of the repositories that git init creates. The git init of a
+// test setup must therefore read none of those variables, and it must
+// create its repository whatever they say.
+//
+// TestMain unsets the variables when the test binary starts, so a test
+// that sets them selects a format again. Each case therefore starts
+// the test binary again in an environment that sets one of the
+// variables, as the shell of a developer can. The value names no
+// format, so a git init that reads the variable fails, whatever
+// formats the installed git creates by default. The new process runs
+// only this test. probeEnv makes the test check its own environment
+// and run the setup of a test instead of starting a process.
+func TestGitSkipsEnvironmentFormat(t *testing.T) {
+	t.Parallel()
+
+	// probeEnv marks a process that a case of this test started.
+	const probeEnv = "MCP_GIT_TEST_FORMAT_PROBE"
+
+	// noFormat names no object format and no format of the ref
+	// storage.
+	const noFormat = "mcp-git-test-no-format"
+
+	// Each case names a variable that selects a format.
+	tcs := map[string]string{
+		"object format": "GIT_DEFAULT_HASH",
+		"ref format":    "GIT_DEFAULT_REF_FORMAT",
+		"ref backend":   "GIT_REFERENCE_BACKEND",
+	}
+
+	if os.Getenv(probeEnv) != "" {
+		for _, variable := range tcs {
+			_, set := os.LookupEnv(variable)
+			assert.False(t, set, "TestMain left %s set", variable)
+		}
+
+		// The setup of most tests starts with these commands. They
+		// create a bare repository with git init, and they commit to
+		// a clone of it.
+		work := initWorkClone(t, initBareRepo(t))
+		assert.Equal(t, "init", gitOut(t, "-C", work, "log", "--format=%s"))
+
+		return
+	}
+
+	binary, err := os.Executable()
+	require.NoError(t, err)
+
+	run := "-test.run=^" + t.Name() + "$"
+
+	for name, variable := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := exec.CommandContext(t.Context(), binary, run)
+			cmd.Env = slices.Concat(os.Environ(), []string{variable + "=" + noFormat, probeEnv + "=1"})
+
+			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, "%s", out)
 		})
 	}

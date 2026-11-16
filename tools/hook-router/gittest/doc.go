@@ -25,6 +25,15 @@
 // in a linked worktree. A commit hook that runs the tests passes both
 // variables on.
 //
+// Variables of the environment also select the formats of the
+// repositories that git init creates. With GIT_DEFAULT_HASH set to
+// sha256, an object name has 64 characters, and a test that expects
+// the 40 characters of a SHA-1 object name fails.
+// GIT_DEFAULT_REF_FORMAT selects the format of the ref storage, such
+// as reftable. GIT_REFERENCE_BACKEND names the ref storage of every
+// repository that git opens, and git init creates the ref storage that
+// it names.
+//
 // A test binary covers one package, so each test package that runs git
 // calls [IsolateEnv] in a TestMain of its own:
 //
@@ -41,7 +50,8 @@
 // the system config and the global config. It finds no global ignore
 // file and no global attributes file. It acts on the repository that
 // git finds from the directory of the command. git init and git clone
-// copy no template into a new repository.
+// copy no template into a new repository. git init creates each
+// repository in the default formats of the installed git.
 //
 // [IsolateEnv] hides the two global files with XDG_CONFIG_HOME, which
 // it points at the null device. Programs other than git read the
@@ -52,7 +62,8 @@
 // [CheckConfigEnv]. The check fails when git still reads the system
 // config, the global config, or the template directory. It also fails
 // when git still finds the global ignore file or the global attributes
-// file. Another test calls [CheckRepositoryEnv], which fails when
+// file, or when the environment still holds a variable that selects a
+// format. Another test calls [CheckRepositoryEnv], which fails when
 // TestMain leaves a variable to the environment that points git at a
 // repository.
 package gittest

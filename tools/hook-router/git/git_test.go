@@ -35,6 +35,13 @@ import (
 // the repository of its working directory. The setup of a test then
 // commits to the branch of the developer. TestMain therefore unsets
 // each variable that [gittest.RepositoryEnv] lists.
+//
+// Variables of the environment also select the formats of the
+// repositories that git init creates. With GIT_DEFAULT_HASH set to
+// sha256, the SHA of a commit has 64 characters, and the tests expect
+// the 40 characters of SHA-1. TestMain therefore unsets those
+// variables as well, and git init creates each repository in the
+// default formats of the installed git.
 func TestMain(m *testing.M) {
 	err := gittest.IsolateEnv(context.Background())
 	if err != nil {
@@ -48,7 +55,9 @@ func TestMain(m *testing.M) {
 // template directory, the global ignore file, and the global
 // attributes file of the developer. The git commands of the tests must
 // therefore read no key of that config and no line of those two files.
-// They must also run no hook of the developer.
+// They must also run no hook of the developer. TestMain also unsets
+// the variables that select a format of a new repository, so the git
+// init of the tests must read none of them.
 func TestGitSkipsDeveloperConfig(t *testing.T) {
 	t.Parallel()
 

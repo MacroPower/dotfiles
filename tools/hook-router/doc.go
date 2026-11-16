@@ -138,6 +138,8 @@
 // The gittest subpackage serves the tests, and no engine imports it.
 // It keeps the git config, the template directory, the global ignore
 // file, the global attributes file, and the repository of the
-// developer from the tests. Each test package that runs git imports
-// it.
+// developer from the tests. It also makes git init create each
+// repository in the default formats of git, whatever formats the
+// environment of the developer selects. Each test package that runs
+// git imports it.
 package main

@@ -447,10 +447,11 @@ func TestRemoteToolsSkipConfigFileVariable(t *testing.T) { //nolint:paralleltest
 // serverRepositoryEnvCases returns the cases of [repositoryEnvCases],
 // a case for GIT_REFERENCE_BACKEND, and a case that sets every variable
 // that the server removes. [TestGitSkipsEnvironmentRepository] checks
-// that TestMain unsets each variable of [repositoryEnvCases]. TestMain
-// unsets the variables that git rev-parse --local-env-vars prints, and
-// git does not print GIT_REFERENCE_BACKEND. [repositoryEnvCases]
-// therefore does not hold that case.
+// that TestMain unsets each variable of [repositoryEnvCases], and git
+// rev-parse --local-env-vars prints each of those variables. git does
+// not print GIT_REFERENCE_BACKEND, so [repositoryEnvCases] does not
+// hold that case. [TestGitSkipsEnvironmentFormat] checks that TestMain
+// unsets GIT_REFERENCE_BACKEND.
 func serverRepositoryEnvCases() map[string]map[string]string {
 	tcs := repositoryEnvCases()
 

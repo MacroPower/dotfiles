@@ -62,9 +62,28 @@ func TestIsolateEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
 	t.Setenv("GIT_TEMPLATE_DIR", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
+	// The shell of a developer can also select the formats of the
+	// repositories that git init creates.
+	formats := map[string]string{
+		"GIT_DEFAULT_HASH":       "sha256",
+		"GIT_DEFAULT_REF_FORMAT": "reftable",
+		"GIT_REFERENCE_BACKEND":  "reftable",
+	}
+
+	for name, value := range formats {
+		t.Setenv(name, value)
+	}
+
 	require.NoError(t, gittest.IsolateEnv(t.Context()))
 
 	for _, name := range names {
+		_, set := os.LookupEnv(name)
+		assert.False(t, set, "%s is set", name)
+	}
+
+	// git init fails when one of these variables holds an empty
+	// value, so IsolateEnv must unset each of them.
+	for name := range formats {
 		_, set := os.LookupEnv(name)
 		assert.False(t, set, "%s is set", name)
 	}
@@ -195,8 +214,9 @@ func TestCheckRepositoryEnvStopsBeforeCases(t *testing.T) {
 }
 
 // [TestMain] makes git skip the system config, the global config, and
-// the template directory of the developer. It also hides the global
-// ignore file and the global attributes file, so the check passes.
+// the template directory of the developer. It hides the global ignore
+// file and the global attributes file. It also unsets the variables
+// that select a format of a new repository, so the check passes.
 func TestCheckConfigEnv(t *testing.T) {
 	t.Parallel()
 
@@ -211,6 +231,8 @@ func TestCheckConfigEnv(t *testing.T) {
 // of a case and a hook that git ran from the hooks directory of a
 // case. They must also report a path that the ignore file of a case
 // ignores and an attribute that the attributes file of a case sets.
+// They must report each variable of a case that selects a format of a
+// new repository.
 func TestCheckConfigEnvFindsLeak(t *testing.T) {
 	t.Parallel()
 
@@ -224,6 +246,9 @@ func TestCheckConfigEnvFindsLeak(t *testing.T) {
 	assert.Contains(t, out, "git ran a hook of the developer")
 	assert.Contains(t, out, "git read the ignore file of the developer")
 	assert.Contains(t, out, "git read the attributes file of the developer")
+	assert.Contains(t, out, "TestMain left GIT_DEFAULT_HASH set")
+	assert.Contains(t, out, "TestMain left GIT_DEFAULT_REF_FORMAT set")
+	assert.Contains(t, out, "TestMain left GIT_REFERENCE_BACKEND set")
 }
 
 // runLeaking starts the test binary again with leakEnv and env set,
