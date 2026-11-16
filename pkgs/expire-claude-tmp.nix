@@ -24,6 +24,13 @@
 # entry by its name in the directory that it entered, so it never
 # follows a symbolic link out of the tree.
 #
+# When the tool cannot enter a project directory, it keeps each session
+# directory there, and the run fails and names the project directory.
+# A user other than root cannot enter a project directory whose mode
+# keeps that user out. The tool also refuses a project directory when a
+# symbolic link or another directory took its place after the tool
+# examined it.
+#
 # Root can mount a directory from anywhere in the tree, and
 # `rm --one-file-system` crosses a bind mount of the same file system.
 # So the tool keeps each entry that is a mount point or that holds one.
@@ -561,7 +568,10 @@ let
         fi
         # The subshell keeps the change of directory to itself.
         (
-          enter "$entry" || exit 1
+          if ! enter "$entry"; then
+            echo "expire-claude-tmp: cannot enter $name/$entry, so its session directories stay" >&2
+            exit 1
+          fi
           sweep "$entry"
           exit "$status"
         ) || status=1
@@ -852,6 +862,68 @@ let
           EOF
             chmod u+w "$root/-work-app"
           fi
+
+          # The run goes on past a project directory that it cannot
+          # enter. Each session directory there stays, and the run fails
+          # and names the project directory by its path. The user cannot
+          # enter a directory with the mode 000. Root ignores the mode,
+          # so this case runs only for another user. The glob sorts the
+          # project directory that the user cannot enter first.
+          if [ "$uid" != 0 ]; then
+            root=closed/claude-$uid
+            session "$root/-work-app/old"
+            session "$root/-work-lib/stale"
+            chmod 000 "$root/-work-app"
+            cutoff=$(mark)
+            if expire-claude-tmp closed "@$cutoff" sessions >log 2>err; then
+              fail 'the run succeeds when it cannot enter a project directory'
+            fi
+            chmod 700 "$root/-work-app"
+            [ -e "$root/-work-app/old/scratchpad/notes.md" ] ||
+              fail 'the run removes a session directory of a project directory that it cannot enter'
+            grep -qxF "expire-claude-tmp: cannot enter $root/-work-app, so its session directories stay" err ||
+              fail 'the run does not name the project directory whose mode keeps the user out'
+            expect_log "$root" 'the run does not name exactly the session directory that it removed past a project directory that it cannot enter' <<'EOF'
+          -work-lib/stale
+          EOF
+          fi
+
+          # A process of the user can put a symbolic link in the place of
+          # a project directory after the tool examined the directory.
+          # The tool then removes no entry of the target of the link,
+          # and the run fails and names the project directory. This copy
+          # of the tool runs a stat that moves the project directory of
+          # swap aside and puts a link to elsewhere in its place. The
+          # stat does so right after the tool examined the project
+          # directory.
+          root=swap/claude-$uid
+          session "$root/-work-app/old"
+          session elsewhere/old
+          mkdir wrapped-stat
+          cat >wrapped-stat/stat <<EOF
+          #!${runtimeShell}
+          ${coreutils}/bin/stat "\$@" && rc=0 || rc=\$?
+          for arg; do last=\$arg; done
+          if [ "\$last" = ./-work-app ] && [ ! -L "$here/$root/-work-app" ]; then
+            mv "$here/$root/-work-app" "$here/swap-work-app"
+            ln -s "$here/elsewhere" "$here/$root/-work-app"
+          fi
+          exit "\$rc"
+          EOF
+          chmod +x wrapped-stat/stat
+          sed "s|^export PATH=\"|&$here/wrapped-stat:|" ${expire-claude-tmp}/bin/expire-claude-tmp >stat-expire-claude-tmp
+          chmod +x stat-expire-claude-tmp
+          grep -q "^export PATH=\"$here/wrapped-stat:" stat-expire-claude-tmp ||
+            fail 'the copy of the tool does not run the stat of the test'
+          if ./stat-expire-claude-tmp swap now sessions >log 2>err; then
+            fail 'the run succeeds when a symbolic link takes the place of a project directory'
+          fi
+          [ -L "$root/-work-app" ] ||
+            fail 'the stat of the test does not put a link in the place of the project directory'
+          [ -e elsewhere/old/scratchpad/notes.md ] && [ -e swap-work-app/old/scratchpad/notes.md ] && [ ! -s log ] ||
+            fail 'the run removes a session directory after a symbolic link took the place of its project directory'
+          grep -qxF "expire-claude-tmp: cannot enter $root/-work-app, so its session directories stay" err ||
+            fail 'the run does not name the project directory that a symbolic link replaced'
 
           # A session directory that the tool renamed and cannot delete
           # stays under its new name. The run fails and names both names,
