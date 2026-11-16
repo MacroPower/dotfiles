@@ -1059,35 +1059,81 @@ func (h *handler) checkDest(dest string) error {
 	)
 }
 
-// resolveExistingPrefix resolves symlinks for the longest
-// existing prefix of path and appends the remaining
-// unresolved suffix.
+// maxLinks is the number of symbolic links that
+// [resolveExistingPrefix] follows on one path. [filepath.EvalSymlinks]
+// follows the same number.
+const maxLinks = 255
+
+// resolveExistingPrefix resolves the symbolic links of an absolute path
+// as far as the path exists, and it keeps the rest of the path as
+// text. [handler.checkDest] and [resolveAllowDirs] make each path
+// absolute before they pass it.
+//
+// resolveExistingPrefix reads the path one element at a time from its
+// start, as the OS does. It reads the target of each symbolic link in
+// place of the link, also when that target does not exist. A path
+// through the link therefore names the same directory before and
+// after someone creates the target. A ".." after a symbolic link leads
+// to the parent of the target of the link, whether or not the target
+// or a later element exists. A ".." after an element that does not
+// exist drops that element. After maxLinks links, such as on a loop of
+// links, each later link stays as text.
 func resolveExistingPrefix(path string) string {
-	// filepath.EvalSymlinks gets the path as the caller gave it, so a
-	// ".." after a symbolic link leads to the parent of the target of
-	// the link.
-	resolved, err := filepath.EvalSymlinks(path)
-	if err == nil {
-		return resolved
+	sep := string(filepath.Separator)
+
+	// resolved holds the elements that the loop has read, with the
+	// target of each link in place of the link. The OS reads a ".."
+	// against that path, so filepath.Dir drops the last element as
+	// text.
+	resolved := sep
+	links := 0
+
+	for rest := path; rest != ""; {
+		var elem string
+
+		elem, rest, _ = strings.Cut(rest, sep)
+
+		switch elem {
+		case "", ".":
+			continue
+		case "..":
+			resolved = filepath.Dir(resolved)
+
+			continue
+		}
+
+		next := filepath.Join(resolved, elem)
+
+		// os.Lstat fails for an element that does not exist, and
+		// os.Readlink fails for a link that the OS cannot read. Each
+		// of those elements stays as text.
+		info, err := os.Lstat(next)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 || links == maxLinks {
+			resolved = next
+
+			continue
+		}
+
+		target, err := os.Readlink(next)
+		if err != nil || target == "" {
+			resolved = next
+
+			continue
+		}
+
+		links++
+
+		// The OS reads an absolute target from the root, and a
+		// relative target against the directory that holds the link.
+		// That directory is still in resolved.
+		if filepath.IsAbs(target) {
+			resolved = sep
+		}
+
+		rest = target + sep + rest
 	}
 
-	// filepath.Dir and filepath.Base both keep the last element of a
-	// path that ends with a separator, and the join of their results
-	// repeats that element. filepath.Clean removes the separator, and
-	// it also drops each ".." with the element before it. The cleaned
-	// path can exist, so filepath.EvalSymlinks gets another try at it.
-	if clean := filepath.Clean(path); clean != path {
-		return resolveExistingPrefix(clean)
-	}
-
-	dir := filepath.Dir(path)
-	base := filepath.Base(path)
-
-	if dir == path {
-		return path
-	}
-
-	return filepath.Join(resolveExistingPrefix(dir), base)
+	return resolved
 }
 
 // acquireLock takes an exclusive flock on the file at path.lock, and

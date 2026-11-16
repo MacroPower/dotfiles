@@ -314,7 +314,17 @@
 // --allow-dir with a symbolic link on its path, such as /tmp/git on
 // macOS, therefore allows the paths under the directory that the
 // link leads to. The --allow-dir can name a directory that does not
-// exist when the server starts.
+// exist when the server starts. It can also pass through a symbolic
+// link whose target does not exist. It then names the same directory
+// before and after someone creates that target.
+//
+// The server reads an absolute --allow-dir one element at a time, as
+// the OS reads a path. A .. after a symbolic link therefore leads to
+// the parent of the directory that the link leads to, whether or not
+// that directory or the elements after the .. exist. A .. after an
+// element that does not exist drops that element. The tools drop the
+// element before each .. of a path as text, so the same spelling might
+// name another directory in a tool call.
 //
 // The server reads a relative --allow-dir, such as repos or a single
 // dot, against its working directory when it starts. It reads the

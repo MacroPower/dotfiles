@@ -552,6 +552,25 @@ func TestCheckDestSymlink(t *testing.T) {
 	require.NoError(t, h.checkDest(filepath.Join(allowDir, "repo")))
 }
 
+// [handler.checkDest] reads the target of a symbolic link whose target
+// does not exist. It refuses a path through a link in the allowed
+// directory that leads outside it, also before someone creates the
+// target.
+func TestCheckDestSymlinkWithoutTarget(t *testing.T) {
+	t.Parallel()
+
+	allowDir := t.TempDir()
+	outside := t.TempDir()
+
+	link := filepath.Join(allowDir, "escape")
+	require.NoError(t, os.Symlink(filepath.Join(outside, "later"), link))
+
+	h := &handler{allowDirs: mustResolveAllowDirs(t, allowDir)}
+
+	err := h.checkDest(filepath.Join(link, "repo"))
+	require.ErrorIs(t, err, ErrDeniedDest)
+}
+
 func TestCheckSparsePaths(t *testing.T) {
 	t.Parallel()
 

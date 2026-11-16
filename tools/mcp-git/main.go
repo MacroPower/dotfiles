@@ -36,6 +36,14 @@ func (s *stringSlice) Set(v string) error {
 // allowed directory that does not exist when the server starts and
 // that has a symbolic link on its path.
 //
+// resolveAllowDirs passes an absolute directory to
+// [resolveExistingPrefix] as the flag gave it. A ".." after a symbolic
+// link therefore leads to the parent of the target of the link,
+// whether or not the target or the elements after the ".." exist.
+// [handler.checkDest] cleans a path as text before it resolves the
+// links. A ".." in that path therefore drops the element before it,
+// also when that element is a symbolic link.
+//
 // resolveAllowDirs reads a relative directory with [filepath.Abs], as
 // [handler.checkDest] reads a relative path. [filepath.Abs] joins the
 // directory to the working directory that [os.Getwd] reports, which

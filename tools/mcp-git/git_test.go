@@ -969,3 +969,141 @@ func TestRemoteOrDefault(t *testing.T) {
 	assert.Equal(t, "origin", remoteOrDefault(""))
 	assert.Equal(t, "upstream", remoteOrDefault("upstream"))
 }
+
+func TestResolveExistingPrefix(t *testing.T) {
+	t.Parallel()
+
+	// The temporary directory can lie behind a symbolic link of its
+	// own, as it does on macOS. The expected paths therefore start
+	// from its resolved path.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	target := filepath.Join(root, "target")
+	link := filepath.Join(root, "link")
+	deep := filepath.Join(root, "deep")
+	relative := filepath.Join(root, "relative")
+	dangling := filepath.Join(root, "dangling")
+	pending := filepath.Join(root, "pending")
+	chain := filepath.Join(root, "chain")
+	loop := filepath.Join(root, "loop")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(target, "existing"), 0o755))
+	require.NoError(t, os.Symlink(target, link))
+	require.NoError(t, os.Symlink(filepath.Join(target, "existing"), deep))
+	require.NoError(t, os.Symlink(filepath.Join("target", "existing"), relative))
+	require.NoError(t, os.Symlink(filepath.Join(root, "nowhere"), dangling))
+	require.NoError(t, os.Symlink(filepath.Join(target, "new"), pending))
+	require.NoError(t, os.Symlink(pending, chain))
+	require.NoError(t, os.Symlink(loop, loop))
+
+	sep := string(filepath.Separator)
+
+	// filepath.Join cleans the path, so concat joins the elements of
+	// a path that keeps a "..", a ".", or an empty element.
+	concat := func(elems ...string) string {
+		return strings.Join(elems, sep)
+	}
+
+	tests := map[string]struct {
+		path string
+		want string
+	}{
+		"root": {
+			path: sep,
+			want: sep,
+		},
+		"existing directory": {
+			path: filepath.Join(target, "existing"),
+			want: filepath.Join(target, "existing"),
+		},
+		"missing nested directory": {
+			path: filepath.Join(target, "missing", "nested"),
+			want: filepath.Join(target, "missing", "nested"),
+		},
+		"link": {
+			path: link,
+			want: target,
+		},
+		"missing directory behind a link": {
+			path: filepath.Join(link, "missing"),
+			want: filepath.Join(target, "missing"),
+		},
+		"missing directory after a dot and empty elements": {
+			path: concat(root, "", "link", ".", "missing", ""),
+			want: filepath.Join(target, "missing"),
+		},
+		"link without a target": {
+			path: filepath.Join(dangling, "repo"),
+			want: filepath.Join(root, "nowhere", "repo"),
+		},
+		"link to a link without a target": {
+			path: filepath.Join(chain, "repo"),
+			want: filepath.Join(target, "new", "repo"),
+		},
+		"link with a relative target": {
+			path: filepath.Join(relative, "missing"),
+			want: filepath.Join(target, "existing", "missing"),
+		},
+		"loop of links": {
+			path: filepath.Join(loop, "repo"),
+			want: filepath.Join(loop, "repo"),
+		},
+		"parent of the target of a link": {
+			path: concat(deep, ".."),
+			want: target,
+		},
+		"existing sibling of the target of a link": {
+			path: concat(deep, "..", "existing"),
+			want: filepath.Join(target, "existing"),
+		},
+		"missing sibling of the target of a link": {
+			path: concat(deep, "..", "missing"),
+			want: filepath.Join(target, "missing"),
+		},
+		"missing nested directory beside the target of a link": {
+			path: concat(deep, "..", "missing", "nested"),
+			want: filepath.Join(target, "missing", "nested"),
+		},
+		"missing sibling of the target of a link without a target": {
+			path: concat(pending, "..", "missing"),
+			want: filepath.Join(target, "missing"),
+		},
+		"missing sibling of the relative target of a link": {
+			path: concat(relative, "..", "missing"),
+			want: filepath.Join(target, "missing"),
+		},
+		"parent of a loop of links": {
+			path: concat(loop, "..", "missing"),
+			want: filepath.Join(root, "missing"),
+		},
+		"missing directory after two parents of the target of a link": {
+			path: concat(deep, "..", "..", "missing"),
+			want: filepath.Join(root, "missing"),
+		},
+		"parent of a missing directory": {
+			path: concat(root, "missing", ".."),
+			want: root,
+		},
+		"parent of a missing directory behind a link": {
+			path: concat(link, "missing", ".."),
+			want: target,
+		},
+		"link after the parent of a missing directory": {
+			path: concat(root, "missing", "..", "link", "gone"),
+			want: filepath.Join(target, "gone"),
+		},
+		"parent of the target of a link after the parent of a missing directory": {
+			path: concat(deep, "missing", "..", "..", "gone"),
+			want: filepath.Join(target, "gone"),
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, resolveExistingPrefix(tt.path))
+		})
+	}
+}

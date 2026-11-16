@@ -435,6 +435,17 @@ func TestResolveAllowDirs(t *testing.T) {
 			want:     filepath.Join(target, "existing"),
 			skipDest: true,
 		},
+		"missing sibling of the target of a link": {
+			// The ".." leads to the parent of the target of the link
+			// also when the directory after it does not exist.
+			dir:      deep + sep + ".." + sep + "missing",
+			want:     filepath.Join(target, "missing"),
+			skipDest: true,
+		},
+		"link after the parent of a missing directory": {
+			dir:  root + sep + "missing" + sep + ".." + sep + "link" + sep + "gone",
+			want: filepath.Join(target, "gone"),
+		},
 	}
 
 	for name, tt := range tests {
@@ -444,16 +455,53 @@ func TestResolveAllowDirs(t *testing.T) {
 			got := mustResolveAllowDirs(t, tt.dir)
 			require.Equal(t, []string{tt.want}, got)
 
+			// The handler allows a destination under the directory
+			// that the flag names.
+			h := &handler{allowDirs: got}
+			require.NoError(t, h.checkDest(filepath.Join(tt.want, "repo")))
+
 			if tt.skipDest {
 				return
 			}
 
 			// The handler allows a destination that the caller names
 			// through the directory as the flag gave it.
-			h := &handler{allowDirs: got}
 			require.NoError(t, h.checkDest(filepath.Join(tt.dir, "repo")))
 		})
 	}
+}
+
+// An --allow-dir can pass through a symbolic link whose target does
+// not exist when the server starts. The allowed directory stays the
+// same after someone creates that target, both for the running server
+// and after a restart.
+func TestResolveAllowDirsLinkWithoutTarget(t *testing.T) {
+	t.Parallel()
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	target := filepath.Join(root, "target")
+	later := filepath.Join(target, "later")
+	link := filepath.Join(root, "link")
+
+	require.NoError(t, os.Mkdir(target, 0o755))
+	require.NoError(t, os.Symlink(later, link))
+
+	sep := string(filepath.Separator)
+	dirs := []string{filepath.Join(link, "repos"), link + sep + ".." + sep + "repos"}
+	want := []string{filepath.Join(later, "repos"), filepath.Join(target, "repos")}
+
+	before := mustResolveAllowDirs(t, dirs...)
+	require.Equal(t, want, before)
+
+	h := &handler{allowDirs: before[:1]}
+	require.NoError(t, h.checkDest(filepath.Join(link, "repos", "repo")))
+
+	require.NoError(t, os.Mkdir(later, 0o755))
+
+	assert.NoError(t, h.checkDest(filepath.Join(link, "repos", "repo")))
+	assert.Equal(t, want, mustResolveAllowDirs(t, dirs...))
 }
 
 // The server reads a relative --allow-dir against its working
