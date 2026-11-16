@@ -174,7 +174,9 @@ func (m *Dev) CheckLint(
 // each fix to its file (see dagger/dagger#11160).
 //
 // Format fails when a run of golangci-lint fails, such as on a
-// .golangci.yaml file that golangci-lint rejects. An issue that
+// .golangci.yaml file that golangci-lint rejects. Format also fails
+// when a module does not compile, because golangci-lint then reports a
+// typecheck issue and fixes no file of that module. Another issue that
 // golangci-lint cannot fix does not fail the run. The changeset then
 // holds the other fixes of the run, and [Dev.CheckLint] reports the
 // issue.
@@ -193,24 +195,17 @@ func (m *Dev) Format(
 	src := lintSource(toolchain)
 	ctr := m.lintBase(src)
 
-	// By default, golangci-lint exits with status 1 when it finds an
-	// issue that it cannot fix. --issues-exit-code=0 makes it exit with
-	// status 0 after such a run. So the container keeps the fixes of
-	// that run and fixes the next module.
-	//
-	// With the flag, golangci-lint still exits with status 3 and fixes
-	// nothing when it cannot run, such as on a .golangci.yaml file that
-	// it rejects. It exits with status 7 after a run in which a linter
-	// logged an error, whether or not an issue remains. Each status
-	// other than 0 fails the step, so each read of the changeset
-	// returns the error of the step, not an empty changeset.
+	// formatScript fails when golangci-lint cannot run in a module. It
+	// also fails when golangci-lint fixes no file of a module that does
+	// not compile. A failed script fails the step, so each read of the
+	// changeset returns the error of the step, not an empty changeset.
 	//
 	// The linter configuration turns off the newexpr pass of modernize,
 	// because that pass panics under --fix.
 	for _, mod := range goModules {
 		ctr = ctr.
 			WithWorkdir(path.Join(lintDir, mod)).
-			WithExec([]string{"golangci-lint", "run", "--fix", "--issues-exit-code=0"})
+			WithExec([]string{"sh", "-c", formatScript, "sh", path.Join(toolchainSubpath, mod)})
 	}
 
 	// lintBase copies .golangci.yaml into lintDir. Without this step,
@@ -226,6 +221,45 @@ func (m *Dev) Format(
 
 	return updated.Changes(original)
 }
+
+// formatScript runs golangci-lint --fix on the Go module of its working
+// directory. Its first argument is the path of that module from the
+// root of the repository, which the script prints in its error.
+//
+// By default, golangci-lint exits with status 1 when it finds an issue
+// that it cannot fix. --issues-exit-code=0 makes it exit with status 0
+// after such a run. So the container keeps the fixes of that run and
+// fixes the next module.
+//
+// With the flag, golangci-lint still exits with status 3 and fixes
+// nothing when it cannot run, such as on a .golangci.yaml file that it
+// rejects. It exits with status 7 after a run in which a linter logged
+// an error, whether or not an issue remains. The script exits with each
+// of those statuses, because set -e ends it at the failed command.
+//
+// When a package of the module does not compile, golangci-lint reports
+// the errors of the compiler as typecheck issues and drops every other
+// issue of the run. It therefore fixes no file of the module, and with
+// the flag it exits with status 0. The script finds that run in the
+// JSON report, where golangci-lint writes the linter of each issue to
+// the FromLinter field. The report escapes each quote inside a string,
+// so the pattern of the script matches only that field. The script
+// then exits with status 1, the default status of golangci-lint for a
+// run that leaves an issue.
+//
+// The script writes the JSON report outside [lintDir], so the changeset
+// of [Dev.Format] does not hold it. The text report stays on stdout,
+// so the error of the step carries each typecheck issue.
+const formatScript = `set -eu
+report=$(mktemp)
+golangci-lint run --fix --issues-exit-code=0 \
+    --output.text.path=stdout --output.json.path="$report"
+if grep -Fq '"FromLinter":"typecheck"' "$report"; then
+    echo "$1 does not compile, so golangci-lint fixed none of its files." \
+        "Fix each typecheck issue, then format again." >&2
+    exit 1
+fi
+`
 
 // nixSystem maps a Dagger container platform to a Nix system string.
 func nixSystem(ctx context.Context, ctr *dagger.Container) (string, error) {

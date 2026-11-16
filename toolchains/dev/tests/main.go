@@ -135,6 +135,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestCheckLintTestModule(ctx) })
 	eg.Go(func() error { return m.TestFormatTestModule(ctx) })
 	eg.Go(func() error { return m.TestFormatExitStatus(ctx) })
+	eg.Go(func() error { return m.TestFormatTypeError(ctx) })
 
 	err := eg.Wait()
 	if err != nil {
@@ -2120,6 +2121,19 @@ const (
 	// after golangci-lint --fix rewrites [unfixableProbeSource].
 	unfixableProbeFixed = "package main\n\nvar _ = []int{1, 2}\n\nfunc lintProbeUnused() {}\n"
 
+	// typeErrorProbeName is the name that [typeErrorProbeSource] calls.
+	// No code declares it.
+	typeErrorProbeName = "lintProbeUndefined"
+
+	// typeErrorProbeSource is the content of a file at [lintProbePath]
+	// that does not compile. It holds the fault of [lintProbeSource] and
+	// a function whose body calls [typeErrorProbeName]. golangci-lint
+	// reports the call as a typecheck issue and fixes nothing in the
+	// module. The engine still generates the bindings of the module,
+	// because it does not check the body of a function for them.
+	typeErrorProbeSource = "package main\n\nvar _ = []int{1,2}\n\n" +
+		"func lintProbeTypeError() { " + typeErrorProbeName + "() }\n"
+
 	// rejectedLintConfig is a .golangci.yaml file that golangci-lint
 	// rejects, because the file enables a linter that golangci-lint
 	// does not have. golangci-lint then exits with status 3 and reads
@@ -2261,8 +2275,8 @@ func (m *Tests) TestFormatTestModule(ctx context.Context) error {
 // Format returns the fix of that file. Then the test passes Format a
 // .golangci.yaml file that golangci-lint rejects. golangci-lint fixes
 // nothing with that file, and the changeset of Format fails with the
-// error of the golangci-lint command. The test fails when Format
-// returns an empty changeset for that run.
+// exit status of golangci-lint. The test fails when Format returns an
+// empty changeset for that run.
 //
 // +check
 func (m *Tests) TestFormatExitStatus(ctx context.Context) error {
@@ -2281,10 +2295,63 @@ func (m *Tests) TestFormatExitStatus(ctx context.Context) error {
 	}
 
 	// Dagger returns a dagger.ExecError for a step whose command exits
-	// with a status that the step does not accept.
+	// with a status that the step does not accept. The step of Format
+	// exits with the status of golangci-lint, which is 3 on
+	// rejectedLintConfig.
+	want := 3
+
 	var execErr *dagger.ExecError
-	if !errors.As(err, &execErr) || len(execErr.Cmd) == 0 || execErr.Cmd[0] != "golangci-lint" {
-		return fmt.Errorf("expected the error of a golangci-lint command, got: %w", err)
+	if !errors.As(err, &execErr) || execErr.ExitCode != want {
+		return fmt.Errorf("expected exit status %d of golangci-lint, got: %w", want, err)
+	}
+
+	return nil
+}
+
+// TestFormatTypeError verifies that [Dev.Format] fails on a module that
+// does not compile. The test adds a file to the test module that holds
+// a fault that golangci-lint fixes and a call of a name that no code
+// declares. golangci-lint reports the call as a typecheck issue and
+// fixes nothing in the module. The step of Format that formats the
+// test module then exits with status 1 and names toolchains/dev/tests
+// on stderr, and its stdout carries the typecheck issue. The test
+// fails when Format returns an empty changeset for that run.
+//
+// +check
+func (m *Tests) TestFormatTypeError(ctx context.Context) error {
+	changes := dag.Dev().Format(dagger.DevFormatOpts{Toolchain: lintProbeToolchain(typeErrorProbeSource)})
+
+	_, err := readChangesetPaths(ctx, changes)
+	if err == nil {
+		return fmt.Errorf("expected Format to fail on the type error of %s", lintProbePath)
+	}
+
+	var execErr *dagger.ExecError
+	if !errors.As(err, &execErr) {
+		return fmt.Errorf("expected the error of a failed step, got: %w", err)
+	}
+
+	// The step exits with status 1, the default status of golangci-lint
+	// for a run that leaves an issue.
+	wantStatus := 1
+	if execErr.ExitCode != wantStatus {
+		return fmt.Errorf("expected exit status %d, got %d: %w", wantStatus, execErr.ExitCode, err)
+	}
+
+	// The stderr of the step names the module of lintProbePath by its
+	// path from the root of the repository.
+	wantStderr := "toolchains/dev/tests does not compile"
+	if !strings.Contains(execErr.Stderr, wantStderr) {
+		return fmt.Errorf("expected stderr to hold %q, got %q", wantStderr, execErr.Stderr)
+	}
+
+	// The stdout of the step holds the text report of golangci-lint.
+	// That report puts the name of the linter in parentheses after the
+	// text of each issue.
+	wantStdout := "(typecheck)"
+	if !strings.Contains(execErr.Stdout, wantStdout) || !strings.Contains(execErr.Stdout, typeErrorProbeName) {
+		return fmt.Errorf("expected a %s issue that names %s, got stdout %q",
+			wantStdout, typeErrorProbeName, execErr.Stdout)
 	}
 
 	return nil
