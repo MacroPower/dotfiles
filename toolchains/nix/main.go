@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -436,6 +437,11 @@ const (
 
 	// grypeBin is the path of the grype binary in that container.
 	grypeBin = grypeLink + "/bin/grype"
+
+	// scanTimeEnv is the name of the environment variable that holds
+	// the time of the call of [Nix.grypeBase] in that container. No
+	// command reads the variable.
+	scanTimeEnv = "VULNSCAN_TIME"
 )
 
 // grypeBase returns a container that holds the grype package of
@@ -462,6 +468,20 @@ const (
 // With the setting, grype exits with status 2 after a scan with a
 // finding of that severity or a higher one. Both functions then return
 // an error and no report.
+//
+// The container sets scanTimeEnv to the time of the call. The engine
+// reuses the result of a step whose inputs did not change. The cache of
+// the vulnerability database is not an input of the step that runs
+// grypeBin. Without the variable, that step returns the report of an
+// earlier call for the same source, and grype does not load a newer
+// database. The time differs in each call, so the engine runs the step
+// again. The function sets the variable after the build of grype, so
+// the engine still reuses that build.
+//
+// Dagger also stores the result of a function and returns it to a later
+// call with the same source, without a call of grypeBase. So each
+// function that calls grypeBase carries the cache pragma with the value
+// never, which makes Dagger run the function in each call.
 func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 	sbom, err := m.Sbom(ctx)
 	if err != nil {
@@ -474,13 +494,19 @@ func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 		WithMountedCache("/root/.cache/grype", dag.CacheVolume("grype-db")).
 		WithExec([]string{"nix", "build", "nixpkgs#grype", "--out-link", grypeLink}).
 		WithFile("/tmp/sbom.cdx.json", sbom).
-		WithFile("/tmp/.grype.yaml", grypeConfig), nil
+		WithFile("/tmp/.grype.yaml", grypeConfig).
+		WithEnvVariable(scanTimeEnv, time.Now().UTC().Format(time.RFC3339Nano)), nil
 }
 
 // Vulnscan checks the home-manager closure for known CVEs using grype
 // and returns the report of grype as text. It returns an error when
 // grype exits with a status other than 0, such as when grype cannot
 // parse .grype.yaml or cannot load its vulnerability database.
+//
+// Dagger does not cache the report. Each call runs grype again, even
+// for a source that an earlier call scanned. grype then decides by its
+// db settings whether it downloads a newer vulnerability database.
+// +cache="never"
 func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 	ctr, err := m.grypeBase(ctx)
 	if err != nil {
@@ -501,8 +527,8 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 // returns the results as a SARIF v2.1.0 JSON file suitable for upload
 // to GitHub Code Scanning. Unlike [Nix.Vulnscan], which returns raw text,
 // this method produces structured output that GitHub can render as
-// security alerts. Like Vulnscan, it returns an error when grype exits
-// with a status other than 0.
+// security alerts. Like Vulnscan, it runs grype again in each call, and
+// it returns an error when grype exits with a status other than 0.
 //
 // Grype produces empty artifact locations when scanning SBOMs. GitHub
 // Code Scanning requires every result to reference a file in the repo,
@@ -510,6 +536,7 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 // a directly declared package points to the .nix file that declares
 // the package. Each result of a transitive dependency points to the
 // nixpkgs pin in flake.lock.
+// +cache="never"
 func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
 	ctr, err := m.grypeBase(ctx)
 	if err != nil {
