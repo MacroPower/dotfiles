@@ -500,30 +500,36 @@ The closure runs in this order:
    `sync.WaitGroup` for in-flight per-connection handlers to
    return. This is required so no handler is mid-token-mint when
    the next steps unlink files.
-2. `drainSweep` waits for the background `host sweep` goroutine to
+2. Unlink the socket file at `h.socketPath`.
+3. Unlink the per-slot sidecar file at `<socket-path>.id`, which
+   holds the `instance-id` of this `serve`.
+4. Unlink the scoped kubeconfig at `h.lastOutputPath`.
+5. Unlink the hook-router sidecar symlink. The link lies in a
+   directory of the machine that runs `serve`, so it never crosses
+   the Lima boundary.
+6. `drainSweep` waits for the background `host sweep` goroutine to
    return, for at most 30 seconds. The timeout keeps a hung
    `host sweep` subprocess from blocking shutdown. When the wait
    times out, `serve` logs a warning and runs the next step. A
    SIGINT or a SIGTERM, before the closure or during it, cancels the
    sweep. When neither signal arrives, the wait lasts until the
    sweep ends or until the timeout passes.
-3. Drain registered SA release closures with a 30-second
+7. Drain registered SA release closures with a 30-second
    `context.Background` timeout.
-4. Unlink the socket file at `h.socketPath`.
-5. Unlink the per-slot sidecar file at `<socket-path>.id`, which
-   holds the `instance-id` of this `serve`.
-6. Unlink the scoped kubeconfig at `h.lastOutputPath`.
-7. Unlink the hook-router sidecar symlink. The link lies in a
-   directory of the machine that runs `serve`, so it never crosses
-   the Lima boundary.
+
+The unlinks of steps 2, 3, 4, and 5 are local and take
+microseconds. Step 6 and step 7 can take seconds, and neither reads
+the files that the unlinks remove. So the unlinks run first.
 
 Claude Code sends its SIGKILL about 500 ms after the SIGINT that
 starts the closure. A closure that runs longer, for example while a
-`host release` of step 3 runs, then ends partway, and its later
+`host release` of step 7 runs, then ends partway, and its later
 steps never run. So under the signal sequence of Claude Code, the
-closure never reaches the 30-second limit of step 2 or step 3. The
-SIGKILL reaches only `serve`, so a `host release` subprocess that
-has started keeps running after `serve` ends.
+closure never reaches the 30-second limit of step 6 or step 7. A
+SIGKILL during step 6 or step 7 leaves behind only the SAs that
+`serve` had not released, with their bindings and provision records.
+The SIGKILL reaches only `serve`, so a `host release` subprocess
+that has started keeps running after `serve` ends.
 
 When `serve` ends before the closure starts, it leaves the items in
 this list behind. When `serve` ends while the closure runs, it leaves
@@ -1057,8 +1063,9 @@ without expanding the read deny.
   egress proxy gate this. If a target cluster is unreachable from
   the guest, the user adds it to `kubeApiDomains` or routes around
   it. Not this package's problem.
-- **Stale kubeconfig files.** SIGKILL leaves the killed serve's
-  scoped kubeconfig on disk.
+- **Stale kubeconfig files.** A SIGKILL that ends a serve before its
+  cleanup closure unlinks the scoped kubeconfig leaves the file on
+  disk.
   [Lifecycle and cleanup](#lifecycle-and-cleanup) says which SAs of
   a killed serve the orphan sweep reclaims. The kubeconfig file
   itself is small and benign, and the next `select` for that

@@ -54,7 +54,7 @@ var (
 // [main.runServe] before [socket.Acquire] runs so the per-slot
 // sidecar and the resource labels stay aligned. sweepWG tracks the
 // background `host sweep` goroutine launched at startup so shutdown
-// can wait for it before unlinking files.
+// can wait for it to return.
 type handler struct {
 	socketListener  net.Listener
 	envLookup       func(string) string
@@ -142,31 +142,38 @@ func sidecarSymlinkPath() string {
 }
 
 // sessionDir returns a cleanup closure for the per-`serve` session.
-// Construction is infallible; the returned closure must be called
-// once on shutdown.
+// Construction is infallible. The caller must call the returned
+// closure once on shutdown.
 //
 // Shutdown ordering:
 //  1. [*handler.socketShutdown] closes the UDS listener and waits
 //     for in-flight connection handlers via h.socketWG. Required
 //     so no handler is mid-`runHost` when later steps unlink files.
-//  2. Drain the background sweep goroutine via h.sweepWG with a
-//     30-second timeout. The timeout exists because a hung `host
-//     sweep` subprocess would otherwise block shutdown
-//     indefinitely; the existing 30-second timeout inside
-//     runResourceCleanup only scopes that function's K8s release
-//     calls, not the surrounding sessionDir closure.
-//  3. Drain registered K8s resource cleanups with a 30-second
-//     [context.Background] timeout.
-//  4. Unlink the socket file at h.socketPath.
-//  5. Unlink the per-slot sidecar at [socket.SidecarPath].
-//  6. Unlink the scoped kubeconfig at h.lastOutputPath. For a
+//  2. Unlink the socket file at h.socketPath.
+//  3. Unlink the per-slot sidecar at [socket.SidecarPath].
+//  4. Unlink the scoped kubeconfig at h.lastOutputPath. For a
 //     guest serve this path lives under the writable bind mount
 //     of `~/.local/state/mcp-kubectx` declared in workmux's
-//     extra_mounts, so removal succeeds without any host-side
+//     extra_mounts. So the removal succeeds without any host-side
 //     shell-out.
-//  7. Unlink the hook-router sidecar symlink. It lives in a
+//  5. Unlink the hook-router sidecar symlink. It lives in a
 //     directory of the machine that runs this serve, which never
 //     crosses the Lima boundary.
+//  6. Drain the background sweep goroutine via h.sweepWG with a
+//     30-second timeout. The timeout keeps a hung `host sweep`
+//     subprocess from blocking shutdown. The 30-second timeout
+//     inside runResourceCleanup bounds only the release calls of
+//     step 7.
+//  7. Drain registered K8s resource cleanups with a 30-second
+//     [context.Background] timeout.
+//
+// The unlinks run before both drains because they are local and
+// take microseconds, and neither drain reads the files. Claude Code
+// sends SIGKILL about 500 ms after the SIGINT that starts this
+// closure, and a `host release` that talks to the cluster can take
+// longer. A SIGKILL during step 6 or step 7 then leaves only the
+// unreleased SAs behind. The orphan sweep of a later serve in the
+// same env deletes them.
 func (h *handler) sessionDir() func() {
 	// runResourceCleanup intentionally derives from context.Background.
 	// A SIGINT or a SIGTERM cancels the signal-rooted ctx of serve,
@@ -193,10 +200,6 @@ func (h *handler) sessionDir() func() {
 	return func() {
 		h.socketShutdown()
 
-		h.drainSweep()
-
-		runResourceCleanup()
-
 		h.mu.Lock()
 		socketPath := h.socketPath
 		outPath := h.lastOutputPath
@@ -214,6 +217,10 @@ func (h *handler) sessionDir() func() {
 		// serve. No hook removes that dir, so it stays until
 		// that machine cleans its TMPDIR.
 		bestEffortRemove("sidecar symlink", sidecarSymlinkPath())
+
+		h.drainSweep()
+
+		runResourceCleanup()
 	}
 }
 

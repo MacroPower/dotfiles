@@ -309,21 +309,26 @@
 //  1. [*handler.socketShutdown] closes the UDS listener and waits
 //     for each connection handler to return, so each token mint
 //     ends before a later step unlinks a file.
-//  2. [*handler.drainSweep] waits for the background `host sweep`
+//  2. The closure unlinks the socket inode at h.socketPath.
+//  3. The closure unlinks the per-slot sidecar file at
+//     [socket.SidecarPath].
+//  4. The closure unlinks the scoped kubeconfig file with a local
+//     [os.Remove] of h.lastOutputPath.
+//  5. The closure unlinks the hook-router sidecar symlink at
+//     [sidecarSymlinkPath].
+//  6. [*handler.drainSweep] waits for the background `host sweep`
 //     goroutine to return, for at most 30 seconds. The limit keeps
 //     a hung `host sweep` subprocess from blocking the shutdown.
 //     A SIGINT or a SIGTERM, before the closure or during it,
 //     cancels the sweep. When neither signal arrives, the wait
 //     lasts until the sweep ends or until the limit passes.
-//  3. The closure runs every registered release closure with a
+//  7. The closure runs every registered release closure with a
 //     30-second [context.Background] timeout.
-//  4. The closure unlinks the socket inode at h.socketPath.
-//  5. The closure unlinks the per-slot sidecar file at
-//     [socket.SidecarPath].
-//  6. The closure unlinks the scoped kubeconfig file with a local
-//     [os.Remove] of h.lastOutputPath.
-//  7. The closure unlinks the hook-router sidecar symlink at
-//     [sidecarSymlinkPath].
+//
+// The unlinks of steps 2, 3, 4, and 5 are local and take
+// microseconds. Step 6 and step 7 can take seconds, and neither
+// reads the files that the unlinks remove. So the unlinks run
+// first.
 //
 // On a Lima-guest serve the unlink of the kubeconfig file lands on
 // the host through the writable bind mount of <stateHomeDir> declared
@@ -332,11 +337,13 @@
 //
 // Claude Code sends its SIGKILL about 500 ms after the SIGINT that
 // starts the closure. A closure that runs longer, for example while
-// a `host release` of step 3 runs, then ends partway, and its later
+// a `host release` of step 7 runs, then ends partway, and its later
 // steps never run. So under the signal sequence of Claude Code, the
-// closure never reaches the 30-second limit of step 2 or step 3.
-// The SIGKILL reaches only serve, so a `host release` subprocess
-// that has started keeps running after serve ends.
+// closure never reaches the 30-second limit of step 6 or step 7.
+// A SIGKILL during step 6 or step 7 leaves behind only the SAs that
+// serve had not released, with their bindings and provision
+// records. The SIGKILL reaches only serve, so a `host release`
+// subprocess that has started keeps running after serve ends.
 //
 // When serve ends before the closure starts, it leaves the items in
 // this list behind. When serve ends while the closure runs, it

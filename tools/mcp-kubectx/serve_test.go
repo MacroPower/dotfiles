@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1479,6 +1480,111 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 
 	_, err = os.Stat(kubeconfigPath)
 	assert.True(t, os.IsNotExist(err), "kubeconfig file must be unlinked by cleanup")
+}
+
+// TestSessionDirUnlinksBeforeDrains pins that the cleanup closure
+// unlinks the session files before it waits for the sweep and
+// before it runs the SA release. Claude Code sends SIGKILL about
+// 500 ms after its SIGINT. So a closure that ran a slow sweep or
+// release first left the files behind when the SIGKILL arrived.
+func TestSessionDirUnlinksBeforeDrains(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	// Resolve the socket dir before neutralizeWrapperEnv points
+	// TMPDIR at a t.TempDir(). See TestSessionDirCleanupOrdering.
+	socketDir := shortTempDir(t)
+
+	tmp := neutralizeWrapperEnv(t)
+
+	symlinkPath := filepath.Join(tmp, "kubeconfig")
+	t.Setenv("CLAUDE_KUBECTX_SIDECAR", symlinkPath)
+
+	socketPath := filepath.Join(socketDir, "drains.sock")
+	kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig.yaml")
+	require.NoError(t, os.WriteFile(kubeconfigPath, []byte("placeholder"), 0o600))
+	require.NoError(t, os.Symlink(kubeconfigPath, symlinkPath))
+
+	listener, listenCleanup, err := socket.Listen(t.Context(), socketPath, "drains-inst")
+	require.NoError(t, err)
+
+	t.Cleanup(listenCleanup)
+
+	paths := map[string]string{
+		"socket":              socketPath,
+		"per-slot sidecar":    socket.SidecarPath(socketPath),
+		"kubeconfig":          kubeconfigPath,
+		"hook-router symlink": symlinkPath,
+	}
+
+	for name, path := range paths {
+		_, err = os.Lstat(path)
+		require.NoError(t, err, "%s must exist before cleanup", name)
+	}
+
+	h := &handler{
+		pid:            8888,
+		envLookup:      constLookup(""),
+		lastOutputPath: kubeconfigPath,
+		socketPath:     socketPath,
+		socketListener: listener,
+	}
+
+	// The sweep blocks until the test lets it return, the way a
+	// slow `host sweep` blocks the drain at shutdown.
+	sweepRelease := make(chan struct{})
+
+	var sweepDone atomic.Bool
+
+	h.sweepWG.Go(func() {
+		<-sweepRelease
+		sweepDone.Store(true)
+	})
+
+	// The release records which files still exist when it starts.
+	var (
+		releaseAfterSweep bool
+		leftAtRelease     []string
+	)
+
+	h.registerCleanup(func(_ context.Context) {
+		releaseAfterSweep = sweepDone.Load()
+
+		for name, path := range paths {
+			_, statErr := os.Lstat(path)
+			if statErr == nil {
+				leftAtRelease = append(leftAtRelease, name)
+			}
+		}
+	})
+
+	cleanupDone := make(chan struct{})
+
+	go func() {
+		defer close(cleanupDone)
+
+		h.sessionDir()()
+	}()
+
+	assert.Eventually(t, func() bool {
+		for _, path := range paths {
+			_, statErr := os.Lstat(path)
+			if !os.IsNotExist(statErr) {
+				return false
+			}
+		}
+
+		return true
+	}, 2*time.Second, 10*time.Millisecond,
+		"cleanup must unlink every session file while the sweep still runs")
+
+	close(sweepRelease)
+
+	select {
+	case <-cleanupDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sessionDir cleanup did not complete after the sweep returned")
+	}
+
+	assert.True(t, releaseAfterSweep, "the SA release must run after the sweep returns")
+	assert.Empty(t, leftAtRelease, "the SA release must run after every unlink")
 }
 
 // extractError wraps the tool result text as an error for ErrorIs
