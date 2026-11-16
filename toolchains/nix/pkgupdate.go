@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -35,17 +36,34 @@ const (
 	packageFileGlob = "pkgs/*" + packageFileSuffix
 )
 
-// updateCommandRe matches a command of the pkg:update task that runs
-// one update script. Its group holds the path of the script from the
-// root of the project source.
-var updateCommandRe = regexp.MustCompile(`^bash (pkgs/[^/\s]+-update\.sh)$`)
+var (
+	// updateCommandRe matches a command of the pkg:update task that
+	// runs one update script. Its group holds the path of the script
+	// from the root of the project source.
+	updateCommandRe = regexp.MustCompile(`^bash (pkgs/[^/\s]+-update\.sh)$`)
+
+	// scriptDirPathRe matches a path that the text of an update script
+	// builds from the DIRNAME variable, in which the script holds its
+	// own directory. The path starts with `$DIRNAME/`. DIRNAME can
+	// stand in braces, and a double quote can stand before the slash.
+	// The group holds the file name after the slash, which is a run of
+	// word characters, periods, plus signs, and hyphens.
+	scriptDirPathRe = regexp.MustCompile(`\$(?:DIRNAME|\{DIRNAME\})"?/([\w.+-]+)`)
+)
 
 // CheckPkgUpdate verifies that the pkg:update task of
 // taskfiles/nix/Taskfile.yaml runs the update scripts that the project
 // source holds, and no other script. It also verifies that the source
-// holds the package file of each update script. An update script is a
-// file that matches pkgs/*-update.sh. The package file of
-// pkgs/<name>-update.sh is pkgs/<name>.nix, which the script updates.
+// holds each package file of each update script. An update script is a
+// file that matches pkgs/*-update.sh. A package file of an update
+// script is a file that matches pkgs/*.nix and that the script updates.
+// The check counts these files as the package files of
+// pkgs/<name>-update.sh:
+//
+//   - pkgs/<name>.nix, which carries the name of the script.
+//   - pkgs/<file>.nix for each path `$DIRNAME/<file>.nix` in the text of
+//     the script. An update script holds its own directory in the
+//     DIRNAME variable.
 //
 // The check fails when the task does not run an update script, because
 // the package of that script then stays at an old version. It also
@@ -54,11 +72,17 @@ var updateCommandRe = regexp.MustCompile(`^bash (pkgs/[^/\s]+-update\.sh)$`)
 // after it.
 //
 // The check fails when the source holds an update script and does not
-// hold the package file of that script. The script fails when it reads
+// hold a package file of that script. The script fails when it reads
 // the missing file, so Task stops at the command of that script as
-// well. The check finds the package file by the name of the script and
-// does not read the script. So it does not see another file that a
-// script updates.
+// well.
+//
+// The check requires pkgs/<name>.nix whatever the text of the script
+// holds. It finds each other package file only in a path that starts
+// with `$DIRNAME/`. In that path, DIRNAME can stand in braces, and a
+// double quote can stand before the slash. Write each path of a package
+// file in an update script that way. The check does not see a package
+// file that a script names in another way, such as through another
+// variable.
 //
 // The task spells out one command for each script, and the check reads
 // those commands. Write each entry of the cmds list of the task as a
@@ -66,8 +90,8 @@ var updateCommandRe = regexp.MustCompile(`^bash (pkgs/[^/\s]+-update\.sh)$`)
 // an entry of another form, because it cannot tell which script that
 // entry runs.
 //
-// One run of the check reports the faults of the task and each update
-// script without its package file.
+// One run of the check reports the faults of the task and each package
+// file of a script that the source does not hold.
 //
 // +check
 func (m *Nix) CheckPkgUpdate(ctx context.Context) error {
@@ -87,7 +111,7 @@ func (m *Nix) CheckPkgUpdate(ctx context.Context) error {
 	// checkTaskfile does for a missing Taskfile. The Go SDK of Dagger
 	// then sends that caller only the message of the API error, without
 	// the context of each wrap.
-	return errors.Join(m.checkTaskfile(ctx, scripts), checkPackageFiles(scripts, packages))
+	return errors.Join(m.checkTaskfile(ctx, scripts), m.checkPackageFiles(ctx, scripts, packages))
 }
 
 // checkTaskfile reads the Taskfile at pkgUpdateTaskfile from the
@@ -211,26 +235,66 @@ func pkgUpdateScripts(taskfile string) ([]string, error) {
 	return scripts, nil
 }
 
-// checkPackageFiles returns an error that names each update script of
-// scripts whose package file packages does not hold. scripts holds the
+// checkPackageFiles reads each update script of scripts from the
+// project source. It returns an error that names each package file of
+// a script that packages does not hold, with that script.
+// [packageFiles] lists the package files of a script. scripts holds the
 // path of each update script from the root of the project source.
 // packages holds the path of each package file from that root.
-func checkPackageFiles(scripts, packages []string) error {
+//
+// The error also names each script that the function cannot read, such
+// as a directory at the path of a script. The function does not look
+// for the package files of that script.
+func (m *Nix) checkPackageFiles(ctx context.Context, scripts, packages []string) error {
 	var errs []error
 
 	for _, script := range slices.Sorted(slices.Values(scripts)) {
-		pkg := packageFile(script)
-		if !slices.Contains(packages, pkg) {
-			errs = append(errs, fmt.Errorf("%s updates %s, which the project source does not hold", script, pkg))
+		contents, err := m.Source.File(script).Contents(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("reading %s: %w", script, err))
+
+			continue
+		}
+
+		for _, pkg := range packageFiles(script, contents) {
+			if !slices.Contains(packages, pkg) {
+				errs = append(errs, fmt.Errorf("%s updates %s, which the project source does not hold", script, pkg))
+			}
 		}
 	}
 
 	return errors.Join(errs...)
 }
 
-// packageFile returns the path of the package file of the update script
-// at script, which is the file that the script updates. The package
-// file of pkgs/<name>-update.sh is pkgs/<name>.nix.
+// packageFiles returns the path of each package file of the update
+// script at script, from the root of the project source. contents holds
+// the text of the script. The function sorts the paths and returns each
+// path one time.
+//
+// One package file carries the name of the script, and [packageFile]
+// returns its path. The function also returns a path for each match of
+// scriptDirPathRe in contents whose file name ends in .nix. It reads
+// DIRNAME as the directory of the script, so that path is the file
+// name in the directory of script. A path of contents such as
+// `$DIRNAME/../flake.nix` names no package file, because the file name
+// of its match is `..`.
+func packageFiles(script, contents string) []string {
+	files := []string{packageFile(script)}
+
+	for _, match := range scriptDirPathRe.FindAllStringSubmatch(contents, -1) {
+		if name := match[1]; strings.HasSuffix(name, packageFileSuffix) {
+			files = append(files, path.Join(path.Dir(script), name))
+		}
+	}
+
+	slices.Sort(files)
+
+	return slices.Compact(files)
+}
+
+// packageFile returns the path of the package file that carries the
+// name of the update script at script. The script updates that file.
+// For pkgs/<name>-update.sh, the path is pkgs/<name>.nix.
 func packageFile(script string) string {
 	return strings.TrimSuffix(script, updateScriptSuffix) + packageFileSuffix
 }

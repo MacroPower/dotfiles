@@ -3,8 +3,8 @@
 // Validates the nix-darwin, NixOS, and home-manager configurations of
 // the flake through evaluation, static analysis, and formatting checks.
 // It also verifies that the pkg:update task runs each update script in
-// pkgs/, and that pkgs/ holds the package file that each script
-// updates. The checks run in Linux containers and do not build a darwin
+// pkgs/, and that pkgs/ holds each package file that a script updates.
+// The checks run in Linux containers and do not build a darwin
 // derivation.
 
 package main

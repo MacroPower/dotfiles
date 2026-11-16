@@ -21,14 +21,61 @@ const (
 	// second update script.
 	betaUpdateScript = "pkgs/beta-update.sh"
 
-	// betaPackageFile is the path of the package file of the script at
-	// betaUpdateScript.
+	// betaPackageFile is the path of the package file that carries the
+	// name of the script at betaUpdateScript.
 	betaPackageFile = "pkgs/beta.nix"
 
-	// pkgUpdateProbeContents holds the contents of each file of a probe
-	// of pkgUpdateProbes other than the Taskfile. [Nix.CheckPkgUpdate]
-	// reads only the paths of those files.
+	// betaDesktopPackageFile is the path of the second package file that
+	// the text of betaDesktopScript names.
+	betaDesktopPackageFile = "pkgs/beta-desktop.nix"
+
+	// pkgUpdateProbeContents holds the contents of each file that a
+	// probe of pkgUpdateProbes lists in its files field.
+	// [Nix.CheckPkgUpdate] reads the paths of those files and the text
+	// of each update script. This text names no package file.
 	pkgUpdateProbeContents = "probe\n"
+
+	// betaDesktopScript is the text of an update script that names two
+	// package files as the update scripts of the repository do, each in
+	// a path that starts with `$DIRNAME/`. In the script at
+	// betaUpdateScript, the paths name the files at betaPackageFile and
+	// betaDesktopPackageFile.
+	betaDesktopScript = `#!/usr/bin/env bash
+set -euo pipefail
+
+DIRNAME=$(dirname "$0")
+PKG_FILE="$DIRNAME/beta.nix"
+DESKTOP_PKG_FILE="$DIRNAME/beta-desktop.nix"
+`
+
+	// betaSpellingsScript is the text of an update script that names
+	// three package files after the file at betaPackageFile. Each of
+	// the three paths spells the DIRNAME variable another way. The
+	// first one puts the name in braces, the second one closes the
+	// double quotes before the slash, and the third one does both.
+	betaSpellingsScript = `DIRNAME=$(dirname "$0")
+PKG_FILE="$DIRNAME/beta.nix"
+SERVER_PKG_FILE="${DIRNAME}/beta-server.nix"
+TOOLS_PKG_FILE="$DIRNAME"/beta-tools.nix
+AGENT_PKG_FILE="${DIRNAME}"/beta-agent.nix
+`
+
+	// betaOtherPathsScript is the text of an update script that names
+	// one package file, the file at betaPackageFile. No other path of
+	// the text names a package file. The paths to the old directory, to
+	// gamma.nix.orig, and to beta.json do not end in .nix. The path to
+	// flake.nix leaves the directory of the script. The paths to
+	// default.nix and delta.nix start with other variables.
+	betaOtherPathsScript = `DIRNAME=$(dirname "$0")
+OLD_DIRNAME=$DIRNAME/old
+REPO_ROOT=$(git -C "$DIRNAME" rev-parse --show-toplevel)
+PKG_FILE="$DIRNAME/beta.nix"
+cp "$PKG_FILE" "$DIRNAME/gamma.nix.orig"
+jq . "$DIRNAME/beta.json"
+nix eval --file "$DIRNAME/../flake.nix"
+nix eval --file "$REPO_ROOT/default.nix"
+nix eval --file "$OLD_DIRNAME/delta.nix"
+`
 )
 
 // pkgUpdateProbe is a project source on which
@@ -45,13 +92,18 @@ type pkgUpdateProbe struct {
 	// check must pass a probe whose want is empty.
 	want []string
 
+	// scripts holds the text of each update script of the source whose
+	// text the probe sets, by the path of the script.
+	scripts map[string]string
+
 	// files holds the path of each file of the source other than the
-	// Taskfile.
+	// Taskfile and the scripts of scripts. Each of those files holds
+	// pkgUpdateProbeContents.
 	files []string
 }
 
 // pkgUpdateProbes holds the probes of [Tests.TestCheckPkgUpdate]. The
-// source of each probe holds the package file of each of its update
+// source of each probe holds each package file of each of its update
 // scripts, unless the comment of the probe says that a package file is
 // missing.
 var pkgUpdateProbes = []pkgUpdateProbe{
@@ -79,16 +131,66 @@ var pkgUpdateProbes = []pkgUpdateProbe{
 		want:     []string{"runs " + betaUpdateScript + ", which"},
 	},
 	// The task runs both update scripts, and the source does not hold
-	// the package file of the second script. Neither of the last two
-	// files is that package file. The name of one is longer, and the
-	// other one is not in pkgs/.
+	// the package file that carries the name of the second script. The
+	// text of that script names no package file. Neither of the last
+	// two files is the missing package file. The name of one is longer,
+	// and the other one is not in pkgs/.
 	{
 		name:     "an update script without its package file",
 		taskfile: pkgUpdateProbeTaskfile("pkg:update", "bash "+alphaUpdateScript, "bash "+betaUpdateScript),
 		files: []string{
-			alphaUpdateScript, alphaPackageFile, betaUpdateScript, "pkgs/beta-desktop.nix", "scripts/beta.nix",
+			alphaUpdateScript, alphaPackageFile, betaUpdateScript, betaDesktopPackageFile, "scripts/beta.nix",
 		},
 		want: []string{betaUpdateScript + " updates " + betaPackageFile + ", which"},
+	},
+	// The text of the second script names two package files, and the
+	// source holds both.
+	{
+		name:     "an update script that names two package files",
+		taskfile: pkgUpdateProbeTaskfile("pkg:update", "bash "+alphaUpdateScript, "bash "+betaUpdateScript),
+		scripts:  map[string]string{betaUpdateScript: betaDesktopScript},
+		files:    []string{alphaUpdateScript, alphaPackageFile, betaPackageFile, betaDesktopPackageFile},
+	},
+	// The text of the second script names two package files, and the
+	// source holds only the one that carries the name of the script.
+	// The last file is not the missing package file, because it is not
+	// in pkgs/.
+	{
+		name:     "an update script that names a package file that the source does not hold",
+		taskfile: pkgUpdateProbeTaskfile("pkg:update", "bash "+alphaUpdateScript, "bash "+betaUpdateScript),
+		scripts:  map[string]string{betaUpdateScript: betaDesktopScript},
+		files:    []string{alphaUpdateScript, alphaPackageFile, betaPackageFile, "scripts/beta-desktop.nix"},
+		want:     []string{betaUpdateScript + " updates " + betaDesktopPackageFile + ", which"},
+	},
+	// The text of the second script names three package files that the
+	// source does not hold, each in another spelling of the path. The
+	// error of the check must name each of the three files.
+	{
+		name:     "an update script that names package files in each spelling of the path",
+		taskfile: pkgUpdateProbeTaskfile("pkg:update", "bash "+alphaUpdateScript, "bash "+betaUpdateScript),
+		scripts:  map[string]string{betaUpdateScript: betaSpellingsScript},
+		files:    []string{alphaUpdateScript, alphaPackageFile, betaPackageFile},
+		want: []string{
+			betaUpdateScript + " updates pkgs/beta-server.nix, which",
+			betaUpdateScript + " updates pkgs/beta-tools.nix, which",
+			betaUpdateScript + " updates pkgs/beta-agent.nix, which",
+		},
+	},
+	// The text of the second script holds paths that name no package
+	// file, and the source holds none of the files of those paths.
+	{
+		name:     "an update script with paths that name no package file",
+		taskfile: pkgUpdateProbeTaskfile("pkg:update", "bash "+alphaUpdateScript, "bash "+betaUpdateScript),
+		scripts:  map[string]string{betaUpdateScript: betaOtherPathsScript},
+		files:    []string{alphaUpdateScript, alphaPackageFile, betaPackageFile},
+	},
+	// The source holds a directory at the path of the second script,
+	// and the check cannot read a directory as a script.
+	{
+		name:     "a directory at the path of an update script",
+		taskfile: pkgUpdateProbeTaskfile("pkg:update", "bash "+alphaUpdateScript, "bash "+betaUpdateScript),
+		files:    []string{alphaUpdateScript, alphaPackageFile, betaUpdateScript + "/keep", betaPackageFile},
+		want:     []string{"reading " + betaUpdateScript},
 	},
 	// The second entry runs its script with sh. The check reads only an
 	// entry that runs its script with bash.
@@ -176,23 +278,38 @@ func pkgUpdateProbeTaskfile(task string, cmds ...string) string {
 // TestCheckPkgUpdate verifies that [Nix.CheckPkgUpdate] compares the
 // pkg:update task of the Taskfile at nixTaskfilePath with the update
 // scripts of the project source. It also verifies that the check
-// requires the package file of each update script. The check passes on
-// the default source of [Nix]. So the task of the repository runs each
-// update script of the repository, and the repository holds the package
-// file of each script.
+// requires each package file of each update script. Those files are
+// the file that carries the name of the script and each file that the
+// text of the script names in a path that starts with `$DIRNAME/`. The
+// check passes on the default source of [Nix]. So the task of the
+// repository runs each update script of the repository, and the
+// repository holds each package file of each script.
 //
 // The test then runs the check on each probe of pkgUpdateProbes. The
-// source of a probe holds only the files that the probe lists and the
-// Taskfile of the probe. So the result depends on nothing else. The
-// check passes a source whose task runs each update script and that
-// holds the package file of each script. It also passes a Taskfile that
-// holds another task in the short syntax, because it decodes only the
-// pkg:update task. The check fails in each of these cases:
+// source of a probe holds only the files and the scripts that the probe
+// lists and the Taskfile of the probe. So the result depends on nothing else. The
+// check passes each of these sources:
+//
+//   - The task runs each update script, and the source holds the
+//     package file that carries the name of each script.
+//   - The Taskfile holds another task in the short syntax. The check
+//     decodes only the pkg:update task.
+//   - The text of an update script names two package files, and the
+//     source holds both.
+//   - The text of an update script holds paths that name no package
+//     file. Such a path does not end in .nix, leaves the directory of
+//     the script, or starts with another variable than DIRNAME.
+//
+// The check fails in each of these cases:
 //
 //   - The source holds an update script that the task does not run.
 //   - The task runs a script that the source does not hold.
 //   - The source holds an update script and does not hold the package
-//     file of that script.
+//     file that carries the name of that script.
+//   - The text of an update script names a package file that the source
+//     does not hold.
+//   - The source holds a directory at the path of an update script, so
+//     the check cannot read the script.
 //   - The task holds an entry that is not a string of the form
 //     `bash pkgs/<name>-update.sh`.
 //   - The Taskfile does not define the pkg:update task.
@@ -209,6 +326,13 @@ func pkgUpdateProbeTaskfile(task string, cmds ...string) string {
 // to name both faults. So a check that stops at the first fault fails
 // the test.
 //
+// The script of one probe names three package files that the source
+// does not hold. Each path spells the DIRNAME variable another way,
+// with braces, with a double quote before the slash, or with both. The
+// test requires the error of the check to name each of the three files.
+// So a check that reads only the path `$DIRNAME/<file>.nix` fails the
+// test, as does a check that stops at the first missing file.
+//
 // +check
 func (m *Tests) TestCheckPkgUpdate(ctx context.Context) error {
 	err := dag.Nix().CheckPkgUpdate(ctx)
@@ -224,6 +348,10 @@ func (m *Tests) TestCheckPkgUpdate(ctx context.Context) error {
 
 		for _, file := range probe.files {
 			src = src.WithNewFile(file, pkgUpdateProbeContents)
+		}
+
+		for script, text := range probe.scripts {
+			src = src.WithNewFile(script, text)
 		}
 
 		err = dag.Nix(dagger.NixOpts{Source: src}).CheckPkgUpdate(ctx)
