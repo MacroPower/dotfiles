@@ -355,11 +355,12 @@ func (m *Nix) Format() *dagger.Changeset {
 	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
 }
 
-// sbomnixRef pins the upstream sbomnix flake. nixpkgs ships 1.7.4
-// which cannot parse the `nix derivation show` JSON format produced
-// by Nix 2.33+ (and Lix 2.94 used here), failing with "Deriver does
-// not exist" on every closure path. v1.7.6 normalizes the new
-// wrapped payload. https://github.com/tiiuae/sbomnix/issues/267
+// sbomnixRef pins the upstream sbomnix flake. nixpkgs ships 1.7.4,
+// which cannot parse the JSON format that `nix derivation show` prints
+// in Nix 2.33 and later, and in the Lix 2.94 release that [nixImage]
+// pins. sbomnix 1.7.4 fails with "Deriver does not exist" on every
+// closure path. v1.7.6 normalizes the new wrapped payload.
+// https://github.com/tiiuae/sbomnix/issues/267
 const sbomnixRef = "github:tiiuae/sbomnix/v1.7.6"
 
 // Sbom generates a CycloneDX SBOM for the home-manager closure.
@@ -390,15 +391,15 @@ func (m *Nix) Sbom(ctx context.Context) (*dagger.File, error) {
 }
 
 // DependencySnapshot generates a GitHub dependency submission snapshot
-// from the CycloneDX SBOM. The returned JSON can be POSTed directly to
-// the GitHub dependency submission API. The sha and ref parameters
-// identify the commit; correlator deduplicates submissions; runURL
-// links back to the CI run.
+// from the CycloneDX SBOM. You can POST the returned JSON directly to
+// the GitHub dependency submission API. The sha and ref arguments
+// identify the commit, correlator deduplicates submissions, and runURL
+// links the snapshot to the CI run.
 func (m *Nix) DependencySnapshot(
 	ctx context.Context,
 	// Git commit SHA for the snapshot.
 	sha string,
-	// Git ref (e.g. "refs/heads/master").
+	// Git ref, such as "refs/heads/master".
 	ref string,
 	// Unique correlator string for deduplication.
 	correlator string,
@@ -475,11 +476,12 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 // this method produces structured output that GitHub can render as
 // security alerts.
 //
-// Grype produces empty artifact locations when scanning SBOMs. Since
-// GitHub Code Scanning requires every result to reference a file in
-// the repo, results are patched: directly declared packages point to
-// the .nix file where they appear; transitive dependencies fall back
-// to the nixpkgs pin in flake.lock.
+// Grype produces empty artifact locations when scanning SBOMs. GitHub
+// Code Scanning requires every result to reference a file in the repo,
+// so this method patches the location of each result. Each result of
+// a directly declared package points to the .nix file that declares
+// the package. Each result of a transitive dependency points to the
+// nixpkgs pin in flake.lock.
 func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
 	ctr, err := m.grypeBase(ctx)
 	if err != nil {
@@ -715,8 +717,8 @@ func jsonArray(v any) []any {
 }
 
 // patchSarifLocations fills in artifact locations in SARIF results.
-// Results whose package has a source location point to that .nix file;
-// all others fall back to fallbackURI at fallbackLine.
+// Each result whose package has a source location points to that .nix
+// file. Every other result points to fallbackURI at fallbackLine.
 func patchSarifLocations(
 	raw string,
 	locations map[string]sourceLocation,
