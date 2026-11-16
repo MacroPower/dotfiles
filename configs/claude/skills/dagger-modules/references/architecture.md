@@ -1211,7 +1211,20 @@ A module with a generated entrypoint takes no such list, because the SDK writes 
 
 ### Go workspaces
 
-If a `go.work` file exists in the repository root, Dagger automatically adds new modules to it. This enables seamless IDE support and cross-module imports within the same repo.
+Go SDK v1.6.0 does not add a module of either layout to a `go.work` file above the module directory, such as a `go.work` file at the repository root. So when the repository has a `go.work` file, add each new module to it. Run `go work use` from the directory of the `go.work` file, and pass the directory of the module:
+
+```shell
+go work use .dagger/modules/my-module
+```
+
+Until `go.work` lists the module, Go treats the module as outside the workspace. `go build`, `go vet`, and `go test` then fail in the module directory. The package pattern of the command selects the error, as in these cases:
+
+| Package pattern | Error |
+| --- | --- |
+| `.`, or no pattern | `current directory is contained in a module that is not one of the workspace modules listed in go.work` |
+| `./...` | `pattern ./...: directory prefix . does not contain modules listed in go.work or their selected dependencies` |
+
+`go work use` also raises the `go` line of `go.work` when the `go.mod` of the module names a later Go version. Keep the raised line. When the `go` line of `go.work` names an earlier version than a listed module requires, the `go` command fails in every module of the workspace with `module <path> listed in go.work file requires go >= <version>`.
 
 ### Private Go modules
 

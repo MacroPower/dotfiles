@@ -125,7 +125,7 @@ A module on the Go runtime has no `cmd/` directory and no `internal/dagger/entry
 
 Split across multiple files in the same package freely. Only the top-level package is part of the public API. Give each Go file of the module directory the package clause of `main.go`, because the SDK refuses to generate a module directory that declares two packages.
 
-If a `go.work` file exists in the repository root, Dagger automatically adds new modules to it.
+Go SDK v1.6.0 does not add a module of either layout to a `go.work` file above the module directory. When the repository has a `go.work` file, add the new module from the directory of that file, as in `go work use .dagger/modules/my-module`. [Go workspaces](references/architecture.md#go-workspaces) in architecture.md covers the errors that the `go` command reports until `go.work` lists the module.
 
 For sub-packages, import `dagger/<module>/internal/dagger` to access Dagger types, and call the core constructors there as in the module package:
 
