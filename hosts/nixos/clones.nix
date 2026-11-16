@@ -73,19 +73,42 @@ in
     # service removes each clone that nothing changed for the span of
     # cloneMaxAge, and it removes the clone as a whole. A fetch changes
     # its clone, and a read does not. pkgs/expire-clones.nix describes
-    # what counts as a clone. The service runs as the user who owns the
-    # clones.
+    # what counts as a clone.
+    #
+    # The service runs as root, as systemd-tmpfiles does. So it reads a
+    # directory whose mode keeps the user out. It also removes the
+    # files that the user cannot remove, such as the files that a
+    # rootless container wrote with a subordinate uid. A service that
+    # runs as the user keeps each clone that holds such a directory or
+    # such a file. With --user, the tool refuses a cloneRoot that is a
+    # symbolic link or that belongs to another user. The tool never
+    # walks or removes the target of a symbolic link. It keeps each
+    # clone that holds a mount, so it does not delete the files of the
+    # source of a bind mount. When the tool keeps a clone that it
+    # cannot remove, the run fails and names the clone.
+    #
+    # ProtectSystem and ProtectHome also keep the service from writing
+    # outside cloneRoot. The hyphen before cloneRoot lets the service
+    # start before the first clone creates the directory. The service
+    # must see the /tmp of the host, so it does not set PrivateTmp. It
+    # must remove the files of every uid, so it does not set
+    # PrivateUsers. In a user namespace of its own, root cannot remove
+    # the files of a uid that the namespace does not map.
     systemd.services.expire-clones = {
       description = "Remove the clones under ${cloneRoot} that nothing changed in ${cloneMaxAge}";
       serviceConfig = {
         Type = "oneshot";
-        User = username;
         ExecStart = utils.escapeSystemdExecArgs [
           (lib.getExe pkgs.expire-clones)
+          "--user"
+          username
           cloneRoot
           "${cloneMaxAge} ago"
         ];
         IOSchedulingClass = "idle";
+        ProtectSystem = "strict";
+        ProtectHome = "read-only";
+        ReadWritePaths = [ "-${cloneRoot}" ];
       };
     };
 

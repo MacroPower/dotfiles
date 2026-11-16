@@ -1245,7 +1245,7 @@ let
   expireClonesEnabled = pkgs.stdenv.hostPlatform.isDarwin && cfg.toolBundles.git.enable;
 
   # The expire-clones agent writes one line here for each clone that it
-  # removes.
+  # removes. It also names each clone that it cannot remove here.
   expireClonesLog = "${config.home.homeDirectory}/Library/Logs/expire-clones.log";
 
   # The expire-claude-tmp agent writes one line here for each session
@@ -5253,6 +5253,12 @@ in
     # pkgs/expire-clones.nix describes what counts as a clone.
     # expire-clones.service of hosts/nixos/clones.nix removes the clones
     # of a NixOS host at the same age.
+    #
+    # The agent runs as the user. So it keeps a clone that holds a
+    # directory that the user cannot read or a file that the user
+    # cannot delete. The run then fails, and expireClonesLog names the
+    # clone. The service of the NixOS hosts runs as root and removes
+    # such a clone.
     #
     # The agent runs every day at 04:00. When the Mac sleeps at that
     # time, launchd runs the agent after the Mac wakes. launchd skips

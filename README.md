@@ -316,10 +316,20 @@ Every NixOS host removes a clone under `/tmp/git` as a whole, so an agent finds 
 
 The settings apply only on a host that keeps the `git` bundle of `dotfiles.claude.toolBundles` on, and the bundle is on by default. On a Linux host, that bundle tells agents to clone into `/tmp/git`.
 
+The service runs as root, as the cleanup of `/tmp` does. So it reads a directory whose mode keeps the user out. It also removes the files that the user cannot remove, such as the files that a rootless container wrote with a subordinate uid. It removes a symbolic link in `/tmp/git` and keeps the files of the target, and systemd lets it write only in `/tmp/git`.
+
+The service keeps each clone that holds a mount, so it does not delete the files of the source of a bind mount. It also keeps each owner directory that is a mount point. The cleanup of `/tmp` skips such a mount too. Until someone removes the mount, each run fails and names the directory that holds it.
+
 `pkgs/expire-clones.nix` describes what counts as a clone and as a change. The build of each configuration runs the cleanup of `/tmp` on a sample clone, and it fails when the cleanup deletes a file of that clone. The evaluation of a NixOS host fails when the bundle is on and the host lacks the rule. To list the clones that the service removed, run this command on the host:
 
 ```sh
 journalctl -u expire-clones.service -g removed
+```
+
+When a run cannot remove an old clone, it keeps the clone, names it, and fails. To list those clones, run this command on the host:
+
+```sh
+journalctl -u expire-clones.service -g stay
 ```
 
 To apply the settings, run `task switch` on the host. For the OrbStack machine, run `task vm:switch` on the Mac. A clone that lost files to the cleanup of `/tmp` before the switch stays incomplete, and the service removes it 10 days after its last change. To remove every clone now, wait until no session reads a clone. Then run this command on the host:
@@ -436,6 +446,14 @@ The script does not clean `~/Library/Caches`, so a launchd agent bounds the clon
 ```sh
 grep removed ~/Library/Logs/expire-clones.log
 ```
+
+The agent runs as the user, so it cannot remove every clone. It keeps a clone that holds a directory that the user cannot read. When a clone holds a file that the user cannot delete, the agent renames the clone to `.expired.<random>` and keeps the renamed directory. In both cases the run fails and names the clone. To list those clones, run this command on the Mac:
+
+```sh
+grep stay ~/Library/Logs/expire-clones.log
+```
+
+Delete each of those clones by hand. Use `sudo` when a file of the clone belongs to another user.
 
 To apply the settings, run `sudo task switch` on the Mac. Then restart each Claude Code session that started before the switch, because such a session still clones into `/tmp/git`. The switch leaves the clones in `/tmp/git` where they are. macOS deletes their files, and it empties `/tmp` at each restart. To remove them now, run this command on the Mac:
 
