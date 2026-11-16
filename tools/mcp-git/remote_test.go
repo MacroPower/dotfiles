@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -546,6 +547,53 @@ func TestRemoteToolsRefuseWorkTreeOutsideAllowDir(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, result.IsError, "the tool must refuse the working tree")
 			assert.Contains(t, resultText(t, result), ErrDeniedDest.Error())
+
+			requireEmptyDir(t, outside)
+			requireUnchanged(t, before, bare, work)
+		})
+	}
+}
+
+// A signal can kill the git command that names the working tree, as
+// the kernel does to free memory. Every tool must then fail with that
+// error, and it must not take the repository for one that has no
+// working tree. The tools skip the check of the working tree for such
+// a repository, and git_pull refuses it.
+func TestRemoteToolsFailWhenSignalKillsWorkTreeLookup(t *testing.T) { //nolint:paralleltest // t.Setenv
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+
+	// The script kills itself for the command that names the working
+	// tree, and it runs git for every other command.
+	script := "#!/bin/sh\n" +
+		"for arg in \"$@\"; do\n" +
+		"\tif [ \"$arg\" = --show-toplevel ]; then kill -KILL $$; fi\n" +
+		"done\n" +
+		"exec '" + git + "' \"$@\"\n"
+
+	for toolName, rt := range remoteTools() { //nolint:paralleltest // t.Setenv
+		t.Run(toolName, func(t *testing.T) {
+			bare, work := rt.repos(t)
+			outside := t.TempDir()
+
+			setWorkTree(t, work, outside)
+
+			before := readTrees(t, bare, work)
+
+			h := &handler{
+				allowDirs:     mustResolveAllowDirs(t, filepath.Dir(work)),
+				allowFileURLs: true,
+			}
+
+			gitStandIn(t, script)
+
+			result, _, err := rt.call(t.Context(), h, work)
+			require.NoError(t, err)
+			require.True(t, result.IsError, "the tool must fail")
+
+			text := resultText(t, result)
+			assert.Contains(t, text, "resolving the working tree of "+work+": running git: signal: killed")
+			assert.NotContains(t, text, ErrNoWorkTree.Error())
 
 			requireEmptyDir(t, outside)
 			requireUnchanged(t, before, bare, work)

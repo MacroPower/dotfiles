@@ -518,6 +518,89 @@ func TestGitWorkTree(t *testing.T) {
 	got, err = gitWorkTree(t.Context(), work)
 	require.NoError(t, err)
 	assert.Equal(t, outside, got)
+
+	// git takes a repository that sets core.bare for one that has no
+	// working tree, and it prints a warning about core.worktree before
+	// it says so.
+	setConfig(t, work, "core.bare", "true")
+
+	got, err = gitWorkTree(t.Context(), work)
+	require.NoError(t, err)
+	assert.Empty(t, got, "a repository that sets core.bare has no working tree")
+}
+
+// git translates its messages into the language of the locale.
+// gitWorkTree reads the message of git to find a repository that has
+// no working tree. It must report a bare repository as one, whatever
+// the locale of the server is.
+func TestGitWorkTreeIgnoresLocale(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// LANGUAGE names the language of the messages in every locale
+	// except the C locale.
+	t.Setenv("LANGUAGE", "de")
+	t.Setenv("LC_ALL", "en_US.UTF-8")
+
+	bare := initBareRepo(t)
+
+	// The check needs a git that prints a translated message here. git
+	// does not translate when it has no German messages, or when the
+	// host lacks the locale that LC_ALL names.
+	args := []string{"-C", bare, "rev-parse", "--show-toplevel"}
+	cmd := exec.CommandContext(t.Context(), "git", args...) //nolint:gosec // test helper
+
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err)
+
+	if strings.Contains(string(out), noWorkTreeMessage) {
+		t.Skip("git does not translate its messages in this environment")
+	}
+
+	got, err := gitWorkTree(t.Context(), bare)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+// A repository has no working tree only when git says so. git can
+// also fail for another reason. For example, the kernel kills git to
+// free memory, or the server cannot start git. gitWorkTree must then
+// return the failure, because [handler.runRemote] skips the check of
+// the working tree for a repository that has none.
+func TestGitWorkTreeFailure(t *testing.T) { //nolint:paralleltest // t.Setenv
+	tcs := map[string]struct {
+		// git is the script that stands in for git. An empty script
+		// leaves PATH without git.
+		git string
+
+		// want is the cause that the error names after the path.
+		want string
+	}{
+		"signal kills git": {
+			git:  "#!/bin/sh\nkill -KILL $$\n",
+			want: "running git: signal: killed",
+		},
+		"git exits with an error and prints nothing": {
+			git:  "#!/bin/sh\nexit 128\n",
+			want: "running git: exit status 128",
+		},
+		"git prints another message": {
+			git:  "#!/bin/sh\necho \"fatal: cannot chdir to '': No such file or directory\" >&2\nexit 128\n",
+			want: "running git: exit status 128: fatal: cannot chdir to '': No such file or directory",
+		},
+		"git cannot start": {
+			want: `running git: exec: "git": executable file not found in $PATH`,
+		},
+	}
+
+	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			gitStandIn(t, tc.git)
+
+			dir := t.TempDir()
+
+			got, err := gitWorkTree(t.Context(), dir)
+			require.EqualError(t, err, "resolving the working tree of "+dir+": "+tc.want)
+			assert.Empty(t, got)
+		})
+	}
 }
 
 func TestEnclosingGitDir(t *testing.T) {

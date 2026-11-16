@@ -50,6 +50,14 @@ const (
 	// names and that git does not accept as a git directory.
 	noRepoMessage = "fatal: not a git repository"
 
+	// noWorkTreeMessage is the message that git rev-parse
+	// --show-toplevel prints in the C locale when it finds no working
+	// tree. git finds none in a bare repository and in a directory
+	// inside a git directory. git prints a warning before the message
+	// when the config of the repository sets both core.bare and
+	// core.worktree.
+	noWorkTreeMessage = "fatal: this operation must be run in a work tree"
+
 	// badConfigMessage starts the message that git prints in the C
 	// locale when it cannot parse a line of a config file. The message
 	// goes on with the number of the line and the path of the file.
@@ -258,7 +266,8 @@ type remoteOp struct {
 // The config also names the working tree, with core.worktree.
 // runRemote refuses a working tree that [handler.checkWorkTree]
 // denies, and [handler.gitOptions] passes the path that runRemote
-// checked to git.
+// checked to git. [gitWorkTree] describes the error for a repository
+// whose working tree git cannot name.
 func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	if d := h.effectiveTimeout(op.timeout); d > 0 {
 		var cancel context.CancelFunc
@@ -788,23 +797,44 @@ func gitCommonDir(ctx context.Context, repo string) (string, error) {
 // uses for the repository at repo. The path is the value of
 // core.worktree when the config of the repository sets it. It returns
 // "" for a repository that has no working tree, such as a bare
-// repository. git rev-parse exits with an error there.
+// repository.
+//
+// git rev-parse exits with status 128 for such a repository. It exits
+// with the same status when it cannot read the git config, so only
+// its message names the cause. gitWorkTree therefore returns "" only
+// for a message that holds noWorkTreeMessage. It runs git with
+// messageLocale, because it reads that message.
+//
+// gitWorkTree returns an error for every other failure of git. For
+// example, a signal kills git, or the server cannot start git.
+// [handler.runRemote] skips the check of the working tree for a
+// repository that has none, so gitWorkTree must not return "" for
+// such a failure. Except for a timeout, the error names repo and ends
+// with the message of git. git rev-parse does not read the remotes of
+// the git config, so the message holds no URL of a remote. When git
+// prints no message, the error ends with the error of
+// [exec.Cmd.Output] instead.
 func gitWorkTree(ctx context.Context, repo string) (string, error) {
-	out, err := gitValue(ctx, "-C", repo, "rev-parse", "--show-toplevel")
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return "", nil
-		}
-
-		if errors.Is(err, ErrTimeout) {
-			return "", err
-		}
-
-		return "", fmt.Errorf("resolving working tree: %w", err)
+	out, message, err := gitOutput(ctx, append(gitEnv(), messageLocale),
+		"-C", repo, "rev-parse", "--show-toplevel",
+	)
+	if err == nil {
+		return out, nil
 	}
 
-	return out, nil
+	if errors.Is(err, ErrTimeout) {
+		return "", err
+	}
+
+	if strings.Contains(message, noWorkTreeMessage) {
+		return "", nil
+	}
+
+	if message == "" {
+		return "", fmt.Errorf("resolving the working tree of %s: %w", repo, err)
+	}
+
+	return "", fmt.Errorf("resolving the working tree of %s: %w: %s", repo, err, truncateOutput(message))
 }
 
 // checkWorkTree checks the working tree at workTree of the repository

@@ -255,6 +255,12 @@
 // --work-tree, which wins over core.worktree. git_pull refuses a
 // repository that has no working tree, such as a bare repository.
 //
+// The tools take a repository for one without a working tree only
+// when git says that it has none. git can also fail to name the
+// working tree. For example, a signal kills git, or the server cannot
+// start git. The tool then fails before it contacts the remote. The
+// error names the repository, and it ends with the cause.
+//
 // An --allow-dir can hold paths that the sandbox of the caller cannot
 // write, such as another checkout or the hooks directory of its git
 // directory. Git runs a file in a hooks directory as a hook. The
