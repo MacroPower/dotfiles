@@ -562,15 +562,22 @@ func skippedHookNote(ctx context.Context, repo, event string) (string, error) {
 // defines for event in the repository at repo. The hooksPath override
 // keeps the hook file out of the listing of git hook list. That
 // command exits 1 when it finds no hook. Git 2.53 and earlier do not
-// read hooks from git config, and they exit with an error too. A
-// listing that exits with an error therefore holds no hook.
+// read hooks from git config, and they exit with an error status too.
+// A listing that exits with an error status therefore holds no hook.
+//
+// configHooks returns an error for every other failure of git. For
+// example, a signal kills git, or the server cannot start git.
+// [skippedHookNote] then fails too, because its note must name each
+// hook.
 func configHooks(ctx context.Context, repo, event string) ([]string, error) {
 	out, err := gitValue(ctx,
 		"-c", "core.hooksPath="+os.DevNull, "-C", repo, "hook", "list", "-z", event,
 	)
 	if err != nil {
+		// A signal that kills git also gives an [*exec.ExitError],
+		// but git did not exit with a status then.
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if errors.As(err, &exitErr) && exitErr.Exited() {
 			return nil, nil
 		}
 

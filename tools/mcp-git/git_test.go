@@ -1365,6 +1365,54 @@ func TestConfigHooks(t *testing.T) {
 	}
 }
 
+// git hook list exits with an error status when it finds no hook. git
+// 2.53 and earlier also exit with one, because they do not know the
+// subcommand. configHooks must report no hook only for such an exit.
+// git can also fail for another reason. For example, the kernel kills
+// git to free memory, or the server cannot start git. configHooks must
+// then fail, because the note of git_push must name each hook that
+// git config defines.
+func TestConfigHooksFailure(t *testing.T) { //nolint:paralleltest // t.Setenv
+	tcs := map[string]struct {
+		// git is the script that stands in for git. An empty script
+		// leaves PATH without git.
+		git string
+
+		// err is the error of configHooks, or "" when configHooks
+		// must report no hook.
+		err string
+	}{
+		"git finds no hook": {
+			git: "#!/bin/sh\nexit 1\n",
+		},
+		"git does not know the subcommand": {
+			git: "#!/bin/sh\nexit 129\n",
+		},
+		"signal kills git": {
+			git: "#!/bin/sh\nkill -KILL $$\n",
+			err: "listing pre-push hooks: running git: signal: killed",
+		},
+		"git cannot start": {
+			err: `listing pre-push hooks: running git: exec: "git": executable file not found in $PATH`,
+		},
+	}
+
+	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			gitStandIn(t, tc.git)
+
+			got, err := configHooks(t.Context(), t.TempDir(), "pre-push")
+			if tc.err != "" {
+				require.EqualError(t, err, tc.err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Empty(t, got)
+		})
+	}
+}
+
 func TestHookFile(t *testing.T) {
 	t.Parallel()
 

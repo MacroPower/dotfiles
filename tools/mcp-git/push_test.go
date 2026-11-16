@@ -641,6 +641,40 @@ func TestHandlePushSkipsHooks(t *testing.T) {
 	}
 }
 
+// A signal can kill the git command that lists the hooks of the git
+// config, as the kernel does to free memory. git_push must then fail
+// before it pushes. A push that succeeds without the note leaves the
+// caller unaware of the hooks whose checks it must run itself.
+func TestHandlePushFailsWhenSignalKillsHookList(t *testing.T) { //nolint:paralleltest // t.Setenv
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+
+	bare, work := initRepos(t, false, true)
+
+	script, marker := markerScript(t)
+	appendGitConfig(t, work, "[hook \"check\"]\n\tcommand = "+configQuote(script)+"\n\tevent = pre-push\n")
+
+	before := readTrees(t, bare, work)
+
+	// The script kills itself for the command that lists the hooks,
+	// and it runs git for every other command.
+	gitStandIn(t, "#!/bin/sh\n"+
+		"for arg in \"$@\"; do\n"+
+		"\tif [ \"$arg\" = hook ]; then kill -KILL $$; fi\n"+
+		"done\n"+
+		"exec '"+git+"' \"$@\"\n")
+
+	h := &handler{allowFileURLs: true}
+
+	result, _, err := h.handlePush(t.Context(), nil, PushInput{Repo: work})
+	require.NoError(t, err)
+	require.True(t, result.IsError, "the push must fail")
+	assert.Contains(t, resultText(t, result), "listing pre-push hooks: running git: signal: killed")
+
+	requireNotRun(t, marker)
+	requireUnchanged(t, before, bare, work)
+}
+
 // writeConfigHook defines the pre-push hook check in the git config
 // of repo. The hook runs script.
 func writeConfigHook(t *testing.T, repo, script string) {

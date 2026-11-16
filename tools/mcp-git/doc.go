@@ -142,6 +142,14 @@
 // that git config defines. The result also tells the caller to run
 // the checks of each hook itself, inside its sandbox.
 //
+// git_push fails before it contacts the remote when git cannot name
+// the hook file, or when git hook list ends without an exit status.
+// For example, a signal kills git, or the server cannot start git.
+// The error ends with the cause. When git hook list exits with an
+// error status, the result names no hook of the git config. That
+// command exits 1 when it finds no hook, and git 2.53 and earlier
+// lack the subcommand.
+//
 // # Config Commands
 //
 // Git options and environment variables turn off each command that
