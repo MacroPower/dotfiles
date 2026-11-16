@@ -73,6 +73,14 @@
 // caller cannot express a remote delete or a force push (git_push
 // offers force_with_lease explicitly).
 //
+// git_fetch, git_pull, and git_push report that a path is not a git
+// repository only when git finds no repository from the path. git can
+// also find a repository and fail to open it, such as a repository
+// whose git config holds a line that git cannot parse. The error then
+// says that the tool could not open the repository. It names the path,
+// and it ends with the message of git, which gives the cause. The
+// tools report a path that names no directory in the same way.
+//
 // git_fetch, git_pull, and git_push do not trust the git config of
 // the repository. The server runs with the privileges of the user,
 // outside any sandbox that confines the caller. The caller can write

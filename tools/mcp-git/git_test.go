@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -274,6 +275,231 @@ func TestGitCommonDir(t *testing.T) {
 
 	_, err = gitCommonDir(t.Context(), t.TempDir())
 	require.ErrorIs(t, err, ErrNotRepo)
+}
+
+// unparseableConfig is git config text that holds a section header
+// without its closing bracket. git cannot parse that line, so git
+// cannot open a repository with that config.
+const unparseableConfig = "[remote \"origin\"\n"
+
+// git exits with status 128 when it finds no repository from a
+// directory. It exits with the same status when it finds a repository
+// that it cannot open. gitCommonDir and absoluteGitDir must report a
+// missing repository only for the first failure. For every other
+// failure, the error must say that git could not open the repository,
+// and it must hold the message of git.
+func TestRepoPathErrors(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		// dir prepares the directory of the call and returns its
+		// path.
+		dir func(t *testing.T) string
+
+		// want is text that the message of git holds.
+		want string
+
+		// err is set when the error must report a missing repository.
+		err error
+	}{
+		"directory outside every repository": {
+			dir: func(t *testing.T) string {
+				t.Helper()
+
+				return t.TempDir()
+			},
+			err: ErrNotRepo,
+		},
+		"config that git cannot parse": {
+			dir: func(t *testing.T) string {
+				t.Helper()
+
+				return initConfigRepo(t, unparseableConfig)
+			},
+			want: "bad config line",
+		},
+		"directory in a repository whose config git cannot parse": {
+			dir: func(t *testing.T) string {
+				t.Helper()
+
+				dir := filepath.Join(initConfigRepo(t, unparseableConfig), "dir")
+				require.NoError(t, os.Mkdir(dir, 0o755))
+
+				return dir
+			},
+			want: "bad config line",
+		},
+		"directory that does not exist": {
+			dir: func(t *testing.T) string {
+				t.Helper()
+
+				return filepath.Join(t.TempDir(), "missing")
+			},
+			want: "cannot change to",
+		},
+	}
+
+	paths := map[string]func(ctx context.Context, dir string) (string, error){
+		"gitCommonDir":   gitCommonDir,
+		"absoluteGitDir": absoluteGitDir,
+	}
+
+	for pathName, path := range paths {
+		for name, tc := range tcs {
+			t.Run(pathName+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				dir := tc.dir(t)
+
+				_, err := path(t.Context(), dir)
+				require.Error(t, err)
+
+				if tc.err != nil {
+					require.ErrorIs(t, err, tc.err)
+					assert.EqualError(t, err, "not a git repository: "+dir)
+
+					return
+				}
+
+				require.NotErrorIs(t, err, ErrNotRepo)
+
+				message := err.Error()
+				assert.Contains(t, message, "opening the repository at "+dir+": running git: exit status 128: fatal: ")
+				assert.Contains(t, message, tc.want)
+				assert.NotContains(t, message, ErrNotRepo.Error())
+			})
+		}
+	}
+}
+
+// git translates its messages into the language of the locale, and
+// gitCommonDir reads the message of git to find a missing repository.
+// It must report a directory outside every repository as one, whatever
+// the locale of the server is.
+func TestGitCommonDirIgnoresLocale(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// LANGUAGE names the language of the messages in every locale
+	// except the C locale.
+	t.Setenv("LANGUAGE", "de")
+	t.Setenv("LC_ALL", "en_US.UTF-8")
+
+	dir := t.TempDir()
+
+	// The check needs a git that prints a translated message here. git
+	// does not translate when it has no German messages, or when the
+	// host lacks the locale that LC_ALL names.
+	cmd := exec.CommandContext(t.Context(), "git", "-C", dir, "rev-parse", "--git-dir") //nolint:gosec // test helper
+
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err)
+
+	if strings.Contains(string(out), noRepoMessage) {
+		t.Skip("git does not translate its messages in this environment")
+	}
+
+	_, err = gitCommonDir(t.Context(), dir)
+	require.ErrorIs(t, err, ErrNotRepo)
+}
+
+// git can exit with an error and print nothing, and the server can
+// fail to start git. gitCommonDir must then report neither a missing
+// repository nor an empty message of git.
+func TestGitCommonDirWithoutMessage(t *testing.T) { //nolint:paralleltest // t.Setenv
+	tcs := map[string]struct {
+		// git is the script that stands in for git. An empty script
+		// leaves PATH without git.
+		git string
+
+		// want is the cause that the error names after the path.
+		want string
+	}{
+		"git exits with an error and prints nothing": {
+			git:  "#!/bin/sh\nexit 128\n",
+			want: "running git: exit status 128",
+		},
+		"git cannot start": {
+			want: `running git: exec: "git": executable file not found in $PATH`,
+		},
+	}
+
+	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			bin := t.TempDir()
+			if tc.git != "" {
+				writeHookIn(t, bin, "git", tc.git)
+			}
+
+			t.Setenv("PATH", bin)
+
+			dir := t.TempDir()
+
+			_, err := gitCommonDir(t.Context(), dir)
+			require.NotErrorIs(t, err, ErrNotRepo)
+			assert.EqualError(t, err, "opening the repository at "+dir+": "+tc.want)
+		})
+	}
+}
+
+// The working tree that core.worktree names can hold a repository of
+// its own. checkWorkTree must say that git finds no git directory only
+// when git finds no repository from the working tree. For every other
+// failure of git, the error must hold the message of git.
+func TestCheckWorkTreeErrors(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		// tree prepares the working tree and returns its path.
+		tree func(t *testing.T) string
+
+		// want returns text that the error must hold for the working
+		// tree at tree.
+		want func(tree string) string
+	}{
+		"directory outside every repository": {
+			tree: func(t *testing.T) string {
+				t.Helper()
+
+				return t.TempDir()
+			},
+			want: func(tree string) string {
+				return ": git finds no git directory from " + tree
+			},
+		},
+		"checkout whose config git cannot parse": {
+			tree: func(t *testing.T) string {
+				t.Helper()
+
+				return initConfigRepo(t, unparseableConfig)
+			},
+			want: func(tree string) string {
+				return ": opening the repository at " + tree + ": running git: exit status 128: fatal: bad config line"
+			},
+		},
+		// git prints the value of core.worktree as the working tree,
+		// whether or not a directory exists there.
+		"directory that does not exist": {
+			tree: func(t *testing.T) string {
+				t.Helper()
+
+				return filepath.Join(t.TempDir(), "missing")
+			},
+			want: func(tree string) string {
+				return ": opening the repository at " + tree + ": running git: exit status 128: fatal: cannot change to"
+			},
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := initConfigRepo(t, "")
+			tree := tc.tree(t)
+
+			err := (&handler{}).checkWorkTree(t.Context(), repo, tree)
+			require.ErrorIs(t, err, ErrDeniedWorkTree)
+			assert.ErrorContains(t, err, ErrDeniedWorkTree.Error()+tc.want(tree))
+		})
+	}
 }
 
 func TestGitWorkTree(t *testing.T) {

@@ -951,6 +951,43 @@ func TestRemoteToolsReportUnreadableRemote(t *testing.T) {
 	}
 }
 
+// git finds a repository whose config holds a line that it cannot
+// parse, and it cannot open that repository. The path of the call lies
+// in a repository. The error must therefore say that the server could
+// not open the repository, and it must hold the message of git. It
+// must not say that the path is not a git repository.
+func TestRemoteToolsReportUnparseableConfig(t *testing.T) {
+	t.Parallel()
+
+	for toolName, rt := range remoteTools() {
+		t.Run(toolName, func(t *testing.T) {
+			t.Parallel()
+
+			bare, work := rt.repos(t)
+			config := filepath.Join(work, ".git", "config")
+
+			parseable, err := os.ReadFile(config)
+			require.NoError(t, err)
+
+			appendGitConfig(t, work, unparseableConfig)
+
+			result, _, err := rt.call(t.Context(), &handler{allowFileURLs: true}, work)
+			require.NoError(t, err)
+			require.True(t, result.IsError, "the tool must not contact the remote")
+
+			text := resultText(t, result)
+			assert.Contains(t, text, rt.failure.Error()+": opening the repository at "+work+": ")
+			assert.Contains(t, text, "fatal: bad config line")
+			assert.NotContains(t, text, ErrNotRepo.Error())
+
+			// git reads the commits of the clone only when it can parse
+			// the config.
+			require.NoError(t, os.WriteFile(config, parseable, 0o644))
+			rt.requireNotLanded(t, bare, work)
+		})
+	}
+}
+
 // TestGitRefusesTransports covers a remote whose definition changes
 // after runRemote checks its URLs. git resolves the remote again when
 // it connects, so the git command itself must refuse each transport

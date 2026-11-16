@@ -37,6 +37,16 @@ const (
 	// that holds '='. [hookOptions] uses the option to set
 	// hook.<name>.enabled for a hook with any name.
 	hookSwitchEnv = "MCP_GIT_HOOK_ENABLED"
+
+	// messageLocale is the entry of the environment that makes git
+	// print its messages in English. git translates its messages into
+	// the language of the locale. LC_ALL wins over every other locale
+	// variable, and LANGUAGE has no effect in the C locale.
+	messageLocale = "LC_ALL=C"
+
+	// noRepoMessage starts each message that git prints in the C
+	// locale when it finds no repository from a directory.
+	noRepoMessage = "fatal: not a git repository"
 )
 
 var (
@@ -55,8 +65,9 @@ var (
 	// with a dash.
 	ErrDeniedRepoPrefix = errors.New("repo must not start with '-'")
 
-	// ErrNotRepo is returned when a path is not inside a git
-	// repository.
+	// ErrNotRepo is returned when git finds no repository from a path,
+	// and when [checkGitDir] rejects the git directory of a
+	// destination.
 	ErrNotRepo = errors.New("not a git repository")
 
 	// ErrNoWorkTree is returned when a command that updates the
@@ -154,6 +165,10 @@ type remoteOp struct {
 // a repository whose config sets a key that git options cannot
 // override, as [repoConfig.check] describes. [handler.gitOptions] and
 // [handler.commandEnv] turn off the hooks and each other command.
+//
+// runRemote refuses a path outside every repository with [ErrNotRepo],
+// and [repoPath] describes the error for a repository that git cannot
+// open.
 //
 // runRemote refuses a remote that the repository does not configure
 // with [ErrUnknownRemote], and [remoteURLs] describes the error for a
@@ -590,41 +605,93 @@ func (h *handler) runGit(ctx context.Context, args ...string) (string, error) {
 // callers can parse stdout as a value and error messages cannot leak
 // remote URLs.
 func gitValue(ctx context.Context, args ...string) (string, error) {
+	out, _, err := gitOutput(ctx, gitEnv(), args...)
+
+	return out, err
+}
+
+// gitOutput runs git with args in the environment env, and it returns
+// the trimmed stdout of git. When git exits with an error, gitOutput
+// also returns the trimmed stderr of git. The message of the returned
+// error never holds that text.
+func gitOutput(ctx context.Context, env []string, args ...string) (string, string, error) {
 	//nolint:gosec // G204: args are validated by the calling handler.
 	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = gitEnv()
+	cmd.Env = env
 
 	out, err := cmd.Output()
 	if err != nil {
 		tErr := timeoutError(ctx)
 		if tErr != nil {
-			return "", tErr
+			return "", "", tErr
 		}
 
-		return "", fmt.Errorf("running git: %w", err)
+		var (
+			exitErr *exec.ExitError
+			stderr  string
+		)
+
+		// Output stores the stderr of the command in the error.
+		if errors.As(err, &exitErr) {
+			stderr = strings.TrimSpace(string(exitErr.Stderr))
+		}
+
+		return "", stderr, fmt.Errorf("running git: %w", err)
 	}
 
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(string(out)), "", nil
 }
 
-// gitCommonDir returns the absolute common git directory for repo.
-// It doubles as the repository check: git walks up from repo, so a
-// path inside a repository resolves to that repository, a linked
-// worktree resolves to the main checkout's git directory, and a
-// non-repository path errors with [ErrNotRepo].
-func gitCommonDir(ctx context.Context, repo string) (string, error) {
-	out, err := gitValue(ctx,
-		"-C", repo, "rev-parse", "--path-format=absolute", "--git-common-dir",
-	)
+// repoPath runs git rev-parse with flags in the directory at dir, and
+// it returns the path that git prints. git finds the repository from
+// dir before it prints the path, so repoPath doubles as the repository
+// check. A directory outside every repository fails with [ErrNotRepo].
+//
+// git also fails when it finds a repository that it cannot open, such
+// as a repository whose git config holds a line that git cannot parse.
+// git exits with status 128 for both failures, and only its message
+// tells them apart. repoPath therefore runs git with messageLocale,
+// and it reports [ErrNotRepo] only for a message that holds
+// noRepoMessage.
+//
+// For every other failure except a timeout, the error says that
+// repoPath could not open the repository. It names dir, and it ends
+// with the message of git, which gives the cause. For example, the
+// message names the config file and the line that git cannot parse.
+// git rev-parse does not read the remotes of the git config, so the
+// message holds no URL of a remote. When git prints no message, or
+// when git cannot start, the error ends with the error of
+// [exec.Cmd.Output] instead.
+func repoPath(ctx context.Context, dir string, flags ...string) (string, error) {
+	args := slices.Concat([]string{"-C", dir, "rev-parse"}, flags)
+
+	out, message, err := gitOutput(ctx, append(gitEnv(), messageLocale), args...)
 	if err != nil {
 		if errors.Is(err, ErrTimeout) {
 			return "", err
 		}
 
-		return "", fmt.Errorf("%w: %s", ErrNotRepo, repo)
+		if strings.Contains(message, noRepoMessage) {
+			return "", fmt.Errorf("%w: %s", ErrNotRepo, dir)
+		}
+
+		if message == "" {
+			return "", fmt.Errorf("opening the repository at %s: %w", dir, err)
+		}
+
+		return "", fmt.Errorf("opening the repository at %s: %w: %s", dir, err, truncateOutput(message))
 	}
 
 	return out, nil
+}
+
+// gitCommonDir returns the absolute common git directory for repo.
+// git walks up from repo, so a path inside a repository resolves to
+// that repository. A linked worktree resolves to the git directory of
+// the main checkout. [repoPath] describes the error for a path outside
+// every repository and for a repository that git cannot open.
+func gitCommonDir(ctx context.Context, repo string) (string, error) {
+	return repoPath(ctx, repo, "--path-format=absolute", "--git-common-dir")
 }
 
 // gitWorkTree returns the absolute path of the working tree that git
@@ -665,6 +732,12 @@ func gitWorkTree(ctx context.Context, repo string) (string, error) {
 // The caller can write a .git file into a git directory whose hooks it
 // cannot write. checkWorkTree therefore also refuses a working tree
 // inside a git directory, as [enclosingGitDir] finds it.
+//
+// git can also fail to open a repository from the working tree. For
+// example, git finds a repository whose git config it cannot parse, or
+// core.worktree names a directory that does not exist. git then names
+// no git directory, so checkWorkTree refuses the working tree, and the
+// error ends with the error of [repoPath].
 func (h *handler) checkWorkTree(ctx context.Context, abs, workTree string) error {
 	err := h.checkDest(workTree)
 	if err != nil {
@@ -690,8 +763,12 @@ func (h *handler) checkWorkTree(ctx context.Context, abs, workTree string) error
 		return err
 	}
 
-	if err != nil {
+	if errors.Is(err, ErrNotRepo) {
 		return fmt.Errorf("%w: git finds no git directory from %s", ErrDeniedWorkTree, workTree)
+	}
+
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDeniedWorkTree, err)
 	}
 
 	if found != gitDir {
@@ -704,18 +781,10 @@ func (h *handler) checkWorkTree(ctx context.Context, abs, workTree string) error
 // absoluteGitDir returns the absolute path of the git directory that
 // git finds from the directory at dir. The path has no symbolic link.
 // A linked worktree has a git directory of its own, inside the common
-// git directory.
+// git directory. [repoPath] describes the error for a directory
+// outside every repository and for a repository that git cannot open.
 func absoluteGitDir(ctx context.Context, dir string) (string, error) {
-	out, err := gitValue(ctx, "-C", dir, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		if errors.Is(err, ErrTimeout) {
-			return "", err
-		}
-
-		return "", fmt.Errorf("%w: %s", ErrNotRepo, dir)
-	}
-
-	return out, nil
+	return repoPath(ctx, dir, "--absolute-git-dir")
 }
 
 // enclosingGitDir returns the git directory that holds the directory
