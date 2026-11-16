@@ -2,6 +2,8 @@
   lib,
   stdenv,
   fetchurl,
+  runCommand,
+  jq,
 }:
 
 let
@@ -42,6 +44,28 @@ stdenv.mkDerivation {
 
   installPhase = ''
     install -Dm755 kubectl-radar $out/bin/kubectl-radar
+  '';
+
+  # Runs pkgs/radar-update-test.sh, which tests pkgs/radar-update.sh on
+  # copies of this file and of pkgs/radar-desktop.nix. The update script
+  # finds the version and each hash of a package file by the text around
+  # them. So the test also fails after an edit of either file that moves
+  # them out of the lines that the script reads. The test does not reach
+  # the network.
+  #
+  # To build the test by hand, run:
+  #
+  #   nix build --no-link --impure --expr '((builtins.getFlake (toString ./.))
+  #     .inputs.nixpkgs.legacyPackages.${builtins.currentSystem}.callPackage
+  #     ./pkgs/radar.nix { }).tests'
+  passthru.tests.update-script = runCommand "radar-update-test" { nativeBuildInputs = [ jq ]; } ''
+    mkdir pkgs
+    cp ${./radar-update-test.sh} pkgs/radar-update-test.sh
+    cp ${./radar-update.sh} pkgs/radar-update.sh
+    cp ${./radar.nix} pkgs/radar.nix
+    cp ${./radar-desktop.nix} pkgs/radar-desktop.nix
+    bash pkgs/radar-update-test.sh
+    touch $out
   '';
 
   meta = {
