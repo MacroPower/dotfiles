@@ -34,7 +34,9 @@ import (
 // git also reads the global ignore file and the global attributes file
 // of the developer. When the ignore file names README.md, the git add
 // of a test setup skips the file, and the git commit after it fails.
-// Each git command of the tests therefore finds neither file.
+// Each git command of the tests therefore finds neither file. It also
+// skips the system attributes file of the machine, such as
+// /etc/gitattributes.
 //
 // Variables of the environment point git at a repository. With GIT_DIR
 // set, a git command acts on the repository that GIT_DIR names, not on
@@ -63,7 +65,9 @@ func TestMain(m *testing.M) {
 // therefore read no key of that config and no line of those two files.
 // They must also run no hook of the developer. TestMain also unsets
 // the variables that select a format of a new repository, so the git
-// init of the tests must read none of them.
+// init of the tests must read none of them. TestMain also makes git
+// skip the system attributes file of the machine, so git must report
+// no path of that file.
 func TestGitSkipsDeveloperConfig(t *testing.T) {
 	t.Parallel()
 

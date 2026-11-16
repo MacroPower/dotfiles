@@ -2682,7 +2682,14 @@ func requireHostCredential(creds map[string]string, next http.Handler) http.Hand
 // gitBackend serves each bare repository under root over smart HTTP
 // with git http-backend. The repository at <root>/a/b.git answers for
 // the path /a/b.git.
-func gitBackend(t *testing.T, root string) http.Handler {
+//
+// [cgi.Handler] starts git http-backend with the Env field of the
+// handler and with variables that the handler adds, such as PATH. The
+// variables of [TestMain] do not reach git http-backend, so the Env
+// field sets variables of its own. With them, git skips the system
+// config and the system attributes file, and it reads an empty global
+// config.
+func gitBackend(t *testing.T, root string) *cgi.Handler {
 	t.Helper()
 
 	git, err := exec.LookPath("git")
@@ -2696,6 +2703,7 @@ func gitBackend(t *testing.T, root string) http.Handler {
 			"GIT_HTTP_EXPORT_ALL=1",
 			"GIT_CONFIG_NOSYSTEM=1",
 			"GIT_CONFIG_GLOBAL=" + os.DevNull,
+			"GIT_ATTR_NOSYSTEM=1",
 			"HOME=" + root,
 		},
 	}

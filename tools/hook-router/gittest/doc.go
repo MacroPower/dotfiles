@@ -17,6 +17,13 @@
 // writes. The git add of the setup then skips the file, and the git
 // commit after it fails.
 //
+// git also reads a system attributes file for every repository, such
+// as /etc/gitattributes. It reads that file also when it skips the
+// system config. An attribute of the file can change the content that
+// git writes to the working tree of a test. With the eol attribute set
+// to crlf, git checkout ends each line of a text file with a carriage
+// return and a line feed.
+//
 // Variables of the environment point git at a repository. With GIT_DIR
 // set, a git command acts on the repository that GIT_DIR names, not on
 // the repository of its working directory. The setup of a test then
@@ -47,11 +54,12 @@
 //	}
 //
 // Each git command of the tests and of the code under test then skips
-// the system config and the global config. It finds no global ignore
-// file and no global attributes file. It acts on the repository that
-// git finds from the directory of the command. git init and git clone
-// copy no template into a new repository. git init creates each
-// repository in the default formats of the installed git.
+// the system config, the global config, and the system attributes
+// file. It finds no global ignore file and no global attributes file.
+// It acts on the repository that git finds from the directory of the
+// command. git init and git clone copy no template into a new
+// repository. git init creates each repository in the default formats
+// of the installed git.
 //
 // [IsolateEnv] hides the two global files with XDG_CONFIG_HOME, which
 // it points at the null device. Programs other than git read the
@@ -60,10 +68,10 @@
 //
 // Tests of the package check its TestMain. One test calls
 // [CheckConfigEnv]. The check fails when git still reads the system
-// config, the global config, or the template directory. It also fails
-// when git still finds the global ignore file or the global attributes
-// file, or when the environment still holds a variable that selects a
-// format. Another test calls [CheckRepositoryEnv], which fails when
-// TestMain leaves a variable to the environment that points git at a
-// repository.
+// config, the global config, the template directory, or the system
+// attributes file. It also fails when git still finds the global
+// ignore file or the global attributes file, or when the environment
+// still holds a variable that selects a format. Another test calls
+// [CheckRepositoryEnv], which fails when TestMain leaves a variable to
+// the environment that points git at a repository.
 package gittest

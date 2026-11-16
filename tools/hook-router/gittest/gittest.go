@@ -61,11 +61,17 @@ const noFormat = "gittest-no-format"
 // when the variable is unset or empty. With the variable set to the
 // null device, git finds neither file, because no file exists below
 // the null device.
+//
+// git also reads a system attributes file for every repository, such
+// as /etc/gitattributes. GIT_CONFIG_NOSYSTEM does not stop that read.
+// With GIT_ATTR_NOSYSTEM set to 1, git skips the system attributes
+// file.
 var configEnv = map[string]string{
 	"GIT_CONFIG_NOSYSTEM": "1",
 	"GIT_CONFIG_GLOBAL":   os.DevNull,
 	"GIT_TEMPLATE_DIR":    "",
 	"XDG_CONFIG_HOME":     os.DevNull,
+	"GIT_ATTR_NOSYSTEM":   "1",
 }
 
 // formatEnv returns the name of each variable that [IsolateEnv] unsets
@@ -125,6 +131,11 @@ func RepositoryEnv(ctx context.Context) ([]string, error) {
 // of a test setup therefore adds each file that the setup wrote. Every
 // other program of the process that reads XDG_CONFIG_HOME finds no
 // config file either.
+//
+// IsolateEnv also makes git skip the system attributes file of the
+// machine, such as /etc/gitattributes. A git command of the process
+// therefore reads no attributes file from outside the repository that
+// it acts on.
 //
 // IsolateEnv also unsets GIT_DEFAULT_HASH, GIT_DEFAULT_REF_FORMAT, and
 // GIT_REFERENCE_BACKEND. git init then creates each repository in the
@@ -273,7 +284,8 @@ func CheckRepositoryEnv(t *testing.T, setup func(t *testing.T)) {
 // CheckConfigEnv fails t when the TestMain of its test package leaves
 // git to read the system config, the global config, or the template
 // directory of the developer. It also fails t when git still finds the
-// global ignore file or the global attributes file of the developer.
+// global ignore file or the global attributes file of the developer,
+// or when git still reads the system attributes file of the machine.
 // It fails t as well when TestMain leaves a variable to the
 // environment that selects a format of the repositories that git init
 // creates. One top-level test of each test package that runs git calls
@@ -286,16 +298,27 @@ func CheckRepositoryEnv(t *testing.T, setup func(t *testing.T)) {
 // new process runs only the test that called CheckConfigEnv.
 //
 // In the new process, CheckConfigEnv checks that the environment holds
-// no variable that selects a format. It checks that git config does
-// not find a key of the config file of the case. It also checks that
-// git ignores no path and sets no attribute of the case in a new
-// repository. It then runs setup. The case then checks that git ran no
-// hook of the case.
+// no variable that selects a format. It checks that git reads no
+// system attributes file. It checks that git config does not find a
+// key of the config file of the case. It also checks that git ignores
+// no path and sets no attribute of the case in a new repository. It
+// then runs setup. The case then checks that git ran no hook of the
+// case.
 //
 // The environment of a format case gives GIT_DEFAULT_HASH,
 // GIT_DEFAULT_REF_FORMAT, or GIT_REFERENCE_BACKEND a value that names
 // no format. A git init that reads the variable fails, whatever
 // formats the installed git creates by default.
+//
+// git has no variable that names another path for the system
+// attributes file. No case therefore leads git to a system attributes
+// file of its own. The environment of the system attributes case gives
+// GIT_ATTR_NOSYSTEM the value 0. git then reads the system attributes
+// file of the machine, as it does without the variable. The new
+// process runs git var GIT_ATTR_SYSTEM, which prints the path of the
+// file that git reads. The command prints no path when git skips the
+// file. When the command prints a path, the new process stops before a
+// git command reads the file.
 //
 // The environment of every other case leads git to a file or to a
 // template directory of the case. A config file sits in one of the
@@ -317,8 +340,10 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 	if os.Getenv(configProbeEnv) != "" {
 		// setup stops the test when a git command fails, so the
 		// checks of the environment and of the files of the case run
-		// first.
+		// first. checkSystemAttributes stops the test as well, so it
+		// runs after the check of the environment.
 		checkFormatEnv(t)
+		checkSystemAttributes(t)
 		checkDeveloperFiles(t)
 		setup(t)
 
@@ -339,7 +364,8 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 
 	tcs := map[string]struct {
 		// env names the variable that leads git to the file or to the
-		// template directory of the case, or that selects a format.
+		// template directory of the case, that selects a format, or
+		// that makes git read the system attributes file.
 		env string
 		// file is the path of the file inside the directory that env
 		// names. It is empty when env names the file.
@@ -352,10 +378,10 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 		// case then writes only the hooks of that directory, and no
 		// config file, ignore file, or attributes file.
 		template bool
-		// format is true when env selects a format of the
-		// repositories that git init creates. The case then gives env
-		// the value noFormat, and it writes no file.
-		format bool
+		// value is the value that the case gives to env. It is empty
+		// when env names the file or the template directory of the
+		// case. A case with a value writes no file.
+		value string
 	}{
 		"system config": {
 			env: "GIT_CONFIG_SYSTEM",
@@ -407,16 +433,24 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 		// cases cover. The variables of these cases select the
 		// formats outside the config.
 		"object format": {
-			env:    "GIT_DEFAULT_HASH",
-			format: true,
+			env:   "GIT_DEFAULT_HASH",
+			value: noFormat,
 		},
 		"ref format": {
-			env:    "GIT_DEFAULT_REF_FORMAT",
-			format: true,
+			env:   "GIT_DEFAULT_REF_FORMAT",
+			value: noFormat,
 		},
 		"ref backend": {
-			env:    "GIT_REFERENCE_BACKEND",
-			format: true,
+			env:   "GIT_REFERENCE_BACKEND",
+			value: noFormat,
+		},
+		// git has no variable that names another path for the system
+		// attributes file. With the value 0, git reads the system
+		// attributes file of the machine, as it does without the
+		// variable.
+		"system attributes file": {
+			env:   "GIT_ATTR_NOSYSTEM",
+			value: "0",
 		},
 	}
 
@@ -438,8 +472,8 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 			value := path
 
 			switch {
-			case tc.format:
-				value = noFormat
+			case tc.value != "":
+				value = tc.value
 			case tc.template:
 				writeHooks(t, filepath.Join(path, "hooks"), ran)
 			case tc.content != "":
@@ -462,9 +496,15 @@ func CheckConfigEnv(t *testing.T, setup func(t *testing.T)) {
 			// directory of the developer, the process therefore reads
 			// those of the case. It runs no hook of the developer who
 			// runs the tests.
+			//
+			// No case names a system attributes file of its own, so
+			// each case makes git skip the system attributes file of
+			// the machine. Only the system attributes case then gives
+			// GIT_ATTR_NOSYSTEM another value.
 			env := []string{
 				"HOME=" + home,
 				"GIT_CONFIG_SYSTEM=" + os.DevNull,
+				"GIT_ATTR_NOSYSTEM=1",
 			}
 
 			// git reads the .config directory of the home directory
@@ -502,6 +542,32 @@ func checkFormatEnv(t *testing.T) {
 		_, set := os.LookupEnv(name)
 		assert.False(t, set, "TestMain left %s set", name)
 	}
+}
+
+// checkSystemAttributes stops t when git reads the system attributes
+// file of the machine. It runs in the process that a case of
+// [CheckConfigEnv] started.
+//
+// git var GIT_ATTR_SYSTEM prints the path of the system attributes
+// file, also when no file exists at that path. The command does not
+// read the file. When GIT_ATTR_NOSYSTEM makes git skip the file, the
+// command prints nothing, and it exits 1. git var knows the variable
+// GIT_ATTR_SYSTEM in git 2.42.0 and later.
+func checkSystemAttributes(t *testing.T) {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "git", "var", "GIT_ATTR_SYSTEM")
+	cmd.Dir = t.TempDir()
+
+	out, err := cmd.Output()
+
+	// Some git commands after this check read attributes, such as
+	// git check-attr and the git add of setup. The check therefore
+	// stops the test before one of them reads the file of the machine.
+	var exitErr *exec.ExitError
+
+	require.ErrorAs(t, err, &exitErr, "git reads the system attributes file %s", out)
+	require.Equal(t, 1, exitErr.ExitCode(), "%s", exitErr.Stderr)
 }
 
 // checkDeveloperFiles fails t when git reads the config file, the

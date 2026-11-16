@@ -38,11 +38,16 @@ var testGitEnv = map[string]string{
 	// or empty. No file exists below the null device, so git finds
 	// neither file.
 	"XDG_CONFIG_HOME": os.DevNull,
+	// git reads a system attributes file for every repository, such
+	// as /etc/gitattributes, and GIT_CONFIG_NOSYSTEM does not stop
+	// that read. With this variable set to 1, git skips the file.
+	"GIT_ATTR_NOSYSTEM": "1",
 }
 
 // TestMain keeps the git config, the template directory, the global
 // ignore file, the global attributes file, and the repository of the
-// developer from every test. The tests run git in their setup and
+// developer from every test. It also keeps the system attributes file
+// of the machine from every test. The tests run git in their setup and
 // through the handlers, and keys of the git config change what git
 // does. For example, a plain git clone names its remote after
 // clone.defaultRemoteName. Each git command of the tests therefore
@@ -75,6 +80,12 @@ var testGitEnv = map[string]string{
 // of a test setup skips the file, and the git commit after it fails.
 // TestMain therefore points XDG_CONFIG_HOME at the null device, and
 // git finds neither file.
+//
+// git also reads a system attributes file for every repository, such
+// as /etc/gitattributes, and GIT_CONFIG_NOSYSTEM does not stop that
+// read. TestMain therefore sets GIT_ATTR_NOSYSTEM, and git skips the
+// file. The variables of TestMain do not reach git http-backend, so
+// [gitBackend] sets the variable for it.
 //
 // Variables of the environment also point git at a repository. With
 // GIT_DIR set, git -C <dir> acts on the repository that GIT_DIR names.
@@ -582,6 +593,64 @@ func TestGitSkipsDeveloperIgnoreAndAttributes(t *testing.T) {
 
 			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, "%s", out)
+		})
+	}
+}
+
+// [TestMain] makes git skip the system attributes file of the machine.
+// The git commands of the tests must therefore read no attributes file
+// from outside their repositories.
+//
+// git has no variable that names another path for the system
+// attributes file, so no case leads git to a file of its own. Each
+// case runs git var GIT_ATTR_SYSTEM in the environment of some git
+// commands of the tests. The command prints the path of the system
+// attributes file, also when no file exists at that path. When
+// GIT_ATTR_NOSYSTEM makes git skip the file, the command prints
+// nothing, and it exits 1. git var knows the variable GIT_ATTR_SYSTEM
+// in git 2.42.0 and later.
+func TestGitSkipsSystemAttributes(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		// env returns the environment of the git command. With a nil
+		// environment, the command inherits the environment of the
+		// test process.
+		env func(t *testing.T) []string
+	}{
+		"git command of a test": {
+			env: func(*testing.T) []string {
+				return nil
+			},
+		},
+		"git command of a handler": {
+			env: func(*testing.T) []string {
+				return (&handler{}).commandEnv()
+			},
+		},
+		// The variables of [TestMain] do not reach git http-backend.
+		// The case runs git with the Env field of the handler alone.
+		"git http-backend": {
+			env: func(t *testing.T) []string {
+				t.Helper()
+
+				return gitBackend(t, t.TempDir()).Env
+			},
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := exec.CommandContext(t.Context(), "git", "-C", t.TempDir(), "var", "GIT_ATTR_SYSTEM")
+			cmd.Env = tc.env(t)
+
+			var exitErr *exec.ExitError
+
+			out, err := cmd.Output()
+			require.ErrorAs(t, err, &exitErr, "git reads the system attributes file %s", out)
+			assert.Equal(t, 1, exitErr.ExitCode(), "%s", exitErr.Stderr)
 		})
 	}
 }

@@ -54,11 +54,12 @@ func TestIsolateEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
 		t.Setenv(name, "value")
 	}
 
-	// The shell of a developer can name a global config file, turn the
-	// system config on, and name a template directory and an XDG
-	// directory.
+	// The shell of a developer can name a global config file, a
+	// template directory, and an XDG directory. It can also turn the
+	// system config and the system attributes file on.
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "0")
+	t.Setenv("GIT_ATTR_NOSYSTEM", "0")
 	t.Setenv("GIT_TEMPLATE_DIR", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
@@ -91,6 +92,7 @@ func TestIsolateEnv(t *testing.T) { //nolint:paralleltest // t.Setenv
 	assert.Equal(t, "value", os.Getenv(other))
 	assert.Equal(t, os.DevNull, os.Getenv("GIT_CONFIG_GLOBAL"))
 	assert.Equal(t, "1", os.Getenv("GIT_CONFIG_NOSYSTEM"))
+	assert.Equal(t, "1", os.Getenv("GIT_ATTR_NOSYSTEM"))
 
 	// git init falls back to the init.templateDir key and then to the
 	// template directory of the git installation when the variable is
@@ -215,7 +217,8 @@ func TestCheckRepositoryEnvStopsBeforeCases(t *testing.T) {
 
 // [TestMain] makes git skip the system config, the global config, and
 // the template directory of the developer. It hides the global ignore
-// file and the global attributes file. It also unsets the variables
+// file and the global attributes file, and it makes git skip the
+// system attributes file of the machine. It also unsets the variables
 // that select a format of a new repository, so the check passes.
 func TestCheckConfigEnv(t *testing.T) {
 	t.Parallel()
@@ -232,7 +235,8 @@ func TestCheckConfigEnv(t *testing.T) {
 // case. They must also report a path that the ignore file of a case
 // ignores and an attribute that the attributes file of a case sets.
 // They must report each variable of a case that selects a format of a
-// new repository.
+// new repository. They must also report the system attributes file
+// that git reads in the case that turns the file on.
 func TestCheckConfigEnvFindsLeak(t *testing.T) {
 	t.Parallel()
 
@@ -246,6 +250,7 @@ func TestCheckConfigEnvFindsLeak(t *testing.T) {
 	assert.Contains(t, out, "git ran a hook of the developer")
 	assert.Contains(t, out, "git read the ignore file of the developer")
 	assert.Contains(t, out, "git read the attributes file of the developer")
+	assert.Contains(t, out, "git reads the system attributes file")
 	assert.Contains(t, out, "TestMain left GIT_DEFAULT_HASH set")
 	assert.Contains(t, out, "TestMain left GIT_DEFAULT_REF_FORMAT set")
 	assert.Contains(t, out, "TestMain left GIT_REFERENCE_BACKEND set")
