@@ -403,8 +403,9 @@ let
                     `GIT_REFERENCE_BACKEND`, and the other variables of
                     its environment that name a repository. The MCP
                     server of the rule must ignore these variables too.
-                    Otherwise the server acts on a branch that the test
-                    did not read.
+                    Otherwise the server can act on a branch that the
+                    test did not read, or on the remotes of another
+                    repository.
                   - `true`: the field is the boolean true.
                   - `absentOrTrue`: the field is absent or the boolean
                     true.

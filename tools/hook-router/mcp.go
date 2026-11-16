@@ -283,13 +283,24 @@ func currentBranch(logger *slog.Logger) mcprules.BranchResolver {
 // processes then read different repositories.
 //
 // An MCP server starts with the environment of Claude Code, as this
-// process does. That environment can name another repository, with
-// GIT_DIR, GIT_COMMON_DIR, GIT_REFERENCE_BACKEND, or another variable
-// that points git at the HEAD and the refs of one repository. A
-// [git.Runner] starts its git commands without these variables, and
+// process does. That environment can name another repository with one
+// of these variables:
+//
+//   - With GIT_DIR set, a git command reads the HEAD, the refs, and the
+//     remotes of the repository that GIT_DIR names.
+//   - With GIT_REFERENCE_BACKEND set, the command reads the HEAD and
+//     the refs of the ref store that the variable names, such as the
+//     git directory of another repository. It reads the remotes at
+//     repo.
+//   - With GIT_COMMON_DIR set, the command reads the HEAD and the refs
+//     at repo. It reads the remotes and the objects of the repository
+//     that GIT_COMMON_DIR names.
+//
+// A [git.Runner] starts its git commands without these variables, and
 // the mcp-git server removes the same variables from its git commands.
 // Both processes then read the current branch of the repository at
-// repo.
+// repo, and the server pushes that branch to a remote of the same
+// repository.
 func repoBranch(ctx context.Context, repo string) (string, error) {
 	if !filepath.IsAbs(repo) {
 		return "", fmt.Errorf("%w: %q", errRelativeRepo, repo)
