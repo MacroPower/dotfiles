@@ -473,8 +473,28 @@ the prior SA. On failure, or if the `host select` JSON cannot be
 parsed, `restoreCleanups` swaps the previous list back so the prior
 SA still gets released at shutdown.
 
-On SIGINT or SIGTERM, the cleanup closure returned by `sessionDir`
-runs in this order:
+The cleanup closure that `sessionDir` returns runs at each return of
+`runServe` after the socket bind, because `runServe` defers the
+closure right after the bind. `runServe` returns when the MCP client
+closes the stdin of `serve`, when SIGINT or SIGTERM arrives, or when
+the connection to the client fails.
+
+To stop a stdio server, the MCP specification asks the client to
+close the stdin of the server first. It asks for SIGTERM only when
+the server does not exit after that. Claude Code 2.1.319 does not
+follow that order on Linux or macOS. It sends SIGINT to `serve`
+first. When `serve` still runs 100 ms later, Claude Code sends
+SIGTERM, and when `serve` still runs 400 ms after that, it sends
+SIGKILL. So with Claude Code as the client, the closure usually
+starts on SIGINT.
+
+The stdin of `serve` closes with no signal when a client follows the
+order of the specification, or when Claude Code ends without its
+signal sequence, such as when it crashes. Only a crash of `serve` or
+a signal that `serve` does not catch, such as SIGKILL or SIGHUP,
+ends `serve` before the closure runs or while it runs.
+
+The closure runs in this order:
 
 1. `socketShutdown` closes the UDS listener and waits on a
    `sync.WaitGroup` for in-flight per-connection handlers to
@@ -483,7 +503,10 @@ runs in this order:
 2. `drainSweep` waits for the background `host sweep` goroutine to
    return, for at most 30 seconds. The timeout keeps a hung
    `host sweep` subprocess from blocking shutdown. When the wait
-   times out, `serve` logs a warning and runs the next step.
+   times out, `serve` logs a warning and runs the next step. A
+   SIGINT or a SIGTERM, before the closure or during it, cancels the
+   sweep. When neither signal arrives, the wait lasts until the
+   sweep ends or until the timeout passes.
 3. Drain registered SA release closures with a 30-second
    `context.Background` timeout.
 4. Unlink the socket file at `h.socketPath`.
@@ -494,8 +517,21 @@ runs in this order:
    directory of the machine that runs `serve`, so it never crosses
    the Lima boundary.
 
-SIGKILL ends `serve` before the cleanup closure runs. The killed
-`serve` then leaves these items behind:
+Claude Code sends its SIGKILL about 500 ms after the SIGINT that
+starts the closure. A closure that runs longer, for example while a
+`host release` of step 3 runs, then ends partway, and its later
+steps never run. So under the signal sequence of Claude Code, the
+closure never reaches the 30-second limit of step 2 or step 3. The
+SIGKILL reaches only `serve`, so a `host release` subprocess that
+has started keeps running after `serve` ends.
+
+When `serve` ends before the closure starts, it leaves the items in
+this list behind. When `serve` ends while the closure runs, it leaves
+only the items of the steps that have not run. The socket inode is
+the exception, because closing the listener unlinks the inode. A
+SIGINT or a SIGTERM closes the listener at once, and step 1 closes
+it when it is still open. So a `serve` that ends during the closure
+leaves no socket inode.
 
 - **SAs and bindings.** Each SA that the `serve` had not released
   stays on its cluster with its binding. The orphan sweep at the
@@ -513,8 +549,8 @@ SIGKILL ends `serve` before the cleanup closure runs. The killed
   `serve`. The stale-clearance step of `socket.Listen` unlinks it
   when a later `serve` takes the slot.
 - **Per-slot sidecar file.** The file stays at `<socket-path>.id`.
-  The same stale-clearance step unlinks it together with the socket
-  inode.
+  The same stale-clearance step unlinks it when a later `serve` takes
+  the slot, whether or not the socket inode remains.
 - **Scoped kubeconfig.** The file exists after the first successful
   `select` of an external context. No step removes it, and
   [Out of scope](#out-of-scope) describes the manual cleanup.
@@ -535,8 +571,8 @@ that the launcher wrapper started.
 describes what removes the directory after a session that ended
 without SessionEnd. While the session still runs, another `serve` in
 the session replaces the link at its next successful `select` of an
-external context. That `serve` also removes the link when it shuts
-down on SIGINT or SIGTERM, even when it never ran a `select`.
+external context. That `serve` also removes the link when its
+cleanup closure runs, even when it never ran a `select`.
 
 Outside a session of the launcher wrapper, `serve` writes the link to
 `<TMPDIR>/claude-kubectx/<PPID>/kubeconfig` on the machine that runs

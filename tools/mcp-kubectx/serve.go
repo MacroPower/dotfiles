@@ -169,9 +169,10 @@ func sidecarSymlinkPath() string {
 //     crosses the Lima boundary.
 func (h *handler) sessionDir() func() {
 	// runResourceCleanup intentionally derives from context.Background.
-	// The serve's signal-rooted ctx is already canceled by the time
-	// this runs (it fires *because* ctx canceled), so threading it
-	// would abort in-flight Delete* calls and re-leak the SA.
+	// A SIGINT or a SIGTERM cancels the signal-rooted ctx of serve,
+	// before this closure runs or while it runs. A release that took
+	// that ctx then aborts its in-flight Delete* calls and re-leaks
+	// the SA.
 	runResourceCleanup := func() { //nolint:contextcheck // see comment above
 		h.mu.Lock()
 		fns := h.cleanupFuncs

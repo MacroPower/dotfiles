@@ -282,8 +282,28 @@
 // error, [*handler.restoreCleanups] swaps the previous list back so
 // the prior SA still gets released at shutdown.
 //
-// On SIGINT or SIGTERM, the cleanup closure that
-// [*handler.sessionDir] returns runs these steps in order:
+// [runServe] defers the cleanup closure that [*handler.sessionDir]
+// returns right after the socket bind, so the closure runs at each
+// later return of [runServe]. [runServe] returns when the MCP client
+// closes the stdin of serve, when SIGINT or SIGTERM cancels the
+// context of serve, or when the connection to the client fails.
+//
+// To stop a stdio server, the MCP specification asks the client to
+// close the stdin of the server first. It asks for SIGTERM only
+// when the server does not exit after that. Claude Code 2.1.319
+// does not follow that order on Linux or macOS. It sends SIGINT to
+// serve first. When serve still runs 100 ms later, Claude Code
+// sends SIGTERM, and when serve still runs 400 ms after that, it
+// sends SIGKILL. So with Claude Code as the client, the closure
+// usually starts on SIGINT.
+//
+// The stdin of serve closes with no signal when a client follows
+// the order of the specification, or when Claude Code ends without
+// its signal sequence, such as when it crashes. Only a crash of
+// serve or a signal that serve does not catch, such as SIGKILL or
+// SIGHUP, ends serve before the closure runs or while it runs.
+//
+// The closure runs these steps in order:
 //
 //  1. [*handler.socketShutdown] closes the UDS listener and waits
 //     for each connection handler to return, so each token mint
@@ -291,6 +311,9 @@
 //  2. [*handler.drainSweep] waits for the background `host sweep`
 //     goroutine to return, for at most 30 seconds. The limit keeps
 //     a hung `host sweep` subprocess from blocking the shutdown.
+//     A SIGINT or a SIGTERM, before the closure or during it,
+//     cancels the sweep. When neither signal arrives, the wait
+//     lasts until the sweep ends or until the limit passes.
 //  3. The closure runs every registered release closure with a
 //     30-second [context.Background] timeout.
 //  4. The closure unlinks the socket inode at h.socketPath.
@@ -306,9 +329,22 @@
 // in workmux's extra_mounts. The guest's write reach extends only to
 // that directory, which only ever holds mcp-kubectx kubeconfigs.
 //
-// SIGKILL ends a serve before the cleanup closure of
-// [*handler.sessionDir] runs. The killed serve then leaves these
-// items behind:
+// Claude Code sends its SIGKILL about 500 ms after the SIGINT that
+// starts the closure. A closure that runs longer, for example while
+// a `host release` of step 3 runs, then ends partway, and its later
+// steps never run. So under the signal sequence of Claude Code, the
+// closure never reaches the 30-second limit of step 2 or step 3.
+// The SIGKILL reaches only serve, so a `host release` subprocess
+// that has started keeps running after serve ends.
+//
+// When serve ends before the closure starts, it leaves the items in
+// this list behind. When serve ends while the closure runs, it
+// leaves only the items of the steps that have not run. The socket
+// inode is the exception, because closing the listener unlinks the
+// inode. [socket.Serve] closes the listener as soon as SIGINT or
+// SIGTERM cancels the context of serve, and step 1 closes it when
+// it is still open. So a serve that ends during the closure leaves
+// no socket inode.
 //
 //   - Each SA that the serve had not released, and the binding of
 //     that SA. The startup sweep of a later serve in the same env,
@@ -322,8 +358,9 @@
 //   - The socket inode at the slot of the killed serve. The next
 //     serve that takes the slot detects the inode with the stale
 //     probe in [socket.Listen] and unlinks it before the bind.
-//   - The per-slot sidecar file at [socket.SidecarPath]. The same
-//     stale probe unlinks the file together with the socket inode.
+//   - The per-slot sidecar file at [socket.SidecarPath]. The next
+//     serve that takes the slot unlinks the file in [socket.Listen]
+//     before the bind, whether or not the socket inode remains.
 //   - The scoped kubeconfig file. No step removes it. A later
 //     `host select` that writes the same path overwrites it.
 //   - The hook-router sidecar symlink at [sidecarSymlinkPath].
