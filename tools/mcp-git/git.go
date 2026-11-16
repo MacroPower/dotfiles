@@ -797,6 +797,49 @@ func configValue(ctx context.Context, repo, key string, options ...string) (stri
 	return out, nil
 }
 
+// configEntry is a key of the git config and one value that the config
+// stores for that key.
+type configEntry struct {
+	key   string
+	value string
+}
+
+// configEntries returns an entry for each value that the git config of
+// the repository at repo stores for a key that pattern matches. pattern
+// is a regular expression of git config --get-regexp. git matches it
+// against a key whose section name and variable name are in lowercase.
+func configEntries(ctx context.Context, repo, pattern string) ([]configEntry, error) {
+	// -z ends each value with a NUL and puts a newline between a key
+	// and its value. A key holds no newline, because git allows none
+	// in the name of a subsection.
+	out, err := gitValue(ctx, "-C", repo, "config", "-z", "--get-regexp", pattern)
+	if err != nil {
+		// git config exits 1 when the config sets no key that pattern
+		// matches.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+
+		if errors.Is(err, ErrTimeout) {
+			return nil, err
+		}
+
+		return nil, fmt.Errorf("reading git config %s: %w", pattern, err)
+	}
+
+	var entries []configEntry
+
+	for entry := range strings.SplitSeq(out, "\x00") {
+		key, value, found := strings.Cut(entry, "\n")
+		if found {
+			entries = append(entries, configEntry{key: key, value: value})
+		}
+	}
+
+	return entries, nil
+}
+
 // remoteURLs returns the URLs configured for remote in repo, with
 // insteadOf and pushInsteadOf rewrites applied. When push is set it
 // returns the push URLs, which can differ from the fetch URLs. A push

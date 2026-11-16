@@ -44,8 +44,18 @@
 // such a URL. For example, a file under .git/remotes can define the
 // origin remote. The git config can also store for it a URL that
 // git_clone refuses as the url input, such as an alias gh:org/repo
-// that a rewrite expands. The error then names both URLs after the
-// rewrites, and it says so.
+// that a rewrite expands. The error then names another url input that
+// matches the destination, such as the URL that the rewrite gives for
+// the alias.
+//
+// git_clone also refuses a destination whose origin remote matches no
+// url input that git_clone accepts, and the error says so. For
+// example, the git config can hold a second rewrite that changes the
+// URL that the first rewrite gives for the alias. git applies the
+// first rewrite when it reads the origin remote. It applies the second
+// rewrite when a call passes that URL as the url input. The error
+// names no URL, and it tells the caller to choose another dest, or to
+// delete the directory and retry.
 //
 // The git config can store a credential in a URL, such as in the base
 // of a rewrite. The tool result must not hold that credential, so the

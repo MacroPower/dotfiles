@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -61,6 +63,13 @@ var (
 	// ErrDeniedOriginURL is returned when the origin remote of the
 	// existing repo at dest has a URL that [handler.checkURL] refuses.
 	ErrDeniedOriginURL = errors.New("dest holds a repository whose origin remote has a URL that git_clone refuses")
+
+	// ErrUnmatchedOrigin is returned when no url input that
+	// [handler.checkURL] accepts matches the origin remote of the
+	// existing repo at dest.
+	ErrUnmatchedOrigin = errors.New(
+		"dest holds a repository whose origin remote matches no url input that git_clone accepts",
+	)
 
 	// ErrCorruptDest is returned when dest holds a .git directory that
 	// [checkGitDir] rejects and the handler cannot move dest aside.
@@ -321,8 +330,10 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 // remote. A repo whose origin remote has no URL fails with
 // [ErrNoOriginURL], as [remoteLacksURL] decides. A repo whose origin
 // remote has a URL that [handler.checkURL] refuses fails with
-// [ErrDeniedOriginURL]. None of these errors depends on url, and
-// [unusableDest] gives each of them the same advice.
+// [ErrDeniedOriginURL]. A repo whose origin remote matches no url that
+// checkURL accepts fails with [ErrUnmatchedOrigin]. None of these
+// errors depends on url, and [unusableDest] gives each of them the
+// same advice.
 //
 // checkOrigin passes to checkURL the URL that git reads for origin,
 // after the url.<base>.insteadOf rewrites of the git config. When
@@ -349,19 +360,29 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 // starts with the prefix that the rewrite replaces changes its own
 // output.
 //
-// The error names each URL without a trailing ".git" suffix. It keeps
-// the suffix of the URL of storedOrigin when the URL without it does
-// not match the checkout, as [matchingForm] decides. It keeps the
+// The error names each of the two without a trailing ".git" suffix. It
+// keeps the suffix of the URL of storedOrigin when the URL without it
+// does not match the checkout, as [matchingForm] decides. It keeps the
 // suffix of url when the URL without it equals the first URL that the
 // error names. The two URLs therefore differ before [stripCredential]
 // removes a credential from each.
 //
-// When storedOrigin returns no URL, the error names the two URLs that
-// checkOrigin compares, after the rewrites, and it says so. For
-// example, storedOrigin returns no URL when [handler.checkURL] refuses
-// the URL that the git config stores for origin, such as the alias
-// gh:org/repo of a rewrite whose insteadOf value is gh:. That rewrite
-// gives a URL that checkURL accepts.
+// When storedOrigin returns no URL, the error names for origin the url
+// input that [handler.matchingInput] returns, as matchingInput returns
+// it. That input matches the checkout as well, so it differs from url.
+// For example, storedOrigin returns no URL when [handler.checkURL]
+// refuses the URL that the git config stores for origin, such as the
+// alias gh:org/repo of a rewrite whose insteadOf value is gh:. That
+// rewrite gives a URL that checkURL accepts, and matchingInput returns
+// that URL when the URL matches the checkout.
+//
+// When matchingInput returns no input either, no url makes git_clone
+// pull the repo, and checkOrigin fails with [ErrUnmatchedOrigin]. For
+// example, the git config can hold a second rewrite that changes the
+// URL that the first rewrite gives for the alias. git applies the
+// first rewrite when it reads origin. It applies the second rewrite
+// when a caller passes that URL as url, so that url names another URL
+// than the URL of origin.
 //
 // The tool result holds the error, so the error names each URL as
 // [stripCredential] returns it. The git config of dest can store a
@@ -420,32 +441,37 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 		return err
 	}
 
-	note := ""
-
 	if stored == "" {
-		note = ": this message names each URL after the URL rewrites of the git config"
+		got, err = h.matchingInput(ctx, dest, got)
+		if err != nil {
+			return err
+		}
+
+		if got == "" {
+			return unusableDest(ErrUnmatchedOrigin, dest)
+		}
 	} else {
 		got, err = matchingForm(ctx, dest, stored, got)
 		if err != nil {
 			return err
 		}
+	}
 
-		// got passes the check and url does not, so the two differ.
-		want = strings.TrimSuffix(url, ".git")
-		if want == got {
-			want = url
-		}
+	// got passes the check and url does not, so the two differ.
+	want = strings.TrimSuffix(url, ".git")
+	if want == got {
+		want = url
 	}
 
 	shownGot := stripCredential(got)
 	shownWant := stripCredential(want)
 
+	note := ""
+
 	// got and want differ. When stripCredential returns the same URL
-	// for both, they differ only in a part that it removes. The note
-	// about the rewrites stays, because the caller must still learn
-	// that the error names each URL after the rewrites.
+	// for both, they differ only in a part that it removes.
 	if shownGot == shownWant {
-		note += ": the URLs differ only in a user or a password that this message leaves out"
+		note = ": the URLs differ only in a user or a password that this message leaves out"
 	}
 
 	return fmt.Errorf("%w: got %s, want %s%s", ErrOriginMismatch, shownGot, shownWant, note)
@@ -487,6 +513,148 @@ func matchingForm(ctx context.Context, dest, stored, got string) (string, error)
 	// When rewriteURL fails, git rejects trimmed as a url input, so
 	// trimmed does not pass the check.
 	return stored, nil
+}
+
+// matchingInput returns a url input of git_clone that matches the
+// origin remote of the repository at dest. It returns "" when no url
+// input matches. got is the URL that git reads for origin, without a
+// trailing ".git" suffix.
+//
+// A url input matches when it is not empty, [handler.checkURL] accepts
+// it, and [rewriteURL] returns got for it, with or without a trailing
+// ".git" suffix. [handler.handleClone] then accepts that url input,
+// and [handler.checkOrigin] passes for it.
+//
+// For a url input that holds the name of a remote with a URL,
+// rewriteURL returns the URL of that remote. It applies one
+// url.<base>.insteadOf rewrite to another url input that starts with
+// the insteadOf value of that rewrite. It returns every other url
+// input unchanged. Every url input for which rewriteURL returns got,
+// with or without the suffix, is therefore one of these candidates:
+//
+//   - got, with or without the suffix
+//   - a URL that [rewriteSources] returns for got, with or without the
+//     suffix
+//   - a name that [remoteNames] returns
+//
+// matchingInput returns the first candidate that matches. It reads the
+// candidates in the order of the list, and it reads got without the
+// suffix before got with the suffix.
+func (h *handler) matchingInput(ctx context.Context, dest, got string) (string, error) {
+	targets := []string{got, got + ".git"}
+
+	sources, err := rewriteSources(ctx, dest, targets)
+	if err != nil {
+		return "", err
+	}
+
+	names, err := remoteNames(ctx, dest)
+	if err != nil {
+		return "", err
+	}
+
+	for _, candidate := range slices.Concat(targets, sources, names) {
+		// handleClone refuses an empty url input, and checkURL
+		// accepts one when allowFileURLs is set.
+		if candidate == "" || h.checkURL(candidate) != nil {
+			continue
+		}
+
+		rewritten, err := rewriteURL(ctx, dest, candidate)
+		if errors.Is(err, ErrTimeout) {
+			return "", err
+		}
+
+		// When rewriteURL fails, git rejects the candidate as a url
+		// input, so the candidate does not pass the check.
+		if err == nil && strings.TrimSuffix(rewritten, ".git") == got {
+			return candidate, nil
+		}
+	}
+
+	return "", nil
+}
+
+// rewriteSources returns each URL that one url.<base>.insteadOf
+// rewrite of the git config of the repository at repo can change to
+// one of targets. For each rewrite and each target that starts with
+// the base of the rewrite, that URL is the insteadOf value of the
+// rewrite and then the rest of the target.
+//
+// git applies to a URL only the rewrite with the longest insteadOf
+// value that the URL starts with. Another rewrite can therefore change
+// a returned URL to another URL than the target, and the caller must
+// read each returned URL with [rewriteURL].
+func rewriteSources(ctx context.Context, repo string, targets []string) ([]string, error) {
+	rewrites, err := configEntries(ctx, repo, `^url\..*\.insteadof$`)
+	if err != nil {
+		return nil, err
+	}
+
+	var sources []string
+
+	for _, rewrite := range rewrites {
+		base := strings.TrimSuffix(strings.TrimPrefix(rewrite.key, "url."), ".insteadof")
+
+		for _, target := range targets {
+			rest, found := strings.CutPrefix(target, base)
+			if found {
+				sources = append(sources, rewrite.value+rest)
+			}
+		}
+	}
+
+	return sources, nil
+}
+
+// remoteNames returns the name of each remote that the repository at
+// repo can define with a URL. git reads a url input that holds the
+// name of a remote with a URL as the URL of that remote.
+//
+// The git config can define such a remote with the key
+// remote.<name>.url, and remoteNames returns the name of each remote
+// that has that key. A file under the remotes directory or the
+// branches directory of the common git directory can also define one.
+// The name of the file is the name of the remote. remoteNames returns
+// the name of each entry of those two directories, and it does not
+// read the entries.
+//
+// A returned name need not define a URL. A file can hold no URL. From
+// git 2.46, an empty value of remote.<name>.url clears the URLs that
+// the config stores for the remote before that value. The caller
+// therefore reads each name with [rewriteURL].
+func remoteNames(ctx context.Context, repo string) ([]string, error) {
+	urls, err := configEntries(ctx, repo, `^remote\..*\.url$`)
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+
+	// The config stores an entry for each URL of a remote.
+	for _, url := range urls {
+		names = appendUnique(names, strings.TrimSuffix(strings.TrimPrefix(url.key, "remote."), ".url"))
+	}
+
+	commonDir, err := gitCommonDir(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, dir := range []string{"remotes", "branches"} {
+		files, err := os.ReadDir(filepath.Join(commonDir, dir))
+
+		// git reads no remote from a path that names no directory.
+		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+			return nil, fmt.Errorf("listing the remotes of %s: %w", repo, err)
+		}
+
+		for _, file := range files {
+			names = append(names, file.Name())
+		}
+	}
+
+	return names, nil
 }
 
 // rewriteURL returns url after git applies the url.<base>.insteadOf
