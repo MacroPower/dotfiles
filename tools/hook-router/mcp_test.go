@@ -10,12 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/git"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/gittest"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
@@ -771,6 +773,194 @@ func TestHandleMCPPush(t *testing.T) {
 		assert.Equal(t, pushDeniedReason, hso["permissionDecisionReason"])
 		assert.Contains(t, hso["permissionDecisionReason"], tool)
 	})
+}
+
+// An mcp__git__git_push call with no ref pushes the current branch of
+// the repository that the MCP server reads. The MCP server starts with
+// the environment of Claude Code, as hook-router does. With GIT_DIR
+// set, the git commands of the server read the HEAD, the refs, and the
+// remotes of the repository that GIT_DIR names. With GIT_COMMON_DIR
+// set, they read the refs and the remotes of the repository that
+// GIT_COMMON_DIR names. With GIT_REFERENCE_BACKEND set, they read HEAD
+// and the refs from the ref store that the variable names. Such a call
+// must get an ask, whichever of the two repositories is on a branch
+// with a conventional type.
+//
+// Every other variable leaves the decision to the branch of the
+// repository that the call names. Claude Code inherits config in
+// GIT_CONFIG_COUNT or in GIT_CONFIG_PARAMETERS, such as a
+// safe.directory entry. Only git config reads GIT_CONFIG, and git sets
+// GIT_PREFIX for a shell alias but never reads it. A Claude Code that a
+// commit hook in a main worktree starts inherits GIT_INDEX_FILE and
+// GIT_PREFIX from git. GIT_WORK_TREE changes the working tree of git,
+// not its repository.
+func TestHandleMCPPushAsksWhenEnvironmentNamesRepository(t *testing.T) { //nolint:paralleltest // t.Setenv
+	const tool = "mcp__git__git_push"
+
+	logger := slog.New(slog.DiscardHandler)
+
+	rules, err := parseMCPRules(pushRules, nil, logger)
+	require.NoError(t, err)
+
+	cfg := config{mcpRules: rules}
+
+	fixRepo := checkoutRepo(t, "fix/y")
+	mainRepo := checkoutRepo(t, "main")
+
+	configFile := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(configFile, []byte("[user]\n\tname = Other\n"), 0o600))
+
+	cases := map[string]struct {
+		repo string
+		env  map[string]string
+		want string
+	}{
+		"git directory on a branch with a conventional type: ask": {
+			repo: mainRepo,
+			env:  map[string]string{"GIT_DIR": filepath.Join(fixRepo, ".git")},
+			want: "ask",
+		},
+		"call names a repository on a branch with a conventional type: ask": {
+			repo: fixRepo,
+			env:  map[string]string{"GIT_DIR": filepath.Join(mainRepo, ".git")},
+			want: "ask",
+		},
+		"common directory: ask": {
+			repo: fixRepo,
+			env:  map[string]string{"GIT_COMMON_DIR": filepath.Join(mainRepo, ".git")},
+			want: "ask",
+		},
+		"reference backend on a branch with a conventional type: ask": {
+			repo: mainRepo,
+			env:  map[string]string{"GIT_REFERENCE_BACKEND": "files://" + filepath.Join(fixRepo, ".git")},
+			want: "ask",
+		},
+		"call names a repository on a branch with a conventional type, reference backend: ask": {
+			repo: fixRepo,
+			env:  map[string]string{"GIT_REFERENCE_BACKEND": "files://" + filepath.Join(mainRepo, ".git")},
+			want: "ask",
+		},
+		"config count: allow": {
+			repo: fixRepo,
+			env: map[string]string{
+				"GIT_CONFIG_COUNT":   "1",
+				"GIT_CONFIG_KEY_0":   "safe.directory",
+				"GIT_CONFIG_VALUE_0": fixRepo,
+			},
+			want: "allow",
+		},
+		"config parameters: allow": {
+			repo: fixRepo,
+			env:  map[string]string{"GIT_CONFIG_PARAMETERS": "'safe.directory'='" + fixRepo + "'"},
+			want: "allow",
+		},
+		"config file: allow": {
+			repo: fixRepo,
+			env:  map[string]string{"GIT_CONFIG": configFile},
+			want: "allow",
+		},
+		"alias prefix: allow": {
+			repo: fixRepo,
+			env:  map[string]string{"GIT_PREFIX": "sub/"},
+			want: "allow",
+		},
+		// git sets these values for the hooks of a commit in a main
+		// worktree.
+		"commit hook of a main worktree: allow": {
+			repo: fixRepo,
+			env: map[string]string{
+				"GIT_INDEX_FILE": filepath.Join(".git", "index"),
+				"GIT_PREFIX":     "",
+			},
+			want: "allow",
+		},
+		"working tree: allow": {
+			repo: fixRepo,
+			env:  map[string]string{"GIT_WORK_TREE": mainRepo},
+			want: "allow",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			for variable, value := range tc.env {
+				t.Setenv(variable, value)
+			}
+
+			input, err := json.Marshal(map[string]any{
+				"session_id": "s1",
+				"tool_name":  tool,
+				"tool_input": map[string]any{"repo": tc.repo},
+			})
+			require.NoError(t, err)
+
+			var stdout bytes.Buffer
+
+			require.NoError(t, handleMCP(t.Context(), input, &stdout, cfg, logger))
+
+			hso := preToolDecision(t, &stdout)
+			assert.Equal(t, tc.want, hso["permissionDecision"])
+		})
+	}
+}
+
+// [repoBranch] must reject every path while the environment sets
+// GIT_DIR, GIT_COMMON_DIR, or GIT_REFERENCE_BACKEND. Each of them
+// points the git commands of the MCP server at the refs of another
+// repository. git rev-parse --local-env-vars does not print
+// GIT_REFERENCE_BACKEND, so the test adds it. Every other variable that
+// git prints must leave the answer to the branch of the path. Each case
+// sets one variable to the git directory of a second repository.
+func TestRepoBranchEnvironmentRepository(t *testing.T) { //nolint:paralleltest // t.Setenv
+	const referenceBackend = "GIT_REFERENCE_BACKEND"
+
+	names, err := gittest.RepositoryEnv(t.Context())
+	require.NoError(t, err)
+
+	for _, name := range []string{"GIT_DIR", "GIT_COMMON_DIR"} {
+		require.Contains(t, names, name)
+	}
+
+	if !slices.Contains(names, referenceBackend) {
+		names = append(names, referenceBackend)
+	}
+
+	rejected := []string{"GIT_DIR", "GIT_COMMON_DIR", referenceBackend}
+
+	repo := checkoutRepo(t, "fix/y")
+	other := checkoutRepo(t, "main")
+
+	// git rejects a path as the value of the variables that pass
+	// config, and a git.Runner keeps both. These cases set a value that
+	// git accepts. git reads the URI of a ref store from
+	// GIT_REFERENCE_BACKEND.
+	values := map[string]string{
+		"GIT_CONFIG_COUNT":      "0",
+		"GIT_CONFIG_PARAMETERS": "'user.name'='Other'",
+		referenceBackend:        "files://" + filepath.Join(other, ".git"),
+	}
+
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			value, ok := values[name]
+			if !ok {
+				value = filepath.Join(other, ".git")
+			}
+
+			t.Setenv(name, value)
+
+			branch, err := repoBranch(t.Context(), repo)
+			if slices.Contains(rejected, name) {
+				require.ErrorIs(t, err, errEnvironmentRepo)
+				assert.ErrorContains(t, err, name)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, "fix/y", branch)
+		})
+	}
 }
 
 // pullRequestRules is the --mcp-rules JSON that home/claude.nix

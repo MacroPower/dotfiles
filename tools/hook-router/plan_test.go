@@ -150,6 +150,64 @@ func TestHandleExitPlanModePre_SkipPlanReviewAllowsFirstCall(t *testing.T) {
 	assert.Len(t, baseSHA, 40)
 }
 
+// The baseline of a plan must be the HEAD commit of the repository of
+// the working directory, whatever repository the environment names.
+// With GIT_DIR set, a git command reads the repository that GIT_DIR
+// names. With GIT_REFERENCE_BACKEND set, it reads HEAD from the ref
+// store that the variable names. Each case points one variable at a
+// repository with another HEAD commit.
+func TestHandleExitPlanModePre_RecordsBaselineOfWorkDir(t *testing.T) { //nolint:paralleltest // t.Setenv
+	cases := map[string]struct {
+		variable string
+		// scheme precedes the path of the git directory in the value.
+		scheme string
+	}{
+		"git directory":     {variable: "GIT_DIR"},
+		"reference backend": {variable: "GIT_REFERENCE_BACKEND", scheme: "files://"},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := newTestStore(t)
+			logger := slog.New(slog.DiscardHandler)
+
+			dir := initTestRepo(t)
+			want := gitOutput(t, dir, "rev-parse", "HEAD")
+
+			other := initTestRepo(t)
+			gitOutput(t, other, "commit", "--allow-empty", "-m", "other")
+			require.NotEqual(t, want, gitOutput(t, other, "rev-parse", "HEAD"))
+
+			cfg := config{
+				postImpl:       testCatalog(),
+				commitSkills:   []string{"commit", "commit-push-pr", "merge"},
+				claudePID:      testPID,
+				skipPlanReview: true,
+			}
+
+			input := makeHookJSON(t, hook.Input{
+				SessionID: "s1",
+				ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
+			})
+
+			// Each git command of the setup ran before this point. With
+			// the variable set, such a command reads the other
+			// repository.
+			t.Setenv(tc.variable, tc.scheme+filepath.Join(other, ".git"))
+
+			var stdout bytes.Buffer
+
+			err := handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger)
+			require.NoError(t, err)
+			assert.Empty(t, stdout.Bytes())
+
+			_, _, baseSHA, err := store.Session(t.Context(), "s1")
+			require.NoError(t, err)
+			assert.Equal(t, want, baseSHA)
+		})
+	}
+}
+
 func TestHandleExitPlanModePre_NoPlanPath(t *testing.T) {
 	t.Parallel()
 

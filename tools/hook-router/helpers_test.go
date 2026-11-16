@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -306,4 +307,19 @@ func initTestRepo(t *testing.T) string {
 	}
 
 	return dir
+}
+
+// gitOutput runs one git command in dir and returns what the command
+// prints, without the final newline. It fails the test when the
+// command fails.
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd.Dir = dir
+
+	out, err := cmd.Output()
+	require.NoError(t, err, "git %v", args)
+
+	return strings.TrimSuffix(string(out), "\n")
 }
