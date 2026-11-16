@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -16,9 +17,43 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/formatter"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/gittest"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 )
+
+// TestMain keeps the repository of the developer from every test. The
+// tests run git in their setup and through the handlers. Variables of
+// the environment point git at a repository. With GIT_DIR set, a git
+// command acts on the repository that GIT_DIR names, not on the
+// repository of its working directory. The setup of a test then
+// commits to the branch of the developer. TestMain therefore unsets
+// each variable that [gittest.RepositoryEnv] lists.
+func TestMain(m *testing.M) {
+	err := gittest.UnsetRepositoryEnv(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
+	os.Exit(m.Run())
+}
+
+// [TestMain] unsets each variable of the environment that points git
+// at a repository. The git commands of the tests must therefore act on
+// the repositories of the tests. They must leave the repository that
+// the variables name as it was.
+func TestGitSkipsEnvironmentRepository(t *testing.T) {
+	t.Parallel()
+
+	gittest.CheckRepositoryEnv(t, func(t *testing.T) {
+		t.Helper()
+
+		// The tests create their repositories with the commands of
+		// checkoutRepo, which write the git config, the index, a
+		// commit, and a branch.
+		checkoutRepo(t, "fix/y")
+	})
+}
 
 func TestEventNeedsStore(t *testing.T) {
 	t.Parallel()

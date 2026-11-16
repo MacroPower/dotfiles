@@ -134,4 +134,8 @@
 // The one import between subpackages is msglint's use of
 // linter for findings and mcprules for tool patterns. Only this package
 // composes them.
+//
+// The gittest subpackage serves the tests, and no engine imports it.
+// Each test package that runs git imports it to unset the variables of
+// the environment that point git at a repository.
 package main
