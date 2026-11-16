@@ -12,15 +12,37 @@
 // existing destination from origin. clone.defaultRemoteName of the git
 // config does not change that name.
 //
-// When the destination holds a .git directory that git cannot open or
-// that has no config file, git_clone renames the destination to
-// <dest>.corrupt-<timestamp> and clones again. It refuses a
-// destination whose repository has no origin remote, and a destination
-// whose origin remote has a URL other than the url input. It compares
-// the two URLs after git applies the url.<base>.insteadOf rewrites of
-// the git config to each URL. A new clone authenticates with the token
-// of GH_TOKEN when git connects to github.com over https after those
-// rewrites.
+// When the destination holds a corrupt .git directory, git_clone
+// renames the destination to <dest>.corrupt-<timestamp> and clones
+// again. A .git directory is corrupt when git reports that it is not a
+// git repository, such as a directory without HEAD. It is also corrupt
+// when it has no config file, or when git cannot parse a line or a
+// value of a config file of the directory. The config files of the
+// directory are config, and config.worktree for a sparse clone. A
+// crash can cut such a file short, such as inside the boolean of
+// core.filemode.
+//
+// A cut inside the name of an extension in the config file leaves the
+// name of an extension that git does not know. git_clone therefore
+// counts a .git directory whose config file names such an extension as
+// corrupt. A repository that a later git made with a new extension
+// moves aside too.
+//
+// git can also fail for another reason when git_clone checks the .git
+// directory. For example, the server cannot start git, a signal kills
+// git, or git cannot parse another config file than those of the .git
+// directory. Examples of such files are the global or system config
+// and a file that an include directive names. The checkout can then
+// be healthy, so git_clone leaves the destination in place. The error
+// says that git_clone could not open the repository. It names the
+// .git directory, and it ends with the cause.
+//
+// git_clone refuses a destination whose repository has no origin
+// remote, and a destination whose origin remote has a URL other than
+// the url input. It compares the two URLs after git applies the
+// url.<base>.insteadOf rewrites of the git config to each URL. A new
+// clone authenticates with the token of GH_TOKEN when git connects to
+// github.com over https after those rewrites.
 //
 // git_clone also refuses a destination whose origin remote has no URL,
 // and the error says that the remote has none. The git config defines

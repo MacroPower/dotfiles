@@ -72,7 +72,8 @@ var (
 	)
 
 	// ErrCorruptDest is returned when dest holds a .git directory that
-	// [checkGitDir] rejects and the handler cannot move dest aside.
+	// [checkGitDir] reports as corrupt and the handler cannot move dest
+	// aside.
 	ErrCorruptDest = errors.New("dest holds a corrupt git directory")
 
 	// ErrClone wraps the underlying git clone failure.
@@ -204,7 +205,10 @@ func (h *handler) handleClone(
 		return h.pullExisting(ctx, input)
 	}
 
-	if errors.Is(repoErr, ErrTimeout) {
+	// Only a corrupt .git directory moves the checkout aside. The
+	// check can also fail when the checkout is healthy, such as when
+	// the server cannot start git.
+	if !errors.Is(repoErr, ErrNotRepo) {
 		return toolError(repoErr), nil, nil
 	}
 
@@ -216,24 +220,67 @@ func (h *handler) handleClone(
 	return h.clone(ctx, input, aside)
 }
 
-// checkGitDir reports whether git can open gitDir as a repository and
-// gitDir holds a config file. A cleanup job such as systemd-tmpfiles
-// on /tmp deletes old files one at a time. It can remove HEAD, config,
-// or both, and keep the rest of the directory. The --git-dir flag
-// stops git from walking up to a repository that encloses the
-// destination.
+// checkGitDir checks gitDir, the .git directory of a destination. It
+// fails with [ErrNotRepo] when the directory is corrupt, and the
+// caller then moves the destination aside. A directory is corrupt in
+// these cases:
 //
-// git opens a git directory that has HEAD and no config file. git
-// clone writes the origin remote to the config file, so a checkout
-// that lost the file has no origin to pull from.
+//   - git reports that it is not a git repository.
+//   - git cannot parse a config file of the directory, or a value of
+//     that file.
+//   - The config file names an extension that git does not know.
+//   - The directory holds no config file.
+//
+// The config files of the directory are config, and config.worktree
+// when extensions.worktreeConfig is set. A sparse clone sets that
+// extension.
+//
+// A cleanup job such as systemd-tmpfiles on /tmp deletes old files one
+// at a time. It can remove HEAD, config, or both, and keep the rest of
+// the directory. git reports that a directory without HEAD is not a
+// git repository. git opens a git directory that has HEAD and no
+// config file. git clone writes the origin remote to the config file,
+// so a checkout that lost the file has no origin to pull from.
+//
+// A crash can leave a config file cut short or full of NUL bytes. git
+// then cannot parse a line of the file, or a value such as the number
+// of core.repositoryformatversion or the boolean of core.filemode. The
+// clone that replaces the destination does not read the config files
+// of gitDir. git reads the lines of the system and global config files
+// before those files, and it stops at the first line that it cannot
+// parse. git therefore names a config file of gitDir only when the
+// clone can parse the lines of the other two. The clone still fails
+// when git cannot parse a value of those two files.
+//
+// A cut inside the name of an extension, such as worktreeConfig,
+// leaves the name of an extension that git does not know. git reads
+// the extensions only from the config file of gitDir, so the clone
+// does not meet that name. checkGitDir therefore also reports a
+// repository that a later git made with a new extension as corrupt.
+//
+// The --git-dir flag stops git from walking up to a repository that
+// encloses the destination. checkGitDir runs git with messageLocale,
+// because it reads the message of git.
+//
+// git can also fail for a reason that does not show a corrupt
+// directory. For example, the server cannot start git, a signal kills
+// git, or git cannot parse another config file than those of gitDir.
+// Examples of such files are the global config and a file that an
+// include directive names. The checkout can then be healthy, so the
+// error is not [ErrNotRepo]. [repoOpenError] describes that error.
 func checkGitDir(ctx context.Context, gitDir string) error {
-	_, err := gitValue(ctx, "--git-dir", gitDir, "rev-parse", "--git-dir")
+	args := []string{"--git-dir", gitDir, "rev-parse", "--git-dir"}
+
+	_, message, err := gitOutput(ctx, append(gitEnv(), messageLocale), args...)
 	if err != nil {
-		if errors.Is(err, ErrTimeout) {
-			return err
+		corrupt := badConfigFile(message, gitDir) ||
+			messageLine(message, unknownExtensionMessage) != "" ||
+			badRepoBoolean(ctx, message, gitDir)
+		if corrupt {
+			return fmt.Errorf("%w: %s: %s", ErrNotRepo, gitDir, truncateOutput(message))
 		}
 
-		return fmt.Errorf("%w: %s", ErrNotRepo, gitDir)
+		return repoOpenError(gitDir, message, err)
 	}
 
 	_, err = os.Stat(filepath.Join(gitDir, "config"))
@@ -242,6 +289,98 @@ func checkGitDir(ctx context.Context, gitDir string) error {
 	}
 
 	return nil
+}
+
+// badConfigFile reports whether message says that git cannot parse a
+// line of a config file of the git directory at gitDir, or a value of
+// that file other than a boolean. git printed message in the C locale.
+// The config files are config and config.worktree. git names each file
+// in the form that its command line gives for gitDir.
+//
+// git names the file when it cannot parse a line or a number. It also
+// names the file when it cannot use a value, such as a key without a
+// value. The message for such a value puts the path in quotes.
+func badConfigFile(message, gitDir string) bool {
+	for line := range strings.Lines(message) {
+		line = strings.TrimSuffix(line, "\n")
+
+		for _, name := range []string{"config", "config.worktree"} {
+			path := filepath.Join(gitDir, name)
+
+			badLine := strings.HasPrefix(line, badConfigMessage) && strings.HasSuffix(line, " in file "+path)
+			badNumber := strings.HasPrefix(line, badNumberMessage) && strings.Contains(line, " in file "+path+": ")
+			badVariable := strings.HasPrefix(line, badVariableMessage) &&
+				strings.Contains(line, " in file '"+path+"' at line ")
+
+			if badLine || badNumber || badVariable {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// badRepoBoolean reports whether message says that git cannot parse a
+// boolean of a config file of the git directory at gitDir. git printed
+// message in the C locale. The message names the key and the value,
+// but not the file that holds the value. The value can also come from
+// the system or global config, from the environment, or from a file
+// that an include directive names.
+//
+// badRepoBoolean therefore asks git for the booleans of that key in
+// each config file of gitDir alone. The --local option names config.
+// The --worktree option names config.worktree when
+// extensions.worktreeConfig is set, and config otherwise. The
+// --no-includes option keeps out the files that the config file
+// includes. The environment of git keeps out the system config, the
+// global config, and the config from the environment. The value is in
+// a config file of gitDir when git prints the same line again.
+func badRepoBoolean(ctx context.Context, message, gitDir string) bool {
+	line := messageLine(message, badBooleanMessage)
+
+	// The line ends with the value and the key, each in quotes.
+	rest, ok := strings.CutSuffix(line, "'")
+	at := strings.LastIndex(rest, "' for '")
+
+	if !ok || at < 0 {
+		return false
+	}
+
+	key := rest[at+len("' for '"):]
+
+	env := append(gitEnv(),
+		messageLocale,
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_COUNT=0",
+		"GIT_CONFIG_PARAMETERS=",
+	)
+
+	for _, file := range []string{"--local", "--worktree"} {
+		_, again, err := gitOutput(ctx, env,
+			"--git-dir", gitDir, "config", file, "--no-includes", "--type=bool", "--get-all", key,
+		)
+		if err != nil && messageLine(again, badBooleanMessage) == line {
+			return true
+		}
+	}
+
+	return false
+}
+
+// messageLine returns the first line of message that starts with
+// prefix, or "" when no line does.
+func messageLine(message, prefix string) string {
+	for line := range strings.Lines(message) {
+		line = strings.TrimSuffix(line, "\n")
+
+		if strings.HasPrefix(line, prefix) {
+			return line
+		}
+	}
+
+	return ""
 }
 
 // moveAside renames a corrupt checkout at dest to a timestamped

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"io"
 	"net"
 	"net/http"
@@ -3143,15 +3144,71 @@ func TestHandleClonePullRefusesConfigCommands(t *testing.T) {
 	requireNotRun(t, marker)
 }
 
+const (
+	// cutNumberConfig is the config file of a new clone, cut short
+	// after the key of a number. git says that it cannot parse the
+	// number, and it names the file.
+	cutNumberConfig = "[core]\n\trepositoryformatversion"
+
+	// cutBooleanConfig is the config file of a new clone, cut short
+	// inside the value of a boolean. git says that it cannot parse the
+	// boolean, and it does not name the file.
+	cutBooleanConfig = "[core]\n\trepositoryformatversion = 0\n\tfilemode = tr"
+
+	// cutExtensionConfig is the config file of a sparse clone, cut
+	// short inside the name of the worktreeConfig extension. git says
+	// that it does not know the extension work.
+	cutExtensionConfig = "[core]\n\trepositoryformatversion = 1\n[extensions]\n\twork"
+
+	// missingValueConfig is a config file whose last key has no value.
+	// git says that the key needs a value, and it names the file.
+	missingValueConfig = "[core]\n\trepositoryformatversion = 0\n\texcludesfile"
+)
+
 func TestHandleCloneCorruptDest(t *testing.T) {
 	t.Parallel()
 
 	tcs := map[string]struct {
+		// remove names the files to delete from the .git directory.
 		remove []string
+
+		// config, when set, replaces the file of the .git directory
+		// that file names.
+		config string
+
+		// file names the file of the .git directory that config
+		// replaces. It defaults to config.
+		file string
+
+		// sparsePaths, when set, makes the clone a sparse clone of
+		// these paths.
+		sparsePaths []string
 	}{
-		"missing HEAD and config": {remove: []string{"HEAD", "config"}},
-		"missing HEAD":            {remove: []string{"HEAD"}},
-		"missing config":          {remove: []string{"config"}},
+		"missing HEAD and config":      {remove: []string{"HEAD", "config"}},
+		"missing HEAD":                 {remove: []string{"HEAD"}},
+		"missing config":               {remove: []string{"config"}},
+		"config that git cannot parse": {config: unparseableConfig},
+
+		// A crash can leave a config file that holds only NUL bytes.
+		"config that holds only NUL bytes": {config: string(make([]byte, 64))},
+
+		// A crash can also cut the config file short inside a value
+		// or inside the name of an extension.
+		"config cut short in a number":                 {config: cutNumberConfig},
+		"config cut short in a boolean":                {config: cutBooleanConfig},
+		"config cut short in the name of an extension": {config: cutExtensionConfig},
+
+		// git also fails on a value that it cannot use, such as a key
+		// without a value.
+		"config with a key that has no value": {config: missingValueConfig},
+
+		// A sparse clone keeps its sparse checkout in config.worktree,
+		// a second config file of the .git directory.
+		"config.worktree of a sparse clone that holds only NUL bytes": {
+			config:      string(make([]byte, 64)),
+			file:        "config.worktree",
+			sparsePaths: []string{"docs"},
+		},
 	}
 
 	for name, tc := range tcs {
@@ -3166,9 +3223,19 @@ func TestHandleCloneCorruptDest(t *testing.T) {
 			parent := t.TempDir()
 			runGitCmds(t, [][]string{{"git", "init", "-q", parent}})
 
-			dest := filepath.Join(parent, "cloned")
+			input := CloneInput{URL: bare, Dest: filepath.Join(parent, "cloned"), SparsePaths: tc.sparsePaths}
+			dest := input.Dest
 
-			result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			// git ignores --filter in a clone from a local path, so a
+			// sparse clone reads the bare repository through a file://
+			// URL.
+			if len(tc.sparsePaths) > 0 {
+				runGitCmds(t, [][]string{{"git", "-C", bare, "config", "uploadpack.allowFilter", "true"}})
+
+				input.URL = "file://" + bare
+			}
+
+			result, _, err := h.handleClone(t.Context(), nil, input)
 			require.NoError(t, err)
 			require.False(t, result.IsError, resultText(t, result))
 
@@ -3176,9 +3243,18 @@ func TestHandleCloneCorruptDest(t *testing.T) {
 				require.NoError(t, os.Remove(filepath.Join(dest, ".git", f)))
 			}
 
+			if tc.config != "" {
+				file := cmp.Or(tc.file, "config")
+				path := filepath.Join(dest, ".git", file)
+
+				// The file must exist, so that config replaces it.
+				require.FileExists(t, path)
+				require.NoError(t, os.WriteFile(path, []byte(tc.config), 0o644))
+			}
+
 			require.NoError(t, os.WriteFile(filepath.Join(dest, "local.txt"), []byte("keep"), 0o644))
 
-			result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			result, _, err = h.handleClone(t.Context(), nil, input)
 			require.NoError(t, err)
 			require.False(t, result.IsError, resultText(t, result))
 			assert.Contains(t, resultText(t, result), "Cloned")
@@ -3193,7 +3269,7 @@ func TestHandleCloneCorruptDest(t *testing.T) {
 			assert.Equal(t, "keep", string(kept))
 
 			// The new checkout is a working repository again.
-			result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			result, _, err = h.handleClone(t.Context(), nil, input)
 			require.NoError(t, err)
 			require.False(t, result.IsError, resultText(t, result))
 			assert.Contains(t, resultText(t, result), "Pulled")
@@ -3224,6 +3300,550 @@ func TestHandleCloneCorruptDestOutsideAllowDir(t *testing.T) {
 
 	_, statErr := os.Stat(filepath.Join(dest, ".git"))
 	require.NoError(t, statErr)
+}
+
+// checkGitDir must report a corrupt git directory in these cases:
+//
+//   - git says that the directory is not a git repository.
+//   - git cannot parse a config file of the directory, or a value of
+//     that file.
+//   - The config file names an extension that git does not know.
+//   - The directory has no config file.
+//
+// For every other failure of git, the error must say that git could
+// not open the repository, and it must hold the message of git.
+func TestCheckGitDir(t *testing.T) {
+	t.Parallel()
+
+	// worktreeConfig makes git read config.worktree of the git
+	// directory at gitDir, as a sparse clone does, and writes text to
+	// that file.
+	worktreeConfig := func(t *testing.T, gitDir, text string) {
+		t.Helper()
+
+		runGitCmds(t, [][]string{
+			{"git", "--git-dir", gitDir, "config", "extensions.worktreeConfig", "true"},
+		})
+
+		require.NoError(t, os.WriteFile(filepath.Join(gitDir, "config.worktree"), []byte(text), 0o644))
+	}
+
+	tcs := map[string]struct {
+		// change changes the git directory at gitDir before the check.
+		change func(t *testing.T, gitDir string)
+
+		// err is set when the check must report a corrupt git
+		// directory.
+		err error
+
+		// want is text that the message of git holds. The error must
+		// hold the message after the path of the git directory.
+		want string
+	}{
+		"git directory of a new repository": {},
+		"missing HEAD": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				require.NoError(t, os.Remove(filepath.Join(gitDir, "HEAD")))
+			},
+			err: ErrNotRepo,
+		},
+		"missing objects directory": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				require.NoError(t, os.RemoveAll(filepath.Join(gitDir, "objects")))
+			},
+			err: ErrNotRepo,
+		},
+		"missing config": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				require.NoError(t, os.Remove(filepath.Join(gitDir, "config")))
+			},
+			err: ErrNotRepo,
+		},
+		"config that git cannot parse": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				appendGitConfig(t, filepath.Dir(gitDir), unparseableConfig)
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad config line ",
+		},
+		"config that holds only NUL bytes": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				config := filepath.Join(gitDir, "config")
+
+				require.NoError(t, os.WriteFile(config, make([]byte, 64), 0o644))
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad config line ",
+		},
+		"config cut short in a number": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				config := filepath.Join(gitDir, "config")
+
+				require.NoError(t, os.WriteFile(config, []byte(cutNumberConfig), 0o644))
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad numeric config value '' for 'core.repositoryformatversion' in file ",
+		},
+		"config cut short in a boolean": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				config := filepath.Join(gitDir, "config")
+
+				require.NoError(t, os.WriteFile(config, []byte(cutBooleanConfig), 0o644))
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad boolean config value 'tr' for 'core.filemode'",
+		},
+		// git parses core.bare when it opens the git directory, so
+		// every git command fails on that value, whatever key the
+		// command reads.
+		"config cut short in the boolean of core.bare": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				config := filepath.Join(gitDir, "config")
+				text := "[core]\n\trepositoryformatversion = 0\n\tbare = fal"
+
+				require.NoError(t, os.WriteFile(config, []byte(text), 0o644))
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad boolean config value 'fal' for 'core.bare'",
+		},
+		"config with a key that has no value": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				config := filepath.Join(gitDir, "config")
+
+				require.NoError(t, os.WriteFile(config, []byte(missingValueConfig), 0o644))
+			},
+			err: ErrNotRepo,
+			want: "error: missing value for 'core.excludesfile'\n" +
+				"fatal: bad config variable 'core.excludesfile' in file '",
+		},
+		"config with a value that git cannot use": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				appendGitConfig(t, filepath.Dir(gitDir), "[core]\n\tcheckstat = defa\n")
+			},
+			err: ErrNotRepo,
+			want: "error: invalid value for 'core.checkstat': 'defa'\n" +
+				"fatal: bad config variable 'core.checkstat' in file '",
+		},
+		"config cut short in the name of an extension": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				config := filepath.Join(gitDir, "config")
+
+				require.NoError(t, os.WriteFile(config, []byte(cutExtensionConfig), 0o644))
+			},
+			err:  ErrNotRepo,
+			want: "fatal: unknown repository extension found:\n\twork",
+		},
+		"config that names two extensions that git does not know": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				config := filepath.Join(gitDir, "config")
+				text := "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tfoo = bar\n\tbaz\n"
+
+				require.NoError(t, os.WriteFile(config, []byte(text), 0o644))
+			},
+			err:  ErrNotRepo,
+			want: "fatal: unknown repository extensions found:\n\tfoo\n\tbaz",
+		},
+		"config.worktree that holds only NUL bytes": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				worktreeConfig(t, gitDir, string(make([]byte, 64)))
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad config line 1 in file ",
+		},
+		"config.worktree with a number that git cannot parse": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				worktreeConfig(t, gitDir, "[core]\n\tcompression = x\n")
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad numeric config value 'x' for 'core.compression' in file ",
+		},
+		"config.worktree cut short in a boolean": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				worktreeConfig(t, gitDir, "[core]\n\tsparseCheckout = tr")
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad boolean config value 'tr' for 'core.sparsecheckout'",
+		},
+		"config.worktree with a key that has no value": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				worktreeConfig(t, gitDir, "[core]\n\tcommentChar")
+			},
+			err: ErrNotRepo,
+			want: "error: missing value for 'core.commentchar'\n" +
+				"fatal: bad config variable 'core.commentchar' in file '",
+		},
+		"included config file with a number that git cannot parse": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				included := filepath.Join(t.TempDir(), "included")
+
+				require.NoError(t, os.WriteFile(included, []byte("[core]\n\tcompression = x\n"), 0o644))
+				appendGitConfig(t, filepath.Dir(gitDir), "[include]\n\tpath = "+included+"\n")
+			},
+			want: "fatal: bad numeric config value 'x' for 'core.compression' in file ",
+		},
+		"included config file that git cannot parse": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				included := filepath.Join(t.TempDir(), "included")
+
+				require.NoError(t, os.WriteFile(included, []byte(unparseableConfig), 0o644))
+				appendGitConfig(t, filepath.Dir(gitDir), "[include]\n\tpath = "+included+"\n")
+			},
+			want: "fatal: bad config line ",
+		},
+		"included config file with a key that has no value": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				included := filepath.Join(t.TempDir(), "included")
+
+				require.NoError(t, os.WriteFile(included, []byte("[core]\n\texcludesfile\n"), 0o644))
+				appendGitConfig(t, filepath.Dir(gitDir), "[include]\n\tpath = "+included+"\n")
+			},
+			want: "error: missing value for 'core.excludesfile'\n" +
+				"fatal: bad config variable 'core.excludesfile' in file '",
+		},
+		// git does not name the file of a boolean that it cannot
+		// parse.
+		"included config file with a boolean that git cannot parse": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				included := filepath.Join(t.TempDir(), "included")
+
+				require.NoError(t, os.WriteFile(included, []byte("[core]\n\tfilemode = tr\n"), 0o644))
+				appendGitConfig(t, filepath.Dir(gitDir), "[include]\n\tpath = "+included+"\n")
+			},
+			want: "fatal: bad boolean config value 'tr' for 'core.filemode'",
+		},
+		// git reads booleans from config as well when
+		// extensions.worktreeConfig is set.
+		"config with a boolean that git cannot parse beside config.worktree": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				worktreeConfig(t, gitDir, "[core]\n\tsparseCheckout = true\n")
+				appendGitConfig(t, filepath.Dir(gitDir), "[core]\n\tfilemode = tr\n")
+			},
+			err:  ErrNotRepo,
+			want: "fatal: bad boolean config value 'tr' for 'core.filemode'",
+		},
+		"file that config.worktree includes with a boolean that git cannot parse": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				included := filepath.Join(t.TempDir(), "included")
+
+				require.NoError(t, os.WriteFile(included, []byte("[core]\n\tsparseCheckout = tr\n"), 0o644))
+				worktreeConfig(t, gitDir, "[include]\n\tpath = "+included+"\n")
+			},
+			want: "fatal: bad boolean config value 'tr' for 'core.sparsecheckout'",
+		},
+		"repository format that git does not know": {
+			change: func(t *testing.T, gitDir string) {
+				t.Helper()
+
+				runGitCmds(t, [][]string{
+					{"git", "--git-dir", gitDir, "config", "core.repositoryformatversion", "99"},
+				})
+			},
+			want: "fatal: Expected git repo version",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			gitDir := filepath.Join(initConfigRepo(t, ""), ".git")
+
+			if tc.change != nil {
+				tc.change(t, gitDir)
+			}
+
+			err := checkGitDir(t.Context(), gitDir)
+
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+
+				if tc.want != "" {
+					require.ErrorContains(t, err, gitDir+": "+tc.want)
+				}
+
+				return
+			}
+
+			if tc.want == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.NotErrorIs(t, err, ErrNotRepo)
+			require.ErrorContains(t, err,
+				"opening the repository at "+gitDir+": running git: exit status 128: "+tc.want,
+			)
+		})
+	}
+}
+
+// git_clone moves a destination aside only when its .git directory is
+// corrupt. The check of that directory can fail for another reason.
+// For example, the server cannot start git, or the kernel kills git to
+// free memory. git_clone must then return the failure and leave the
+// destination in place, because the checkout can be healthy.
+func TestHandleCloneKeepsDestWhenCheckFails(t *testing.T) { //nolint:paralleltest // t.Setenv
+	tcs := map[string]struct {
+		// setup makes the check of the checkout at dest fail.
+		setup func(t *testing.T, dest string)
+
+		// want is the cause that the error names after the path of the
+		// git directory.
+		want string
+	}{
+		"git cannot start": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				gitStandIn(t, "")
+			},
+			want: `running git: exec: "git": executable file not found in $PATH`,
+		},
+		"signal kills git": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				gitStandIn(t, "#!/bin/sh\nkill -KILL $$\n")
+			},
+			want: "running git: signal: killed",
+		},
+		"git exits with an error and prints nothing": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				gitStandIn(t, "#!/bin/sh\nexit 128\n")
+			},
+			want: "running git: exit status 128",
+		},
+		"global config that git cannot parse": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				setGlobalConfig(t, unparseableConfig)
+			},
+			want: "running git: exit status 128: fatal: bad config line ",
+		},
+		"global config with a number that git cannot parse": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				setGlobalConfig(t, "[core]\n\tcompression = x\n")
+			},
+			want: "running git: exit status 128: fatal: bad numeric config value 'x' for 'core.compression' in file ",
+		},
+		"global config with a key that has no value": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				setGlobalConfig(t, "[core]\n\texcludesfile\n")
+			},
+			want: "running git: exit status 128: error: missing value for 'core.excludesfile'\n" +
+				"fatal: bad config variable 'core.excludesfile' in file ",
+		},
+		// git checks the values of the global config first and stops at
+		// its key. The clone after a move aside fails on the same key.
+		"global config and config of the destination with keys that have no value": {
+			setup: func(t *testing.T, dest string) {
+				t.Helper()
+
+				appendGitConfig(t, dest, "[core]\n\tcommentChar\n")
+				setGlobalConfig(t, "[core]\n\texcludesfile\n")
+			},
+			want: "running git: exit status 128: error: missing value for 'core.excludesfile'\n" +
+				"fatal: bad config variable 'core.excludesfile' in file ",
+		},
+		// git does not name the file of a boolean that it cannot
+		// parse. The clone after a move aside fails on the same value.
+		"global config with a boolean that git cannot parse": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				setGlobalConfig(t, "[core]\n\tfilemode = tr\n")
+			},
+			want: "running git: exit status 128: fatal: bad boolean config value 'tr' for 'core.filemode'",
+		},
+		"config from the environment with a boolean that git cannot parse": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				t.Setenv("GIT_CONFIG_COUNT", "1")
+				t.Setenv("GIT_CONFIG_KEY_0", "core.filemode")
+				t.Setenv("GIT_CONFIG_VALUE_0", "tr")
+			},
+			want: "running git: exit status 128: fatal: bad boolean config value 'tr' for 'core.filemode'",
+		},
+		// git -c passes its config in GIT_CONFIG_PARAMETERS.
+		"config of git -c with a boolean that git cannot parse": {
+			setup: func(t *testing.T, _ string) {
+				t.Helper()
+
+				t.Setenv("GIT_CONFIG_PARAMETERS", "'core.filemode'='tr'")
+			},
+			want: "running git: exit status 128: fatal: bad boolean config value 'tr' for 'core.filemode'",
+		},
+		// git parses the global config first and stops at its value.
+		// The clone after a move aside fails on the same value.
+		"global config and config of the destination with booleans that git cannot parse": {
+			setup: func(t *testing.T, dest string) {
+				t.Helper()
+
+				appendGitConfig(t, dest, "[core]\n\tfilemode = fals\n")
+				setGlobalConfig(t, "[core]\n\tfilemode = tr\n")
+			},
+			want: "running git: exit status 128: fatal: bad boolean config value 'tr' for 'core.filemode'",
+		},
+		// The user can include a file outside the .git directory in
+		// the config of the destination. The clone after a move aside
+		// drops that include directive.
+		"included config file with a boolean that git cannot parse": {
+			setup: func(t *testing.T, dest string) {
+				t.Helper()
+
+				included := filepath.Join(t.TempDir(), "user.gitconfig")
+
+				require.NoError(t, os.WriteFile(included, []byte("[core]\n\tfilemode = tr\n"), 0o644))
+				appendGitConfig(t, dest, "[include]\n\tpath = "+included+"\n")
+			},
+			want: "running git: exit status 128: fatal: bad boolean config value 'tr' for 'core.filemode'",
+		},
+		// git parses the global config first and names it. The
+		// clone after a move aside fails on the same file.
+		"global config and config of the destination that git cannot parse": {
+			setup: func(t *testing.T, dest string) {
+				t.Helper()
+
+				appendGitConfig(t, dest, unparseableConfig)
+				setGlobalConfig(t, unparseableConfig)
+			},
+			want: "running git: exit status 128: fatal: bad config line ",
+		},
+	}
+
+	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
+		t.Run(name, func(t *testing.T) {
+			bare := initBareRepo(t)
+			h := &handler{allowFileURLs: true}
+			dest := filepath.Join(t.TempDir(), "cloned")
+
+			result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			require.NoError(t, os.WriteFile(filepath.Join(dest, "local.txt"), []byte("keep"), 0o644))
+
+			tc.setup(t, dest)
+
+			result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			require.NoError(t, err)
+			require.True(t, result.IsError)
+			assert.Contains(t, resultText(t, result),
+				"opening the repository at "+filepath.Join(dest, ".git")+": "+tc.want,
+			)
+
+			// A config file of the destination that git cannot parse
+			// moves the destination aside, so it must not be the
+			// cause.
+			assert.NotContains(t, resultText(t, result), filepath.Join(dest, ".git", "config"))
+
+			asides, err := filepath.Glob(dest + ".corrupt-*")
+			require.NoError(t, err)
+			assert.Empty(t, asides)
+
+			kept, err := os.ReadFile(filepath.Join(dest, "local.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, "keep", string(kept))
+		})
+	}
+}
+
+// git translates its messages into the language of the locale, and
+// git_clone reads the message of git to find a corrupt .git directory.
+// It must move a corrupt checkout aside whatever the locale of the
+// server is.
+func TestHandleCloneCorruptDestIgnoresLocale(t *testing.T) { //nolint:paralleltest // t.Setenv
+	// LANGUAGE names the language of the messages in every locale
+	// except the C locale.
+	t.Setenv("LANGUAGE", "de")
+	t.Setenv("LC_ALL", "en_US.UTF-8")
+
+	bare := initBareRepo(t)
+	h := &handler{allowFileURLs: true}
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	gitDir := filepath.Join(dest, ".git")
+
+	require.NoError(t, os.Remove(filepath.Join(gitDir, "HEAD")))
+
+	// The check needs a git that prints a translated message here. git
+	// does not translate when it has no German messages, or when the
+	// host lacks the locale that LC_ALL names.
+	//nolint:gosec // test helper
+	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", gitDir, "rev-parse", "--git-dir")
+
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err)
+
+	if strings.Contains(string(out), noRepoMessage) {
+		t.Skip("git does not translate its messages in this environment")
+	}
+
+	result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	asides, err := filepath.Glob(dest + ".corrupt-*")
+	require.NoError(t, err)
+	require.Len(t, asides, 1)
+	assert.Contains(t, resultText(t, result), asides[0])
 }
 
 func TestEffectiveTimeout(t *testing.T) {

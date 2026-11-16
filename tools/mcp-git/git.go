@@ -45,8 +45,42 @@ const (
 	messageLocale = "LC_ALL=C"
 
 	// noRepoMessage starts each message that git prints in the C
-	// locale when it finds no repository from a directory.
+	// locale when it finds no repository from a directory. It also
+	// starts the message for a directory that the --git-dir option
+	// names and that git does not accept as a git directory.
 	noRepoMessage = "fatal: not a git repository"
+
+	// badConfigMessage starts the message that git prints in the C
+	// locale when it cannot parse a line of a config file. The message
+	// goes on with the number of the line and the path of the file.
+	badConfigMessage = "fatal: bad config line "
+
+	// badNumberMessage starts the message that git prints in the C
+	// locale when it cannot parse the number of a config value. The
+	// message goes on with the value, the key, and the path of the
+	// file that holds the value.
+	badNumberMessage = "fatal: bad numeric config value "
+
+	// badVariableMessage starts the message that git prints in the C
+	// locale when it reads a config value that it cannot use, such as
+	// a key without a value. The message goes on with the key, the
+	// quoted path of the file that holds the value, and the number of
+	// the line. git prints a line that starts with "error: missing
+	// value" or "error: invalid value" before it.
+	badVariableMessage = "fatal: bad config variable "
+
+	// badBooleanMessage starts the message that git prints in the C
+	// locale when it cannot parse the boolean of a config value. The
+	// message goes on with the value and the key, and it does not name
+	// the file that holds the value.
+	badBooleanMessage = "fatal: bad boolean config value "
+
+	// unknownExtensionMessage starts the message that git prints in
+	// the C locale when the config file of a git directory names an
+	// extension that git does not know. The message goes on with
+	// "found:" or "s found:" and the names of the extensions. git reads
+	// the extensions only from the config file of the git directory.
+	unknownExtensionMessage = "fatal: unknown repository extension"
 )
 
 var (
@@ -66,7 +100,7 @@ var (
 	ErrDeniedRepoPrefix = errors.New("repo must not start with '-'")
 
 	// ErrNotRepo is returned when git finds no repository from a path,
-	// and when [checkGitDir] rejects the git directory of a
+	// and when [checkGitDir] finds a corrupt git directory in a
 	// destination.
 	ErrNotRepo = errors.New("not a git repository")
 
@@ -691,44 +725,54 @@ func gitOutput(ctx context.Context, env []string, args ...string) (string, strin
 // repoPath runs git rev-parse with flags in the directory at dir, and
 // it returns the path that git prints. git finds the repository from
 // dir before it prints the path, so repoPath doubles as the repository
-// check. A directory outside every repository fails with [ErrNotRepo].
-//
-// git also fails when it finds a repository that it cannot open, such
-// as a repository whose git config holds a line that git cannot parse.
-// git exits with status 128 for both failures, and only its message
-// tells them apart. repoPath therefore runs git with messageLocale,
-// and it reports [ErrNotRepo] only for a message that holds
-// noRepoMessage.
-//
-// For every other failure except a timeout, the error says that
-// repoPath could not open the repository. It names dir, and it ends
-// with the message of git, which gives the cause. For example, the
-// message names the config file and the line that git cannot parse.
-// git rev-parse does not read the remotes of the git config, so the
-// message holds no URL of a remote. When git prints no message, or
-// when git cannot start, the error ends with the error of
-// [exec.Cmd.Output] instead.
+// check. A directory outside every repository fails with [ErrNotRepo],
+// and [repoOpenError] describes the error for a repository that git
+// cannot open. repoPath runs git with messageLocale, because
+// [repoOpenError] reads the message of git.
 func repoPath(ctx context.Context, dir string, flags ...string) (string, error) {
 	args := slices.Concat([]string{"-C", dir, "rev-parse"}, flags)
 
 	out, message, err := gitOutput(ctx, append(gitEnv(), messageLocale), args...)
 	if err != nil {
-		if errors.Is(err, ErrTimeout) {
-			return "", err
-		}
-
-		if strings.Contains(message, noRepoMessage) {
-			return "", fmt.Errorf("%w: %s", ErrNotRepo, dir)
-		}
-
-		if message == "" {
-			return "", fmt.Errorf("opening the repository at %s: %w", dir, err)
-		}
-
-		return "", fmt.Errorf("opening the repository at %s: %w: %s", dir, err, truncateOutput(message))
+		return "", repoOpenError(dir, message, err)
 	}
 
 	return out, nil
+}
+
+// repoOpenError returns the error for a git rev-parse command that
+// could not open the repository at path. message is what git printed
+// in the C locale, and err is the error of [gitOutput]. When git found
+// no repository at path, the error is [ErrNotRepo].
+//
+// git also fails when it finds a repository that it cannot open, such
+// as a repository whose git config holds a line that git cannot parse.
+// git exits with status 128 for both failures, and only its message
+// tells them apart. repoOpenError therefore reports [ErrNotRepo] only
+// for a message that holds noRepoMessage.
+//
+// For every other failure except a timeout, the error says that git
+// could not open the repository. It names path, and it ends with the
+// message of git, which gives the cause. For example, the message
+// names the config file and the line that git cannot parse. git
+// rev-parse does not read the remotes of the git config, so the
+// message holds no URL of a remote. When git prints no message, such
+// as when git cannot start or a signal kills it, the error ends with
+// the error of [exec.Cmd.Output] instead.
+func repoOpenError(path, message string, err error) error {
+	if errors.Is(err, ErrTimeout) {
+		return err
+	}
+
+	if strings.Contains(message, noRepoMessage) {
+		return fmt.Errorf("%w: %s", ErrNotRepo, path)
+	}
+
+	if message == "" {
+		return fmt.Errorf("opening the repository at %s: %w", path, err)
+	}
+
+	return fmt.Errorf("opening the repository at %s: %w: %s", path, err, truncateOutput(message))
 }
 
 // gitCommonDir returns the absolute common git directory for repo.

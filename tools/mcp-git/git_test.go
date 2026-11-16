@@ -83,6 +83,21 @@ func writeHookIn(t *testing.T, dir, name, script string) string {
 	return hook
 }
 
+// gitStandIn puts a directory that holds only the script git on PATH,
+// so that the server runs the script in place of git. An empty script
+// leaves PATH without git. gitStandIn sets an environment variable, so
+// the test must not run in parallel.
+func gitStandIn(t *testing.T, script string) {
+	t.Helper()
+
+	bin := t.TempDir()
+	if script != "" {
+		writeHookIn(t, bin, "git", script)
+	}
+
+	t.Setenv("PATH", bin)
+}
+
 // markerScript writes an executable script that creates a marker file
 // and then fails. It returns the path of the script and the path of
 // the marker. A test sets a command that git must not run to the
@@ -423,12 +438,7 @@ func TestGitCommonDirWithoutMessage(t *testing.T) { //nolint:paralleltest // t.S
 
 	for name, tc := range tcs { //nolint:paralleltest // t.Setenv
 		t.Run(name, func(t *testing.T) {
-			bin := t.TempDir()
-			if tc.git != "" {
-				writeHookIn(t, bin, "git", tc.git)
-			}
-
-			t.Setenv("PATH", bin)
+			gitStandIn(t, tc.git)
 
 			dir := t.TempDir()
 
