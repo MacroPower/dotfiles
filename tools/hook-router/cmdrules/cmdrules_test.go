@@ -26,8 +26,8 @@ const (
 	cloneDeniedReason        = "Direct git clone of a remote URL is blocked. Use mcp__git__git_clone instead. A clone from a local path runs in Bash."
 	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git fetch ../other main`."
 	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead. That tool refuses a remote on the local file system. Pull from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git pull ../other main`."
-	pushDeniedReason         = "Direct git push usage is blocked. Use mcp__git__git_push instead."
-	remoteUpdateDeniedReason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead."
+	pushDeniedReason         = "Direct git push usage is blocked. Use mcp__git__git_push instead. That tool refuses a remote on the local file system. Push to one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git push ../other main`."
+	remoteUpdateDeniedReason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, and name its remote-tracking branches in the refspec, as in `git fetch ../other '+refs/heads/*:refs/remotes/origin/*'`."
 	kubectxReason            = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason         = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason      = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
@@ -61,9 +61,10 @@ func canonicalRules() *cmdrules.Engine {
 			Reason:          pullDeniedReason,
 		},
 		{
-			Command: "git",
-			Args:    []string{"push"},
-			Reason:  pushDeniedReason,
+			Command:         "git",
+			Args:            []string{"push"},
+			ExceptLocalPath: true,
+			Reason:          pushDeniedReason,
 		},
 		{
 			Command: "git",
@@ -591,17 +592,54 @@ func TestCommandRulesCheck_GitRemoteOps(t *testing.T) {
 			input: "git push --force-with-lease",
 			want:  pushDeniedReason,
 		},
-		// The push rule sets no ExceptLocalPath.
-		"git push to a local path": {
-			input: "git push ../bare.git main",
+		"git push without arguments": {
+			input: "git push",
+			want:  pushDeniedReason,
+		},
+		"git push to a url": {
+			input: "git push https://example.com/repo.git main",
+			want:  pushDeniedReason,
+		},
+		// git reads a plain name as the name of a remote. The URL of
+		// that remote can be a local path, and the rule cannot read it.
+		"git push to a plain name": {
+			input: "git push bare.git main",
+			want:  pushDeniedReason,
+		},
+		"git push a branch with a slash": {
+			input: "git push -u origin feature/topic",
+			want:  pushDeniedReason,
+		},
+		"git push with a refspec": {
+			input: "git push origin HEAD:refs/heads/main",
+			want:  pushDeniedReason,
+		},
+		"git push that deletes a branch": {
+			input: "git push origin :topic",
+			want:  pushDeniedReason,
+		},
+		"git push to a path that starts with a variable": {
+			input: `git push "$S/bare.git" main`,
+			want:  pushDeniedReason,
+		},
+		// The path of -C names the repository that pushes, not the
+		// repository that it pushes to.
+		"git -C relative dir push": {
+			input: "git -C ../work push",
 			want:  pushDeniedReason,
 		},
 		"git remote update": {
 			input: "git remote update",
 			want:  remoteUpdateDeniedReason,
 		},
-		// A fetch or a pull that names a local path reads a local
-		// repository.
+		// git remote update takes the names of remotes, so its rule
+		// exempts no path.
+		"git remote update with a path": {
+			input: "git remote update ../bare.git",
+			want:  remoteUpdateDeniedReason,
+		},
+		// A fetch, a pull, or a push that names a local path reaches a
+		// local repository.
 		"no match: fetch from a parent path": {
 			input: "git fetch ../bare.git main",
 		},
@@ -637,6 +675,28 @@ func TestCommandRulesCheck_GitRemoteOps(t *testing.T) {
 		},
 		"no match: git -C dir pull from a parent path": {
 			input: "git -C /tmp/scratch/work pull ../bare.git main",
+		},
+		"no match: push to a parent path": {
+			input: "git push ../bare.git main",
+		},
+		"no match: git -C quoted dir push to a parent path with a refspec": {
+			input: `git -C "$S/work" push ../bare.git HEAD:refs/heads/main`,
+		},
+		"no match: push to an absolute path with flags": {
+			input: "git push -q --force /tmp/scratch/bare.git main",
+		},
+		"no match: push to a file url": {
+			input: "git push file:///tmp/scratch/bare.git main",
+		},
+		"no match: push to a path with an expansion": {
+			input: `git push "/tmp/scratch/$name" main`,
+		},
+		"no match: push a branch of the repository itself": {
+			input: "git push . main:topic",
+		},
+		// The reason of the remote update rule names this fetch.
+		"no match: fetch remote-tracking branches from a parent path": {
+			input: "git fetch ../other '+refs/heads/*:refs/remotes/origin/*'",
 		},
 		// The remote deny carries two positionals, so the local-only
 		// git remote leaves fall through.

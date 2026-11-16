@@ -3395,12 +3395,14 @@ in
         };
         # Every git command runs without a prompt except the ones that
         # write to a remote. permissions.ask lists the Bash forms of
-        # those commands, and conditionalRules decides
-        # mcp__git__git_push. The allow entries matter on hosts where
-        # the sandbox auto-allow is off. On auto-allow hosts
-        # hook-router already allows git. Permission rules evaluate
-        # deny, then ask, then allow, whatever their specificity, so
-        # each ask entry wins over Bash(git *).
+        # those commands other than git push. The push rule of
+        # commandRules.deny decides a Bash git push, and
+        # conditionalRules decides mcp__git__git_push. The allow
+        # entries matter on hosts where the sandbox auto-allow is off.
+        # On auto-allow hosts hook-router already allows git.
+        # Permission rules evaluate deny, then ask, then allow,
+        # whatever their specificity, so each ask entry wins over
+        # Bash(git *).
         permissions.allow = [
           "mcp__git__git_clone"
           "mcp__git__git_fetch"
@@ -3409,12 +3411,21 @@ in
           "Bash(git *)"
         ];
         # Bash forms of the git commands that write to a remote.
-        # commandRules.deny also redirects push to mcp__git__git_push.
-        # The Bash push entries still prompt when hook-router emits no
-        # decision.
+        #
+        # git push has no entry. The push rule of commandRules.deny
+        # denies each Bash push except a push that names a local path,
+        # and that push writes to no other host. Claude Code prompts on
+        # a settings ask rule even when a hook allows the call. An
+        # entry for git push therefore makes the push to a local path
+        # prompt. Under promptGuard, a Workflow agent gets a deny in
+        # place of that prompt.
+        #
+        # hook-router does not match a push that another command
+        # starts, such as `timeout 30 git push`. Claude Code reads that
+        # command as a git command, so Bash(git *) allows it without a
+        # prompt. Bash(git *) also allows each push when hook-router
+        # emits no decision.
         permissions.ask = [
-          "Bash(git push)"
-          "Bash(git push *)"
           "Bash(git send-email)"
           "Bash(git send-email *)"
           "Bash(git lfs push *)"
@@ -3462,15 +3473,21 @@ in
         ];
         sandbox.allowWrite = [ cloneRoot ];
         # mcp-git refuses a repository on the local file system as the
-        # source of a clone and as the remote of a fetch or a pull. The
-        # rules for those three commands therefore leave a call that
-        # reads such a repository to Bash. A clone always names its
-        # source, so the clone rule matches only a call that names a
-        # remote URL. A fetch or a pull that names no repository
-        # reaches the default remote, and a plain word names a remote.
-        # The fetch rule and the pull rule therefore exempt only a call
-        # that names a local path. Each of the two reasons tells the
-        # agent to name that path.
+        # source of a clone and as the remote of a fetch, a pull, or a
+        # push. The rules for those commands therefore leave a call
+        # that names such a repository to Bash. A clone always names
+        # its source, so the clone rule matches only a call that names
+        # a remote URL. A fetch, a pull, or a push that names no
+        # repository reaches the default remote, and a plain word names
+        # a remote. The fetch rule, the pull rule, and the push rule
+        # therefore exempt only a call that names a local path. The
+        # reason of each of these rules tells the agent to name that
+        # path.
+        #
+        # A push to a local path runs without a prompt, because it
+        # writes to no other host. git runs the hooks of the other
+        # repository as children of the Bash command, so no hook runs
+        # outside the Bash sandbox.
         #
         # canonicalRules mirrors these rules in
         # `tools/hook-router/helpers_test.go` and in
@@ -3498,18 +3515,24 @@ in
           {
             command = "git";
             args = [ "push" ];
-            reason = "Direct git push usage is blocked. Use mcp__git__git_push instead.";
+            exceptLocalPath = true;
+            reason = "Direct git push usage is blocked. Use mcp__git__git_push instead. That tool refuses a remote on the local file system. Push to one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git push ../other main`.";
           }
           {
             # `git remote update` fetches every remote, so it reaches the
             # network the same way `git fetch` does. The other `git
             # remote` leaves stay local and fall through.
+            #
+            # The command takes the names of remotes and never a path,
+            # so the rule exempts no call. Its reason names the fetch
+            # by path that updates the remote-tracking branches of a
+            # remote on the local file system.
             command = "git";
             args = [
               "remote"
               "update"
             ];
-            reason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead.";
+            reason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, and name its remote-tracking branches in the refspec, as in `git fetch ../other '+refs/heads/*:refs/remotes/origin/*'`.";
           }
         ];
         fetchRules.deny = [

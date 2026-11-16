@@ -204,6 +204,9 @@ func TestHandleBashAutoAllow(t *testing.T) {
 		"git pull from a local path": {
 			command: "git pull -q /tmp/scratch/bare.git main",
 		},
+		"git push to a local path": {
+			command: `git -C "$S/work" push ../bare.git HEAD:refs/heads/main`,
+		},
 	}
 
 	for name, tc := range local {

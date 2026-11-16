@@ -25,8 +25,8 @@ const (
 	cloneDeniedReason        = "Direct git clone of a remote URL is blocked. Use mcp__git__git_clone instead. A clone from a local path runs in Bash."
 	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git fetch ../other main`."
 	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead. That tool refuses a remote on the local file system. Pull from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git pull ../other main`."
-	pushDeniedReason         = "Direct git push usage is blocked. Use mcp__git__git_push instead."
-	remoteUpdateDeniedReason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead."
+	pushDeniedReason         = "Direct git push usage is blocked. Use mcp__git__git_push instead. That tool refuses a remote on the local file system. Push to one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, as in `git push ../other main`."
+	remoteUpdateDeniedReason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead. That tool refuses a remote on the local file system. Fetch from one in Bash by a literal path that starts with `/`, `./`, `../`, or `file://`, and name its remote-tracking branches in the refspec, as in `git fetch ../other '+refs/heads/*:refs/remotes/origin/*'`."
 	kubectxReason            = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason         = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason      = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
@@ -59,9 +59,10 @@ func canonicalRules() *cmdrules.Engine {
 			Reason:          pullDeniedReason,
 		},
 		{
-			Command: "git",
-			Args:    []string{"push"},
-			Reason:  pushDeniedReason,
+			Command:         "git",
+			Args:            []string{"push"},
+			ExceptLocalPath: true,
+			Reason:          pushDeniedReason,
 		},
 		{
 			Command: "git",
