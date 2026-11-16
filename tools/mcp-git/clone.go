@@ -369,6 +369,13 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 // [readUserHooks]. The command of [sparseCheckoutArgs] runs after the
 // clone, and it names the working tree itself.
 //
+// Each git command also takes the options of
+// [handler.cloneCredentialArgs], which authenticate a clone from
+// GitHub over https. A sparse clone without a depth leaves out each
+// blob that its checkout does not hold. The command of
+// [sparseCheckoutArgs] then fetches the blobs of the sparse paths from
+// origin.
+//
 //nolint:unparam // signature matches mcp.AddTool handler contract.
 func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*mcp.CallToolResult, any, error) {
 	hooks, err := readUserHooks(ctx)
@@ -376,9 +383,9 @@ func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*m
 		return toolError(err), nil, nil
 	}
 
-	opts := slices.Concat(guardOptions(), hookOptions(hooks))
+	opts := slices.Concat(h.cloneCredentialArgs(), guardOptions(), hookOptions(hooks))
 
-	_, err = h.runGit(ctx, slices.Concat(h.credentialArgs(input.URL), opts, buildCloneArgs(input))...)
+	_, err = h.runGit(ctx, slices.Concat(opts, buildCloneArgs(input))...)
 	if err != nil {
 		return toolError(fmt.Errorf("%w: %w", ErrClone, err)), nil, nil
 	}
@@ -407,6 +414,30 @@ func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*m
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: msg}},
 	}, nil, nil
+}
+
+// cloneCredentialArgs returns git -c flags that give the credential
+// helper of the token to each https connection to github.com. It
+// returns nil when no token is set.
+//
+// git clone connects to the url input after it applies the
+// url.<base>.insteadOf rewrites of the git config. A conditional
+// include of the global config can hold a rewrite for the new clone
+// alone. The server cannot apply that rewrite before the clone, so the
+// flags do not depend on the url input. git applies the key
+// credential.https://github.com.helper only to a connection to
+// https://github.com, after every rewrite. The empty value of that key
+// removes the helpers of the config files for that host. Those helpers
+// still answer for every other host.
+func (h *handler) cloneCredentialArgs() []string {
+	if h.token == "" {
+		return nil
+	}
+
+	return []string{
+		"-c", "credential.https://github.com.helper=",
+		"-c", "credential.https://github.com.helper=" + githubCredentialHelper,
+	}
 }
 
 // sparseCheckoutArgs returns the arguments of the git command that

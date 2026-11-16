@@ -1,11 +1,17 @@
 package main
 
 import (
+	"io"
+	"net"
+	"net/http"
+	"net/http/cgi"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -523,7 +529,9 @@ func TestHandleCloneWithToken(t *testing.T) {
 
 	dest := filepath.Join(t.TempDir(), "cloned")
 
-	// Clone with token set (file URL, so credential args are not injected).
+	// Clone with token set. git applies the credential options only to an
+	// https connection to github.com, so the clone of a file URL asks for
+	// no credential.
 	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
@@ -798,9 +806,18 @@ func aliasOrigin(t *testing.T, bare, dest string) {
 func setGlobalRewrite(t *testing.T, bare string) {
 	t.Helper()
 
+	setGlobalConfig(t, rewriteConfig(bare))
+}
+
+// setGlobalConfig points the global git config at a file that holds
+// text. It sets an environment variable, so the test must not run in
+// parallel.
+func setGlobalConfig(t *testing.T, text string) {
+	t.Helper()
+
 	global := filepath.Join(t.TempDir(), "gitconfig")
 
-	require.NoError(t, os.WriteFile(global, []byte(rewriteConfig(bare)), 0o644))
+	require.NoError(t, os.WriteFile(global, []byte(text), 0o644))
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
 }
 
@@ -979,6 +996,376 @@ func TestHandleClonePullsRewrittenURL(t *testing.T) { //nolint:paralleltest // t
 	require.NoError(t, err)
 	require.False(t, result.IsError, resultText(t, result))
 	assert.Contains(t, resultText(t, result), "Pulled")
+}
+
+func TestCloneCredentialArgs(t *testing.T) {
+	t.Parallel()
+
+	wantArgs := []string{
+		"-c", "credential.https://github.com.helper=",
+		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f`,
+	}
+
+	tests := map[string]struct {
+		token string
+		want  []string
+	}{
+		"token": {
+			token: "ghp_test123",
+			want:  wantArgs,
+		},
+		"no token": {},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := (&handler{token: tt.token}).cloneCredentialArgs()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// authProxy is an HTTP proxy that tunnels each CONNECT request to one
+// https server. The server records each credential that it receives,
+// and it passes each request to the backend of [startAuthProxy].
+type authProxy struct {
+	// url is the URL of the proxy.
+	url   string
+	hosts []string
+	creds []string
+	mu    sync.Mutex
+}
+
+// unauthorized answers every request with 401. git then asks the
+// credential helpers for a credential, sends the request again with
+// the credential, and fails.
+var unauthorized http.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
+	w.WriteHeader(http.StatusUnauthorized)
+})
+
+// requireCredential passes each request that carries cred, as
+// user:password, to next. It answers every other request with 401.
+func requireCredential(cred string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, password, ok := r.BasicAuth()
+		if !ok || user+":"+password != cred {
+			unauthorized.ServeHTTP(w, r)
+
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// gitBackend serves each bare repository under root over smart HTTP
+// with git http-backend. The repository at <root>/a/b.git answers for
+// the path /a/b.git.
+func gitBackend(t *testing.T, root string) http.Handler {
+	t.Helper()
+
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+
+	return &cgi.Handler{
+		Path: git,
+		Args: []string{"http-backend"},
+		Env: []string{
+			"GIT_PROJECT_ROOT=" + root,
+			"GIT_HTTP_EXPORT_ALL=1",
+			"GIT_CONFIG_NOSYSTEM=1",
+			"GIT_CONFIG_GLOBAL=" + os.DevNull,
+			"HOME=" + root,
+		},
+	}
+}
+
+// startAuthProxy starts an [authProxy] for the lifetime of the test.
+// Its server passes each request to backend.
+func startAuthProxy(t *testing.T, backend http.Handler) *authProxy {
+	t.Helper()
+
+	p := &authProxy{}
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, password, ok := r.BasicAuth()
+		if ok {
+			p.mu.Lock()
+			p.creds = append(p.creds, user+":"+password)
+			p.mu.Unlock()
+		}
+
+		backend.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.Error(w, "the proxy serves only CONNECT", http.StatusMethodNotAllowed)
+
+			return
+		}
+
+		p.mu.Lock()
+		p.hosts = append(p.hosts, r.Host)
+		p.mu.Unlock()
+
+		upstream, err := (&net.Dialer{}).DialContext(r.Context(), "tcp", server.Listener.Addr().String())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+
+			return
+		}
+		defer upstream.Close() //nolint:errcheck // The tunnel ends when either side closes.
+
+		conn, buf, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close() //nolint:errcheck // The tunnel ends when either side closes.
+
+		_, err = conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
+		if err != nil {
+			return
+		}
+
+		// Each copy ends when one side closes its connection, and its
+		// error reports only that close.
+		copied := make(chan error, 2)
+
+		go func() {
+			_, copyErr := io.Copy(upstream, buf)
+
+			copied <- copyErr
+		}()
+
+		go func() {
+			_, copyErr := io.Copy(conn, upstream)
+
+			copied <- copyErr
+		}()
+
+		<-copied
+	}))
+	t.Cleanup(proxy.Close)
+
+	p.url = proxy.URL
+
+	return p
+}
+
+// requests returns each host that git asked the proxy to connect to,
+// with each repeat removed, and each credential that the server
+// received, as user:password.
+func (p *authProxy) requests() ([]string, []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return slices.Compact(slices.Clone(p.hosts)), slices.Clone(p.creds)
+}
+
+// config returns git config text that sends each https connection
+// through the proxy and trusts the certificate of its server. The
+// curloptResolve keys point github.com and gitlab.com at the loopback
+// address, so git cannot reach either host when it skips the proxy.
+func (p *authProxy) config() string {
+	return "[http]\n" +
+		"\tproxy = " + p.url + "\n" +
+		"\tsslVerify = false\n" +
+		"\tcurloptResolve = github.com:443:127.0.0.1\n" +
+		"\tcurloptResolve = gitlab.com:443:127.0.0.1\n"
+}
+
+// setProxyEnv sets GH_TOKEN to token, and it points the global git
+// config at a file that holds config. It clears each variable of the
+// environment that changes how git reaches a host or where git finds a
+// credential. It sets environment variables, so the test must not run
+// in parallel.
+func setProxyEnv(t *testing.T, token, config string) {
+	t.Helper()
+
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GH_TOKEN", token)
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+	// An empty GIT_ASKPASS keeps git from asking a program of the
+	// environment for a credential. gitEnv keeps the empty value, so
+	// git also skips the program that SSH_ASKPASS names.
+	t.Setenv("GIT_ASKPASS", "")
+	// gitEnv keeps a GIT_SSH_COMMAND that is set. git then fails
+	// without a connection to a host when no rewrite changes an
+	// SCP-style URL to an https URL.
+	t.Setenv("GIT_SSH_COMMAND", "false")
+	// git reads config from these variables after the global config.
+	// A credential helper or a proxy that they set then overrides the
+	// test config.
+	t.Setenv("GIT_CONFIG_COUNT", "0")
+	t.Setenv("GIT_CONFIG_PARAMETERS", "")
+	setGlobalConfig(t, config)
+}
+
+// githubHTTPSRewrite is git config text with a url.<base>.insteadOf
+// rewrite that turns an SCP-style URL of GitHub into an https URL.
+const githubHTTPSRewrite = "[url \"https://github.com/\"]\n\tinsteadOf = git@github.com:\n"
+
+// globalHelper is git config text with a credential helper that
+// answers for every host.
+const globalHelper = "[credential]\n\thelper = \"!f() { echo username=global; echo password=secret; }; f\"\n"
+
+// git clone connects to the url input after every rewrite of the git
+// config. The token must reach each https connection to github.com,
+// and the credential helpers of the git config must answer for every
+// other host.
+func TestHandleCloneCredential(t *testing.T) { //nolint:paralleltest // t.Setenv
+	const (
+		token      = "ghp_test123"
+		tokenCred  = "x-access-token:" + token
+		globalCred = "global:secret"
+		github     = "github.com:443"
+		gitlab     = "gitlab.com:443"
+	)
+
+	tests := map[string]struct {
+		token string
+		url   string
+		// config is text that the test adds to the global config.
+		config string
+		// include is the text of a config file that the global config
+		// includes only for a git directory under the parent of dest.
+		include string
+		host    string
+		creds   []string
+	}{
+		"https URL of GitHub": {
+			token: token,
+			url:   "https://github.com/a/b",
+			host:  github,
+			creds: []string{tokenCred},
+		},
+		"SCP-style URL that the global config rewrites": {
+			token:  token,
+			url:    "git@github.com:a/b",
+			config: githubHTTPSRewrite,
+			host:   github,
+			creds:  []string{tokenCred},
+		},
+		"SCP-style URL that a conditional include rewrites": {
+			token:   token,
+			url:     "git@github.com:a/b",
+			include: githubHTTPSRewrite,
+			host:    github,
+			creds:   []string{tokenCred},
+		},
+		"GitHub with a helper in the global config": {
+			token:  token,
+			url:    "https://github.com/a/b",
+			config: globalHelper,
+			host:   github,
+			creds:  []string{tokenCred},
+		},
+		"another host with a helper in the global config": {
+			token:  token,
+			url:    "https://gitlab.com/a/b",
+			config: globalHelper,
+			host:   gitlab,
+			creds:  []string{globalCred},
+		},
+		"another host": {
+			token: token,
+			url:   "https://gitlab.com/a/b",
+			host:  gitlab,
+		},
+		"no token": {
+			url:    "git@github.com:a/b",
+			config: githubHTTPSRewrite + globalHelper,
+			host:   github,
+			creds:  []string{globalCred},
+		},
+	}
+
+	for name, tt := range tests { //nolint:paralleltest // setProxyEnv calls t.Setenv.
+		t.Run(name, func(t *testing.T) {
+			proxy := startAuthProxy(t, unauthorized)
+
+			// git matches the pattern of an includeIf gitdir condition
+			// against the git directory with each symbolic link
+			// resolved. The temporary directory of macOS lies under
+			// such a link.
+			parent, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+
+			config := proxy.config() + tt.config
+
+			if tt.include != "" {
+				include := filepath.Join(t.TempDir(), "include")
+				require.NoError(t, os.WriteFile(include, []byte(tt.include), 0o644))
+
+				config += "[includeIf \"gitdir:" + parent + "/\"]\n\tpath = " + include + "\n"
+			}
+
+			setProxyEnv(t, tt.token, config)
+
+			input := CloneInput{URL: tt.url, Dest: filepath.Join(parent, "dest")}
+
+			result, _, err := (&handler{token: tt.token}).handleClone(t.Context(), nil, input)
+			require.NoError(t, err)
+			require.True(t, result.IsError, resultText(t, result))
+
+			hosts, creds := proxy.requests()
+			assert.Equal(t, []string{tt.host}, hosts)
+			assert.Equal(t, tt.creds, creds)
+		})
+	}
+}
+
+// A sparse clone without a depth leaves out each blob that its
+// checkout does not hold. git sparse-checkout set then fetches the
+// blobs of the sparse paths from origin, and that fetch must take the
+// token as well.
+func TestHandleCloneSparseCredential(t *testing.T) { //nolint:paralleltest // t.Setenv
+	const token = "ghp_test123"
+
+	root := t.TempDir()
+	bare := filepath.Join(root, "a", "b.git")
+
+	runGitCmds(t, [][]string{
+		{"git", "init", "-q", "--bare", bare},
+		{"git", "-C", bare, "config", "uploadpack.allowFilter", "true"},
+	})
+
+	work := initWorkClone(t, bare)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(work, "dir"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(work, "other"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(work, "other", "g.txt"), []byte("other"), 0o644))
+	commitFile(t, work, "dir/f.txt", "dir", "add dirs")
+	runGitCmds(t, [][]string{{"git", "-C", work, "push", "-q", "origin", "HEAD"}})
+
+	proxy := startAuthProxy(t, requireCredential("x-access-token:"+token, gitBackend(t, root)))
+	setProxyEnv(t, token, proxy.config()+githubHTTPSRewrite)
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	result, _, err := (&handler{token: token}).handleClone(t.Context(), nil, CloneInput{
+		URL:         "git@github.com:a/b.git",
+		Dest:        dest,
+		SparsePaths: []string{"dir"},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	assert.FileExists(t, filepath.Join(dest, "dir", "f.txt"))
+	assert.NoFileExists(t, filepath.Join(dest, "other", "g.txt"))
+
+	// The clone lacks the blob of a path outside the sparse checkout.
+	// git clone therefore left out the blobs, and git sparse-checkout
+	// set fetched the blob of dir/f.txt.
+	blob := gitOut(t, "-C", work, "rev-parse", "HEAD:other/g.txt")
+	missing := gitOut(t, "-C", dest, "rev-list", "--objects", "--missing=print", "HEAD")
+	assert.Contains(t, strings.Fields(missing), "?"+blob)
 }
 
 // A new clone holds the hook files of the template directory, and git

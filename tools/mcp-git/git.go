@@ -908,6 +908,14 @@ func timeoutError(ctx context.Context) error {
 	return fmt.Errorf("%w: %w", ErrTimeout, ctxErr)
 }
 
+// githubCredentialHelper is the git credential helper that answers
+// with the token of GH_TOKEN. The helper reads the token from the
+// environment of git, so the token stays out of the arguments of
+// every git command.
+//
+//nolint:gosec // G101: the helper holds no credential, because it reads GH_TOKEN.
+const githubCredentialHelper = `!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f`
+
 // credentialArgs returns git -c flags that configure a
 // credential helper for GitHub HTTPS URLs. It returns nil when
 // no token is set or the URL is not an HTTPS GitHub URL.
@@ -918,7 +926,7 @@ func (h *handler) credentialArgs(url string) []string {
 
 	return []string{
 		"-c", "credential.helper=",
-		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f`,
+		"-c", "credential.https://github.com.helper=" + githubCredentialHelper,
 	}
 }
 

@@ -9,15 +9,18 @@
 // clones again. It refuses a destination whose repository has no
 // origin remote, and a destination whose origin remote has a URL
 // other than the url input. It compares the two URLs after git applies
-// the url.<base>.insteadOf rewrites of the git config to each URL.
+// the url.<base>.insteadOf rewrites of the git config to each URL. A
+// new clone authenticates with the token of GH_TOKEN when git connects
+// to github.com over https after those rewrites.
+//
 // git_fetch, git_pull, and git_push operate on an existing local
-// repository: they resolve its git directory (worktree-aware), take
-// a flock on <gitdir>/mcp-git.lock, resolve the named remote's URL
-// so the GH_TOKEN credential helper can authenticate it, and run the
-// corresponding git subcommand with captured output. Remote and ref
-// inputs are plain names, never URLs or refspecs, so remote deletes
-// and force pushes cannot be expressed (git_push offers
-// force_with_lease explicitly).
+// repository. They resolve its git directory (worktree-aware), and
+// they take a flock on <gitdir>/mcp-git.lock. They resolve the named
+// remote's URL so the GH_TOKEN credential helper can authenticate it,
+// and they run the corresponding git subcommand with captured output.
+// Remote and ref inputs are plain names, never URLs or refspecs, so a
+// caller cannot express a remote delete or a force push (git_push
+// offers force_with_lease explicitly).
 //
 // git_fetch, git_pull, and git_push do not trust the git config of
 // the repository. The server runs with the privileges of the user,
@@ -249,13 +252,15 @@
 //
 // git_clone lists the hooks of a new clone outside every repository.
 // A conditional include of the global config can therefore define a
-// hook for the new clone alone, and git runs that hook. A caller that
-// writes the git config of the destination during the clone can also
-// define a hook, or set a key that git_pull refuses. Git then runs the
-// command, or it applies the key. The working tree of a sparse
-// checkout still holds, because git_clone names it on the command
-// line. When the destination exists, git_clone pulls with the limits
-// of git_pull.
+// hook for the new clone alone, and git runs that hook.
+//
+// A caller that writes the git config of the destination during the
+// clone can also define a hook, or set a key that git_pull refuses.
+// Git then runs the command, or it applies the key. A key under http
+// can point the connection that carries the token of GH_TOKEN at
+// another server. The working tree of a sparse checkout still holds,
+// because git_clone names it on the command line. When the
+// destination exists, git_clone pulls with the limits of git_pull.
 //
 // A filter program of the global config reads keys of its own from
 // the config of the repository. The server cannot know the keys of
@@ -283,5 +288,12 @@
 //   - GH_TOKEN: when set, configures a git credential helper that
 //     authenticates HTTPS requests to github.com using this token.
 //     This enables cloning, fetching, pulling, and pushing private
-//     repositories.
+//     repositories. A new clone gives the helper to each https
+//     connection to github.com after git applies the URL rewrites of
+//     the git config. For a sparse clone without a depth, those
+//     connections include the fetch of the files of the sparse
+//     paths. The credential helpers of the config files still answer
+//     for every other host. Every other call takes the helper when
+//     the first URL of the remote starts with https://github.com/
+//     after those rewrites.
 package main

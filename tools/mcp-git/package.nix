@@ -13,6 +13,10 @@ buildGoModule {
 
   nativeCheckInputs = [ git ];
 
+  # Tests use httptest.NewServer, which binds to loopback. The Darwin sandbox
+  # blocks all network access by default, and this flag allows loopback.
+  __darwinAllowLocalNetworking = true;
+
   meta = {
     description = "MCP server exposing idempotent git operations";
     homepage = "https://github.com/MacroPower/dotfiles/tree/main/tools/mcp-git";
