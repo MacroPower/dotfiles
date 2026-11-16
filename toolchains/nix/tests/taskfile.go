@@ -52,6 +52,17 @@ func (m *Nix) Checked() {}
 func (m *Nix) TwiceChecked() {}
 `
 
+	// wrappedPragmaGo is the Go code of a method that
+	// [checkTaskfileProbes] adds to taskfileProbeGo. A sentence of its
+	// doc comment wraps after the word +check. Dagger reads the pragma
+	// at the end of that line. So it makes Wrapped a check, though no
+	// line of the comment holds only the pragma.
+	wrappedPragmaGo = `
+// Wrapped builds a closure, so it does not carry +check
+// and only a dagger call command runs it.
+func (m *Nix) Wrapped() {}
+`
+
 	// commandEnd holds the characters other than a newline that end a
 	// match of daggerCommandRe and each name that checkCommandRe and
 	// callCommandRe capture. They are the quotes, the backtick, the
@@ -484,6 +495,15 @@ var (
 // when such a backslash comes before the space or the shell operator
 // that follows the name of the function.
 //
+// The test finds the pragma of a function of [Nix] on a line of the
+// doc comment that holds only +check. Dagger also reads +check at the
+// end of any other line of a doc comment and before any equals sign,
+// even in the middle of a sentence. So a sentence that wraps after the
+// word +check makes its function a check, and Dagger removes the word
+// from the description of the function. The test therefore fails when
+// Dagger reads the pragma from a line that holds more than +check, in
+// the doc comment of a function of [Nix].
+//
 // Before it reads the Taskfile, the test runs [checkTaskfileProbes] on
 // fixed probe commands. That self-check fails when the test passes a
 // command that names a function that the command does not run, or a
@@ -493,7 +513,9 @@ var (
 // and commands that share a line. They also include commands that go
 // on after a quote, a backtick, or &>, and commands that a backslash
 // splits. The self-check also fails when the test fails a right command
-// or misreads a name of two words.
+// or misreads a name of two words. It fails as well when the test
+// passes a function whose doc comment ends a line with +check after
+// other words.
 //
 // +check
 func (m *Tests) TestTaskfileCommands(ctx context.Context) error {
@@ -537,6 +559,11 @@ func (m *Tests) TestTaskfileCommands(ctx context.Context) error {
 // a function of the toolchain. Each other command fails. A Taskfile in
 // which daggerCommandRe finds no command gives the function nothing to
 // verify, so the function returns an error for that Taskfile too.
+//
+// The function reads the functions of the toolchain with
+// [nixFunctions], and it returns each error of nixFunctions. So it
+// also fails when Dagger reads the +check pragma from a line that
+// holds more than the pragma, in the doc comment of a function.
 func checkTaskfileCommands(taskfile string, goFiles map[string]string) error {
 	functions, err := nixFunctions(goFiles)
 	if err != nil {
@@ -720,6 +747,12 @@ func scalarValues(node *yaml.Node) []string {
 // daggerCommandRe finds no command also fails checkTaskfileCommands,
 // but that error quotes no command. So the self-check fails when
 // daggerCommandRe misses the command of a probe.
+//
+// The function also runs checkTaskfileCommands on the Taskfile of
+// runnableProbeCmds against taskfileProbeGo with the method of
+// wrappedPragmaGo. It returns an error when checkTaskfileCommands
+// passes that Go file, or when the error does not name the doc comment
+// of the method.
 func checkTaskfileProbes() error {
 	goFiles := map[string]string{taskfileProbeGoPath: taskfileProbeGo}
 
@@ -728,6 +761,19 @@ func checkTaskfileProbes() error {
 	err := checkTaskfileCommands(taskfile, goFiles)
 	if err != nil {
 		return fmt.Errorf("checking the probe Taskfile %q: %w", taskfile, err)
+	}
+
+	wrapped := taskfileProbeGo + wrappedPragmaGo
+	want := "the doc comment of Wrapped"
+
+	err = checkTaskfileCommands(taskfile, map[string]string{taskfileProbeGoPath: wrapped})
+	if err == nil {
+		return fmt.Errorf("checkTaskfileCommands passed the probe Go file %q, want an error that holds %q",
+			wrapped, want)
+	}
+
+	if !strings.Contains(err.Error(), want) {
+		return fmt.Errorf("checking the probe Go file %q, want an error that holds %q: %w", wrapped, want, err)
 	}
 
 	for _, probe := range unrunnableProbes {
@@ -761,6 +807,12 @@ func probeTaskfile(cmds string) string {
 // the exported methods of the type that nixTypeName names. Each key is
 // the [cliName] of a function, and its value reports whether the
 // function carries the +check pragma.
+//
+// nixFunctions reads the pragma with [carriesCheck]. It returns an
+// error that names the function when carriesCheck rejects the doc
+// comment of the function. carriesCheck rejects a doc comment when
+// Dagger reads the pragma from a line that holds more than the pragma,
+// such as the line of a sentence that wraps after the word +check.
 func nixFunctions(goFiles map[string]string) (map[string]bool, error) {
 	functions := map[string]bool{}
 	fset := token.NewFileSet()
@@ -782,7 +834,10 @@ func nixFunctions(goFiles map[string]string) (map[string]bool, error) {
 				return nil, fmt.Errorf("deriving the dagger CLI name of a function in %s: %w", file, err)
 			}
 
-			functions[name] = carriesCheck(fn.Doc)
+			functions[name], err = carriesCheck(fn.Doc)
+			if err != nil {
+				return nil, fmt.Errorf("reading the doc comment of %s in %s: %w", fn.Name.Name, file, err)
+			}
 		}
 	}
 

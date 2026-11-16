@@ -49,6 +49,8 @@ Follow these conventions in the comments of each module.
 - In the module comment and in each doc comment, explain what the module or the item does and how to use it. Do not list the exported items that the comment covers. `dagger functions` lists the functions of the module, so do not list them in the module comment or in the doc comment of the main object.
 - Put a comment above each argument of an exported function, except `ctx`. Dagger publishes the comment as the description of the argument. Put each pragma of the argument, such as `+optional` or `+default`, on a line of its own after the description.
 - Put each pragma of a function, such as `+check`, `+generate`, or `+cache`, on a line of its own at the end of the doc comment.
+- When a sentence of a comment names a pragma, such as `+check`, do not end a line with that name. Do not write `=` right after the name. Dagger reads a pragma wherever a `+` and the word after it end a line or stand before `=`, even in the middle of a sentence. That rule holds for each comment that can carry a pragma, such as the doc comment of a function and the comment of an argument. Dagger then applies the pragma and removes the word from the description. So a sentence that wraps after `+check` makes its function a check, and `dagger check` runs the function.
+- Check each comment for a pragma name that ends a line or stands before `=`, because the tests find only some of those names. `TestAggregates` fails when Dagger reads `+check` from a line that holds more than the pragma, in the doc comment of an exported method of `Tests`. `TestTaskfileCommands` fails on such a line in the doc comment of a function of the `nix` toolchain. No test reads the other pragmas, the comments of arguments, or the doc comments of the functions of the `dev` toolchain.
 - Link a Go name with the `[Name]` syntax, such as `[Dev]` for the main object, `[Dev.DevBase]` for a function of the module, and `[withClaudeState]` for a helper.
 
 ## Testing
@@ -66,7 +68,7 @@ Each test is a method of `Tests` that returns an error, such as `func (m *Tests)
 - Open the doc comment with what the test verifies.
 - Set `InsecureRootCapabilities` or `ExperimentalPrivilegedNesting` only in a test that needs it, because each option lets the container bypass its sandbox. Justify the option in a `Security review:` paragraph of the doc comment. The header of `toolchains/dev/tests/main.go` sets this rule.
 - End the doc comment with a line that holds only `+check`. `dagger check` runs each function that carries the pragma.
-- Leave the pragma off a test that needs `InsecureRootCapabilities`, pushes an image to a registry, or builds the full shell image. Those tests are too privileged or too slow for every run. In the doc comment, say why the test does not carry the pragma, and give the `dagger call` command that runs the test.
+- Leave the pragma off a test that needs `InsecureRootCapabilities`, pushes an image to a registry, or builds the full shell image. Those tests are too privileged or too slow for every run. In the doc comment, say why the test does not carry the pragma, and give the `dagger call` command that runs the test. Keep a word after `+check` on its line in that comment, as in `Not annotated with +check because`. Dagger reads `+check` at the end of a line as the pragma, so the test becomes a check and `dagger check` runs it. `TestAggregates` fails on a line that ends with `+check` after other words.
 
 ### Aggregates
 
@@ -75,7 +77,7 @@ Each test is a method of `Tests` that returns an error, such as `func (m *Tests)
 - Call each test that carries `+check` from `All`.
 - Call each test that does not carry `+check` from `AllFull`. `AllFull` also calls `All`, so it runs every test of the module.
 
-`TestAggregates` in `aggregates.go` parses the Go files of the module. It fails when `All` or `AllFull` does not call a test that it must call. Each test module holds a copy of `aggregates.go`, so apply each change to every copy.
+`TestAggregates` in `aggregates.go` parses the Go files of the module. It fails when `All` or `AllFull` does not call a test that it must call. It also fails when Dagger reads `+check` from a line that holds more than the pragma, in the doc comment of an exported method of `Tests`. Dagger reads the pragma at the end of any line and before any `=`. So such a line can make a test a check that `All` does not call. Each test module holds a copy of `aggregates.go`, so apply each change to every copy.
 
 ### Tasks
 
