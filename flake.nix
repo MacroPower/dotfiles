@@ -194,6 +194,7 @@
                 comfyui = ./pkgs/comfyui.nix;
                 slugify = ./pkgs/slugify.nix;
                 mdcopy = ./pkgs/mdcopy.nix;
+                expire-clones = ./pkgs/expire-clones.nix;
                 prose-weirpack = ./pkgs/prose-weirpack.nix;
                 prose-lint = ./pkgs/prose-lint.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
