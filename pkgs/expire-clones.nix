@@ -147,9 +147,9 @@ let
 
       # enter DIR changes into the directory DIR. It fails when DIR is a
       # symbolic link or not a directory, or when another directory took
-      # the place of DIR before the change. cd reads the name `-` as the
-      # directory that the shell left, so enter names a relative DIR
-      # with a leading `./`.
+      # the place of DIR before the change. stat reads the name `-` as
+      # standard input, and cd reads it as the directory that the shell
+      # left. So enter names a relative DIR with a leading `./`.
       enter() {
         local dir=$1 want
         if [[ $dir != /* ]]; then
@@ -561,8 +561,9 @@ let
           clone root/owner/retimed
           # The tool names each entry by its name in the directory that
           # it entered. So a name that starts with a hyphen must not read
-          # as an option. cd must not read the name `-` as the directory
-          # that the shell left.
+          # as an option. stat must not read the name `-` as standard
+          # input, and cd must not read it as the directory that the
+          # shell left.
           clone root/owner/-rf
           clone root/-/stale
 
