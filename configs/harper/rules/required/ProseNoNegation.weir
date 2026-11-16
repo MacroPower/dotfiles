@@ -18,10 +18,17 @@
 #
 # False Positives
 #
-# Only `need` and `require` count, because `has no header` and `takes no
-# arguments` read as plain idiom. A comparison word after `no` states a
-# bound or a time instead (`requires no more than 2 GB`, `need no longer
-# wait`), so the guard skips `more`, `less`, `fewer`, and `longer`.
+# A comparison word after `no` states a bound or a time instead
+# (`requires no more than 2 GB`, `need no longer wait`), so the guard
+# skips `more`, `less`, `fewer`, and `longer`.
+#
+# Related Rules
+#
+# The Recommended ProseNoNegation reports other verbs before `no`
+# (`matches no check`). Only `need` and `require` sit at Required,
+# because a few phrases with other verbs read as fixed idiom (`leaving
+# no room`). The Recommended tier leaves both verbs out, so only this
+# tier reports them.
 #
 # Measurement
 #

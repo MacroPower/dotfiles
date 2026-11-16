@@ -1,0 +1,87 @@
+# Overview
+#
+# Linguists call a negation that sits on the object of a verb
+# no-negation, after its `no` (`a check that matches no check`). The
+# object is the noun that the verb acts on. A negation on the verb is
+# not-negation (`a check that does not match any check`). No-negation
+# puts the verb first, so the reader takes `matches` as a positive claim
+# until `no` turns it around. The fix moves the negation onto the verb
+# and writes `any` before the object. The rule sits at Recommended,
+# because a few phrases read as fixed idiom (`leaving no room`), where
+# the fix reads no clearer.
+#
+# Expression
+#
+# Harper's part-of-speech tagger marks each word with a tag for its word
+# class. `main` has two branches. The first counts a word that carries
+# `VERB`, the tag for a verb, and not `NOUN`, the tag for a noun, before
+# `no`. The second counts a word that carries `NOUN` before `no`,
+# because the tagger reads many verbs that end in `s` as nouns (`lists`,
+# `names`, `records`).
+#
+# In the second branch, the word before the noun must not carry `DET`,
+# the tag for a determiner, a word that introduces a noun, such as
+# `the`, `a`, or `this`. After a determiner, the noun is a real noun,
+# and `no` opens a clause that describes it (`a path no rule matches`).
+# The tagger marks `that` as a determiner, so the guard lets `that`,
+# `which`, and `who` through (`a call that names no branch`). Weir has
+# no lookbehind, so the filter consumes the word before `names` and
+# narrows the finding back to `names no`. The filter needs that word,
+# so a sentence that opens with `Lists no` passes.
+#
+# `after` guards the word after `no`. It skips a comparison word, such
+# as `more`, `longer`, or `sooner`, because the comparison states a
+# bound (`stops no sooner than one timeout`). It skips `one` and
+# `matter`, for `no one` and `no matter`. It also skips a word that
+# carries `ADP`, `CCONJ`, or `SCONJ`. `ADP` is the tag for a
+# preposition, a word that ties a noun to the rest of the sentence, such
+# as `of`, `with`, or `by`. `CCONJ` is the tag for a conjunction that
+# joins two equal parts, such as `and` or `or`. `SCONJ` is the tag for a
+# conjunction that opens a clause, such as `because`. Before such a
+# word, `no` is an answer (`says no to the prompt`).
+#
+# False Positives
+#
+# `be` and `have` stay out. `There is no cache` and `has no header`
+# state that a thing is absent, and `does not have a header` is longer
+# and no clearer.
+#
+# `mean`, `indicate`, `signal`, `imply`, `ensure`, `guarantee`,
+# `assume`, `assert`, `verify`, `check`, `confirm`, and `expect` stay
+# out, because the `no` after them opens a clause of its own (`zero
+# means no limit`, `ensure no value has been sent`). The negation
+# belongs to that clause, so moving it onto the verb changes the claim.
+#
+# The determiner guard reads only the word right before the noun, so an
+# adjective between a determiner and the noun still matches (`gives
+# many enhanced perks no entry`).
+#
+# Related Rules
+#
+# The Required ProseNoNegation reports `need` and `require` before `no`,
+# because their fix never reads as idiom. This tier leaves both verbs
+# out, so only the Required tier reports them.
+#
+# Measurement
+#
+# The rule hit 74 lines in the measure.py corpus, and 24 of 25 sampled
+# hits negated a verb through its object (`selects no rows`, `makes no
+# attempt`, `provides no mechanism`). The misfire was the idiom `leaving
+# no room`.
+expr be [is, are, was, were, be, been, being, am]
+expr have [has, have, had, having]
+expr clause [$mean, meant, $indicate, $signal, $imply, $ensure, $guarantee, $assume, $assert, $verify, $check, $confirm, $expect, case]
+expr skip [@be, @have, @clause, $need, $require]
+expr after <![more, less, fewer, longer, sooner, later, earlier, higher, lower, greater, larger, smaller, better, worse, one, matter], !ADP, !CCONJ, !SCONJ>
+expr verb <VERB, !NOUN, !@skip>
+expr nounverb <NOUN, !@skip>
+expr main [(@verb no @after), <([that, which, who, !DET] @nounverb no @after), (@nounverb no @after)>]
+let message "No-negation. Negate the verb, so `matches no check` becomes `does not match any check`."
+let description "Flags a verb negated through its object with `no`."
+let becomes ""
+let kind "Style"
+allows "The check does not match any check."
+allows "The file has no header."
+allows "Zero means no limit."
+allows "A path no rule matches stays untouched."
+allows "The user says no to the prompt."

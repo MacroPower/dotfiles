@@ -50,7 +50,7 @@
 #
 # Related Rules
 #
-# `needs` and `will` stay out of `aux`, because ProseNoNegation,
+# `needs` and `will` stay out of `aux`, because the Required ProseNoNegation,
 # ProseFutureTense, and the Recommended ProseObligation report the words
 # after them. `you` and `we` stay out of `subject`, because the Required
 # ProseFiller reports the filler `as you can see` and `as we have seen`.

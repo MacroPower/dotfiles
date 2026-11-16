@@ -17,7 +17,7 @@ The context is done after the deadline passes.
 The file is missing.
 The job has been running for an hour.
 The path is relative to the repository root.
-The zero value holds no map and panics on Set.
+The zero value does not hold a map and panics on Set.
 
 Sweep drops every entry whose expiry has passed.
 The limit applies per host, not per request.
