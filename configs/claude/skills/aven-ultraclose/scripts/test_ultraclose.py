@@ -27,6 +27,7 @@ import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("ultraclose.py")
 WORKFLOW = Path(__file__).with_name("close-task.js")
@@ -61,18 +62,53 @@ DEFAULT_SHARED = [
 # The environment variable in which Claude Code names the session of each
 # command that it runs.
 SESSION = "CLAUDE_CODE_SESSION_ID"
+# The variables that keep the git files of the developer and of the
+# machine from the git commands of a test, with their values.
+#
+# With GIT_CONFIG_NOSYSTEM set to 1, git skips the system config. git
+# reads the file that GIT_CONFIG_GLOBAL names as the global config. It
+# then reads neither the .gitconfig file of the home directory nor the
+# config file of the XDG directory. The null device holds no key.
+#
+# git reads a global ignore file and a global attributes file for every
+# repository. The core.excludesFile key and the core.attributesFile key
+# of the config name those files, and the empty global config sets
+# neither key. git then looks for the files `git/ignore` and
+# `git/attributes` in the directory that XDG_CONFIG_HOME names. It looks
+# in the .config directory of the home directory only when the variable
+# is unset or empty. With the variable set to the null device, git finds
+# neither file, because no file exists below the null device.
+#
+# git also reads a system attributes file for every repository, such as
+# /etc/gitattributes. GIT_CONFIG_NOSYSTEM does not stop that read. With
+# GIT_ATTR_NOSYSTEM set to 1, git skips the system attributes file.
+ISOLATION = {
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "XDG_CONFIG_HOME": os.devnull,
+    "GIT_ATTR_NOSYSTEM": "1",
+}
 
 
 def clean_env():
-    """The environment without the GIT_* variables of a calling git hook.
+    """The environment of a test, without the git files of the developer.
+
+    The environment drops each GIT_* variable of the process, such as the
+    variables of a calling git hook, and it sets the variables of
+    ISOLATION. So each git command of a test reads only the config, the
+    ignore files, and the attributes files of the repository that it acts
+    on. A test can name a global config of its own in the environment, as
+    with_identity() does. Every other program of a test that reads
+    XDG_CONFIG_HOME finds no config file either.
 
     The environment also names no Claude Code session. So each command of
     a test runs outside a session, unless the test names one with
     in_session().
     """
-    return {
+    kept = {
         k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k != SESSION
     }
+    return {**kept, **ISOLATION}
 
 
 def in_session(env, session):
@@ -280,15 +316,13 @@ def new_repo(tmp):
     return repo, env
 
 
-# The git options that let a test commit without the identity and the
-# signing key of the user.
+# The git options that give a commit of a test a name and an email address.
+# The global config of clean_env() holds no identity.
 IDENTITY = [
     "-c",
     "user.name=test",
     "-c",
     "user.email=test@example.com",
-    "-c",
-    "commit.gpgsign=false",
 ]
 
 
@@ -622,6 +656,114 @@ def store_step(task_dir):
     return f"Store the summary in {summary} and the notes in {notes}."
 
 
+class IsolationTest(unittest.TestCase):
+    """clean_env() keeps the git files of the developer from each test."""
+
+    # The attribute that only the attributes file of a case sets.
+    ATTRIBUTE = "ultraclose-developer"
+    # The path that a test passes to git check-ignore and to git
+    # check-attr. The file does not exist.
+    PATH = "canary.txt"
+
+    def exit_of(self, *args, cwd, env):
+        """Run one git command. Return its exit status and its standard output."""
+        p = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return p.returncode, p.stdout
+
+    def test_git_reads_no_file_of_developer(self):
+        # Each case writes one file where git looks for a file of the
+        # developer. An ignore file ignores every path, so a git add of
+        # a test that reads the file adds nothing. An attributes file sets
+        # ATTRIBUTE on every path. A config file names an ignore file and
+        # an attributes file of the case in core.excludesFile and in
+        # core.attributesFile.
+        # name: (the variable that names the directory of the file, the
+        # path of the file in that directory)
+        cases = {
+            "ignore file in the XDG directory": ("XDG_CONFIG_HOME", "git/ignore"),
+            "ignore file in the home directory": ("HOME", ".config/git/ignore"),
+            "attributes file in the XDG directory": (
+                "XDG_CONFIG_HOME",
+                "git/attributes",
+            ),
+            "attributes file in the home directory": (
+                "HOME",
+                ".config/git/attributes",
+            ),
+            "config in the XDG directory": ("XDG_CONFIG_HOME", "git/config"),
+            "config in the home directory": ("HOME", ".gitconfig"),
+        }
+        for name, (variable, file) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                developer = {
+                    "HOME": str(Path(tmp, "home")),
+                    "XDG_CONFIG_HOME": str(Path(tmp, "xdg")),
+                }
+                for directory in developer.values():
+                    Path(directory).mkdir()
+                path = Path(developer[variable], file)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                texts = {"ignore": "*\n", "attributes": f"* {self.ATTRIBUTE}\n"}
+                if path.name in texts:
+                    path.write_text(texts[path.name])
+                else:
+                    # git config writes the file, so git quotes each path.
+                    for kind, key in (
+                        ("ignore", "core.excludesFile"),
+                        ("attributes", "core.attributesFile"),
+                    ):
+                        named = Path(tmp, kind)
+                        named.write_text(texts[kind])
+                        set_key = ("config", "--file", str(path), key, str(named))
+                        git(*set_key, cwd=tmp, env=clean_env())
+                with mock.patch.dict(os.environ, developer):
+                    # git reads the .config directory of the home directory
+                    # only when XDG_CONFIG_HOME is unset or empty.
+                    if variable == "HOME":
+                        del os.environ["XDG_CONFIG_HOME"]
+                    env = clean_env()
+                # git check-ignore and git check-attr run only in a
+                # repository. A new repository ignores no path and sets no
+                # attribute, so only the file of the case changes what the
+                # two commands report.
+                repo = Path(tmp, "repo")
+                git("init", "-q", str(repo), cwd=tmp, env=env)
+                # git check-ignore exits 1 when no pattern ignores the
+                # path. Otherwise it prints the file that holds the pattern.
+                ignored = self.exit_of(
+                    "check-ignore", "--verbose", self.PATH, cwd=repo, env=env
+                )
+                self.assertEqual(ignored, (1, ""))
+                # git check-attr prints unspecified as the value of an
+                # attribute that no attributes file sets for the path.
+                attribute = ("check-attr", self.ATTRIBUTE, "--", self.PATH)
+                self.assertEqual(
+                    git(*attribute, cwd=repo, env=env),
+                    f"{self.PATH}: {self.ATTRIBUTE}: unspecified",
+                )
+
+    def test_git_skips_system_files(self):
+        # git has no variable that names another path for the system
+        # attributes file, so no file of the test stands in for it. git
+        # var prints the path of the system config and the path of the
+        # system attributes file, also when no file exists at that path.
+        # When git skips the file, the command prints nothing, and it
+        # exits 1. git var knows the two variables in git 2.42.0 and
+        # later.
+        with tempfile.TemporaryDirectory() as tmp:
+            for variable in ("GIT_CONFIG_SYSTEM", "GIT_ATTR_SYSTEM"):
+                with self.subTest(variable):
+                    read = self.exit_of("var", variable, cwd=tmp, env=clean_env())
+                    self.assertEqual(read, (1, ""))
+
+
 class InitTest(unittest.TestCase):
     def test_shared(self):
         cases = {
@@ -781,16 +923,11 @@ class InitTest(unittest.TestCase):
 
     def test_retry_after_failed_init(self):
         # Init fails after its checks when it cannot add the worktrees to
-        # the exclude file of the repository. Without a global config and
-        # a global ignore file, git ignores no worktree, so init writes
-        # the exclude file.
+        # the exclude file of the repository. git reads no global ignore
+        # file in the environment of the test, so it ignores no worktree,
+        # and init writes the exclude file.
         with tempfile.TemporaryDirectory() as tmp:
             repo, env = new_repo(tmp)
-            env |= {
-                "GIT_CONFIG_GLOBAL": os.devnull,
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "XDG_CONFIG_HOME": tmp,
-            }
             info = Path(repo, ".git", "info")
             shutil.rmtree(info, ignore_errors=True)
             run = Path(tmp, "run").resolve()
@@ -3636,14 +3773,13 @@ KEPT_NOTE = (
 def with_identity(tmp, env):
     """Give the commits of an environment a name and an email address.
 
-    The leftover command commits with the git config of its caller. The
-    file replaces the config of the user, so the signing key of the user
-    does not reach the test repository.
+    The leftover command commits with the git config of its caller, and
+    the global config of clean_env() holds no identity. The file becomes
+    the global config of the environment.
     """
     config = Path(tmp, "gitconfig")
     config.write_text("[user]\n\tname = test\n\temail = test@example.com\n")
     env["GIT_CONFIG_GLOBAL"] = str(config)
-    env["GIT_CONFIG_NOSYSTEM"] = "1"
 
 
 def kept_branches(repo, env):
@@ -4358,15 +4494,14 @@ class LandCase(unittest.TestCase):
         # that git prints. A temporary directory can sit behind a symbolic
         # link, so the tests compare the output with real paths.
         repo, run = Path(tmp, "repo").resolve(), Path(tmp, "run").resolve()
-        # The landing commits with the git config of its caller. This
-        # file replaces the config of the user, so the hook path and the
-        # signing key of the user do not reach the test repository.
+        # The landing commits with the git config of its caller, and the
+        # global config of clean_env() holds no identity. This file
+        # becomes the global config of the environment.
         config = Path(tmp, "gitconfig")
         config.write_text("[user]\n\tname = test\n\temail = test@example.com\n")
         env = clean_env()
         stub_aven(tmp, env)
         env["GIT_CONFIG_GLOBAL"] = str(config)
-        env["GIT_CONFIG_NOSYSTEM"] = "1"
         env["ENGINE"] = str(Path(tmp, "engine"))
         env["RAN"] = str(Path(tmp, "ran"))
         env["PROCESS"] = str(Path(tmp, "process"))
@@ -6450,13 +6585,8 @@ class TargetTest(LandCase):
         for name, (flags, file, refuses) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
                 repo, env = launchable_repo(tmp)
-                # Without a global ignore file, git ignores no worktree
-                # before init.
-                env |= {
-                    "GIT_CONFIG_GLOBAL": os.devnull,
-                    "GIT_CONFIG_NOSYSTEM": "1",
-                    "XDG_CONFIG_HOME": tmp,
-                }
+                # git reads no global ignore file in the environment of
+                # the test, so it ignores no worktree before init.
                 Path(repo, file).parent.mkdir(parents=True, exist_ok=True)
                 Path(repo, file).write_text("f\n")
                 self.assertNotEqual(git("status", "--porcelain", cwd=repo, env=env), "")
