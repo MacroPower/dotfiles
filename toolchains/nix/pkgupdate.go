@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -19,9 +20,19 @@ const (
 	// scripts, as the Taskfile at pkgUpdateTaskfile spells it.
 	pkgUpdateTask = "pkg:update"
 
+	// updateScriptSuffix ends the path of each update script.
+	updateScriptSuffix = "-update.sh"
+
 	// updateScriptGlob matches the path of each update script from the
 	// root of the project source.
-	updateScriptGlob = "pkgs/*-update.sh"
+	updateScriptGlob = "pkgs/*" + updateScriptSuffix
+
+	// packageFileSuffix ends the path of each package file.
+	packageFileSuffix = ".nix"
+
+	// packageFileGlob matches the path of each package file from the
+	// root of the project source.
+	packageFileGlob = "pkgs/*" + packageFileSuffix
 )
 
 // updateCommandRe matches a command of the pkg:update task that runs
@@ -31,8 +42,10 @@ var updateCommandRe = regexp.MustCompile(`^bash (pkgs/[^/\s]+-update\.sh)$`)
 
 // CheckPkgUpdate verifies that the pkg:update task of
 // taskfiles/nix/Taskfile.yaml runs the update scripts that the project
-// source holds, and no other script. An update script is a file that
-// matches pkgs/*-update.sh.
+// source holds, and no other script. It also verifies that the source
+// holds the package file of each update script. An update script is a
+// file that matches pkgs/*-update.sh. The package file of
+// pkgs/<name>-update.sh is pkgs/<name>.nix, which the script updates.
 //
 // The check fails when the task does not run an update script, because
 // the package of that script then stays at an old version. It also
@@ -40,22 +53,53 @@ var updateCommandRe = regexp.MustCompile(`^bash (pkgs/[^/\s]+-update\.sh)$`)
 // stops at the command of that script, so it never runs the scripts
 // after it.
 //
+// The check fails when the source holds an update script and does not
+// hold the package file of that script. The script fails when it reads
+// the missing file, so Task stops at the command of that script as
+// well. The check finds the package file by the name of the script and
+// does not read the script. So it does not see another file that a
+// script updates.
+//
 // The task spells out one command for each script, and the check reads
 // those commands. Write each entry of the cmds list of the task as a
 // string of the form `bash pkgs/<name>-update.sh`. The check fails on
 // an entry of another form, because it cannot tell which script that
 // entry runs.
 //
+// One run of the check reports the faults of the task and each update
+// script without its package file.
+//
 // +check
 func (m *Nix) CheckPkgUpdate(ctx context.Context) error {
-	taskfile, err := m.Source.File(pkgUpdateTaskfile).Contents(ctx)
-	if err != nil {
-		return fmt.Errorf("reading %s: %w", pkgUpdateTaskfile, err)
-	}
-
 	scripts, err := m.Source.Glob(ctx, updateScriptGlob)
 	if err != nil {
 		return fmt.Errorf("listing %s: %w", updateScriptGlob, err)
+	}
+
+	packages, err := m.Source.Glob(ctx, packageFileGlob)
+	if err != nil {
+		return fmt.Errorf("listing %s: %w", packageFileGlob, err)
+	}
+
+	// The joined error names the faults of both comparisons. It also
+	// reaches a caller in another module with its whole text. A
+	// function can return an API error in a chain of single wraps, as
+	// checkTaskfile does for a missing Taskfile. The Go SDK of Dagger
+	// then sends that caller only the message of the API error, without
+	// the context of each wrap.
+	return errors.Join(m.checkTaskfile(ctx, scripts), checkPackageFiles(scripts, packages))
+}
+
+// checkTaskfile reads the Taskfile at pkgUpdateTaskfile from the
+// project source and returns the error of [checkPkgUpdate] for that
+// Taskfile and scripts. scripts holds the path of each update script
+// from the root of the project source. The function also returns an
+// error when it cannot read the Taskfile, such as when the source does
+// not hold the file.
+func (m *Nix) checkTaskfile(ctx context.Context, scripts []string) error {
+	taskfile, err := m.Source.File(pkgUpdateTaskfile).Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", pkgUpdateTaskfile, err)
 	}
 
 	err = checkPkgUpdate(taskfile, scripts)
@@ -165,4 +209,28 @@ func pkgUpdateScripts(taskfile string) ([]string, error) {
 	}
 
 	return scripts, nil
+}
+
+// checkPackageFiles returns an error that names each update script of
+// scripts whose package file packages does not hold. scripts holds the
+// path of each update script from the root of the project source.
+// packages holds the path of each package file from that root.
+func checkPackageFiles(scripts, packages []string) error {
+	var errs []error
+
+	for _, script := range slices.Sorted(slices.Values(scripts)) {
+		pkg := packageFile(script)
+		if !slices.Contains(packages, pkg) {
+			errs = append(errs, fmt.Errorf("%s updates %s, which the project source does not hold", script, pkg))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// packageFile returns the path of the package file of the update script
+// at script, which is the file that the script updates. The package
+// file of pkgs/<name>-update.sh is pkgs/<name>.nix.
+func packageFile(script string) string {
+	return strings.TrimSuffix(script, updateScriptSuffix) + packageFileSuffix
 }

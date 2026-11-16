@@ -65,8 +65,10 @@ tasks:
   # file that matches pkgs/*-update.sh. In the commit hook,
   # CheckPkgUpdate of the nix toolchain fails when a script has no
   # command here, or when a command names a script that does not exist.
-  # Write each command as `bash pkgs/<name>-update.sh`, because the
-  # check fails on an entry of another form.
+  # It also fails when pkgs/<name>-update.sh exists and pkgs/<name>.nix,
+  # which the script updates, does not. Write each command as
+  # `bash pkgs/<name>-update.sh`, because the check fails on an entry of
+  # another form.
   pkg:update:
     desc: Update custom package derivations in pkgs/
     cmds:
