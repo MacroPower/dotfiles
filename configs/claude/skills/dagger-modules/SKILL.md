@@ -5,7 +5,7 @@ description: >-
   Dagger-based CI pipelines.
 ---
 
-# Dagger Modules — Go SDK
+# Dagger Modules: Go SDK
 
 This skill covers the full lifecycle of building Dagger modules in Go: initialization, function design, types, caching, services, secrets, LLM integration, testing, dependencies, toolchains, and publishing.
 
@@ -283,15 +283,15 @@ When the source of a module is the repository root, the migration converts its `
 ## Key Design Principles
 
 ### Functions are the building blocks
-Each function should do one thing well. Accept typed inputs, return typed outputs. Functions run in sandboxed containers — they have no implicit access to the host.
+Each function should do one thing well. Accept typed inputs, return typed outputs. Functions run in sandboxed containers, so they do not have implicit access to the host.
 
 ### Lazy evaluation
-Dagger operations are lazy — nothing executes until a scalar value is resolved (via `ctx`). Build pipelines by chaining operations. Resolve intermediate values only when you need them. Use `Sync(ctx)` when you need to force execution for side effects without extracting a value.
+Dagger operations are lazy. They execute only when a call that takes `ctx` resolves a scalar value. Build pipelines by chaining operations. Resolve intermediate values only when you need them. To force execution for side effects without extracting a value, call `Sync(ctx)`.
 
 ### Immutability drives caching
 Every Dagger operation takes immutable inputs and produces immutable outputs. This content-addressing enables automatic caching. Embrace the functional, pipeline-style approach.
 
-### Chain, don't orchestrate
+### Chain, do not orchestrate
 Instead of imperative step-by-step scripting, compose operations into pipelines using method chaining. The DAG engine handles execution order, parallelism, and caching.
 
 ### Constructor for module-wide config
@@ -369,7 +369,7 @@ Options: `"10s"`, `"10m"`, `"10h"` (TTL), `"session"` (current session only), `"
 
 Cache key = module source code + argument values + parent object values. Any change invalidates.
 
-Function caching and layer caching are independent — even with `cache="never"`, unchanged internal steps (WithExec, etc.) still use layer caching.
+Function caching and layer caching are independent. Even with `cache="never"`, unchanged internal steps, such as a `WithExec`, still use layer caching.
 
 Modules whose `engineVersion` is lower than v0.19.4 default to `"session"` caching. To keep that default, add `disableDefaultFunctionCaching = true` to the module config before a manual edit or a generation raises the `engineVersion` to v0.19.4 or a later version. Neither the Dagger v1.0.0-beta.25 CLI nor Go SDK v1.6.0 adds the flag. [dagger-module.toml](references/architecture.md#dagger-moduletoml) in architecture.md covers how to raise the `engineVersion` and when generation raises it. Remove the flag after you review the caching of each function, and the functions take the 7-day default.
 
@@ -522,7 +522,7 @@ See [architecture.md](references/architecture.md) for advanced patterns (interde
 
 ## Secrets
 
-Accept secrets as typed `*dagger.Secret` arguments — never as plain strings. Secrets are never written to logs or cached on disk. They are automatically scrubbed from stdout/stderr and scoped to the defining module.
+Accept secrets as typed `*dagger.Secret` arguments, never as plain strings. Dagger never writes secrets to logs, and it never caches them on disk. It scrubs them from stdout and stderr, and it scopes them to the module that defines them.
 
 Callers pass secrets via providers:
 

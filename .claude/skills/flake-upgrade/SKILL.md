@@ -23,13 +23,13 @@ an aven task.
 The expensive middle step (changelog reading) is fanned out to parallel read-only
 agents, one per changed input and one per installed package that a
 package-carrying input moved, so a full update stays fast. The main agent
-applies all edits itself -- research agents never touch the repo, which avoids
-conflicting edits and keeps the final judgment in one place.
+applies all edits itself, and research agents never touch the repo. So no two
+agents make conflicting edits, and the final judgment stays in one place.
 
 ## Step 1: Preflight
 
 Confirm `flake.nix` and `flake.lock` are clean in git (`git status --porcelain
-flake.nix flake.lock`). If they are dirty, stop and ask -- otherwise the lock diff
+flake.nix flake.lock`). If they are dirty, stop and ask. Otherwise the lock diff
 mixes the user's pending changes with the bump, and reverting becomes destructive.
 Other dirty files are fine. Keeping the lock clean also means the committed
 `flake.lock` at HEAD is the "before" for diffing, so you do not need a snapshot.
@@ -55,8 +55,8 @@ task nix:lock-diff
 It diffs HEAD's `flake.lock` against the working tree (run
 `task nix:lock-diff -- <rev-or-file> [new-file]` to compare other points) and prints
 a JSON array of changed root inputs with repo, old/new rev, dates, and a compare
-URL. Transitive nodes (`flake-parts_2`, `systems_3`, ...) are excluded on purpose -
-they are not actionable here.
+URL. It leaves out transitive nodes (`flake-parts_2`, `systems_3`, ...) on
+purpose, because they are not actionable here.
 
 A rev range describes what moved in that input's own tree. For an input that
 exists to package other software, the range hides the bumps that matter, and
@@ -131,8 +131,9 @@ run:
   their packaging and says nothing about what Claude Code or neovim changed.
 
 Within a wave, spawn all general-purpose agents in a single message so they run
-concurrently. They inherit the session model by default -- changelog triage
-needs real judgment; downgrade only trivial single-package inputs.
+concurrently. They inherit the session model by default. Changelog triage
+needs real judgment, so downgrade only the agents of trivial single-package
+inputs.
 
 Prompt template (fill in from the Step 3 JSON):
 
@@ -187,7 +188,7 @@ commit titled `claude-code: 2.1.0 -> 2.2.0` in llm-agents.nix is a pointer to
 a changelog, not a changelog; the agent reads anthropics/claude-code's release
 notes for that range.
 
-While agents run, do not busy-wait -- end the turn and act on completion
+While agents run, do not busy-wait. End the turn and act on completion
 notifications as they arrive.
 
 ## Step 6: Act on the reports
@@ -283,7 +284,7 @@ nix flake check --no-build --all-systems
 This evaluates every host configuration (darwin, NixOS, and home-manager checks)
 without building, which is exactly where removed or renamed options blow up.
 Fix evaluation errors and rerun until clean. Watch stderr for deprecation
-warnings too -- fixing them now is the point of this skill.
+warnings too, because fixing them now is the point of this skill.
 
 If any `.nix` files were edited, run `task format`. The full `task check`
 (Dagger e2e) is slow, so leave it to the user unless they asked for it.
