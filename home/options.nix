@@ -81,6 +81,24 @@ in
       description = "SSH config Include directives.";
     };
 
+    findExcludes = mkOption {
+      type = types.listOf types.str;
+      default = [
+        ".git"
+        ".worktrees"
+        ".claude/worktrees"
+      ];
+      description = ''
+        Directories that the fish `find` function leaves out of each
+        search. home/fish.nix reads the list on every host, so this
+        file declares the option. On a host that imports
+        home/claude.nix, hook-router leaves the same directories out of
+        the `rg` and `bfs` commands that its search rewrite writes. An
+        entry without a slash names a directory, and an entry with a
+        slash names the end of a path.
+      '';
+    };
+
     caCertificateFiles = mkOption {
       type = types.listOf types.path;
       default = [ ];

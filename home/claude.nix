@@ -1059,7 +1059,20 @@ let
           lib.escapeShellArg (builtins.toJSON (removeAttrs cfg.outputCompaction [ "saveFullOutput" ]))
         } \
         ${lib.optionalString cfg.outputCompaction.saveFullOutput ''--compaction-output-dir "${config.xdg.stateHome}/hook-router/outputs"''} \
-        ${lib.optionalString cfg.searchRewrite.enable "--search-rewrite-config ${lib.escapeShellArg (builtins.toJSON (removeAttrs cfg.searchRewrite [ "enable" ]))}"} \
+        ${
+          # The fish `find` function of home/fish.nix reads
+          # dotfiles.findExcludes too. So the hook and the shell leave
+          # the same directories out of a search.
+          lib.optionalString cfg.searchRewrite.enable
+            "--search-rewrite-config ${
+              lib.escapeShellArg (
+                builtins.toJSON {
+                  inherit (cfg.searchRewrite) grep find;
+                  inherit (config.dotfiles) findExcludes;
+                }
+              )
+            }"
+        } \
         --sleep-guard-config ${
           # Passed unconditionally: enable travels inside the JSON (the
           # --compaction-config pattern) because maxSeconds cannot double
@@ -2533,24 +2546,8 @@ in
             default = true;
             description = ''
               Whether to rewrite `find` into `bfs` with a global
-              `-exclude` prune of findExcludes injected after the
-              command word.
-            '';
-          };
-          findExcludes = mkOption {
-            type = types.listOf types.str;
-            default = [
-              ".git"
-              ".worktrees"
-              ".claude/worktrees"
-            ];
-            description = ''
-              Directories pruned from both rewrites. The single source
-              of truth shared by the hook (via --search-rewrite-config)
-              and the interactive fish `find` wrapper. A basename entry
-              (no slash) prunes by name; a slash-bearing entry prunes by
-              path. Each entry becomes a bfs `-exclude` clause and an rg
-              `-g` exclude glob.
+              `-exclude` prune of `dotfiles.findExcludes` injected after
+              the command word.
             '';
           };
         };
@@ -2559,7 +2556,10 @@ in
       description = ''
         hook-router PreToolUse:Bash search rewriting. camelCase keys so
         `builtins.toJSON` matches the Go struct tags in
-        tools/hook-router/searchrewrite/searchrewrite.go Config.
+        tools/hook-router/searchrewrite/searchrewrite.go Config. The
+        wrapper adds the `dotfiles.findExcludes` list of home/options.nix
+        to the JSON as the `findExcludes` field. Each entry of the list
+        becomes a bfs `-exclude` clause and an rg `-g` exclude glob.
       '';
     };
 

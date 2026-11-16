@@ -22,13 +22,13 @@
         };
       };
     };
+  # This homeModule imports no module of home/, so the host gets only
+  # the modules that home/default.nix imports. The evaluation of this
+  # host fails when one of those modules reads an option of a module
+  # that only other hosts import, such as home/claude.nix. Declare that
+  # option in home/options.nix instead of importing the other module
+  # here.
   homeModule = {
-    # home/fish.nix reads dotfiles.claude.searchRewrite, whose option is
-    # defined in home/claude.nix; every host imports it. Without this the
-    # home config fails to evaluate ("attribute 'claude' missing").
-    imports = [
-      ../../home/claude.nix
-    ];
     dotfiles = {
       git = {
         userName = "Jacob Colvin";

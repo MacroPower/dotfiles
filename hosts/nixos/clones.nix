@@ -31,9 +31,13 @@ let
   # cannot read the value.
   cloneMaxAge = "10 days";
   tmpfilesKeeps = import ./tmpfiles-check.nix { inherit config lib pkgs; };
+  # home/claude.nix declares the dotfiles.claude options, and the git
+  # tool bundle is one of them. A host whose homeModule leaves that
+  # module out has no git tool bundle.
+  hasGitBundle = user.dotfiles ? claude && user.dotfiles.claude.toolBundles.git.enable;
 in
 {
-  config = lib.mkIf user.dotfiles.claude.toolBundles.git.enable {
+  config = lib.mkIf hasGitBundle {
     # This assertion fails the evaluation when the Claude Code
     # instructions send the clones to a directory other than cloneRoot.
     # The daily cleanup of /tmp then deletes single files of the

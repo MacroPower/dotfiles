@@ -17,7 +17,7 @@ let
   # treat them as command substitution. The hook-router rewrite builds
   # the same expression in Go (excludeExpr in
   # tools/hook-router/searchrewrite/searchrewrite.go); keep both in sync.
-  findExcludes = config.dotfiles.claude.searchRewrite.findExcludes;
+  inherit (config.dotfiles) findExcludes;
   bfsExcludeExpr = lib.concatStringsSep " -o " (
     map (e: if lib.hasInfix "/" e then "-path '*${e}'" else "-name ${e}") findExcludes
   );

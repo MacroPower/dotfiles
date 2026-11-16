@@ -11,8 +11,8 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 )
 
-// defaultExcludes mirrors the findExcludes default wired into
-// home/claude.nix. Update both when the default changes.
+// defaultExcludes mirrors the default of the dotfiles.findExcludes
+// option in home/options.nix. Update both when the default changes.
 var defaultExcludes = []string{".git", ".worktrees", ".claude/worktrees"}
 
 // fullConfig enables both rewrites with the default excludes.
