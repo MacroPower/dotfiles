@@ -365,9 +365,17 @@ in
     #
     # The file's license header prints as `x` too, because its text
     # must stay verbatim (see license_lines).
+    #
+    # comment_lines drops the `\r` from each line that ends in `\r\n`,
+    # and so does license_lines. Patterns that end at the line end, such
+    # as the tests for a YAML block scalar and an HCL heredoc, then match
+    # those lines too. A source file with CRLF line endings therefore
+    # draws the same findings as its copy with LF endings. Its shadow
+    # ends each line in `\n` alone.
     comment_lines() {
       KIND="$1" SHIFTS="$3" LICENSE="$(license_lines "$2")" awk '
         BEGIN {
+          RS = "\r?\n"
           block = -1
           n = split(ENVIRON["LICENSE"], header, "\n")
           for (i = 1; i <= n; i++) {
@@ -474,9 +482,15 @@ in
     # line. The header is the file's first run of full-line comments,
     # after any blank lines and a shebang, when one of its lines names a
     # copyright or a license. License text must stay verbatim, so no
-    # finding on it can be fixed, and the wrapper drops them all.
+    # finding on it can be fixed, and the wrapper drops them all. The
+    # awk program drops the `\r` from each line that ends in `\r\n`. A
+    # blank line before the header and an empty comment line inside it
+    # then read the same with either line ending.
     license_lines() {
       awk '
+        BEGIN {
+          RS = "\r?\n"
+        }
         !started && (/^[ \t]*$/ || (NR == 1 && /^#!/)) {
           next
         }
@@ -988,6 +1002,71 @@ in
             echo "control.go: expected a finding" >&2
             exit 1
           fi
+          touch "$out"
+        '';
+
+        # Lints the source files in configs/harper/fixtures/crlf and copies
+        # of them with CRLF line endings, and expects the findings that
+        # want lists from both. The test also expects the shadow of each
+        # copy to match the shadow of its source byte for byte. The
+        # command in configs/harper/CLAUDE.md builds this test too.
+        #
+        # Each file holds lines that the comment shadow skips, or that it
+        # marks by a pattern that ends at the line end. The block scalar
+        # in deploy.yaml and the heredoc in main.tf each hold a script
+        # whose `#` lines are code. The block scalar also holds a blank
+        # line. An empty comment line sits inside the license header of
+        # license.go. A blank line sits between the shebang and the
+        # license header of license.py. The comment after that header
+        # holds an empty comment line and a line that ends in a dash.
+        tests.crlf = runCommand "prose-lint-crlf" { } ''
+          mkdir lf crlf
+          cp ${../configs/harper/fixtures/crlf}/* lf/
+          files="deploy.yaml license.go license.py main.tf"
+          for f in $files; do
+            sed 's/$/\r/' "lf/$f" >"crlf/$f"
+          done
+
+          cat >want <<'END'
+          deploy.yaml:1:17 ProseAndOr
+          license.go:5:31 ProseAndOr
+          license.py:7:17 ProseAndOr
+          license.py:9:21 ProseDash
+          main.tf:1:17 ProseAndOr
+          END
+
+          # Prints `file:line:col Rule` for each finding in the directory
+          # that the argument names, by line within each file.
+          findings() {
+            local f out rc
+            for f in $files; do
+              rc=0
+              out=$(cd "$1" && ${lib.getExe finalAttrs.finalPackage} "$f") || rc=$?
+              if [ "$rc" -ge 2 ]; then
+                echo "$1/$f: prose-lint exited $rc" >&2
+                return 1
+              fi
+              printf '%s\n' "$out" |
+                sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::([A-Za-z]+): .*,\1 \2,p' |
+                sort -t: -k2,2n
+            done
+          }
+
+          for d in lf crlf; do
+            findings "$d" >"$d.found" || exit 1
+            if ! diff want "$d.found"; then
+              echo "the files in $d draw other findings than want lists" >&2
+              exit 1
+            fi
+          done
+          for f in $files; do
+            ${lib.getExe finalAttrs.finalPackage} --shadow "lf/$f" >lf.shadow
+            ${lib.getExe finalAttrs.finalPackage} --shadow "crlf/$f" >crlf.shadow
+            if ! cmp lf.shadow crlf.shadow; then
+              echo "$f: the shadow of the copy with CRLF line endings differs" >&2
+              exit 1
+            fi
+          done
           touch "$out"
         '';
 

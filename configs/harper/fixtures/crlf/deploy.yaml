@@ -1,0 +1,10 @@
+# Run the tests and/or the linter on each push.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          # Copy the file(s) to the server, e.g. the build output.
+
+          # Restart the service and/or the proxy.
+          cp a b

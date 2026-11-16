@@ -386,6 +386,11 @@ on a set of files.
 
 - `license-headers` lints source files that open with a license header
   and expects no finding.
+- `crlf` lints the source files in `fixtures/crlf/` and copies of them
+  with CRLF line endings. The files hold a YAML block scalar, an HCL
+  heredoc, and license headers, whose lines the comment shadow skips.
+  The test expects the findings that it lists from both copies of each
+  file, and the same shadow from both.
 - `prompt-files` lints one line with a word in capitals at the path of
   a prompt file for an agent and at other paths. It expects the
   ProseCapsEmphasis finding only at the other paths, which include a
