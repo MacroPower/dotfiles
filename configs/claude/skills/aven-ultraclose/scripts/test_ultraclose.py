@@ -4167,6 +4167,15 @@ class LeftoverTest(unittest.TestCase):
 # How long HANG and MANAGER hang, in seconds. Each of them waits for a
 # process that sleeps that long.
 HANG_SECONDS = 30
+# How long gone() waits for a process to end, in seconds.
+GONE_SECONDS = 10
+# How long the second process of STUBBORN and the process of
+# OUTLASTS_SIGINT sleep, in seconds. Each of them outlasts the SIGINT of
+# a stop. A test lands a step that runs one of them, and gone() then
+# waits for the process to end. The sleep lasts longer than the stop and
+# that wait together for each step timeout of LandCase.TIMEOUTS. So a
+# process that gone() finds ended did not end with its sleep.
+OUTLAST_SECONDS = 60
 
 
 # A program that stands in for lefthook. It runs a process in a process
@@ -4198,10 +4207,10 @@ child.wait()
 # and ends. That process waits for a second process, which ignores
 # SIGTERM as well. The process file of the environment records the ID of
 # the second process.
-STUBBORN = """\
+STUBBORN = f"""\
 trap "" INT
 trap 'touch "$STOPPED"; exit 1' TERM
-(trap "" TERM; exec sleep 30) &
+(trap "" TERM; exec sleep {OUTLAST_SECONDS}) &
 echo $! >"$PROCESS"
 wait
 """
@@ -4210,7 +4219,7 @@ wait
 # A program that hangs. It keeps running after SIGINT, and it records
 # each SIGINT that it gets in the interrupted file of the environment.
 # The process file of the environment records the ID of its process.
-OUTLASTS_SIGINT = """\
+OUTLASTS_SIGINT = f"""\
 import os
 import signal
 import time
@@ -4223,18 +4232,18 @@ def interrupted(signum, frame):
 
 signal.signal(signal.SIGINT, interrupted)
 with open(os.environ["PROCESS"], "w") as f:
-    f.write(f"{os.getpid()}\\n")
-time.sleep(30)
+    f.write(f"{{os.getpid()}}\\n")
+time.sleep({OUTLAST_SECONDS})
 """
 
 
 def gone(process):
-    """Whether a process ends within 10 seconds.
+    """Whether a process ends within GONE_SECONDS seconds.
 
     A process that ended keeps its ID until its parent reads its exit
     status, so the function waits for the ID to leave.
     """
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + GONE_SECONDS
     while time.monotonic() < deadline:
         try:
             os.kill(process, 0)
@@ -4316,7 +4325,7 @@ class LandCase(unittest.TestCase):
     HANG = f'echo "{WAITS}"; sh -c \'echo $$ >"$PROCESS"; exec sleep {HANG_SECONDS}\''
     # A step whose first run hangs, and whose later runs pass.
     HANG_ONCE = f'test -e "$RAN" || {{ touch "$RAN"; {HANG}; }}'
-    # The step timeouts that land_hung tries in turn, in seconds. Each is
+    # The step timeouts that hung_landing tries in turn, in seconds. Each is
     # less than a minute, so the output of a landing gives it in seconds,
     # such as 8s. Each step timeout plus GRACE is less than HANG_SECONDS.
     # So the step still hangs when the landing stops it. The bound of the
@@ -4400,13 +4409,17 @@ class LandCase(unittest.TestCase):
         )
         return p.returncode, p.stdout.splitlines()
 
-    def land_hung(self, top, *flags, hook="exit 0"):
-        """Land a task whose step hangs until the landing stops the step.
+    @contextmanager
+    def hung_landing(self, top, start):
+        """Run a land command whose step hangs until the landing stops the step.
 
-        The flags and the hook go to start_task, together with a step
-        timeout. Return the directory that start_task filled, the
-        repository, the environment, the step timeout in seconds, and the
-        landing.
+        The start argument is a function that starts a run with one task
+        that is ready to land, as start_task does. It takes a directory
+        and the step timeout of the run in seconds, and it returns the
+        repository and the environment. Yield that directory, the
+        repository, the environment, the step timeout, and the land
+        command, which still runs. On exit, the method kills a land
+        command that still runs.
 
         A landing stops its step one step timeout after the step starts.
         On a loaded host, the step might still be starting at that time.
@@ -4417,20 +4430,20 @@ class LandCase(unittest.TestCase):
         shows how a landing stops a step that hangs.
 
         So the method tries each step timeout of TIMEOUTS in turn, with a
-        new task in a directory of its own inside top. It returns the
-        first landing whose step recorded its process in the first half
-        of the step timeout, counted from the start of the land command.
+        new task in a directory of its own inside top. It yields the
+        first land command whose step recorded its process in the first
+        half of the step timeout, counted from the start of the command.
         The landing stops a step no sooner than one step timeout after
         that start. So the step had the other half of the step timeout to
-        start the wait that follows the record. The method fails the test
-        when no step timeout of TIMEOUTS gives such a landing.
+        start the wait that follows the record. The method waits for the
+        end of each land command that it does not yield. It fails the
+        test when no step timeout of TIMEOUTS gives a land command to
+        yield.
         """
         for limit in self.TIMEOUTS:
             tmp = Path(top, f"timeout-{limit}")
             tmp.mkdir()
-            repo, env = self.start_task(
-                tmp, *flags, "--step-timeout", str(limit), hook=hook
-            )
+            repo, env = start(tmp, limit)
             record = Path(env["PROCESS"])
             half = time.monotonic() + limit / 2
             p = subprocess.Popen(
@@ -4448,18 +4461,43 @@ class LandCase(unittest.TestCase):
                     time.sleep(0.05)
                 # The method reads the clock after it finds the record,
                 # so the step recorded its process before that time.
-                hung = record.exists() and time.monotonic() < half
+                if record.exists() and time.monotonic() < half:
+                    yield tmp, repo, env, limit, p
+                    return
                 output = p.communicate(timeout=limit + 60)[0]
             finally:
                 p.kill()
                 p.wait()
             landing = p.returncode, output.splitlines()
-            if hung:
-                return tmp, repo, env, limit, landing
         self.fail(
             f"the step did not hang in the first {limit / 2:g} seconds of a"
             f" landing, and the last landing was {landing}"
         )
+
+    def land_hung(self, top, *flags, hook="exit 0", start=None):
+        """Land a task whose step hangs until the landing stops the step.
+
+        The method waits for the end of the land command that
+        hung_landing yields. Return the directory that the start
+        function filled, the repository, the environment, the step
+        timeout in seconds, and the landing.
+
+        Without the start argument, start_task starts each task with the
+        flags, the hook, and the step timeout. A test that changes the
+        environment or the config of the run before the landing passes
+        the start function of hung_landing, and it passes no flag and no
+        hook.
+        """
+        if start is None:
+
+            def start(tmp, limit):
+                return self.start_task(
+                    tmp, *flags, "--step-timeout", str(limit), hook=hook
+                )
+
+        with self.hung_landing(top, start) as (tmp, repo, env, limit, p):
+            output = p.communicate(timeout=limit + 60)[0]
+        return tmp, repo, env, limit, (p.returncode, output.splitlines())
 
     def land_twice(self, tmp, repo, env):
         """Land the task with two commands that run at the same time.
@@ -5668,39 +5706,89 @@ class LandTest(LandCase):
             self.assert_ended(self.hung_process(env))
             self.assert_failed(repo, env, landing, "CHECKTIMEOUT")
 
+    def test_land_hung_starts_each_task_with_start_function(self):
+        # The step of the first landing starts late, so land_hung lands a
+        # new task with a longer step timeout. The start function starts
+        # each task in a directory of its own. It sets the step timeout
+        # of each run with the config command.
+        self.TIMEOUTS = (1, 3, 20)
+        late = f"sleep 0.7; {self.HANG}"
+        # The directory and the step timeout of each task.
+        started = []
+
+        def start(tmp, limit):
+            started.append((tmp, limit))
+            repo, env = self.start_task(tmp, "--check", late)
+            ultraclose("config", "--step-timeout", str(limit), cwd=repo, env=env)
+            return repo, env
+
+        with tempfile.TemporaryDirectory() as top:
+            tmp, repo, env, limit, landing = self.land_hung(top, start=start)
+            # On a loaded host, the step of the second landing might
+            # start late as well, and land_hung then lands a third task.
+            count = len(started)
+            self.assertGreater(count, 1)
+            self.assertEqual([step for _, step in started], [*self.TIMEOUTS[:count]])
+            self.assertEqual(len({directory for directory, _ in started}), count)
+            # land_hung returns the last task, and the landing of that
+            # task ran with the step timeout of the config command.
+            self.assertEqual((tmp, limit), started[-1])
+            self.assertEqual(repo, Path(tmp, "repo").resolve())
+            self.assertIn(f"the step timeout of {limit}s", "\n".join(landing[1]))
+            self.assert_ended(self.hung_process(env))
+            self.assert_failed(repo, env, landing, "CHECKTIMEOUT")
+
     def test_land_hung_stops_step_before_its_sleep_ends(self):
-        # A landing sends SIGTERM to a step one step timeout plus GRACE
-        # after the step starts. The step of land_hung still sleeps at
-        # that time. So a step that ends before the SIGTERM ended on the
-        # SIGINT of the stop.
         for limit in self.TIMEOUTS:
+            # A landing sends SIGTERM to a step one step timeout plus
+            # GRACE after the step starts. The step of land_hung still
+            # sleeps at that time. So a step that ends before the SIGTERM
+            # ended on the SIGINT of the stop.
             self.assertLess(limit + GRACE, HANG_SECONDS)
+            # The stop of a step sends SIGINT, SIGTERM, and SIGKILL GRACE
+            # seconds apart. So a land command ends three times GRACE at
+            # most after the step timeout ends. gone() then waits
+            # GONE_SECONDS for a process of the step. The second process
+            # of STUBBORN and the process of OUTLASTS_SIGINT still sleep
+            # at that time. A land command that ends before it stops the
+            # step ends sooner. So a process that gone() finds ended did
+            # not end with its sleep. A test that reads the process then
+            # catches a land command that leaves the step running.
+            self.assertLess(limit + 3 * GRACE + GONE_SECONDS, OUTLAST_SECONDS)
 
     def test_stops_processes_that_ignore_signals(self):
         # The landing sends SIGTERM to the processes that SIGINT did not
         # end, and it kills the processes that SIGTERM did not end.
-        with tempfile.TemporaryDirectory() as tmp:
-            script = Path(tmp, "stubborn.sh")
+        with tempfile.TemporaryDirectory() as top:
+            script = Path(top, "stubborn.sh")
             script.write_text(STUBBORN)
             hook = f'exec sh "{script}"'
-            repo, env = self.start_task(tmp, "--step-timeout", "2", hook=hook)
-            stopped = Path(tmp, "stopped")
-            env["STOPPED"] = str(stopped)
-            landing = self.land(repo, env, timeout=60)
+
+            def start(tmp, limit):
+                repo, env = self.start_task(
+                    tmp, "--step-timeout", str(limit), hook=hook
+                )
+                env["STOPPED"] = str(Path(tmp, "stopped"))
+                return repo, env
+
+            _, repo, env, _, landing = self.land_hung(top, start=start)
             self.assert_ended(self.hung_process(env))
             # The first process got SIGTERM before the landing killed the
             # processes of the step.
-            self.assertTrue(stopped.exists())
+            self.assertTrue(Path(env["STOPPED"]).exists())
             self.assert_failed(repo, env, landing, "COMMITTIMEOUT")
 
     def test_config_changes_step_timeout(self):
         # The run starts with the default step timeout, and the step
         # hangs for less time than that. So only the step timeout of the
         # config command stops the step.
-        with tempfile.TemporaryDirectory() as tmp:
+        def start(tmp, limit):
             repo, env = self.start_task(tmp, "--check", self.HANG)
-            ultraclose("config", "--step-timeout", "2", cwd=repo, env=env)
-            landing = self.land(repo, env, timeout=60)
+            ultraclose("config", "--step-timeout", str(limit), cwd=repo, env=env)
+            return repo, env
+
+        with tempfile.TemporaryDirectory() as top:
+            _, repo, env, _, landing = self.land_hung(top, start=start)
             self.assert_ended(self.hung_process(env))
             self.assert_failed(repo, env, landing, "CHECKTIMEOUT")
 
@@ -5733,19 +5821,23 @@ class LandTest(LandCase):
             ),
         }
         for name, (check, hook, result) in cases.items():
-            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
-                repo, env = self.start_task(
-                    tmp,
-                    "--check",
-                    check,
-                    "--health",
-                    self.HEALTH,
-                    "--step-timeout",
-                    "2",
-                    hook=hook,
-                )
-                Path(env["ENGINE"]).touch()
-                landing = self.land(repo, env, timeout=60)
+            with self.subTest(name), tempfile.TemporaryDirectory() as top:
+
+                def start(tmp, limit):
+                    repo, env = self.start_task(
+                        tmp,
+                        "--check",
+                        check,
+                        "--health",
+                        self.HEALTH,
+                        "--step-timeout",
+                        str(limit),
+                        hook=hook,
+                    )
+                    Path(env["ENGINE"]).touch()
+                    return repo, env
+
+                _, repo, env, _, landing = self.land_hung(top, start=start)
                 self.assert_ended(self.hung_process(env))
                 self.assert_failed(repo, env, landing, result)
                 self.assertNotIn("no engine", landing[1])
@@ -5755,16 +5847,24 @@ class LandTest(LandCase):
         # process that the landing kills can. No git command can then
         # restore the main checkout.
         hook = f'touch "$LOCK"; {self.HANG_ONCE}'
-        with tempfile.TemporaryDirectory() as tmp:
-            repo, env = self.start_task(tmp, "--step-timeout", "2", hook=hook)
+        # The HEAD of each main checkout before its landing, by the path
+        # of the main checkout.
+        heads = {}
+
+        def start(tmp, limit):
+            repo, env = self.start_task(tmp, "--step-timeout", str(limit), hook=hook)
             # The output names the main checkout and the lock file by the
             # real path of the repository, which is the path that git
             # prints. A temporary directory can sit behind a symbolic link.
             repo = repo.resolve()
-            lock = Path(repo, ".git", "index.lock")
-            env["LOCK"] = str(lock)
-            head = git("rev-parse", "HEAD", cwd=repo, env=env)
-            status, lines = self.land(repo, env, timeout=60)
+            env["LOCK"] = str(Path(repo, ".git", "index.lock"))
+            heads[repo] = git("rev-parse", "HEAD", cwd=repo, env=env)
+            return repo, env
+
+        with tempfile.TemporaryDirectory() as top:
+            _, repo, env, _, (status, lines) = self.land_hung(top, start=start)
+            lock = Path(env["LOCK"])
+            head = heads[repo]
             self.assert_ended(self.hung_process(env))
             self.assertEqual(status, 2, lines)
             self.assertEqual(lines[-1], f"RESULT {REF} COMMITTIMEOUT")
@@ -5791,10 +5891,14 @@ class LandTest(LandCase):
             self.assertIn(str(lock), output)
             self.assertNotEqual(git("status", "--porcelain", cwd=repo, env=env), "")
             # The task lands after the lock file leaves and the two
-            # commands of the rollback run.
+            # commands of the rollback run. On a loaded host, a commit
+            # that passes might take longer than the step timeout of the
+            # first landing. So the run takes the default step timeout
+            # before the second landing.
             lock.unlink()
             git(*reset.split()[1:], cwd=repo, env=env)
             git("clean", "-qfd", cwd=repo, env=env)
+            ultraclose("config", "--step-timeout", str(STEP_TIMEOUT), cwd=repo, env=env)
             self.assert_landed(repo, env, self.land(repo, env, timeout=60))
 
     def test_signal_during_restore_lets_git_command_finish(self):
@@ -5804,42 +5908,53 @@ class LandTest(LandCase):
         # of the restore. The wrapper waits until the land command ends.
         # Then it runs that git command and records that the command
         # passed.
-        # result: (the init flags, the commit hook)
-        cases = {
-            "COMMITFAIL": ([], "exit 1"),
-            "COMMITTIMEOUT": (["--step-timeout", "2"], self.HANG),
-        }
-        for (result, (flags, hook)), sig in itertools.product(
-            cases.items(), (signal.SIGTERM, signal.SIGHUP)
+        # result: the commit hook
+        hooks = {"COMMITFAIL": "exit 1", "COMMITTIMEOUT": self.HANG}
+        for (result, hook), sig in itertools.product(
+            hooks.items(), (signal.SIGTERM, signal.SIGHUP)
         ):
             with (
                 self.subTest(result=result, signal=sig.name),
-                tempfile.TemporaryDirectory() as tmp,
+                tempfile.TemporaryDirectory() as top,
             ):
                 # The land command of this test inherits the signals that
                 # the caller of the test ignores, and it keeps them ignored.
                 if signal.getsignal(sig) == signal.SIG_IGN:
                     self.skipTest(f"the caller of the test ignores {sig.name}")
-                repo, env = self.start_task(tmp, *flags, hook=hook)
-                wrapper = Path(tmp, "wrapper")
-                wrapper.mkdir()
-                real = shutil.which("git", path=env["PATH"])
-                reset = Path(tmp, "reset")
-                (wrapper / "git").write_text(
-                    "#!/bin/sh\n"
-                    'if [ "$1 $2 $3" = "reset -q --hard" ]; then\n'
-                    f"  kill -{sig.name.removeprefix('SIG')} $PPID\n"
-                    "  while kill -0 $PPID 2>/dev/null; do sleep 0.05; done\n"
-                    f'  "{real}" "$@" && touch "{reset}"\n'
-                    "  exit\n"
-                    "fi\n"
-                    f'exec "{real}" "$@"\n'
-                )
-                (wrapper / "git").chmod(0o755)
-                env["PATH"] = f"{wrapper}{os.pathsep}{env['PATH']}"
-                status, lines = self.land(repo, env, timeout=60)
+                # The record of the wrapper of each task. land_hung starts
+                # a task for each land command that it runs, and each of
+                # those land commands restores the main checkout.
+                resets = []
+
+                def start(tmp, limit=None):
+                    flags = ["--step-timeout", str(limit)] if limit else []
+                    repo, env = self.start_task(tmp, *flags, hook=hook)
+                    wrapper = Path(tmp, "wrapper")
+                    wrapper.mkdir()
+                    real = shutil.which("git", path=env["PATH"])
+                    reset = Path(tmp, "reset")
+                    (wrapper / "git").write_text(
+                        "#!/bin/sh\n"
+                        'if [ "$1 $2 $3" = "reset -q --hard" ]; then\n'
+                        f"  kill -{sig.name.removeprefix('SIG')} $PPID\n"
+                        "  while kill -0 $PPID 2>/dev/null; do sleep 0.05; done\n"
+                        f'  "{real}" "$@" && touch "{reset}"\n'
+                        "  exit\n"
+                        "fi\n"
+                        f'exec "{real}" "$@"\n'
+                    )
+                    (wrapper / "git").chmod(0o755)
+                    env["PATH"] = f"{wrapper}{os.pathsep}{env['PATH']}"
+                    resets.append(reset)
+                    return repo, env
+
                 if result == "COMMITTIMEOUT":
+                    _, repo, env, _, landing = self.land_hung(top, start=start)
                     self.assert_ended(self.hung_process(env))
+                else:
+                    repo, env = start(top)
+                    landing = self.land(repo, env, timeout=60)
+                status, lines = landing
                 # The signal ended the land command before it printed a
                 # result.
                 self.assertEqual(status, -sig, lines)
@@ -5847,9 +5962,9 @@ class LandTest(LandCase):
                     [line for line in lines if line.startswith(f"RESULT {REF}")],
                     lines,
                 )
-                # The git command of the restore outlives the land command.
+                # The git command of each restore outlives its land command.
                 deadline = time.monotonic() + 30
-                while not reset.exists():
+                while not all(reset.exists() for reset in resets):
                     self.assertLess(
                         time.monotonic(), deadline, "the git reset did not pass"
                     )
@@ -5884,43 +5999,45 @@ class LandTest(LandCase):
     def test_signal_during_stop_ends_command_after_step_stops(self):
         # The step keeps running after SIGINT, so the landing sends it
         # SIGTERM GRACE seconds after SIGINT. A signal comes in that time.
-        # name: (the init flags, the signal that starts the stop, the
-        # signal that comes during the stop, the exit status of the land
-        # command)
+        # name: (the signal that starts the stop, the signal that comes
+        # during the stop, the exit status of the land command). The step
+        # timeout starts the stop of a case that names no first signal.
         cases = {
-            "a second SIGINT": ([], signal.SIGINT, signal.SIGINT, -signal.SIGINT),
+            "a second SIGINT": (signal.SIGINT, signal.SIGINT, -signal.SIGINT),
             "SIGTERM after the step timeout": (
-                ["--step-timeout", "1"],
                 None,
                 signal.SIGTERM,
                 128 + signal.SIGTERM,
             ),
         }
-        for name, (flags, first, second, status) in cases.items():
-            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+        for name, (first, second, status) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as top:
                 # The land command of this test inherits the signals that
                 # the caller of the test ignores, and it keeps them ignored.
                 if signal.getsignal(second) == signal.SIG_IGN:
                     self.skipTest(f"the caller of the test ignores {second.name}")
-                program = Path(tmp, "program.py")
+                program = Path(top, "program.py")
                 program.write_text(OUTLASTS_SIGINT)
                 check = f'exec "{sys.executable}" "{program}"'
-                repo, env = self.start_task(tmp, "--check", check, *flags)
-                interrupted = Path(tmp, "interrupted")
-                env["INTERRUPTED"] = str(interrupted)
-                p = subprocess.Popen(
-                    [sys.executable, str(SCRIPT), "land", REF],
-                    cwd=repo,
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                )
-                try:
+
+                def start(tmp, limit):
+                    repo, env = self.start_task(
+                        tmp, "--check", check, "--step-timeout", str(limit)
+                    )
+                    env["INTERRUPTED"] = str(Path(tmp, "interrupted"))
+                    return repo, env
+
+                def stop(env, p):
+                    """Send the signals of the case to the land command p.
+
+                    Return the process of the step and the standard output
+                    of the land command.
+                    """
                     process = self.hung_process(env)
                     if first:
                         p.send_signal(first)
                     # The step records the SIGINT of the stop.
+                    interrupted = Path(env["INTERRUPTED"])
                     deadline = time.monotonic() + 60
                     while not interrupted.exists():
                         self.assertLess(
@@ -5928,10 +6045,27 @@ class LandTest(LandCase):
                         )
                         time.sleep(0.05)
                     p.send_signal(second)
-                    output = p.communicate(timeout=60)[0]
-                finally:
-                    p.kill()
-                    p.wait()
+                    return process, p.communicate(timeout=60)[0]
+
+                if first:
+                    # The first signal comes before the step timeout ends.
+                    repo, env = start(top, STEP_TIMEOUT)
+                    p = subprocess.Popen(
+                        [sys.executable, str(SCRIPT), "land", REF],
+                        cwd=repo,
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        text=True,
+                    )
+                    try:
+                        process, output = stop(env, p)
+                    finally:
+                        p.kill()
+                        p.wait()
+                else:
+                    with self.hung_landing(top, start) as (_, _, env, _, p):
+                        process, output = stop(env, p)
                 self.assert_ended(process)
                 # The signal ended the land command before it printed a
                 # result.
@@ -8048,10 +8182,12 @@ class LandActionTest(LandCase):
                 self.assertEqual(script.environment_failure(log), want)
 
     def test_action_of_stopped_step(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo, env = self.start_task(
-                tmp, "--check", self.HANG, "--step-timeout", "2"
+        with tempfile.TemporaryDirectory() as top:
+            tmp, repo, env, _, (status, lines) = self.land_hung(
+                top, "--check", self.HANG
             )
+            result = f"RESULT {REF} CHECKTIMEOUT"
+            self.assertEqual((status, lines[-1]), (2, result), lines)
             log = Path(tmp, "run").resolve() / "logs" / f"{REF}.check.log"
             action = (
                 "The landing stopped the check, which does not show that the task"
@@ -8059,11 +8195,12 @@ class LandActionTest(LandCase):
                 " that cause as the Landing section of SKILL.md says for"
                 " CHECKTIMEOUT, before you start another landing."
             )
-            self.assertEqual(
-                self.action(self.failed(repo, env, "CHECKTIMEOUT")), action
-            )
+            self.assertEqual(self.action(lines), action)
             self.assert_ended(self.hung_process(env))
-            Path(env["PROCESS"]).unlink()
+            # The second landing stops the step after the same step
+            # timeout. On a loaded host, that stop might end the step
+            # before the step records its process. The action is the same
+            # in both cases, so the test reads no process of this landing.
             self.assertEqual(
                 self.action(self.failed(repo, env, "CHECKTIMEOUT")),
                 f"{action} The task has ended in CHECKTIMEOUT 2 times. When the"
@@ -8072,7 +8209,6 @@ class LandActionTest(LandCase):
                 f" shows that the change causes the wait: {self.SYNC_COMMAND}."
                 f" Otherwise note the task: {self.NOTE_COMMAND}.",
             )
-            self.assert_ended(self.hung_process(env))
 
     def test_action_of_missing_worktree(self):
         # The worktree of the task goes missing after its review.
