@@ -46,15 +46,17 @@ To count the git processes of one run, put a `git` script that records each star
 ```sh
 dir=$(mktemp -d)
 mkdir -p "$dir/shim"
-printf '#!/bin/sh\necho x >> "$GITCOUNT_FILE"\nexec %s "$@"\n' "$(command -v git)" > "$dir/shim/git"
+printf '#!/bin/sh\necho x >> "%s"\nexec %s "$@"\n' "$dir/count" "$(command -v git)" > "$dir/shim/git"
 chmod +x "$dir/shim/git"
 cd tools/mcp-git
 : > "$dir/count"
-GITCOUNT_FILE="$dir/count" PATH="$dir/shim:$PATH" go test -count=1 ./...
+PATH="$dir/shim:$PATH" go test -count=1 ./...
 wc -l < "$dir/count"
 ```
 
-The count was about 2,700 at the commit that added this section. It was about 2,280 at the commit that made `runRemote` read every path of a repository with one git command.
+Some tests start git with an environment of their own. For example, `gitBackend` in `mcp-git/clone_test.go` returns a `cgi.Handler` that starts `git http-backend` with its own `Env`. A variable that the run sets does not reach those git processes, so the `printf` writes the path of the count file into the script.
+
+The count was about 2,700 at the commit that added this section. It was about 2,300 at the commit that made `runRemote` read every path of a repository with one git command.
 
 ## mcp-destiny Game Data
 
