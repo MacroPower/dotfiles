@@ -1448,7 +1448,6 @@ func (p *authProxy) config() string {
 func setProxyEnv(t *testing.T, token, config string) {
 	t.Helper()
 
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GH_TOKEN", token)
 	t.Setenv("NO_PROXY", "")
 	t.Setenv("no_proxy", "")

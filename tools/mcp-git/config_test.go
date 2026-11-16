@@ -449,7 +449,6 @@ func TestReadUserHooks(t *testing.T) { //nolint:paralleltest // t.Setenv
 	global := filepath.Join(t.TempDir(), "gitconfig")
 	require.NoError(t, os.WriteFile(global, []byte("[hook \"global\"]\n\tcommand = check\n"), 0o644))
 
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "hook.command line.event")
