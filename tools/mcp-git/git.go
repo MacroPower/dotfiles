@@ -155,8 +155,10 @@ type remoteOp struct {
 // override, as [repoConfig.check] describes. [handler.gitOptions] and
 // [handler.commandEnv] turn off the hooks and each other command.
 //
-// runRemote refuses a remote that has no URL with [ErrNoRemoteURL], as
-// [remoteLacksURL] decides.
+// runRemote refuses a remote that the repository does not configure
+// with [ErrUnknownRemote], and [remoteURLs] describes the error for a
+// remote that git cannot read. runRemote refuses a remote that has no
+// URL with [ErrNoRemoteURL], as [remoteLacksURL] decides.
 //
 // The config also names the working tree, with core.worktree.
 // runRemote refuses a working tree that [handler.checkWorkTree]
@@ -800,6 +802,12 @@ func configValue(ctx context.Context, repo, key string, options ...string) (stri
 // returns the push URLs, which can differ from the fetch URLs. A push
 // goes to every push URL, and a fetch uses the first URL. The URLs
 // must not appear in messages, because a URL can embed credentials.
+//
+// A repository that does not configure remote fails with
+// [ErrUnknownRemote], as [remoteMissing] decides. git can also fail to
+// read a remote that the git config defines, such as a remote whose
+// remote.<name>.url key has no value. The error then says that
+// remoteURLs could not read the remote, and it names remote and repo.
 func remoteURLs(ctx context.Context, repo, remote string, push bool) ([]string, error) {
 	args := []string{"-C", repo, "remote", "get-url", "--all"}
 	if push {
@@ -814,10 +822,26 @@ func remoteURLs(ctx context.Context, repo, remote string, push bool) ([]string, 
 			return nil, err
 		}
 
-		return nil, fmt.Errorf("%w: %s", ErrUnknownRemote, remote)
+		if remoteMissing(err) {
+			return nil, fmt.Errorf("%w: %s", ErrUnknownRemote, remote)
+		}
+
+		return nil, fmt.Errorf("reading the %s remote of %s: %w", remote, repo, err)
 	}
 
 	return strings.Split(out, "\n"), nil
+}
+
+// remoteMissing reports whether err is the error of a git remote
+// get-url command that found no remote of the name in the repository.
+// git 2.30 and later exit with status 2 then, and the manual of git
+// remote keeps that status for a remote that git cannot find. git
+// exits with another status for every other failure, such as a git
+// config that it cannot parse.
+func remoteMissing(err error) bool {
+	var exitErr *exec.ExitError
+
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 2
 }
 
 // remoteLacksURL reports whether remote has no URL in the repository

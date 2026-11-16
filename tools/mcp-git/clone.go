@@ -315,7 +315,10 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 
 // checkOrigin verifies that url is the URL of the origin remote of the
 // existing repo at dest. A repo that has no origin remote fails with
-// [ErrNoOrigin]. A repo whose origin remote has no URL fails with
+// [ErrNoOrigin], as [remoteMissing] decides. When git cannot read the
+// origin remote for another reason, such as a remote.origin.url key
+// without a value, the error says that checkOrigin could not read the
+// remote. A repo whose origin remote has no URL fails with
 // [ErrNoOriginURL], as [remoteLacksURL] decides. A repo whose origin
 // remote has a URL that [handler.checkURL] refuses fails with
 // [ErrDeniedOriginURL]. None of these errors depends on url, and
@@ -373,11 +376,7 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 			return err
 		}
 
-		// git remote get-url exits 2 when the repository does not
-		// configure the remote. The manual of git remote keeps that
-		// status for a remote that git cannot find.
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+		if remoteMissing(err) {
 			return unusableDest(ErrNoOrigin, dest)
 		}
 

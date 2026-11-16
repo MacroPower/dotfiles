@@ -562,6 +562,87 @@ func TestRemoteLacksURL(t *testing.T) {
 	}
 }
 
+// valuelessOriginURL is git config text that gives the URL of the
+// origin remote no value. git opens a repository with that config, and
+// git remote get-url rejects the config.
+const valuelessOriginURL = "[remote \"origin\"]\n\turl\n"
+
+// git remote get-url exits with status 2 only when it finds no remote
+// of the name. remoteURLs must report an unknown remote only then. The
+// git config can define a remote that git cannot read. The error must
+// then say that remoteURLs could not read the remote.
+func TestRemoteURLsErrors(t *testing.T) {
+	t.Parallel()
+
+	const (
+		originWithURL = "[remote \"origin\"]\n\turl = " + aliasPrefix + "a.git\n"
+
+		// valuelessPushURL gives the push URL of the origin remote no
+		// value, and it stores a URL for the remote.
+		valuelessPushURL = originWithURL + "[remote \"origin\"]\n\tpushurl\n"
+	)
+
+	tcs := map[string]struct {
+		config string
+		remote string
+		push   bool
+
+		// err is set when the error must report an unknown remote.
+		err error
+	}{
+		"missing remote": {
+			remote: "nosuch",
+			err:    ErrUnknownRemote,
+		},
+		"missing remote, for a push": {
+			remote: "nosuch",
+			push:   true,
+			err:    ErrUnknownRemote,
+		},
+		"missing remote beside another remote": {
+			config: originWithURL,
+			remote: "nosuch",
+			err:    ErrUnknownRemote,
+		},
+		"URL without a value": {
+			config: valuelessOriginURL,
+		},
+		"URL without a value, for a push": {
+			config: valuelessOriginURL,
+			push:   true,
+		},
+		"push URL without a value": {
+			config: valuelessPushURL,
+		},
+		"push URL without a value, for a push": {
+			config: valuelessPushURL,
+			push:   true,
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := initConfigRepo(t, tc.config)
+			remote := remoteOrDefault(tc.remote)
+
+			_, err := remoteURLs(t.Context(), repo, remote, tc.push)
+			require.Error(t, err)
+
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				assert.EqualError(t, err, "unknown remote: "+remote)
+
+				return
+			}
+
+			require.NotErrorIs(t, err, ErrUnknownRemote)
+			assert.ErrorContains(t, err, "reading the "+remote+" remote of "+repo+": ")
+		})
+	}
+}
+
 func TestGitOptions(t *testing.T) {
 	t.Parallel()
 

@@ -2172,7 +2172,7 @@ func TestCheckOriginUnreadableRemote(t *testing.T) {
 	dest := initWorkClone(t, initBareRepo(t))
 
 	runGitCmds(t, [][]string{{"git", "-C", dest, "remote", "remove", "origin"}})
-	appendGitConfig(t, dest, "[remote \"origin\"]\n\turl\n")
+	appendGitConfig(t, dest, valuelessOriginURL)
 
 	err := (&handler{}).checkOrigin(t.Context(), "https://example.invalid/r.git", dest)
 	require.Error(t, err)

@@ -175,6 +175,13 @@
 // refuses the remote only when remote.<name>.pushurl stores no URL
 // either. Its error names both keys.
 //
+// git_fetch, git_pull, and git_push report an unknown remote only when
+// git finds no remote of that name in the repository. git can also
+// fail to read a remote that the git config defines, such as a remote
+// whose remote.<name>.url key has no value. The error then says that
+// the tool could not read the remote, and it names the remote and the
+// repository.
+//
 // # Connections
 //
 // Git sends a credential over the https connection to the host of the

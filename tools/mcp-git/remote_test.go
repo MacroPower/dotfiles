@@ -910,6 +910,34 @@ func TestRemoteToolsRefuseStoredRemoteName(t *testing.T) {
 	}
 }
 
+// git can open a repository whose config gives the URL of a remote no
+// value, but git remote get-url rejects that config. The config
+// defines the remote, so the error must say that the server could not
+// read the remote. It must not say that the remote is unknown.
+func TestRemoteToolsReportUnreadableRemote(t *testing.T) {
+	t.Parallel()
+
+	for toolName, rt := range remoteTools() {
+		t.Run(toolName, func(t *testing.T) {
+			t.Parallel()
+
+			bare, work := rt.repos(t)
+
+			appendGitConfig(t, work, valuelessOriginURL)
+
+			result, _, err := rt.call(t.Context(), &handler{}, work)
+			require.NoError(t, err)
+			require.True(t, result.IsError, "the tool must not contact the remote")
+
+			text := resultText(t, result)
+			assert.Contains(t, text, rt.failure.Error()+": reading the origin remote of "+work+": ")
+			assert.NotContains(t, text, "unknown remote")
+
+			rt.requireNotLanded(t, bare, work)
+		})
+	}
+}
+
 // TestGitRefusesTransports covers a remote whose definition changes
 // after runRemote checks its URLs. git resolves the remote again when
 // it connects, so the git command itself must refuse each transport
