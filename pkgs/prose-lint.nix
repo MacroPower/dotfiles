@@ -1312,12 +1312,7 @@ in
             printf '%s\n' "$found" |
               sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::(ProseSentenceLength|ProseTrailingCondition): .*,\1 \2,p' >got
             if ! diff want got; then
-              # The message below names only sentence ends. The diff
-              # also fails when opens_quote() in lib/markdown.awk misses
-              # a curly opening quote. Each sentence end then stays in
-              # place, and ProseTrailingCondition reports the `if` of
-              # the ninth or tenth paragraph.
-              echo "the $locale locale ends a sentence at another token" >&2
+              echo "under the $locale locale, the ProseSentenceLength or ProseTrailingCondition findings of ends.md differ from want" >&2
               exit 1
             fi
           done
