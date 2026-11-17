@@ -11,3 +11,5 @@ The result is not incorrect.
 Do not run the migration script against the production database unless the backup finishes.
 
 You can't just run make without reading the docs.
+
+The server “cannot” start without a valid certificate.

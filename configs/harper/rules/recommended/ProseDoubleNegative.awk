@@ -27,6 +27,8 @@
 #   it (`cannot start without a certificate`). The scan stops at a word
 #   that opens a clause (`and`, `because`, `which`). It also stops at a
 #   word that ends in a comma, a colon, a semicolon, a period, or `)`.
+#   A straight or a curly closing quote can follow the mark (`said
+#   “not now,” then ran without a lock`).
 # - `not` before a word with a negative prefix from a list (`not
 #   unlike`, `not unsafe`). Here the positive form also makes the claim
 #   stronger (`not unsafe` becomes `safe`), so the writer must settle
@@ -132,7 +134,10 @@ function sentence(n,   i, j, w, d, t, opener, depth_at) {
       for (j = i - 1; j >= 1 && j >= i - 6; j--) {
         # A comma, colon, semicolon, or period after word j closes a
         # clause, and a negative word before it belongs to that clause.
-        if (tok[j] ~ /[,;:.]["')*_\]]*$/ || tok[j] ~ /\)$/) {
+        # A closing quote after the mark is straight or curly. The
+        # pattern names each curly quote by its UTF-8 bytes, as
+        # ends_sentence() in lib/markdown.awk does.
+        if (tok[j] ~ /[,;:.](["')*_\]]|\342\200\235|\342\200\231)*$/ || tok[j] ~ /\)$/) {
           break
         }
         if (negation(j)) {
