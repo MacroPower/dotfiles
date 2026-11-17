@@ -147,10 +147,10 @@ func runServe(ctx context.Context, args []string) error {
 		return fmt.Errorf("generate instance id: %w", err)
 	}
 
-	// The host id is per-env (host.id vs guest.id): the state dir
-	// is shared with the guest through the Lima bind mount, but
-	// each env's sweep can only vouch for its own env's live
-	// serves, so the ids must split along the same line. See
+	// The host id is per-env (host.id vs guest.id), because the
+	// sweep of each env can vouch only for the live serves of that
+	// env. A guest-side serve keeps guest.id in the state dir of
+	// the guest, outside the Lima bind mount. See
 	// [identity.LoadOrCreateHost].
 	guest := os.Getenv(guestEnvVar) == "1"
 

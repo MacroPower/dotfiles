@@ -4,11 +4,19 @@
 // per-user-per-env host id that bounds a sweep to resources its own
 // host provisioned.
 //
-// The host id is persisted under the mcp-kubectx state dir as
-// `host.id` or `guest.id` depending on the env tag. The id is
-// per-env because the state dir is shared with the Lima guest
-// through the bind mount while sockets are not: each env's liveness
-// discovery can only vouch for its own env's serves, so a shared id
-// would let a host-side sweep delete a concurrent guest serve's live
-// resources (and vice versa).
+// [LoadOrCreateHost] persists the host id in the mcp-kubectx state
+// dir of the calling process, as `host.id` or `guest.id` depending
+// on the env tag. A host-side serve keeps `host.id` on the host. A
+// guest-side serve resolves the state dir in the guest. So it keeps
+// `guest.id` on the disk of its Lima guest VM, outside the bind
+// mount of the host's state dir. Each guest VM has a `guest.id` of
+// its own.
+//
+// The id is per-env because the liveness discovery of each env
+// vouches only for the serves of that env. A shared id lets a
+// host-side sweep delete the live resources of a concurrent guest
+// serve, and the other way around. Serves of both envs can resolve
+// the same state dir, such as when a serve in a Lima guest runs
+// without WM_SANDBOX_GUEST=1. The env tag in the file name then
+// keeps the two ids apart.
 package identity

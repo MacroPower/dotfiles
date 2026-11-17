@@ -180,8 +180,8 @@ func sidecarSymlinkPath() string {
 // sends SIGKILL about 500 ms after the SIGINT that starts this
 // closure, and a `host release` that talks to the cluster can take
 // longer. A SIGKILL during step 4 or step 5 then leaves only the
-// unreleased SAs behind. The orphan sweep of a later serve in the
-// same env deletes them.
+// unreleased SAs behind. The orphan sweep of a later serve with
+// the same host-id deletes them.
 func (h *handler) sessionDir() func() {
 	// runResourceCleanup intentionally derives from context.Background.
 	// A SIGINT or a SIGTERM cancels the signal-rooted ctx of serve,

@@ -78,9 +78,12 @@ func HostPath(forGuest bool) string {
 // The host id bounds the orphan sweep to resources this host+env
 // owns. Two operators running `serve` against a shared cluster never
 // delete each other's resources because their id files differ.
-// Host- and guest-side serves on the same machine keep separate ids
-// (`host.id` vs `guest.id`) for the reason laid out in the package
-// doc.
+// Every Lima guest can break that bound. It can rewrite the `host.id`
+// of the host through the bind mount of the mcp-kubectx state dir,
+// and it can run `host sweep` through `workmux host-exec` with any
+// `--host-id`. Host- and guest-side serves on the same machine keep
+// separate ids (`host.id` vs `guest.id`) for the reason laid out in
+// the package doc.
 func LoadOrCreateHost(forGuest bool) (string, error) {
 	path := HostPath(forGuest)
 

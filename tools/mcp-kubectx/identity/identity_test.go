@@ -143,10 +143,10 @@ func TestLoadOrCreateHostRegeneratesInvalidFormat(t *testing.T) { //nolint:paral
 	assert.Equal(t, id, string(data), "regenerated id must be persisted")
 }
 
-// TestLoadOrCreateHostPerEnv pins the host/guest id split. The state
-// dir is shared across the Lima bind mount, but each env can only
-// observe its own env's live sockets, so a shared id would let one
-// env's sweep delete the other env's live resources.
+// TestLoadOrCreateHostPerEnv pins the host/guest id split. Each env
+// observes only the live sockets of its own env. So when serves of
+// both envs resolve the same state dir, a shared id lets the sweep of
+// one env delete the live resources of the other env.
 func TestLoadOrCreateHostPerEnv(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 

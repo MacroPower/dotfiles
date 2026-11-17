@@ -249,9 +249,15 @@ see [Threat-model shift for local
 contexts](#threat-model-shift-for-local-contexts)). The token
 exists in kubectl's memory for the duration of the API call and is
 gone after.
-Compromise of the bind-mounted directory reveals a recipe for asking
-the host to mint a token, not the token itself, and the host can
-revoke the SA out from under it at any time.
+Read access to the bind-mounted directory reveals a recipe for
+asking the host to mint a token, not the token itself. The host can
+revoke the SA at any time.
+
+Every Lima guest can also write to the bind-mounted directory.
+Through that write access, a guest can, for example, pick the
+command that host-side kubectl runs.
+[Concurrent-select hazard and per-`serve` paths](#concurrent-select-hazard-and-per-serve-paths)
+lists each file of the directory and what a guest can do with it.
 
 This is plain kubectl exec-plugin plumbing, so anything that uses
 client-go (kubectl, helm, kustomize, argocd) works without
@@ -557,10 +563,11 @@ ends during the closure leaves neither file.
   startup of a later `serve` with the same host kubeconfig deletes
   them on whichever cluster they lie, because each SA has a
   provision record on the host. That
-  sweep deletes only the resources of its own env, host or guest,
-  because each env has a `host-id` of its own.
+  sweep deletes only the resources of its own `host-id`. The
+  host-side serves of one host share a `host-id`, and so do the
+  guest-side serves of one Lima guest VM.
   [Manual sweep invocation](#manual-sweep-invocation) describes the
-  sweep of another env.
+  sweep of another `host-id`, such as the id of a deleted guest VM.
 - **Provision records.** The record of each such SA stays in the
   ledger directory on the host. The same sweep removes each record
   after it has deleted the SA and the binding.
@@ -616,19 +623,32 @@ Every provisioned SA and binding carries three labels:
 - `app.kubernetes.io/managed-by=mcp-kubectx`
 - `mcp-kubectx/host-id=<persistent>`: 16-hex id persisted at
   `<XDG_STATE_HOME>/mcp-kubectx/<env>.id` (`host.id` or
-  `guest.id`), mode `0600`. Created on first `serve` startup.
-  Bounds the sweep to resources this host+env owns, so two
-  operators against a shared cluster never delete each other's
-  resources. The id is per-env because the state dir is shared
-  with the guest through the Lima bind mount while sockets are
-  not: each env's liveness discovery can only vouch for its own
-  env's serves, so a shared id would let a host-side sweep delete
-  a concurrent guest serve's live SA (and vice versa).
+  `guest.id`), mode `0600`, on the machine that runs the `serve`.
+  Created on first `serve` startup. Bounds the sweep to resources
+  this host+env owns, so two operators against a shared cluster
+  never delete each other's resources. Every Lima guest can break
+  that bound. It can rewrite `host.id` through the bind mount (see
+  [Concurrent-select hazard and per-`serve` paths](#concurrent-select-hazard-and-per-serve-paths)),
+  and it can run `host sweep` through `workmux host-exec` with any
+  `--host-id`.
+  The id is per-env because the liveness discovery of each env
+  vouches only for the serves of that env. One id for both envs lets
+  a host-side sweep delete the live SA of a concurrent guest serve,
+  and the other way around.
 - `mcp-kubectx/instance-id=<per-serve random>`: 16-hex id
   generated fresh for each `serve` process. Persisted into a
   per-slot sidecar file at `<socket-path>.id` so a future
   `serve` can attribute a live UDS slot back to its bound
   `instance-id`.
+
+Each `serve` resolves `<XDG_STATE_HOME>` in its own environment. So
+`host.id` lies in the state dir of the host, and each Lima guest VM
+keeps the `guest.id` of its guest-side serves on its own disk. The
+bind mount of the host's state dir does not hold a `guest.id`. When
+you delete a guest VM, its `guest.id` goes with it, and no later
+`serve` sweeps the resources that the serves of that VM left
+behind. [Manual sweep invocation](#manual-sweep-invocation)
+describes how to sweep them.
 
 Each `serve` launches a background `host sweep` at startup. It
 passes the sweep its own `host-id`, the live set, and the time at
@@ -851,8 +871,9 @@ operator runs once.
 Run `host sweep` by hand to delete the orphans that the startup sweep
 does not cover.
 
-Stop every running `serve` of the env first. Without
-`--live-instance-id` flags the sweep treats every `serve` as dead.
+Before you sweep a `host-id`, stop every running `serve` that holds
+that id. Without `--live-instance-id` flags the sweep treats every
+`serve` as dead.
 The label pass then deletes every resource with the matching
 `host-id` and a non-empty `instance-id` label, and the record pass
 deletes the SA of every record of that `host-id`. Without
@@ -892,11 +913,53 @@ trust, run the same form with `--kubeconfig` set to the path that the
 records name. When you do not trust the file, delete the record file
 instead.
 
-Use `guest.id` instead of `host.id` to sweep resources provisioned
-by guest-side serves; the two envs keep separate ids and separate
-sweep domains. The name of each record file starts with the
-`host-id` of the `serve` that owns the SA, so the ledger directory
-also shows each `host-id` that still has records.
+The `host sweep` commands of this section read `host.id` on the
+host, so they sweep the resources of host-side serves. Each Lima
+guest VM keeps the `guest.id` of its guest-side serves on its own
+disk, and the host does not hold a copy. To sweep the resources of
+one guest VM, print its id inside the guest:
+
+```
+cat ~/.local/state/mcp-kubectx/guest.id
+```
+
+Then run the `host sweep` commands of this section on the host, with
+`--host-id` set to that id.
+
+When you delete a guest VM, its `guest.id` goes with it. To find the
+`host-id` of a deleted VM, list the ledger directory on the host:
+
+```
+ls ~/.local/state/mcp-kubectx-run/ledger
+```
+
+The name of each record file starts with the `host-id` label of its
+SA. `host select` writes every record of this directory on the host,
+for the serves of the host and of its guest VMs. A ledger id that
+matches neither `host.id` nor the `guest.id` of an existing VM comes
+from one of these sources:
+
+- **A deleted guest VM.** The `guest.id` of the VM went with it.
+- **A former `host.id` of this host or `guest.id` of an existing
+  VM.** `serve` writes a new id file when the file is missing or does
+  not hold a valid id. Every guest can delete or rewrite `host.id`
+  through the bind mount and its own `guest.id` on its own disk, and
+  you can delete either file too.
+- **The choice of a guest.** Every guest can run `host select` with
+  any arguments, so it can pass any id as `--sa-host-id`.
+
+The label pass deletes every resource with the `host-id` that you
+sweep, whoever created it. So before you sweep such an id, list the
+resources that carry it on the cluster that you sweep:
+
+```
+kubectl get sa,rolebinding -A -l mcp-kubectx/host-id=<id>
+kubectl get clusterrolebinding -l mcp-kubectx/host-id=<id>
+```
+
+Sweep the id only when these resources belong to a VM that you
+deleted, or to a former `host.id` of this host or `guest.id` of an
+existing VM.
 
 ## Recursion guard and the env chain
 
@@ -986,21 +1049,63 @@ select`, which builds the path:
 serve process id. Falls back to `~/.local/state/mcp-kubectx/...`
 when `$XDG_STATE_HOME` is unset on the host.
 
-Guest-side `serve` reads the host's `$XDG_STATE_HOME` because
-`workmux host-exec` runs `host select` on the host, so the env
-introspection happens host-side. The guest sees the file at the
-same absolute path through a writable bind mount of
+The kubeconfig path of a guest-side `serve` also lies under the
+host's `$XDG_STATE_HOME`, because `workmux host-exec` runs
+`host select` on the host. So `host select` resolves the path in the
+environment of the host. The guest sees the file at the same
+absolute path through a writable bind mount of
 `<host's $XDG_STATE_HOME>/mcp-kubectx` declared in workmux's
 `extra_mounts` (see `home/claude.nix`). Shutdown cleanup is a
-local `os.Remove(h.lastOutputPath)` from the serve process; on a
-guest serve the unlink lands on the host through the same bind
-mount. The mount is intentionally scoped to the mcp-kubectx
-state dir so the guest's write reach extends only to mcp-kubectx
-kubeconfig files -- not to the rest of the host filesystem.
+local `os.Remove(h.lastOutputPath)` from the serve process. On a
+guest serve, the unlink lands on the host through the same bind
+mount.
+
+Through that mount, the guest can create, change, and delete the
+files of the mcp-kubectx state dir of the host. It can also replace
+each of them with a symlink. The directory holds these files:
+
+- `kubeconfig.<pid>.<env>.yaml`: the scoped kubeconfig of each
+  `serve`, host-side or guest-side. A guest can rewrite the
+  kubeconfig of a live host-side `serve`. Host-side kubectl reads
+  that file through the hook-router sidecar symlink and runs the exec
+  plugin that the file names. So the guest picks the command that
+  host-side kubectl runs and the apiserver that receives each token
+  that the `serve` mints. `host select` writes each kubeconfig on
+  the host and follows a symlink at its path. Every host-side `serve`
+  starts its `host select` outside the sandbox of
+  `workmux host-exec`. So a guest that plants a symlink at the
+  kubeconfig path of a later host-side `serve` makes `host select`
+  overwrite any file of the host that the user can write.
+- `host.id`: the `host-id` of host-side serves. Every host-side
+  `serve` reads it at startup for the `mcp-kubectx/host-id` label of
+  its resources and for the selector of its orphan sweep. So the
+  guest can change the `host-id` of the next host-side `serve`. The
+  startup sweep of that `serve` then uses the host kubeconfig to
+  delete each resource with that `host-id` whose `serve` is missing
+  from its live set. So a guest that writes its own `guest.id` there
+  makes the sweep delete the live SAs of its guest-side serves. A
+  guest that writes the `host-id` of another operator on a shared
+  cluster makes the sweep delete the SAs of that operator.
+- `kubectx.log`: the log of host-side serves, at the path that
+  `home/claude.nix` passes as `--log-file`. A host-side `serve` opens
+  this path for append and follows a symlink there. So a guest that
+  replaces `kubectx.log` with a symlink makes the next host-side
+  `serve` append its log lines to any file of the host that the user
+  can write.
+
+Every guest-side `serve` resolves its state dir in the guest, under
+the home directory of the guest. That path lies outside the mount,
+so the `guest.id` of guest-side serves stays on the disk of the
+guest VM. `serve` writes its log to the `--log-file` path as given,
+and `home/claude.nix` renders that path from the `xdg.stateHome` of
+the machine that it configures. So on a guest VM that
+`home/claude.nix` configures, the log of guest-side serves lies in
+the state dir of the guest too.
 
 The hook-router sidecar symlink published by [*handler.publishSidecar]
-points at the same host-absolute path; hook-router resolves it
-through the bind mount to _read_ the kubeconfig.
+points at the host-absolute path of the scoped kubeconfig. The
+hook-router resolves the symlink through the bind mount to _read_
+the kubeconfig.
 
 The MCP `select` response carries the host-resolved path back to
 the caller so an interactive shell can `export KUBECONFIG=...` to

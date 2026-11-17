@@ -344,8 +344,47 @@
 //
 // On a Lima-guest serve the unlink of the kubeconfig file lands on
 // the host through the writable bind mount of <stateHomeDir> declared
-// in workmux's extra_mounts. The guest's write reach extends only to
-// that directory, which only ever holds mcp-kubectx kubeconfigs.
+// in workmux's extra_mounts. Through that mount, the guest can
+// create, change, and delete the files of <stateHomeDir> of the host.
+// It can also replace each of them with a symlink. The directory
+// holds these files:
+//
+//   - The scoped kubeconfig files of host-side and guest-side serves.
+//     A guest can rewrite the kubeconfig of a live host-side serve.
+//     Host-side kubectl reads that file through the hook-router
+//     sidecar symlink and runs the exec plugin that the file names.
+//     So the guest picks the command that host-side kubectl runs and
+//     the apiserver that receives each token that the serve mints.
+//     `host select` writes each kubeconfig on the host and follows a
+//     symlink at its path. A host-side serve starts its `host select`
+//     outside the sandbox of `workmux host-exec`. So a guest that
+//     plants a symlink at the kubeconfig path of a later host-side
+//     serve makes `host select` overwrite any file of the host that
+//     the user can write.
+//   - The `host.id` file of host-side serves. A host-side serve reads
+//     it at startup for the `host-id` label of its resources and for
+//     the selector of its orphan sweep. So a guest can change the
+//     `host-id` of the next host-side serve. The startup sweep of
+//     that serve then uses the host kubeconfig to delete each
+//     resource with that `host-id` whose serve is missing from its
+//     live set. So a guest that writes its own `guest.id` there
+//     makes the sweep delete the live SAs of its guest-side serves.
+//     A guest that writes the `host-id` of another operator on a
+//     shared cluster makes the sweep delete the SAs of that operator.
+//   - The log file of host-side serves, at the path that
+//     home/claude.nix passes as --log-file. A host-side serve opens
+//     this path for append and follows a symlink there. So a guest
+//     that replaces the log file with a symlink makes the next
+//     host-side serve append its log lines to any file of the host
+//     that the user can write.
+//
+// A guest-side serve resolves its state directory in the guest. So
+// it keeps `guest.id` on the disk of the guest, outside the mount.
+// serve writes its log to the --log-file path as given, and
+// home/claude.nix renders that path from the xdg.stateHome of the
+// machine that it configures. So on a guest that home/claude.nix
+// configures, the log of guest-side serves lies on the disk of the
+// guest too.
 //
 // Claude Code sends its SIGKILL about 500 ms after the SIGINT that
 // starts the closure. A closure that runs longer, for example while
@@ -367,11 +406,16 @@
 // that ends during the closure leaves neither file.
 //
 //   - Each SA that the serve had not released, and the binding of
-//     that SA. The startup sweep of a later serve in the same env,
-//     host or guest, deletes them on whichever cluster they lie,
-//     when that serve uses the same host kubeconfig.
-//     The sweep of the other env never deletes them, because each
-//     env has a host-id of its own.
+//     that SA. The startup sweep of a later serve with the same
+//     host-id deletes them on whichever cluster they lie, when that
+//     serve uses the same host kubeconfig. The host-side serves of
+//     one host share a host-id, and so do the guest-side serves of
+//     one Lima guest VM. The sweep of the other env, or of another
+//     guest VM, keeps them, because it selects another host-id. A
+//     guest can still make a sweep select the host-id of these SAs.
+//     It can write that id into `host.id` (see the `host.id` entry
+//     in the list of the files of <stateHomeDir>), or it can run
+//     `host sweep` through `workmux host-exec` with that id.
 //   - The provision record of each such SA, in the ledger directory
 //     on the host. The same sweep removes the record after it has
 //     deleted the SA and the binding.
@@ -452,7 +496,10 @@
 // different machines cannot delete each other's resources. A
 // host-side serve and a guest-side serve on the same machine
 // cannot either, and neither side observes the live sockets of the
-// other.
+// other. Every Lima guest can break both bounds. It can rewrite
+// `host.id` through the bind mount (see the `host.id` entry in the
+// list of the files of <stateHomeDir>), and it can run `host sweep`
+// through `workmux host-exec` with any `--host-id`.
 //
 // # Recursion guard
 //

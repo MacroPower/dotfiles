@@ -21,11 +21,14 @@ func Subdir(sub string) string {
 	return filepath.Join(home, ".local", "state", sub)
 }
 
-// Dir returns the mcp-kubectx state directory used for per-`serve`
-// kubeconfig files and the persistent host id. Resolved on the host
-// side because the files live on the host filesystem; a Lima-guest
-// serve sees the same path through the writable bind mount declared
-// in workmux's extra_mounts.
+// Dir returns the mcp-kubectx state directory of the calling
+// process. `host select` writes the per-`serve` kubeconfig files
+// there, and `serve` keeps its persistent host id there. `host
+// select` always runs on the host. So a Lima-guest serve reaches its
+// kubeconfig file at the same path, through the writable bind mount
+// that workmux's extra_mounts declares. A Lima-guest serve resolves
+// Dir in the guest, so its host id file lies on the disk of the
+// guest.
 func Dir() string {
 	return Subdir("mcp-kubectx")
 }
