@@ -33,7 +33,9 @@
 #
 # ProseTrailingCondition skips `if needed`, `if necessary`,
 # `if applicable`, `if appropriate`, and `if possible`, so only this
-# rule reports them.
+# rule reports them. This rule does not match such a phrase across a
+# quote (`if "needed"`), so ProseTrailingCondition does not skip that
+# `if`.
 #
 # Measurement
 #

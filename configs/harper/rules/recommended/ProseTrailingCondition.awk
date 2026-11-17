@@ -138,11 +138,15 @@
 # The Recommended ProseVagueCriterion reports `if needed`,
 # `if necessary`, `if applicable`, `if appropriate`, and `if possible`,
 # so the check skips them. ProseVagueCriterion does not match such a
-# phrase across an attribution or a closing quote. The check therefore
-# skips the phrase only when neither sits between the two words. An
-# `if` that ends a quotation, or the first part of a split quotation,
-# then fires (`"Restart the agent if," the guide says, "needed."`,
-# `"Restart the agent if" needed.`).
+# phrase across an attribution or a quote. The check therefore skips the
+# phrase only when neither sits between the two words. An `if` that ends
+# a quotation, or the first part of a split quotation, then fires
+# (`"Restart the agent if," the guide says, "needed."`, `"Restart the
+# agent if" needed.`). So does an `if` before a word in quotes
+# (`Restart the agent if "needed".`). Such an `if` can also open a
+# condition on a quoted string (`Restart the agent if "needed" appears
+# in the log`). Emphasis does not stop ProseVagueCriterion, so the check
+# still skips `if **needed**`.
 #
 # ProseIfWhether reports `if` after a verb of checking (`check if`,
 # `notice if`), so the check skips that `if` too. ProseIfWhether does
@@ -182,6 +186,18 @@ function word(i,   w) {
   gsub(/^[^a-z]+|[^a-z]+$/, "", w)
   gsub(/\342\200\231/, "'", w)
   return w
+}
+
+# Reports whether a quote sits between token i and token i + 1. The
+# quote can close token i (`if"`) or open token i + 1 (`"needed`). A
+# paren, a bracket, or emphasis can sit outside the quote
+# (`if **"needed"**`). Each straight and curly quote counts on either
+# side, so a curly quote that faces the wrong way counts too
+# (`if ”needed”`). The pattern writes each curly quote as its UTF-8
+# bytes, as ends_sentence() in lib/markdown.awk does.
+function quote_between(i,   q) {
+  q = "([\"']|\342\200\230|\342\200\231|\342\200\234|\342\200\235)"
+  return tok[i] ~ (q "[)*_\\]]*$") || tok[i + 1] ~ ("^[(\\[*_]*" q)
 }
 
 function sentence(n,   i, k, m, at, depth, w, t, limited, quoted, resume, resume_end) {
@@ -230,9 +246,10 @@ function sentence(n,   i, k, m, at, depth, w, t, limited, quoted, resume, resume
     }
     if (w == "if" && depth == 0 && t ~ /^[a-z]/) {
       # ProseVagueCriterion does not match across an attribution or a
-      # closing quote. The check skips its words only when the next token
-      # that the check reads is the token right after the `if`.
-      if (word(at[k + 1]) ~ /^(any|so)$/ || (at[k + 1] == i + 1 && word(i + 1) ~ vague) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
+      # quote. The check skips its words only when the next token that the
+      # check reads is the token right after the `if`. When quote_between()
+      # finds a quote between the two tokens, the check does not skip them.
+      if (word(at[k + 1]) ~ /^(any|so)$/ || (at[k + 1] == i + 1 && word(i + 1) ~ vague && !quote_between(i)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
         continue
       }
       if ((word(at[k + 1]) ~ /^(it|they)$/ && word(at[k + 2]) ~ /^exists?$/ && tok[at[k + 2]] ~ /[.:,]([")*_\]']|\342\200\235|\342\200\231)*$/) || (word(at[k + 1]) == "there" && word(at[k + 2]) == "is" && word(at[k + 3]) == "one")) {

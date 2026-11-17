@@ -55,3 +55,35 @@ The tool says "Ready." - Run the build if the tests pass.
 “Copy the files,” the guide says, “if they changed.”
 
 Use the flag if it exists in the cache.
+
+Restart the agent if "needed".
+
+Restart the agent if 'needed'.
+
+Restart the agent if ‘needed’.
+
+Retry the request if “possible”.
+
+Restart the agent if **"needed"**.
+
+Restart the agent if "needed" appears in the log.
+
+Set the label to "restart if" needed.
+
+Restart the agent if ”needed”.
+
+Restart the agent if ’needed’.
+
+Set the label to **"restart if"** needed.
+
+Restart the agent if ("needed").
+
+Restart the agent if ["needed"].
+
+Restart the agent if _"needed"_.
+
+Set the label to ["restart if"] needed.
+
+Set the label to _"restart if"_ needed.
+
+(Set the label to "restart if") needed.

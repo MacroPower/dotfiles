@@ -28,7 +28,7 @@ Set the flag only when the job runs on a shared node if the node allows it.
 
 Use the flag if it exists.
 
-Restart the agent if ‘needed’.
+Use this option ‘only’ if the file sits in a subdirectory.
 
 "Save changes?" appears if you close the editor with unsaved edits.
 
@@ -70,7 +70,7 @@ Restart the agent if ‘needed’.
 
 "Save logs" appears in the menu if the 12" cable fails.
 
-Restart the agent if 'needed'.
+Use this option 'only' if the file sits in a subdirectory.
 
 'Run the build if needed' is the rule.
 
@@ -113,3 +113,9 @@ Set the label to "if the job fails".
 "Copy the files, or," the guide says, "if they changed, restart the job."
 
 "Copy the file if it exists," the guide says.
+
+‘Restart the agent if needed’.
+
+Restart the agent if **needed**.
+
+Restart the agent if _needed_.
