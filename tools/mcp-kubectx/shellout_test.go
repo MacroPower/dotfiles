@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -68,9 +72,9 @@ func TestIsGuest(t *testing.T) {
 }
 
 // fakeExecutable writes a small shell script at $TMPDIR/<name> with
-// the given body and returns its absolute path. The defaultRunHost
-// wrapping is tested by pointing it at this script via a custom
-// hostExecArgs override on the *handler.
+// the given body and returns its absolute path. Tests of
+// [runHostCommand] run this script in place of the mcp-kubectx
+// binary.
 func fakeExecutable(t *testing.T, body string) string {
 	t.Helper()
 
@@ -85,36 +89,249 @@ func fakeExecutable(t *testing.T, body string) string {
 	return path
 }
 
-func TestDefaultRunHostNonZeroExit(t *testing.T) {
-	t.Parallel()
+// recordLog returns a logger that writes JSON records at info level
+// and above, and a function that decodes the records written so far.
+// The decoded records drop the time key, because each record that
+// serve writes itself carries the time of the call.
+func recordLog(t *testing.T) (*slog.Logger, func() []map[string]any) {
+	t.Helper()
 
-	exePath := fakeExecutable(t, `echo "stdout-from-fake"; echo "stderr-from-fake" 1>&2; exit 9`)
+	var buf bytes.Buffer
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 
-	c := exec.CommandContext(ctx, exePath, "host", "list")
+	return logger, func() []map[string]any {
+		t.Helper()
 
-	stdout, err := c.Output()
-	require.Error(t, err, "non-zero exit must surface as an error")
+		var records []map[string]any
 
-	var exitErr *exec.ExitError
+		for line := range bytes.Lines(buf.Bytes()) {
+			var rec map[string]any
 
-	require.ErrorAs(t, err, &exitErr)
+			require.NoError(t, json.Unmarshal(line, &rec))
+			require.Contains(t, rec, slog.TimeKey)
 
-	assert.Equal(t, 9, exitErr.ExitCode())
-	assert.Contains(t, string(stdout), "stdout-from-fake", "stdout captured even on non-zero exit")
-	assert.Contains(t, string(exitErr.Stderr), "stderr-from-fake")
+			delete(rec, slog.TimeKey)
+
+			records = append(records, rec)
+		}
+
+		return records
+	}
 }
 
-func TestDefaultRunHostBinaryNotFound(t *testing.T) {
+func TestRunHostCommand(t *testing.T) {
+	t.Parallel()
+
+	const record = `{"time":"2026-11-16T22:00:00.123Z","level":"WARN","msg":"release service account",` +
+		`"name":"claude-sa-x","error":"forbidden"}`
+
+	relayed := map[string]any{
+		"level":      "WARN",
+		"msg":        "release service account",
+		"subcommand": "release",
+		"name":       "claude-sa-x",
+		"error":      "forbidden",
+	}
+
+	tests := map[string]struct {
+		script  string
+		stdout  string
+		err     error
+		errText string
+		want    []map[string]any
+	}{
+		"exit 0 with a record": {
+			script: "echo out; echo '" + record + "' 1>&2",
+			stdout: "out\n",
+			want:   []map[string]any{relayed},
+		},
+		"exit 0 with a record and text": {
+			script: "echo out; echo 'usage line' 1>&2; echo '" + record + "' 1>&2",
+			stdout: "out\n",
+			want: []map[string]any{
+				relayed,
+				{
+					"level":      "WARN",
+					"msg":        "host subcommand wrote to stderr",
+					"subcommand": "release",
+					"stderr":     "usage line",
+				},
+			},
+		},
+		"exit 0 with nothing on stderr": {
+			script: "echo out",
+			stdout: "out\n",
+		},
+		"non-zero exit keeps the record out of the error": {
+			script:  "echo out; echo '" + record + "' 1>&2; echo 'release: boom' 1>&2; exit 9",
+			stdout:  "out\n",
+			err:     ErrHostExec,
+			errText: `host subcommand "release": exit 9: release: boom`,
+			want:    []map[string]any{relayed},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			exePath := fakeExecutable(t, tc.script)
+			logger, records := recordLog(t)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+
+			stdout, err := runHostCommand(ctx, logger, subRelease, exePath, []string{"host", subRelease})
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				require.EqualError(t, err, tc.errText)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.stdout, string(stdout))
+			assert.Equal(t, tc.want, records())
+		})
+	}
+}
+
+func TestRunHostCommandBinaryNotFound(t *testing.T) {
 	t.Parallel()
 
 	bogus := filepath.Join(t.TempDir(), "no-such-binary")
+	logger, records := recordLog(t)
 
-	c := exec.CommandContext(t.Context(), bogus, "host", "list")
-	err := c.Run()
-	require.Error(t, err, "missing binary must surface as an error")
+	_, err := runHostCommand(t.Context(), logger, subList, bogus, []string{"host", subList})
+	require.ErrorIs(t, err, ErrHostExecRun)
+	assert.Empty(t, records())
+}
+
+// TestRunHostCommandRelaysHostRelease runs `host release` of this
+// test binary as a child process, with a flag that `host release`
+// does not define. The child logs a warning and exits 0, and the
+// warning reaches the logger of the parent.
+func TestRunHostCommandRelaysHostRelease(t *testing.T) {
+	t.Parallel()
+
+	self, err := os.Executable()
+	require.NoError(t, err)
+
+	exePath := fakeExecutable(t, runMainEnv+"=1 exec '"+self+"' \"$@\"")
+	logger, records := recordLog(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	stdout, err := runHostCommand(ctx, logger, subRelease, exePath, []string{"host", subRelease, "--no-such-flag"})
+	require.NoError(t, err, "host release exits 0 after a failure")
+	assert.Empty(t, stdout)
+
+	got := records()
+	require.Len(t, got, 2)
+
+	assert.Equal(t, map[string]any{
+		"level":      "WARN",
+		"msg":        "parse host release flags",
+		"subcommand": "release",
+		"error":      "flag provided but not defined: -no-such-flag",
+	}, got[0])
+
+	assert.Equal(t, "host subcommand wrote to stderr", got[1]["msg"])
+	assert.Equal(t, "release", got[1]["subcommand"])
+	assert.Contains(t, got[1]["stderr"], "Usage of host release")
+}
+
+func TestRelayHostLog(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		stderr string
+		level  slog.Level
+		want   []string
+		text   string
+	}{
+		"record keeps its time, level, message, and attributes": {
+			stderr: `{"time":"2026-11-16T14:00:00.123-08:00","level":"WARN","msg":"sweep delete",` +
+				`"kind":"ServiceAccount","records":2,"ratio":0.5,"clusterScoped":false,"group":{"a":"b"},"none":null}` + "\n",
+			want: []string{
+				`{"time":"2026-11-16T14:00:00.123-08:00","level":"WARN","msg":"sweep delete","subcommand":"sweep",` +
+					`"kind":"ServiceAccount","records":2,"ratio":0.5,"clusterScoped":false,"group":{"a":"b"},"none":null}`,
+			},
+		},
+		"records below the level of the logger drop": {
+			stderr: `{"time":"2026-11-16T22:00:00Z","level":"INFO","msg":"host sweep released recorded service account"}` + "\n" +
+				`{"time":"2026-11-16T22:00:01Z","level":"WARN","msg":"sweep delete"}` + "\n",
+			level: slog.LevelWarn,
+			want: []string{
+				`{"time":"2026-11-16T22:00:01Z","level":"WARN","msg":"sweep delete","subcommand":"sweep"}`,
+			},
+		},
+		"level with an offset": {
+			stderr: `{"time":"2026-11-16T22:00:00Z","level":"WARN+2","msg":"m"}`,
+			want:   []string{`{"time":"2026-11-16T22:00:00Z","level":"WARN+2","msg":"m","subcommand":"sweep"}`},
+		},
+		"lines without a record are text": {
+			stderr: "not json\n" +
+				`{"msg":"no level"}` + "\n" +
+				`{"level":"WARN"}` + "\n" +
+				`{"level":"LOUD","msg":"unknown level"}` + "\n" +
+				`{"level":"WARN","msg":"trailing"} more` + "\n" +
+				`["level","WARN"]` + "\n" +
+				`{"level":"WARN","msg":` + "\n",
+			text: "not json\n" +
+				`{"msg":"no level"}` + "\n" +
+				`{"level":"WARN"}` + "\n" +
+				`{"level":"LOUD","msg":"unknown level"}` + "\n" +
+				`{"level":"WARN","msg":"trailing"} more` + "\n" +
+				`["level","WARN"]` + "\n" +
+				`{"level":"WARN","msg":`,
+		},
+		"text around a record": {
+			stderr: "\nfirst\n" + `{"time":"2026-11-16T22:00:00Z","level":"ERROR","msg":"m"}` + "\nlast\n",
+			want:   []string{`{"time":"2026-11-16T22:00:00Z","level":"ERROR","msg":"m","subcommand":"sweep"}`},
+			text:   "first\nlast",
+		},
+		"empty": {},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: tc.level}))
+
+			text := relayHostLog(t.Context(), logger, subSweep, []byte(tc.stderr))
+			assert.Equal(t, tc.text, text)
+
+			var got []string
+			for line := range strings.Lines(buf.String()) {
+				got = append(got, strings.TrimSuffix(line, "\n"))
+			}
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestRelayHostLogWithoutTime pins that a record without a time key
+// takes the time of the relay.
+func TestRelayHostLogWithoutTime(t *testing.T) {
+	t.Parallel()
+
+	logger, records := recordLog(t)
+
+	text := relayHostLog(t.Context(), logger, subSweep, []byte(`{"level":"INFO","msg":"m","n":"v"}`))
+	assert.Empty(t, text)
+
+	assert.Equal(t, []map[string]any{{
+		"level":      "INFO",
+		"msg":        "m",
+		"subcommand": "sweep",
+		"n":          "v",
+	}}, records())
 }
 
 // TestHostTokenSkipsWorkmuxWhenEnvSetToGuest pins the recursion

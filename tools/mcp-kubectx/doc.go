@@ -60,6 +60,12 @@
 // ledger package are the only state that one `host *` call leaves
 // for a later one. The section "Lifecycle" describes them.
 //
+// The `host *` subcommands write their logs to stderr, one JSON
+// record per line. [runHostCommand] adds each record to the log of
+// the `serve` that ran the subcommand, whatever its exit status. So
+// the --log-file of `serve` holds the warnings of a `host release`
+// or a `host sweep` that logs a failure and exits 0.
+//
 // # Subcommands
 //
 //   - serve: MCP stdio server. Owns the per-process kubeconfig
@@ -148,7 +154,8 @@
 //   - --sa-expiration: token lifetime in seconds
 //     (default: 3600, max: 86400).
 //   - --log-file: path to JSON log file (append). Logs warnings and
-//     cleanup events; defaults to discard.
+//     cleanup events, and the log records of each `host *`
+//     subcommand that `serve` runs. Defaults to discard.
 //   - --socket-slots: number of UDS slot paths probed at startup
 //     (default 16, must be >= 1). Each slot maps to one literal
 //     entry in the Claude Code sandbox allowUnixSockets allowlist.

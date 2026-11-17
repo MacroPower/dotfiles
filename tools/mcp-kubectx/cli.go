@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 )
 
 // ErrUnknownSubcommand is returned when the dispatcher does not
@@ -64,7 +66,13 @@ func dispatch(ctx context.Context, args []string) error {
 // one-shot handler. The host subcommands never run the MCP server
 // and never shell out to `workmux host-exec`; they touch the host
 // filesystem and Kubernetes API directly.
+//
+// It points the default logger at stderr as one JSON record per
+// line before it runs the subcommand. [runHostCommand] reads those
+// lines and adds each record to the log of serve.
 func dispatchHost(ctx context.Context, args []string) error {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+
 	if len(args) == 0 {
 		return fmt.Errorf(
 			"%w: host (missing subcommand: list|select|token|release|sweep)",

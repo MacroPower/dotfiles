@@ -71,6 +71,12 @@ distinction is invisible to kubectl: both host- and guest-side
 serves write the same exec-plugin block, and routing happens
 server-side.
 
+The `host *` subcommands write their logs to stderr, one JSON record
+per line. `serve` adds each record to the file of its `--log-file`
+flag, whatever the exit status of the subcommand. So that log shows
+each failure that `host release` or `host sweep` logs as a warning
+before it exits 0, such as a failed delete.
+
 ```
 mcp-kubectx serve              # MCP stdio mode, local to its Claude
 mcp-kubectx host list          # one-shot: print contexts
@@ -710,9 +716,8 @@ without the context of the call.
 
 Both passes log each failure, such as a Forbidden list or a failed
 delete, at warn level, and no failure blocks `serve` startup. `host
-sweep` writes these warnings to its stderr. `serve` adds that output
-to its log only when `host sweep` exits non-zero, such as when every
-list call of the label pass fails.
+sweep` writes these warnings to its stderr, and `serve` adds each
+one to its log, whatever the exit status of `host sweep`.
 
 ### Provision records
 
@@ -793,10 +798,9 @@ The sweep does not cover these cases:
   [Manual sweep invocation](#manual-sweep-invocation) describes how
   to release it by hand.
 - **A record whose cluster never answers again.** The record pass
-  tries such a record at the startup of every `serve`. Its failures
-  do not change the exit status of `host sweep`, so the log of
-  `serve` shows their warnings only when the label pass makes `host
-sweep` exit non-zero. To find such a record, list
+  tries such a record at the startup of every `serve`, and the log
+  of that `serve` holds a warning for each failed attempt. To find
+  such a record, list
   `<XDG_STATE_HOME>/mcp-kubectx-run/ledger` on the host. After its
   `serve` has ended, a record stays past the startup of the next
   `serve` only when the sweep cannot release it. The JSON of the

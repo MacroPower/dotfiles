@@ -587,7 +587,11 @@ func (h *handler) publishSidecar(target string) {
 
 // releaseClosure builds the cleanup callback that shells out to
 // `host release` for an SA created by a successful `host select`.
-// Errors are logged but never propagated; release is best-effort.
+// Release is best-effort, so no failure leaves the callback. `host
+// release` logs a failed delete as a warning and exits 0, and
+// [runHostCommand] adds that warning to the log of serve. The
+// callback logs the error of a `host release` that does not start
+// or that exits non-zero.
 func (h *handler) releaseClosure(result HostSelectResult) func(context.Context) {
 	return func(ctx context.Context) {
 		args := []string{

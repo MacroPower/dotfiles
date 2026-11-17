@@ -93,9 +93,11 @@ const recordSlack = time.Minute
 // It logs every other failure at warn level and swallows it,
 // because the next `serve` startup runs the sweep again. These
 // failures include a failed list call of some resource kinds, each
-// failed delete, and every failure of the record pass. An error of
-// the label pass does not stop the record pass, and the sweep
-// returns that error after both passes have ended.
+// failed delete, and every failure of the record pass. A `serve`
+// that runs the sweep adds each of these warnings to its own log
+// through [runHostCommand]. An error of the label pass does not stop
+// the record pass, and the sweep returns that error after both
+// passes have ended.
 //
 // The --host-id flag is required and format-checked.
 // [ErrMissingHostID] and [ErrInvalidHostID] name the threat model
@@ -508,10 +510,12 @@ func forgetServiceAccount(
 }
 
 // runSweep shells out to `host sweep` with the calling serve's
-// host id and the discovered live-instance set. Failure is logged
-// at warn level and never propagated; startup is not blocked on a
-// successful sweep. --context is intentionally omitted from the
-// argv. Without it, the sweep covers the cluster of
+// host id and the discovered live-instance set. It logs a failed
+// sweep at warn level and never propagates it, so startup never
+// waits for a successful sweep. `host sweep` exits 0 after most
+// failures, such as a failed delete, and [runHostCommand] adds the
+// warning of each to the log of serve. runSweep leaves --context
+// out of the argv. Without it, the sweep covers the cluster of
 // `cfg.CurrentContext` in the host kubeconfig by label, and it
 // covers the cluster of every provision record of a dead serve
 // that names the host kubeconfig.

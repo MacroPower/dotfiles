@@ -18,12 +18,24 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/ledger"
 )
 
+// runMainEnv names the environment variable that makes the test
+// binary run [run] in place of the tests. A test sets it to "1" to
+// start a `host` subcommand as a child process.
+const runMainEnv = "MCP_KUBECTX_TEST_RUN_MAIN"
+
 // TestMain keeps the provision records of every test out of the
 // state directory of the user who runs the tests. `host release`
 // and `host sweep` read the ledger on every call, and `host select`
 // writes to it. A test that asserts on records takes a directory of
 // its own with [withHostLedger].
+//
+// With [runMainEnv] set to "1", TestMain runs [run] on the
+// arguments of the process and exits with its status.
 func TestMain(m *testing.M) {
+	if os.Getenv(runMainEnv) == "1" {
+		os.Exit(run())
+	}
+
 	dir, err := os.MkdirTemp("", "mcp-kubectx-ledger")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create ledger directory: %v\n", err)

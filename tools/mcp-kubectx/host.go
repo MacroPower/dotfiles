@@ -580,7 +580,9 @@ func runHostToken(ctx context.Context, args []string) error {
 // It logs each failure and always exits 0, for a transient API
 // failure and for an exec failure alike. A non-zero exit makes
 // serve retry the cleanup for the rest of its lifetime, and that
-// retry is worse than the leak.
+// retry is worse than the leak. Each failure is a warning, and a
+// `serve` that runs the release adds that warning to its own log
+// through [runHostCommand].
 //
 // After the cluster holds neither the SA nor the binding,
 // runHostRelease removes the provision records of the SA from the
