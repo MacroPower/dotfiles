@@ -128,22 +128,26 @@
 //
 //   - --kubeconfig: path to the host kubeconfig file
 //     (default: $KUBECONFIG, then ~/.kube/config).
-//   - --output: path where the scoped kubeconfig is written
-//     (default: <host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.<env>.yaml,
-//     falling back to ~/.local/state/mcp-kubectx/... when
-//     $XDG_STATE_HOME is unset on the host). The default is
-//     resolved by `host select` itself; `serve` only forwards its
-//     own pid plus host/guest env as the discriminator. <env> is
-//     the literal string `host` or `guest`. <pid> is the serve
-//     process id, scoping the file to the running serve so a host
-//     serve and a Lima-guest serve cannot collide.
-//     An explicit --output must be host-resolvable and writable
-//     from the guest, since shutdown cleanup is a local
-//     [os.Remove]. Default operation already satisfies that via
-//     the writable bind mount of <stateHomeDir> declared in
-//     workmux's extra_mounts; an explicit --output bypasses that
-//     mount, so the user is responsible for picking a path that
-//     is reachable on both sides.
+//   - --output: path where the scoped kubeconfig is written. The
+//     default is kubeconfig.<pid>.<env>.yaml, and `host select`
+//     resolves it with [statedir.KubeconfigPath] on the host.
+//     `serve` forwards only its own pid and env as the
+//     discriminator. <env> is the literal string `host` or
+//     `guest`. <pid> is the serve process id, which scopes the file
+//     to the running serve, so a host serve and a Lima-guest serve
+//     cannot collide. The file of a host-side serve lies in
+//     <host's $XDG_STATE_HOME>/mcp-kubectx-run, which workmux does
+//     not mount into a guest. The file of a guest-side serve lies in
+//     <host's $XDG_STATE_HOME>/mcp-kubectx, which the guest reads
+//     through the writable bind mount that workmux's extra_mounts
+//     declares. Both fall back to ~/.local/state when
+//     $XDG_STATE_HOME is unset on the host.
+//     A guest-side serve removes its file at shutdown with a local
+//     [os.Remove]. So in a guest, an explicit --output must be
+//     host-resolvable and writable from the guest. The default
+//     path of the guest env lies under the mount and meets both
+//     conditions. An explicit --output bypasses the mount, so the
+//     user picks a path that both sides reach.
 //   - --sa-role-name: name of the Role or ClusterRole to bind (required).
 //   - --sa-role-kind: kind of role to bind: Role or ClusterRole
 //     (default: ClusterRole).
@@ -167,9 +171,9 @@
 //
 // # Socket slot pool
 //
-// The per-`serve` UDS lives at
-// <socketStateDir>/serve.<slot>.<env>.sock, where <slot> is a dense
-// integer 0..N-1 picked at startup by [socket.Acquire].
+// The per-`serve` UDS lives at serve.<slot>.<env>.sock in
+// [statedir.RunDir], where <slot> is a dense integer 0..N-1 picked
+// at startup by [socket.Acquire].
 // Slot indices replace the previous PID-based naming because Claude
 // Code's sandbox `allowUnixSockets` setting matches entries as
 // literal paths, not globs; enumerating one literal per slot is the
@@ -194,25 +198,29 @@
 // # host select flags
 //
 // Creates a ServiceAccount + binding and writes a scoped kubeconfig.
-// The first positional argument is the context name. Path resolution
-// is split: serve owns the discriminator (pid + host/guest env);
-// host select owns the base directory ([statedir.Dir], read from
-// the host's $XDG_STATE_HOME). When --out-path is empty, host select
-// requires --pid and resolves the path itself; an explicit
-// --out-path bypasses defaulting and is forwarded verbatim.
+// The first positional argument is the context name. Serve owns the
+// discriminator of the default path, which is its pid and its env.
+// host select owns the directory, which it resolves from the host's
+// $XDG_STATE_HOME with [statedir.KubeconfigPath]. When --out-path is
+// empty, host select requires --pid and resolves the path itself.
+// An explicit --out-path bypasses the default, and host select
+// writes to it as given. In this doc, <stateHomeDir> stands for
+// [statedir.Dir] and <runDir> for [statedir.RunDir].
 //
 //   - --kubeconfig: path to the host kubeconfig file.
 //   - --out-path: destination for the scoped kubeconfig (default:
-//     <stateHomeDir>/kubeconfig.<pid>.<env>.yaml).
+//     <runDir>/kubeconfig.<pid>.host.yaml, or
+//     <stateHomeDir>/kubeconfig.<pid>.guest.yaml with --for-guest).
 //   - --pid: serve process pid, used as the filename
 //     discriminator when --out-path is empty (required in that
 //     branch, ignored when --out-path is set).
-//   - --for-guest: when true, the kubeconfig user.exec block wraps
-//     `mcp-kubectx host token` with `workmux host-exec` so an
-//     in-guest kubectl can reach the host. When false, user.exec
-//     points at the absolute path of the current binary directly.
-//     Also drives the <env> token (`host` or `guest`) when
-//     --out-path defaulting is in effect.
+//   - --for-guest: picks the env of the default paths. With
+//     --for-guest, the default kubeconfig lies in <stateHomeDir>,
+//     which workmux mounts into each Lima guest. Its name and the
+//     name of the default socket carry the `guest` env tag. Without
+//     the flag, the default kubeconfig lies in <runDir>, which
+//     workmux does not mount, and both names carry the `host` env
+//     tag. The user.exec block is the same in both envs.
 //   - --sa-role-name, --sa-role-kind, --sa-cluster-scoped,
 //     --sa-namespace, --sa-expiration: same semantics as the `serve`
 //     flags above. `serve` forwards its own values verbatim.
@@ -349,28 +357,10 @@
 // It can also replace each of them with a symlink. The directory
 // holds these files:
 //
-//   - The scoped kubeconfig files of host-side and guest-side serves.
-//     A guest can rewrite the kubeconfig of a live host-side serve.
-//     Host-side kubectl reads that file through the hook-router
-//     sidecar symlink and runs the exec plugin that the file names.
-//     So the guest picks the command that host-side kubectl runs and
-//     the apiserver that receives each token that the serve mints.
-//     `host select` writes each kubeconfig on the host and follows a
-//     symlink at its path. A host-side serve starts its `host select`
-//     outside the sandbox of `workmux host-exec`. So a guest that
-//     plants a symlink at the kubeconfig path of a later host-side
-//     serve makes `host select` overwrite any file of the host that
-//     the user can write.
-//   - The `host.id` file of host-side serves. A host-side serve reads
-//     it at startup for the `host-id` label of its resources and for
-//     the selector of its orphan sweep. So a guest can change the
-//     `host-id` of the next host-side serve. The startup sweep of
-//     that serve then uses the host kubeconfig to delete each
-//     resource with that `host-id` whose serve is missing from its
-//     live set. So a guest that writes its own `guest.id` there
-//     makes the sweep delete the live SAs of its guest-side serves.
-//     A guest that writes the `host-id` of another operator on a
-//     shared cluster makes the sweep delete the SAs of that operator.
+//   - The scoped kubeconfig files of guest-side serves. `host select`
+//     writes each of them on the host, and each guest-side serve
+//     reads its file through the mount. So every guest can rewrite
+//     the kubeconfig of each guest-side serve.
 //   - The log file of host-side serves, at the path that
 //     home/claude.nix passes as --log-file. A host-side serve opens
 //     this path for append and follows a symlink there. So a guest
@@ -378,8 +368,17 @@
 //     host-side serve append its log lines to any file of the host
 //     that the user can write.
 //
-// A guest-side serve resolves its state directory in the guest. So
-// it keeps `guest.id` on the disk of the guest, outside the mount.
+// The files that host-side processes trust lie in <runDir> of the
+// host, which workmux does not mount into a guest. These files are
+// the scoped kubeconfig of each host-side serve and the `host.id`
+// file of host-side serves. Host-side kubectl reads such a
+// kubeconfig through the hook-router sidecar symlink and runs the
+// exec plugin that the file names. Each host-side serve reads
+// `host.id` at startup for the `host-id` label of its resources and
+// for the selector of its orphan sweep.
+//
+// A guest-side serve resolves <runDir> in the guest. So it keeps
+// `guest.id` on the disk of the guest, outside the mount.
 // serve writes its log to the --log-file path as given, and
 // home/claude.nix renders that path from the xdg.stateHome of the
 // machine that it configures. So on a guest that home/claude.nix
@@ -412,10 +411,9 @@
 //     one host share a host-id, and so do the guest-side serves of
 //     one Lima guest VM. The sweep of the other env, or of another
 //     guest VM, keeps them, because it selects another host-id. A
-//     guest can still make a sweep select the host-id of these SAs.
-//     It can write that id into `host.id` (see the `host.id` entry
-//     in the list of the files of <stateHomeDir>), or it can run
-//     `host sweep` through `workmux host-exec` with that id.
+//     guest can still make a sweep select the host-id of these SAs,
+//     because it can run `host sweep` through `workmux host-exec`
+//     with that id.
 //   - The provision record of each such SA, in the ledger directory
 //     on the host. The same sweep removes the record after it has
 //     deleted the SA and the binding.
@@ -496,10 +494,8 @@
 // different machines cannot delete each other's resources. A
 // host-side serve and a guest-side serve on the same machine
 // cannot either, and neither side observes the live sockets of the
-// other. Every Lima guest can break both bounds. It can rewrite
-// `host.id` through the bind mount (see the `host.id` entry in the
-// list of the files of <stateHomeDir>), and it can run `host sweep`
-// through `workmux host-exec` with any `--host-id`.
+// other. Every Lima guest can break both bounds, because it can run
+// `host sweep` through `workmux host-exec` with any `--host-id`.
 //
 // # Recursion guard
 //

@@ -105,27 +105,32 @@ func TestHostSelectMissingPid(t *testing.T) {
 }
 
 // TestHostSelectDefaultsOutPath pins two distinct defaults that
-// fire when the corresponding flag is omitted: --out-path falls
-// back to <stateHomeDir>/kubeconfig.<pid>.<env>.yaml (where <pid>
-// is the value of --pid, used purely as a filename discriminator),
-// and --socket-path falls back to
-// <socketStateDir>/serve.0.<env>.sock (slot 0 of the slot pool;
-// independent of --pid). Both have <env> driven by --for-guest.
-// In production serve always forwards an explicit --socket-path so
-// the slot-0 default is only hit by tests.
+// fire when the corresponding flag is omitted. --out-path falls back
+// to kubeconfig.<pid>.<env>.yaml, where <pid> is the value of --pid,
+// used only as a filename discriminator. The file of the host env
+// lies in the run dir, which workmux does not mount into a Lima
+// guest. The file of the guest env lies in the state dir, which the
+// guest reads through the mount. --socket-path falls back to
+// <runDir>/serve.0.<env>.sock, slot 0 of the slot pool, whatever
+// --pid holds. --for-guest drives <env> in both names. In production
+// serve always forwards an explicit --socket-path, so only tests
+// reach the slot-0 default.
 func TestHostSelectDefaultsOutPath(t *testing.T) { //nolint:paralleltest // mutates package-level state, uses t.Setenv
 	tests := map[string]struct {
 		forGuest   string
+		wantDir    string
 		want       string
 		wantSocket string
 	}{
 		"host env": {
 			forGuest:   "false",
+			wantDir:    "mcp-kubectx-run",
 			want:       "kubeconfig.1234.host.yaml",
 			wantSocket: "serve.0.host.sock",
 		},
 		"guest env": {
 			forGuest:   "true",
+			wantDir:    "mcp-kubectx",
 			want:       "kubeconfig.1234.guest.yaml",
 			wantSocket: "serve.0.guest.sock",
 		},
@@ -151,7 +156,7 @@ func TestHostSelectDefaultsOutPath(t *testing.T) { //nolint:paralleltest // muta
 			})
 			require.NoError(t, err)
 
-			expected := filepath.Join(stateHome, "mcp-kubectx", tc.want)
+			expected := filepath.Join(stateHome, tc.wantDir, tc.want)
 			expectedSocket := filepath.Join(stateHome, "mcp-kubectx-run", tc.wantSocket)
 
 			var result HostSelectResult

@@ -42,23 +42,6 @@ const dialDeadline = 500 * time.Millisecond
 // neither the path nor the reason.
 const maxSunPathLen = 103
 
-// StateDir returns the parent directory used for per-`serve` Unix
-// domain socket files. It mirrors [statedir.Dir] but is rooted at a
-// sibling directory name so the socket file does not collide with
-// the existing Lima writable bind mount of <state>/mcp-kubectx
-// (UDS-over-Lima-bind-mount semantics on macOS-host are unverified;
-// the safe design avoids the question entirely by hosting the
-// socket outside the bind mount).
-//
-// The main package keeps its ledger of provision records in a
-// subdirectory, because a Lima guest cannot write here through the
-// bind mount. A guest can still add records through `workmux
-// host-exec mcp-kubectx host select`, so `host sweep` handles only
-// the records of its own kubeconfig.
-func StateDir() string {
-	return statedir.Subdir("mcp-kubectx-run")
-}
-
 // PathForSlot returns the absolute path of the per-`serve` Unix
 // domain socket for a given slot index. Slot indices are dense
 // (0..N-1); each slot maps 1:1 to a literal entry in the Claude Code
@@ -68,7 +51,7 @@ func StateDir() string {
 // machine from stomping on each other's sockets.
 func PathForSlot(slot int, forGuest bool) string {
 	return filepath.Join(
-		StateDir(),
+		statedir.RunDir(),
 		fmt.Sprintf("serve.%d.%s.sock", slot, statedir.EnvTag(forGuest)),
 	)
 }
@@ -127,7 +110,7 @@ func Acquire(
 	}
 
 	return "", nil, fmt.Errorf("%w: %d slots in %s",
-		ErrAllSlotsBusy, maxSlots, StateDir())
+		ErrAllSlotsBusy, maxSlots, statedir.RunDir())
 }
 
 // Listen binds a Unix domain socket at path and returns its

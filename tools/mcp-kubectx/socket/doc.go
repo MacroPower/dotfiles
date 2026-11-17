@@ -7,12 +7,13 @@
 //
 // # Slot pool
 //
-// The per-`serve` UDS lives at <StateDir>/serve.<slot>.<env>.sock,
-// where <slot> is a dense integer 0..N-1 picked at startup by
-// [Acquire]. Slot indices replace PID-based naming because Claude
-// Code's sandbox `allowUnixSockets` setting matches entries as
-// literal paths, not globs; enumerating one literal per slot is the
-// only way to allow a per-`serve` socket whose filename varies.
+// The per-`serve` UDS lives at serve.<slot>.<env>.sock in
+// [statedir.RunDir], where <slot> is a dense integer 0..N-1 picked
+// at startup by [Acquire]. Slot indices replace PID-based naming
+// because Claude Code's sandbox `allowUnixSockets` setting matches
+// entries as literal paths, not globs. So the only way to allow a
+// per-`serve` socket whose filename varies is to list one literal
+// per slot.
 // [Acquire] walks 0..N-1, skipping slots held by a live peer
 // (detected by a dial probe) or that race-lose at bind time (wrapped
 // [syscall.EADDRINUSE]). Crash-leftover inodes are unlinked and the
@@ -20,10 +21,10 @@
 // fails with [ErrAllSlotsBusy] naming the slot count and the state
 // directory.
 //
-// Sockets live under a sibling of the bind-mounted mcp-kubectx state
-// dir (see [StateDir]) because UDS-over-Lima-bind-mount semantics on
-// a macOS host are unverified; hosting the socket on each profile's
-// local filesystem avoids the question entirely.
+// Sockets live in [statedir.RunDir], which workmux does not mount
+// into a Lima guest. The behavior of a UDS on a Lima bind mount of a
+// macOS host is unverified. A socket on the local filesystem of each
+// profile avoids the question.
 //
 // # Sidecars and liveness
 //

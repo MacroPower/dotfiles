@@ -68,7 +68,8 @@ func runServe(ctx context.Context, args []string) error {
 	output := fs.String(
 		"output",
 		"",
-		"path where scoped kubeconfig is written (default: <host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.<env>.yaml). "+
+		"path where scoped kubeconfig is written (default: <host's $XDG_STATE_HOME>/mcp-kubectx-run/kubeconfig.<pid>.host.yaml "+
+			"for a host-side serve, <host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.guest.yaml for a Lima-guest serve). "+
 			"In a Lima guest, an explicit path must be host-resolvable; shutdown cleanup uses a local os.Remove on this "+
 			"branch (not host cleanup), so the path must also be writable from the guest -- typically only true under a "+
 			"writable bind mount. Default operation does not need a writable mount.",
@@ -149,8 +150,8 @@ func runServe(ctx context.Context, args []string) error {
 
 	// The host id is per-env (host.id vs guest.id), because the
 	// sweep of each env can vouch only for the live serves of that
-	// env. A guest-side serve keeps guest.id in the state dir of
-	// the guest, outside the Lima bind mount. See
+	// env. Each id file lies in the run dir of the machine that runs
+	// serve, which workmux never mounts into a Lima guest. See
 	// [identity.LoadOrCreateHost].
 	guest := os.Getenv(guestEnvVar) == "1"
 

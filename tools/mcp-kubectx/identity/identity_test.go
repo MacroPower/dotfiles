@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statedir"
 )
 
 func TestNew(t *testing.T) {
@@ -161,4 +162,37 @@ func TestLoadOrCreateHostPerEnv(t *testing.T) { //nolint:paralleltest // uses t.
 
 	assert.NotEqual(t, hostID, guestID,
 		"host and guest envs must mint distinct ids so their sweeps stay disjoint")
+}
+
+// TestHostPathOutsideMountedDir pins that each id file lies in
+// [statedir.RunDir]. workmux mounts [statedir.Dir] of the host
+// writable into each Lima guest. An id file there lets a guest pick
+// the host-id of host-side serves, and so the selector of their
+// startup sweep.
+func TestHostPathOutsideMountedDir(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	for _, forGuest := range []bool{false, true} {
+		assert.Equal(t, statedir.RunDir(), filepath.Dir(identity.HostPath(forGuest)))
+	}
+}
+
+// TestLoadOrCreateHostIgnoresMountedDir pins that a host.id that a
+// Lima guest writes into [statedir.Dir] of the host through the bind
+// mount does not become the host id of host-side serves.
+func TestLoadOrCreateHostIgnoresMountedDir(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	const planted = "0123456789abcdef"
+
+	require.NoError(t, os.MkdirAll(statedir.Dir(), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(statedir.Dir(), "host.id"), []byte(planted), 0o600))
+
+	id, err := identity.LoadOrCreateHost(false)
+	require.NoError(t, err)
+	assert.NotEqual(t, planted, id, "a host.id in the mounted state dir must not set the host id")
+
+	data, err := os.ReadFile(filepath.Join(statedir.RunDir(), "host.id"))
+	require.NoError(t, err)
+	assert.Equal(t, id, string(data), "the host id must persist in the run dir")
 }

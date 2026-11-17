@@ -736,39 +736,27 @@ let
           writable = true;
         }
         {
-          # mcp-kubectx serve writes scoped kubeconfig files at
-          # this path via `host select` running on the macOS host.
-          # The guest's kubectl reads them through this bind mount,
-          # and shutdown cleanup uses a local os.Remove from the
-          # guest, so the mount must be writable. Through this mount,
-          # the guest can create, change, and delete the files of this
-          # directory of the host, and replace each with a symlink.
-          # The directory holds the scoped kubeconfig files of both
-          # envs and the host.id of host-side serves. It also holds
-          # their kubectx.log, the --log-file of servers.kubectx.
-          # Host-side kubectl reads the kubeconfig of a live host-side
-          # serve through the hook-router sidecar symlink and runs the
-          # exec plugin that the file names. So the guest can rewrite
-          # that file to pick the command that host-side kubectl runs
-          # and the apiserver that receives each token that the serve
-          # mints. A host-side serve reads host.id at startup for the
-          # host-id label of its resources and for the selector of its
-          # orphan sweep. So the guest can change that id. The startup
-          # sweep of that serve then uses the host kubeconfig to
-          # delete each resource with that id whose serve is missing
-          # from its live set. If the guest writes its own guest.id
-          # there, the sweep deletes the live SAs of its guest-side
-          # serves. If it writes the host-id of another operator on a
-          # shared cluster, the sweep deletes the SAs of that operator.
-          # A host-side serve follows a symlink at kubectx.log. The
-          # `host select` that it starts follows a symlink at its
-          # kubeconfig path. Neither runs in the sandbox of
-          # `workmux host-exec`. So a symlink that the guest plants at
-          # either path sends a host-side write to any file of the user
-          # on the host. A guest-side serve keeps guest.id in the state
-          # dir of the guest, outside this mount. On a guest, this
-          # module renders the --log-file of servers.kubectx in that
-          # state dir too.
+          # mcp-kubectx serve writes the scoped kubeconfig files of
+          # guest-side serves at this path via `host select` running
+          # on the macOS host. The guest's kubectl reads them through
+          # this bind mount, and shutdown cleanup uses a local
+          # os.Remove from the guest, so the mount must be writable.
+          # Through this mount, the guest can create, change, and
+          # delete the files of this directory of the host, and
+          # replace each with a symlink. The directory holds the
+          # scoped kubeconfig files of guest-side serves. It also
+          # holds the kubectx.log of host-side serves, the --log-file
+          # of servers.kubectx. A host-side serve follows a symlink at
+          # kubectx.log and does not run in the sandbox of
+          # `workmux host-exec`. So a symlink that the guest plants
+          # there sends a host-side write to any file of the user on
+          # the host. On a guest, this module renders the --log-file
+          # of servers.kubectx in the state dir of the guest.
+          #
+          # The files that host-side processes trust lie in
+          # mcp-kubectx-run, which no entry of this list mounts. They
+          # include host.id and the kubeconfig of each host-side
+          # serve.
           host_path = "${config.xdg.stateHome}/mcp-kubectx";
           guest_path = "${config.xdg.stateHome}/mcp-kubectx";
           writable = true;
@@ -5551,7 +5539,10 @@ in
       # unverified; the safe design avoids the question). Both host
       # and guest profiles need this dir at mode 0700 to match
       # listenSocket's parent-dir invariant; create it
-      # unconditionally so non-Lima Darwin hosts also get it.
+      # unconditionally so non-Lima Darwin hosts also get it. The
+      # dir also holds the files that host-side mcp-kubectx trusts,
+      # such as host.id and the kubeconfig of each host-side serve.
+      # So the extra_mounts of the Lima sandbox must not mount it.
       activation.ensureMcpKubectxRunDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         run install -d -m 700 "${config.xdg.stateHome}/mcp-kubectx-run"
       '';

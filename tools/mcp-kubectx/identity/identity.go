@@ -58,11 +58,13 @@ func Valid(s string) bool {
 }
 
 // HostPath returns the absolute path of the per-user persistent host
-// id file for one env. The directory is the standard mcp-kubectx
-// state dir; the file lives alongside other per-host scoped
-// artifacts as `host.id` or `guest.id` depending on the env tag.
+// id file for one env. The file lies in [statedir.RunDir] as
+// `host.id` or `guest.id`, depending on the env tag. workmux mounts
+// no part of that directory into a Lima guest. So no guest can
+// rewrite the id through the mount. The package doc names the path
+// through which a guest can still overwrite the file.
 func HostPath(forGuest bool) string {
-	return filepath.Join(statedir.Dir(), statedir.EnvTag(forGuest)+".id")
+	return filepath.Join(statedir.RunDir(), statedir.EnvTag(forGuest)+".id")
 }
 
 // LoadOrCreateHost returns the stable 16-hex host identifier for the
@@ -78,12 +80,10 @@ func HostPath(forGuest bool) string {
 // The host id bounds the orphan sweep to resources this host+env
 // owns. Two operators running `serve` against a shared cluster never
 // delete each other's resources because their id files differ.
-// Every Lima guest can break that bound. It can rewrite the `host.id`
-// of the host through the bind mount of the mcp-kubectx state dir,
-// and it can run `host sweep` through `workmux host-exec` with any
-// `--host-id`. Host- and guest-side serves on the same machine keep
-// separate ids (`host.id` vs `guest.id`) for the reason laid out in
-// the package doc.
+// Every Lima guest can break that bound, because it can run `host
+// sweep` through `workmux host-exec` with any `--host-id`. Host- and
+// guest-side serves on the same machine keep separate ids (`host.id`
+// vs `guest.id`) for the reason laid out in the package doc.
 func LoadOrCreateHost(forGuest bool) (string, error) {
 	path := HostPath(forGuest)
 

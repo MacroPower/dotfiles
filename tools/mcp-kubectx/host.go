@@ -40,16 +40,15 @@ var (
 	}
 	hostStdout io.Writer = os.Stdout
 	// hostLedgerDir returns the directory of the provision
-	// records. The directory lies beside the sockets in
-	// [socket.StateDir] and not in [statedir.Dir], because a Lima
-	// guest can write to [statedir.Dir] of the host through the
-	// bind mount. So only the `host` subcommands write records.
-	// A guest can still run `host select` through `workmux
-	// host-exec` with a --kubeconfig of its choice. So `host
-	// sweep` handles only the records of the kubeconfig that it
-	// sweeps.
+	// records. The directory lies in [statedir.RunDir] and not in
+	// [statedir.Dir], because a Lima guest can write to
+	// [statedir.Dir] of the host through the bind mount. So only
+	// the `host` subcommands write records. A guest can still run
+	// `host select` through `workmux host-exec` with a
+	// --kubeconfig of its choice. So `host sweep` handles only the
+	// records of the kubeconfig that it sweeps.
 	hostLedgerDir = func() string {
-		return filepath.Join(socket.StateDir(), "ledger")
+		return filepath.Join(statedir.RunDir(), "ledger")
 	}
 )
 
@@ -252,18 +251,20 @@ func runHostSelect(ctx context.Context, args []string) error {
 	kubeconfigPath := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
 	outPath := fs.String(
 		"out-path", "",
-		"destination for the scoped kubeconfig (default: <stateDir>/kubeconfig.<pid>.<env>.yaml)",
+		"destination for the scoped kubeconfig (default: <runDir>/kubeconfig.<pid>.host.yaml, "+
+			"or <stateDir>/kubeconfig.<pid>.guest.yaml with --for-guest)",
 	)
 	pid := fs.Int("pid", 0, "serve process pid (required when --out-path is empty; ignored otherwise)")
 	forGuest := fs.Bool(
 		"for-guest",
 		false,
-		"path discriminator: when true, the defaulted kubeconfig and socket filenames carry the `guest` env tag rather than `host`",
+		"path discriminator: when true, the defaulted kubeconfig lies in the state dir that Lima guests mount, "+
+			"and the defaulted kubeconfig and socket filenames carry the `guest` env tag rather than `host`",
 	)
 	socketPath := fs.String(
 		"socket-path", "",
 		"absolute path of the per-serve UDS the kubeconfig's exec plugin will connect to "+
-			"(default: <socketStateDir>/serve.0.<env>.sock). serve passes its own resolved slot path "+
+			"(default: <runDir>/serve.0.<env>.sock). serve passes its own resolved slot path "+
 			"because in the guest case the path lives on the guest fs but host select runs host-side.",
 	)
 	saRole := fs.String("sa-role-name", "", "name of the Role or ClusterRole to bind (required)")
@@ -307,10 +308,7 @@ func runHostSelect(ctx context.Context, args []string) error {
 			return ErrSelectMissingPid
 		}
 
-		resolvedOutPath = filepath.Join(
-			statedir.Dir(),
-			fmt.Sprintf("kubeconfig.%d.%s.yaml", *pid, statedir.EnvTag(*forGuest)),
-		)
+		resolvedOutPath = statedir.KubeconfigPath(*pid, *forGuest)
 	}
 
 	// Socket path defaults to socket.PathForSlot(0, *forGuest)

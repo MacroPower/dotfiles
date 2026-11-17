@@ -152,8 +152,9 @@ func sidecarSymlinkPath() string {
 //     [socket.SidecarPath] and then the socket inode at
 //     h.socketPath, as [socket.Listen] describes.
 //  2. Unlink the scoped kubeconfig at h.lastOutputPath. For a
-//     guest serve this path lives under the writable bind mount
-//     of `~/.local/state/mcp-kubectx` declared in workmux's
+//     host serve this path lies in [statedir.RunDir] of the host.
+//     For a guest serve it lies under the writable bind mount of
+//     `~/.local/state/mcp-kubectx` declared in workmux's
 //     extra_mounts. So the removal succeeds without any host-side
 //     shell-out.
 //  3. Unlink the hook-router sidecar symlink. It lives in a
@@ -492,8 +493,9 @@ func (h *handler) selectLocalCtx(name string) (*mcp.CallToolResult, any, error) 
 
 // selectArgs builds the argv passed to `host select`. Serve owns
 // the discriminator (pid + host/guest env) and forwards it as
-// --pid; host select uses that, plus its own host-side
-// [statedir.Dir], to resolve the kubeconfig path. When the user
+// --pid and --for-guest. host select passes both to
+// [statedir.KubeconfigPath] on the host to resolve the kubeconfig
+// path. When the user
 // passed --output to serve, h.outputPath is non-empty and serve
 // forwards it as --out-path so the user override still wins (host
 // select ignores --pid in that branch). The socket path is

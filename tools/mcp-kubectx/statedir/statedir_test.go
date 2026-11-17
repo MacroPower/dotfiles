@@ -38,6 +38,43 @@ func TestDir(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	assert.Equal(t, filepath.Join(state, "mcp-kubectx"), statedir.Dir())
 }
 
+func TestRunDir(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+
+	assert.Equal(t, filepath.Join(state, "mcp-kubectx-run"), statedir.RunDir())
+}
+
+// TestKubeconfigPath pins the directory of each env. workmux mounts
+// [statedir.Dir] of the host writable into each Lima guest, so the
+// kubeconfig of a host-side serve must lie in [statedir.RunDir]. A
+// guest that rewrites that kubeconfig picks the command that
+// host-side kubectl runs.
+func TestKubeconfigPath(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+
+	tests := map[string]struct {
+		want     string
+		forGuest bool
+	}{
+		"host env": {
+			forGuest: false,
+			want:     filepath.Join(state, "mcp-kubectx-run", "kubeconfig.1234.host.yaml"),
+		},
+		"guest env": {
+			forGuest: true,
+			want:     filepath.Join(state, "mcp-kubectx", "kubeconfig.1234.guest.yaml"),
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // parent uses t.Setenv
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, statedir.KubeconfigPath(1234, tc.forGuest))
+		})
+	}
+}
+
 func TestEnvTag(t *testing.T) {
 	t.Parallel()
 

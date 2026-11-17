@@ -4,12 +4,15 @@
 // per-user-per-env host id that bounds a sweep to resources its own
 // host provisioned.
 //
-// [LoadOrCreateHost] persists the host id in the mcp-kubectx state
-// dir of the calling process, as `host.id` or `guest.id` depending
-// on the env tag. A host-side serve keeps `host.id` on the host. A
-// guest-side serve resolves the state dir in the guest. So it keeps
-// `guest.id` on the disk of its Lima guest VM, outside the bind
-// mount of the host's state dir. Each guest VM has a `guest.id` of
+// [LoadOrCreateHost] persists the host id in [statedir.RunDir] of
+// the calling process, as `host.id` or `guest.id` depending on the
+// env tag. workmux mounts no part of that directory into a Lima
+// guest. So no guest can change the `host.id` of host-side serves
+// through the mount. Every guest can still overwrite that file with
+// a kubeconfig when it runs `host select` through `workmux
+// host-exec` with an --out-path of its choice. A guest-side serve
+// resolves the directory in the guest. So it keeps `guest.id` on the
+// disk of its Lima guest VM, and each guest VM has a `guest.id` of
 // its own.
 //
 // The id is per-env because the liveness discovery of each env
