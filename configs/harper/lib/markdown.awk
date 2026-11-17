@@ -280,11 +280,12 @@ function column(off) {
 #
 # Each check that reads a sentence one token at a time calls this
 # function, so those checks end a sentence at the same token.
-# ProseCallout splits a note into sentences with a pattern of its own.
-# That pattern ends a sentence at the same closing marks, curly quotes
-# included. When those marks hold a quote, ProseCallout passes the first
-# token after them to continues_sentence(). A quotation inside a
-# sentence of a note then does not end the sentence either.
+# ProseCallout splits a note with a pattern of its own at each mark
+# before a space, after the same closing marks, curly quotes included.
+# It passes the token that ends at each split to this function. When
+# this function returns 2, ProseCallout passes the first token after the
+# split to continues_sentence(). It then joins the pieces of each
+# sentence that continues past a split.
 #
 # The patterns write each curly closing quote as its UTF-8 bytes in
 # octal, `\342\200\235` for `”` and `\342\200\231` for `’`. They match

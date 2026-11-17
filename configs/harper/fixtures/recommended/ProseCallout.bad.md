@@ -31,3 +31,11 @@ The cleanup removes the temporary files. <!-- same finding -->
 The cleanup writes a log. <!-- same finding -->
 
 **Note:** The cleanup takes a minute. remove the log after it.
+
+The flag reads one directory. <!-- same finding -->
+
+**Note:** The flag takes a directory, e.g. the scratch one. Run the cleanup after it.
+
+The tool waits for the lock. <!-- same finding -->
+
+**Note:** The tool prints Waiting... You must run the cleanup after it.

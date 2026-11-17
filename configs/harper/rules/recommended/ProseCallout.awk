@@ -29,15 +29,25 @@
 # For the first misuse, the check reads the sentences of each note,
 # info, or important callout. It reports a sentence that opens with a
 # command verb (`Run`, `Ensure`, `Do not`) or holds `you must`, `you
-# should`, `must not`, `should not`, `make sure`, or `be sure`. A
-# sentence ends at a `.`, `?`, or `!` before a space, after any closing
-# quote, paren, bracket, or emphasis. A closing quote is straight or
-# curly (`"`, `'`, `”`, or `’`), and the pattern names each curly quote
-# by its UTF-8 bytes, as ends_sentence() in lib/markdown.awk does. A
-# quote after the mark can close a quotation inside the sentence, so a
-# lowercase word after the quote continues the sentence (`prints "Done!"
-# always`). continues_sentence() in lib/markdown.awk holds that test,
-# and lib/sentences.awk calls it too.
+# should`, `must not`, `should not`, `make sure`, or `be sure`.
+#
+# A sentence ends at a `.`, `?`, or `!` before a space, after any
+# closing quote, paren, bracket, or emphasis. A closing quote is
+# straight or curly (`"`, `'`, `”`, or `’`), and the pattern names each
+# curly quote by its UTF-8 bytes, as ends_sentence() in lib/markdown.awk
+# does. A quote after the mark can close a quotation inside the
+# sentence, so a lowercase word after the quote continues the sentence
+# (`prints "Done!" always`). continues_sentence() in lib/markdown.awk
+# holds that test, and lib/sentences.awk calls it too.
+#
+# `e.g.`, `i.e.`, `vs.`, `cf.`, and a three-period ellipsis do not end a
+# sentence, so the word after one of them does not open a sentence (`a
+# directory, e.g. never the root`). ends_sentence() in lib/markdown.awk
+# holds that test, and lib/sentences.awk calls it too. A note sentence
+# that ends in a three-period ellipsis, quoted or not, therefore joins
+# the next sentence. Command verbs that open the next sentence then pass
+# (`prints Waiting... Run the cleanup`). Phrases such as `you must` in
+# the next sentence still draw the finding.
 #
 # The check reads a curly apostrophe between two letters of the first
 # word as a straight one. A note that opens with `Don’t` therefore draws
@@ -129,21 +139,34 @@ function start_callout(k, line) {
 }
 
 # Reports the first instruction in a note.
-function end_callout(   m, pieces, seps, n, sents, i, s, t, w, parts) {
+function end_callout(   m, pieces, seps, n, sents, i, s, t, e, w, parts) {
   if (kind ~ /^(note|info|important)$/ && body ~ /[A-Za-z]/) {
     m = split(body, pieces, /[.!?](["')*_\]]|\342\200\235|\342\200\231)*[ \t]+/, seps)
-    # A quote after the mark can close a quotation inside the sentence
+    # ends_sentence() in lib/markdown.awk reads the token that ends at
+    # each split, so `e.g.` and `reading...` do not end the sentence. A
+    # quote after the mark can close a quotation inside the sentence
     # (`prints "Done!" always`). The piece after such a quote then
     # continues the sentence when continues_sentence() in
     # lib/markdown.awk accepts its first token.
     n = 0
     for (i = 1; i <= m; i++) {
-      t = pieces[i]
-      sub(/[ \t].*$/, "", t)
-      if (i > 1 && seps[i - 1] ~ /["']|\342\200\235|\342\200\231/ && continues_sentence(t)) {
-        sents[n] = sents[n] seps[i - 1] pieces[i]
-      } else {
+      e = 1
+      if (i > 1) {
+        t = pieces[i - 1]
+        sub(/^.*[ \t]/, "", t)
+        s = seps[i - 1]
+        sub(/[ \t]+$/, "", s)
+        e = ends_sentence(t s)
+        if (e == 2) {
+          t = pieces[i]
+          sub(/[ \t].*$/, "", t)
+          e = !continues_sentence(t)
+        }
+      }
+      if (e) {
         sents[++n] = pieces[i]
+      } else {
+        sents[n] = sents[n] seps[i - 1] pieces[i]
       }
     }
     for (i = 1; i <= n; i++) {

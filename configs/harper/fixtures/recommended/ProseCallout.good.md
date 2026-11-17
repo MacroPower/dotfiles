@@ -40,3 +40,24 @@ The installer writes one file per run.
 The tool reports each step.
 
 **Note:** The tool prints 'Done!' always, even when a step fails.
+
+The flag reads one directory.
+
+**Note:** The flag takes a directory, e.g. never the root of the repository.
+
+The cache keys each entry by path.
+
+> [!NOTE]
+> The cache stores each path in one form, i.e. always the absolute path.
+
+The summary lists the changes of each run.
+
+**Note:** The summary shows add vs. remove counts for each run.
+
+The parser reads each date in the log.
+
+**Note:** The parser stores each date in UTC (cf. update times in the audit log, which stay local).
+
+The installer waits for the lock.
+
+**Note:** The installer prints Waiting... always, even when the lock is free.
