@@ -44,7 +44,9 @@ The body: how prose is skipped.
 
 ## `nix flake update --commit-lock-file`
 
-## Indented
+<!-- prettier-ignore-start -->
+  ## Indented
+<!-- prettier-ignore-end -->
 
 ### Has-many relations
 

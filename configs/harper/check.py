@@ -16,7 +16,11 @@ line that ends in an HTML comment that holds `same finding` does not
 need a lint of its own, because a finding on a nearby line covers it,
 such as the heading after it that skips a level. A line that holds only
 a prettier-ignore comment does not need one either, so a fixture can
-keep prettier from adding a blank line between two blocks.
+keep prettier from adding a blank line between two blocks. A fixture
+can also keep the indent of a heading, which prettier strips, by
+putting the heading between prettier-ignore-start and
+prettier-ignore-end lines. A lone prettier-ignore line before the
+heading does not keep the indent.
 A rule that reports one line for a span of several lines, such as a run
 of paragraphs, marks every line after the first. An awk rule can also
 have fixtures/<tier>/<Rule>.raw.txt, which it reads with RAW=1 the way

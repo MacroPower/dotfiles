@@ -22,7 +22,11 @@
 
 ## Release notes for the final quarter of the fiscal year
 
-## How an indented heading is caught
+<!-- prettier-ignore-start -->
+ ## How an indented heading is caught
+
+   ## Spaces that the check strips
+<!-- prettier-ignore-end -->
 
 ### How a level-three heading is caught
 
