@@ -82,7 +82,9 @@
 # the pronoun points at the span (``This is the default: `false` ``).
 #
 # A paragraph directly under a heading passes, because there the
-# pronoun points at the heading's topic, which the reader can see. The
+# pronoun points at the heading's topic, which the reader can see. In a
+# blockquote, a line of only `>` markers between the two counts as a
+# blank line (`> ## Setup`, `>`, `> This is the setup step.`). The
 # first paragraph of a file passes when front matter or any other line
 # sits above it, because there the pronoun points at the page.
 #
@@ -114,14 +116,16 @@
 #   <file>:<line>:<col>: Style::ProseOpeningPronoun: <message>
 
 # Tracks the last two non-blank lines, code and comments included, so a
-# paragraph can tell whether a heading sits directly above it.
+# paragraph can tell whether a heading sits directly above it. A line of
+# only `>` markers is a blank line inside a blockquote, so it does not
+# count.
 {
   if (FNR == 1) {
     prev_nb = 0
     cur_nb = 0
     heading_line = 0
   }
-  if ($0 !~ /^[ \t]*$/) {
+  if ($0 !~ /^[ \t>]*$/) {
     prev_nb = cur_nb
     cur_nb = FNR
   }

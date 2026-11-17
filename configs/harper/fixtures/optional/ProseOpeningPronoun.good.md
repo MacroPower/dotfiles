@@ -173,3 +173,9 @@ It needs to print "Done!" Then it exits.
 The pod holds the cache.
 
 It may help to restart the pod.
+
+> The pod holds the cache.
+>
+> ## Setup
+>
+> This is the setup step.
