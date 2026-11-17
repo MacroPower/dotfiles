@@ -1,8 +1,8 @@
 # mcp-kubectx
 
-Cross-VM transport for Kubernetes context selection. A sandboxed
-Claude (typically running inside a Lima guest) needs to use `kubectl`
-without the host's admin kubeconfig leaking into the guest's
+Cross-VM transport for Kubernetes context selection. It lets a
+sandboxed Claude, such as one that runs inside a Lima guest, use
+`kubectl` without the host's admin kubeconfig leaking into the guest's
 filesystem. The kubeconfig the guest consumes carries no token
 material. It holds only a recipe (a kubectl exec auth plugin) that
 calls back to the host on demand for a short-lived ServiceAccount
@@ -37,18 +37,25 @@ switch in `cli.go`:
 
 The `main` package holds only this wiring: dispatch, the `serve`
 handler and MCP tools, the `host *` flag parsing, and the
-wrapper-env plumbing. The domain logic underneath lives in
-independent, importable packages: `kubeconfig` (minimal config
-model), `kube` (narrow cluster-client interface + client-go
-implementation, with a recording fake in `kubetest`),
-`serviceaccount` (provisioning, release, and the label taxonomy),
-`ledger` (the provision records on disk), `sweep`
-(orphan classification and deletion), `execplugin` (the kubectl
-exec credential protocol, both block and UDS client), `socket`
-(slot pool, sidecars, accept loop, liveness discovery),
-`identity` (instance and host ids), and `statedir` / `statefile`
-(XDG paths and atomic state-file writes). See the package docs in
-each directory for the per-package invariants.
+wrapper-env plumbing. The domain logic lives in independent,
+importable packages:
+
+- `kubeconfig`: the minimal config model.
+- `kube`: the narrow cluster-client interface and its client-go
+  implementation.
+- `kubetest`: a recording fake of the `kube.Client` interface.
+- `serviceaccount`: provisioning, release, and the label taxonomy.
+- `ledger`: the provision records on disk.
+- `sweep`: orphan classification and deletion.
+- `execplugin`: the kubectl exec credential protocol, both the block
+  and the UDS client.
+- `socket`: the slot pool, the sidecars, the accept loop, and liveness
+  discovery.
+- `identity`: instance and host ids.
+- `statedir` and `statefile`: XDG paths and atomic state-file writes.
+
+See the package docs in each directory for the per-package
+invariants.
 
 End-to-end credential flow:
 
@@ -65,11 +72,12 @@ kubectl exec plugin
   -> kubectl reads ExecCredential, calls API server
 ```
 
-The shell-out boundary is the only place the guest/host distinction
-still matters. `*handler.hostExecArgs` decides whether to invoke
-`mcp-kubectx host *` directly (when `serve` is on the host) or wrap
-it with `workmux host-exec mcp-kubectx-host *` (when `serve` is
-inside a Lima guest, indicated by `WM_SANDBOX_GUEST=1`). The
+The shell-out boundary is the only place where the distinction
+between guest and host still matters. `*handler.hostExecArgs`
+decides whether to invoke `mcp-kubectx host *` directly (when `serve`
+is on the host) or wrap it with `workmux host-exec mcp-kubectx-host *`
+(when `serve` is inside a Lima guest, indicated by
+`WM_SANDBOX_GUEST=1`). The
 distinction is invisible to kubectl: both host- and guest-side
 serves write the same exec-plugin block, and routing happens
 server-side.
@@ -93,20 +101,24 @@ mcp-kubectx-host <sub>         # the host subcommands alone, for workmux host-ex
 
 ### Data flow
 
-Two axes decide where bytes go. The _destination_ axis splits on the
-cluster: a local in-sandbox cluster is hit directly with inline
-cluster-admin creds, a remote cluster with a `view`-scoped
-ServiceAccount token minted on the host. The _sandbox_ axis splits on
-where `serve` runs: under seatbelt-level sandboxing it sits in the host
-process tree and forks `host token` directly, under full Lima
-sandboxing it sits inside the guest and the mint crosses the boundary
-via `workmux host-exec`.
+Two axes decide where bytes go:
+
+- **Destination**: the axis splits on the cluster. kubectl reaches a
+  local in-sandbox cluster directly with inline cluster-admin creds.
+  It reaches a remote cluster with a `view`-scoped ServiceAccount
+  token that the host mints.
+- **Sandbox**: the axis splits on where `serve` runs. Under
+  seatbelt-level sandboxing, `serve` sits in the host process tree and
+  forks `host token` directly. Under full Lima sandboxing, `serve` sits
+  inside the guest, and the mint crosses the boundary through
+  `workmux host-exec`.
 
 In both diagrams, solid edges are direct with no host round-trip,
 dotted edges are the minted-credential round-trip through the UDS, and
 the thick edge is the authenticated API call.
 
-Seatbelt-level sandboxing -- `serve` on the host, direct fork:
+Under seatbelt-level sandboxing, `serve` runs on the host and forks
+`host token` directly:
 
 ```mermaid
 flowchart TB
@@ -137,7 +149,8 @@ flowchart TB
   kubectl ==>|"view-scoped token"| remote
 ```
 
-Full Lima sandboxing -- `serve` in the guest, host mint via `workmux host-exec`:
+Under full Lima sandboxing, `serve` runs in the guest, and the host
+mints the token through `workmux host-exec`:
 
 ```mermaid
 flowchart TB
@@ -169,10 +182,10 @@ flowchart TB
 ```
 
 Local contexts are reachable only where a cluster can physically run.
-Only the Lima terrarium has a container runtime, so on the Darwin host
-and in the Dagger container `local.yaml` stays an inert stub and every
-selection takes the external path -- the local edge above is live only
-in the full-Lima diagram.
+Only the Lima terrarium has a container runtime. On the Darwin host
+and in the Dagger container, `local.yaml` stays an inert stub, and
+every selection takes the external path. So the local edge of each
+diagram carries traffic only under full Lima sandboxing.
 See [Threat-model shift for local contexts](#threat-model-shift-for-local-contexts).
 
 ## Scoped kubeconfigs
@@ -248,13 +261,13 @@ per token lifetime (default 1h), not per kubectl call. For a typical
 Claude session that's a handful of forks total, each ~50-200 ms wall
 time when round-tripping through `workmux host-exec`.
 
-## Why this design
+## Design rationale
 
-The scoped kubeconfig holds the SA name, cluster URL, and CA. No
-token material lives on disk inside the VM (this holds for external
-contexts only; in-sandbox local clusters carry inline admin creds --
-see [Threat-model shift for local
-contexts](#threat-model-shift-for-local-contexts)). The token
+The scoped kubeconfig holds the SA name, the cluster URL, and the CA.
+For external contexts, no token material lives on disk inside the
+VM. In-sandbox local clusters carry inline admin creds, as
+[Threat-model shift for local
+contexts](#threat-model-shift-for-local-contexts) describes. The token
 exists in kubectl's memory for the duration of the API call and is
 gone after.
 Read access to the scoped kubeconfig reveals a recipe for asking
@@ -268,38 +281,40 @@ apiservers, and the kubeconfig of every SA, and the host mints a
 token only for an SA that a `serve` of the caller provisioned.
 [Host-side inputs](#host-side-inputs) describes the rules.
 
-This is plain kubectl exec-plugin plumbing, so anything that uses
-client-go (kubectl, helm, kustomize, argocd) works without
-modification. The Unix domain socket is bound by the same
-long-lived MCP `serve` process that already owns the per-`serve`
-state; there is no new daemon and the UDS lifetime tracks the
-Claude session exactly. The shim itself is a single
-`mcp-kubectx exec-plugin` subcommand built into the same binary
-kubectl already invokes, so the deployment surface is unchanged.
+The credential path is plain kubectl exec-plugin plumbing. So every
+tool that uses client-go, such as kubectl, helm, kustomize, or argocd,
+works without modification. The long-lived MCP `serve` process, which
+already owns the per-`serve` state, binds the Unix domain socket. So
+the design does not add a daemon, and the lifetime of the UDS matches
+the Claude session. The shim is the `mcp-kubectx exec-plugin`
+subcommand of the same binary that kubectl already invokes, so the
+deployment does not add a program.
 
-Token rotation falls out of the design. Each plugin invocation
-asks `serve` to mint a fresh token via the host's admin
-TokenRequest API. Deleting the SA on the host invalidates any
-cached token at its next API call; there's no separate revocation
-channel to keep in sync.
+The design rotates tokens without extra code. Each plugin invocation
+asks `serve` to mint a fresh token through the TokenRequest API with
+the admin kubeconfig of the host. Deleting the SA on the host
+invalidates each cached token at its next API call, so the design
+does not need a separate revocation channel.
 
-The UDS exists specifically to escape the bash sandbox at
-credential-mint time: kubectl runs under a sandbox that denies
-reads of `~/.kube/config`, so the credential plugin (a child of
-sandboxed kubectl) inherits the deny when it tries to read the
-admin kubeconfig itself. Routing the mint through `serve` -- which
-runs outside both the bash sandbox (host case) and the Lima guest
-(guest case via `workmux host-exec`) -- sidesteps the deny without
-broadening any sandbox grant. Sandbox grants the connect on the
-single socket path; the token mint happens entirely outside.
+The UDS lets the credential mint escape the bash sandbox. kubectl
+runs under a sandbox that denies reads of `~/.kube/config`. The
+credential plugin is a child of the sandboxed kubectl, so it inherits
+the deny when it tries to read the admin kubeconfig itself.
+
+Routing the mint through `serve` sidesteps the deny without
+broadening any sandbox grant. On the host, `serve` runs outside the
+bash sandbox. In a guest, `serve` reaches past the Lima guest through
+`workmux host-exec`. The sandbox grants the connect on the single
+socket path, and the token mint happens entirely outside.
 
 ## Merged kubeconfig: external + in-sandbox clusters
 
-The launcher wrapper splits `$KUBECONFIG` into a colon-list with a
-single writer each, so external (`view`-scoped, via mcp-kubectx) and
-in-sandbox (cluster-admin, direct) clusters coexist behind one
-`kubectl` and one MCP interface. Off the Lima guest the list has two
-entries:
+The launcher wrapper splits `$KUBECONFIG` into a colon-list, and each
+file in the list has a single writer. So external and in-sandbox
+clusters coexist behind one `kubectl` and one MCP interface. External
+clusters get `view`-scoped access through mcp-kubectx, and in-sandbox
+clusters get direct cluster-admin access. Off the Lima guest the list
+has two entries:
 
 ```
 $KUBECONFIG = $CLAUDE_KUBECTX_LOCAL : $CLAUDE_KUBECTX_SIDECAR
@@ -307,8 +322,9 @@ $KUBECONFIG = $CLAUDE_KUBECTX_LOCAL : $CLAUDE_KUBECTX_SIDECAR
               first entry             second entry
 ```
 
-On the Lima guest image the guest's own `~/.kube/config` is spliced
-into the middle, making it a first-class local source:
+On the Lima guest image, the wrapper splices the guest's own
+`~/.kube/config` into the middle, so the guest config becomes a
+first-class local source:
 
 ```
 $KUBECONFIG = $CLAUDE_KUBECTX_LOCAL : ~/.kube/config : $CLAUDE_KUBECTX_SIDECAR
@@ -320,21 +336,22 @@ $KUBECONFIG = $CLAUDE_KUBECTX_LOCAL : ~/.kube/config : $CLAUDE_KUBECTX_SIDECAR
   written by in-sandbox cluster tools (kind / k3d / minikube /
   k3s) and by plain `kubectl config use-context`. The wrapper
   pre-creates it as a bare stub (`apiVersion: v1` / `kind: Config`).
-  mcp-kubectx writes only `current-context` here, never cluster/user
-  entries.
+  mcp-kubectx writes only `current-context` here, never cluster or
+  user entries.
 - **Guest `~/.kube/config`** (`$CLAUDE_KUBECTX_GUEST_CONFIG`, guest
   image only) is the file a plain guest shell consults. It is
-  independent of the macOS host's `~/.kube/config` (no host admin
-  creds), so a guest-local cluster (kind / k3d / minikube / the
-  homelab Talos-in-Docker harness) written there is reachable from any
-  guest shell with no env vars and surfaced through the kubectx MCP
-  with no per-consumer merge glue. mcp-kubectx treats its contexts as
-  a read source: enumerated as `(local)`, and bare in-sandbox kubectl
-  resolves their cluster/user/creds from it. The wrapper exports the
-  var and drops the `~/.kube/config*` Read deny only on the guest
-  image (the `dotfiles.claude.guestKubeconfigLocal` build flag); see
+  independent of the macOS host's `~/.kube/config` and holds no host
+  admin creds, and mcp-kubectx never writes it. Any guest shell
+  reaches the clusters that tools such as kind, k3d, minikube, and the
+  homelab Talos-in-Docker harness write there, with no env vars.
+  mcp-kubectx lists the contexts of this file as `(local)` with no
+  merge step for each consumer, and bare in-sandbox kubectl resolves
+  their clusters, users, and creds from it.
+  Only the guest image sets the `dotfiles.claude.guestKubeconfigLocal`
+  build flag, which makes the wrapper export the variable and drops
+  the `~/.kube/config*` Read deny.
   [Threat-model shift for local
-  contexts](#threat-model-shift-for-local-contexts).
+  contexts](#threat-model-shift-for-local-contexts) covers the risk.
 - **`$CLAUDE_KUBECTX_SIDECAR`** (`$CLAUDE_KUBECTX_DIR/kubeconfig`)
   is the mcp-managed symlink to the scoped kubeconfig, effectively
   read-only to kubectl. It still carries only the exec-plugin
@@ -379,96 +396,104 @@ kubectl resolves only `current-context`, so merge order never confuses
 creds for the current context. Stale entries for other names are
 inert.
 
-The union is _required_ for routing, not merely an optimization: a
-guest context's apiserver is unreachable from the macOS host, so the
-SA path would fail -- it must route local.
+The routing requires the union, and the union is more than an
+optimization. The macOS host cannot reach the apiserver of a guest
+context, so the SA path fails for that context, and only the local
+path works.
 
-A consequence: because the guest config is persistent, a guest context
-whose name exactly matches a real external context (e.g. `admin@main`)
-would permanently shadow it (unreachable via SA). `list` keeps the
-collision visible by tagging the surviving line
-`(local, shadows external)` instead of silently dropping the external
-context. Keep guest-cluster context names distinct from real external
-ones.
+The guest config persists, so a name collision lasts. When a guest
+context and a real external context share a name, such as
+`admin@main`, the guest context permanently shadows the external one,
+and the SA path cannot reach it. `list` keeps the collision visible by
+tagging the surviving line `(local, shadows external)` instead of
+silently dropping the external context. Keep guest-cluster context
+names distinct from real external ones.
 
 **The stub must always exist.** client-go's `GetDefaultFilename`
-returns the first `$KUBECONFIG` entry that _exists on disk_,
-falling back to the first _listed_ entry only when none exist.
+returns the first `$KUBECONFIG` entry that _exists on disk_. When no
+entry exists, it returns the first _listed_ entry.
 `kubectl config use-context`, new-context writes, and tool-driven
-cluster writes all target that file. If `local.yaml` were absent,
-those writes would silently land in the sidecar and corrupt mcp
-state. Pre-creating the stub guarantees `local.yaml` always exists,
-so it wins `GetDefaultFilename` and every local write lands there,
-leaving the sidecar pristine.
+cluster writes all target that file. Without `local.yaml`, those
+writes land silently in the sidecar and corrupt mcp state.
+Pre-creating the stub guarantees `local.yaml` always exists, so it
+wins `GetDefaultFilename` and every local write lands there. The
+sidecar stays pristine.
 
 **`current-context` is local-authoritative.** It is the one field
-both writers want; in a merged list client-go resolves it
-first-file-wins, so `local.yaml` (first) decides. `select` writes
-`current-context` into `local.yaml` for _every_ kind -- external,
-guest-local, and in-sandbox-local -- even when the selected context's
-creds live in another merge entry (the sidecar for external, the guest
-config for guest-local). Switching is symmetric and last-writer-wins:
+that both writers want. In a merged list, client-go resolves it
+first-file-wins, so `local.yaml`, the first entry, decides. `select`
+writes `current-context` into `local.yaml` for _every_ kind of context:
+external, guest-local, and in-sandbox-local. The creds of an external
+context live in the sidecar, and the creds of a guest-local one live
+in the guest config, but `select` still writes the field into
+`local.yaml`. Switching is symmetric and last-writer-wins:
 `kubectl config use-context <local>` and `mcp__kubectx__select
 <external>` both rewrite the same field (tmp+rename atomic).
 
 A plain guest shell's `kubectl config use-context <guest-ctx>` instead
 writes `current-context` into the guest's `~/.kube/config`, not
 `local.yaml`. MCP `list` reads the `(current)` marker from `local.yaml`
-only, so such a selection does not show `(current)` in `list` -- an
-accepted divergence that keeps the marker consistent with the
-bare-kubectl gate, which also keys on `local.yaml`.
+only, so such a selection does not show `(current)` in `list`. The
+design accepts that divergence, because it keeps the marker consistent
+with the bare-kubectl gate, which also keys on `local.yaml`.
 
 ### Unified `list` / `select`
 
 Both MCP tools cover both kinds, dispatching on the context's
 origin (`serve` reads `$CLAUDE_KUBECTX_LOCAL` in-process):
 
-- **`list`** relays the external contexts from `host list` (the
-  admin kubeconfig) plus the local contexts -- the union of
-  `local.yaml` and, on the guest image, the guest's `~/.kube/config`
-  -- tagged `(local)`. A name in both local sources is listed once.
-  `host list`'s own ` (current)` suffix is stripped (the admin
-  kubeconfig's current-context is meaningless in the merged view); a
-  single `(current)` marker is reapplied from `local.yaml`'s
-  `current-context`.
+- **`list`** relays the external contexts from `host list`, which
+  reads the admin kubeconfig. It adds the local contexts, tagged
+  `(local)`. The local contexts are the union of `local.yaml` and, on
+  the guest image, the guest's `~/.kube/config`, and `list` shows a
+  name in both local sources once. `list` strips the ` (current)`
+  suffix of `host list`, because the current-context of the admin
+  kubeconfig means nothing in the merged view. Then it applies a single
+  `(current)` marker from the `current-context` of `local.yaml`.
 - **`select <ctx>`** branches up front by union membership. A context
   whose name is in `local.yaml` or the guest config takes the
-  **local path**: no host shell-out, no SA -- just set
-  `current-context` in `local.yaml`, release any prior external SA,
-  and store `currentSA` nil so the UDS token path idles. Its creds
-  resolve from whichever local source defines it. Any other name takes
-  the external SA-mint path (host-side mint, publish sidecar) and also
-  writes `current-context` into `local.yaml`. On a name collision
-  **local wins** (rename the colliding context to surface the shadowed
-  external one).
+  **local path**, which neither runs a host command nor mints an SA.
+  The local path sets `current-context` in `local.yaml`, releases any
+  prior external SA, and stores a nil `currentSA`, so the UDS token
+  path idles. kubectl resolves the creds of the context from whichever
+  local source defines it. Any other name takes the external SA-mint
+  path, which mints on the host, publishes the sidecar, and writes
+  `current-context` into `local.yaml`. On a name collision, **local
+  wins**. To surface the shadowed external context, rename the
+  colliding local one.
 
 Plain `kubectl config use-context` keeps working for both as a
-fallback, since everything lives in the one merged `$KUBECONFIG`.
+fallback, because every context lives in the one merged `$KUBECONFIG`.
 
 ### Threat-model shift for local contexts
 
-The scoped-kubeconfig property above -- "no token material lives on
-disk inside the VM" -- does **not** hold for local contexts. Local
-contexts carry usable inline cluster-admin creds _inside_ the
-sandbox: in `local.yaml` for an in-sandbox tool's cluster, or in the
-guest's `~/.kube/config` for a guest-local one. That is safe only
-because the cluster is a throwaway in-VM cluster with no reachability
-beyond the guest. Nothing denies reading these files inside the
-sandbox -- `local.yaml` is outside the deny list, and on the guest
-image the `~/.kube/config*` read-deny is intentionally dropped (the
-`dotfiles.claude.guestKubeconfigLocal` flag) so the Read tool can see
-guest cluster definitions -- so do not assume a read-deny protects
-them. Dropping that deny is contained because the guest
-`~/.kube/config` holds no host admin creds; it is independent of the
-macOS host's `~/.kube/config`, which still never enters the sandbox.
+[Design rationale](#design-rationale) says that no token material
+lives on disk inside the VM. That property of the scoped kubeconfig
+does **not** hold for local contexts. Local contexts carry usable
+inline cluster-admin creds _inside_ the sandbox: in `local.yaml` for
+an in-sandbox tool's cluster, or in the guest's `~/.kube/config` for a
+guest-local one. The creds are safe there only because each such
+cluster is a throwaway in-VM cluster. Nothing outside the guest can
+reach it.
+
+Nothing denies reads of these files inside the sandbox, so do not
+assume that a read deny protects them. `local.yaml` is outside the
+deny list. On the guest image, the
+`dotfiles.claude.guestKubeconfigLocal` flag drops the `~/.kube/config*`
+read deny on purpose, so the Read tool can see the definitions of
+guest clusters. The dropped deny exposes no host admin
+creds, because the guest `~/.kube/config` holds none. The guest file
+is independent of the macOS host's `~/.kube/config`, which still never
+enters the sandbox.
+
 External access stays bound to the role that the host config grants,
 `view` by default, as [Host-side inputs](#host-side-inputs)
 describes.
 
 Only the Lima terrarium VM has a container runtime, so a local
-cluster can only actually run there. On the Darwin host and in the
-Dagger container the plumbing is inert: `local.yaml` stays the bare
-stub and every selection is external.
+cluster can run only there. On the Darwin host and in the Dagger
+container the plumbing is inert: `local.yaml` stays the bare stub and
+every selection is external.
 
 ## Lifecycle and cleanup
 
@@ -492,9 +517,9 @@ SA and drains the prior closures **inline** with a 30-second
 drain has to be synchronous, because deriving from the request
 context would let the MCP SDK cancel the in-flight
 DeleteServiceAccount calls as soon as `selectCtx` returned, re-leaking
-the prior SA. On failure, or if the `host select` JSON cannot be
-parsed, `restoreCleanups` swaps the previous list back so the prior
-SA still gets released at shutdown.
+the prior SA. On failure, or when `serve` cannot parse the JSON of
+`host select`, `restoreCleanups` swaps the previous list back, so
+`serve` still releases the prior SA at shutdown.
 
 The cleanup closure that `sessionDir` returns runs at each return of
 `runServe` after the socket bind, because `runServe` defers the
@@ -868,17 +893,16 @@ kinds in the host kubeconfig:
 they need `delete` and no `list`. If `list` is forbidden on all
 three kinds, the label pass logs a warning and `serve` startup
 continues (the goroutine swallows the resulting `sweep.ErrList`).
-Partial forbids -- list works on one kind but not the others --
-are tolerated: the label pass processes whatever subset it can
-enumerate. The record pass does not wait for the label pass, and it
-runs whatever the label pass returns.
+When `list` works on some kinds but not on others, the label pass
+processes the kinds that it can list. The record pass does not wait
+for the label pass, and it runs whatever the label pass returns.
 
 ### Orphans without `host-id`
 
-A resource carrying `managed-by=mcp-kubectx` but no
-`mcp-kubectx/host-id` label cannot be attributed to a specific
-host, so the sweep leaves it alone. To recover, run manually
-after stopping any live serves:
+The sweep cannot tie a resource that carries
+`managed-by=mcp-kubectx` but no `mcp-kubectx/host-id` label to a
+specific host, so it leaves that resource alone. To recover, run
+manually after stopping any live serves:
 
 ```
 kubectl delete sa,rolebinding -A \
@@ -1074,10 +1098,10 @@ keeps a stale shim of that name until you delete it, as
 The structural defense is pinned by
 `TestHostTokenSkipsWorkmuxWhenEnvSetToGuest`, which sets
 `WM_SANDBOX_GUEST=1` and confirms `runHostToken` calls
-`CreateTokenRequest` directly with no intermediate fork. The
-`exec-plugin` shim has no analogous test because the entry point
-literally does not link the K8s client; the structural property is
-visible at compile time.
+`CreateTokenRequest` directly with no intermediate fork. The entry
+point of the `exec-plugin` shim does not link the Kubernetes client.
+So the structural property is visible at compile time, and the shim
+does not need an analogous test.
 
 ## Deployment requirement: workmux host_commands allowlist
 
@@ -1322,40 +1346,42 @@ describes how `serve` picks `<slot>`.
 
 ### Socket slot pool
 
-`serve` binds the first free slot in the range
-`serve.0.<env>.sock` … `serve.<N-1>.<env>.sock` at startup, where
-`N` defaults to 16 and is configurable via `--socket-slots`. Slot
-indices keep socket filenames stable across `serve` restarts
-because Claude Code's sandbox `allowUnixSockets` setting matches
-entries as literal paths, not glob patterns; enumerating one
-literal entry per slot is the only way to allow a per-`serve`
-socket whose filename varies between processes.
+At startup, `serve` binds the first free slot from
+`serve.0.<env>.sock` to `serve.<N-1>.<env>.sock`, inclusive. The
+`--socket-slots` flag sets `N`, which defaults to 16. Slot indices
+keep socket filenames stable across `serve` restarts, because Claude
+Code's sandbox `allowUnixSockets` setting matches entries as literal
+paths, not glob patterns. So one literal entry for each slot is the
+only way to allow a per-`serve` socket whose filename varies between
+processes.
 
-`socket.Acquire` walks slot indices upward and re-uses
-`socket.Listen`'s existing stale-vs-live dial probe to skip slots
-held by a live peer. Crash-leftover inodes are silently unlinked
-and reused. Concurrent `serve` instances on the same host occupy
-distinct slots; on exhaustion, startup fails with a clear error
-naming the configured slot count and the state directory so an
-operator can grow the pool by raising `kubectxSocketSlots` in
-`home/claude.nix` and rerunning `task switch`.
+`socket.Acquire` walks slot indices upward and calls `socket.Listen`
+on each slot. `socket.Listen` dial-tests an existing socket file at
+the path of the slot. When a live peer answers, `socket.Acquire` skips
+the slot. When nothing answers, `socket.Listen` silently unlinks the
+stale file that a crashed `serve` left behind and reuses the slot.
+Concurrent `serve` instances on the same host occupy distinct slots.
 
-The Nix bundle in `home/claude.nix` enumerates exactly the
-literal paths the binary may bind, sized from the same option,
-so the rendered `~/.claude/settings.json` allowlist is always
-1:1 with the `serve` binary's slot range.
+When every slot is busy, startup fails with an error that names the
+configured slot count and the state directory. To grow the pool, raise
+`kubectxSocketSlots` in `home/claude.nix` and run `task switch` again.
+
+The Nix bundle in `home/claude.nix` enumerates exactly the literal
+paths that the binary can bind, and the same option sets their count.
+So the rendered `~/.claude/settings.json` allowlist always matches the
+slot range of the `serve` binary one to one.
 
 ### Trust boundary
 
-Socket file mode is `0600`; parent dir is `0700`. Single-user
-machine, identical to the kubeconfig at the same dir level. Any
-process running as the same UID can connect, but the threat model
-already trusts same-UID processes (they could read the kubeconfig
-file itself if the deny list did not block it). The bash sandbox
-specifically denies `~/.kube/config` to prevent admin kubeconfig
-exfiltration; the socket gives the in-sandbox kubectl exactly one
-narrow capability -- "ask serve for a fresh SA-scoped token" --
-without expanding the read deny.
+The socket file has mode `0600`, and its parent directory has mode
+`0700`. The machine has a single user, and the kubeconfig in the same
+directory has the same protection. Any process that runs as the same
+UID can connect. But the threat model already trusts same-UID
+processes, because without the deny list they can read the kubeconfig
+file itself. The bash sandbox denies `~/.kube/config` to prevent
+exfiltration of the admin kubeconfig. The socket gives the in-sandbox
+kubectl one narrow capability, a request to `serve` for a fresh
+SA-scoped token, without expanding the read deny.
 
 ## Out of scope
 
