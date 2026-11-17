@@ -73,3 +73,43 @@ Restart the agent if ‘needed’.
 Restart the agent if 'needed'.
 
 'Run the build if needed' is the rule.
+
+"Save the file," the editor asks, "or discard it" if you close a changed buffer.
+
+"Copy the files," the guide says, "if they exist."
+
+“Copy the files,” the guide says, “if it exists.”
+
+"Copy the file if," the guide says, "it exists."
+
+"Remove the stale entries if," the guide says, "any."
+
+(Use the flag if it exists.)
+
+**Use the flag if they exist.**
+
+_Use the flag if it exists._
+
+[Use the flag if it exists.]
+
+'Copy the files', the guide says, 'if they exist.'
+
+‘Copy the files’, the guide says, ‘if they exist.’
+
+Restart the job if so.
+
+Use the cache if there is one.
+
+"Use the cache if," the guide says, "there is one."
+
+"Restart the job if," the guide says, "so."
+
+"Restart the job, even," the guide says, "if it looks healthy."
+
+"Run the tests and see," the guide says, "if they pass."
+
+Set the label to "if the job fails".
+
+"Copy the files, or," the guide says, "if they changed, restart the job."
+
+"Copy the file if it exists," the guide says.
