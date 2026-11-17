@@ -44,9 +44,9 @@
 # `a` or `an` in one paragraph (`A task is a unit of work. A task runs
 # on one worker.`). It catches openers that the verb test misses. Each
 # run reports once however long it grows, and its later sentences skip
-# the verb test. A quotation can open a sentence that goes on after the
-# closing quote (`“A lease?” the guide asks.`). The subject of such a
-# sentence follows the quotation, so the sentence does not open a run.
+# the verb test. A sentence that opens with a quotation and goes on past
+# a quoted `.`, `?`, or `!` does not open a run (`“A lease?” the guide
+# asks.`). The subject of such a sentence follows the quotation.
 #
 # False Positives
 #
@@ -71,6 +71,11 @@
 # a quotation and goes on after it therefore still draws the run
 # finding when it follows a sentence that opens with `a` or `an` (`A
 # lease is a lock. “A lease?” the guide asks.`).
+#
+# A sentence that opens with a quotation that ends in a comma still
+# opens a run, although its subject follows the quotation. Two such
+# sentences in a row draw the run finding (`“A lease,” the guide says
+# before the build. “A lease,” the guide says after the tests.`).
 #
 # List labels and speaker labels that are the letter `a` read as the
 # article (`**(a)** You must give any other recipients`, `**A: That

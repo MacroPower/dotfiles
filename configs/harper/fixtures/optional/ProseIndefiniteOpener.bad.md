@@ -35,3 +35,5 @@ A user typed "`stop`." A user then left.
 "A lease is held?" the guide asks.
 
 A lease is a lock. "A lease?" the guide asks.
+
+“A lease,” the guide says before the build. “A lease,” the guide says after the tests.
