@@ -18,6 +18,11 @@
 # where a list item, heading, table row, or HTML line starts, so each
 # list item counts as its own paragraph.
 #
+# A heading opens with one to six `#` marks. CommonMark reads a line
+# with seven or more marks as text, and so does the check. Such a line
+# right after a paragraph continues the paragraph, and its sentences
+# count toward the paragraph (`####### It starts the worker.`).
+#
 # A pipe table without a leading pipe reaches the check as text. A
 # paragraph that holds a line with two pipes, or a delimiter row such as
 # `:--|:--`, counts as a table and does not draw a finding. A table row
@@ -91,14 +96,14 @@ function flush() {
 }
 
 function prose(text,   rest, pos, tok, col, e) {
-  if (FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
+  if (FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#{1,6})([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
     flush()
   }
   last_line = FNR
   if (text ~ /\|.*\|/ || text ~ /^[ \t]*:?-+:?[ \t]*\|/) {
     table = 1
   }
-  if (text ~ /^[ \t]*(#+([ \t]|$)|[|<])/) {
+  if (text ~ /^[ \t]*(#{1,6}([ \t]|$)|[|<])/) {
     return
   }
   if (!open && sentences == 0) {

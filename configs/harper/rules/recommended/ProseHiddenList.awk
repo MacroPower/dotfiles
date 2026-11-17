@@ -172,7 +172,7 @@ function end_sentence() {
 }
 
 function prose(text,   rest, pos, tok, col, word, e) {
-  if (FILENAME != last_file || FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
+  if (FILENAME != last_file || FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#{1,6})([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
     flush()
   }
   last_file = FILENAME
@@ -181,7 +181,7 @@ function prose(text,   rest, pos, tok, col, word, e) {
   if (text ~ /\|.*\|/ || text ~ /^[ \t]*:?-+:?[ \t]*\|/) {
     table = 1
   }
-  if (text ~ /^[ \t]*(#+([ \t]|$)|[|<:])/) {
+  if (text ~ /^[ \t]*(#{1,6}([ \t]|$)|[|<:])/) {
     return
   }
   if (fresh) {

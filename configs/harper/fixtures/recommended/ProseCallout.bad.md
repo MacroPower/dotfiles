@@ -48,3 +48,20 @@ The backup holds the lock file. <!-- same finding -->
 
 > [!NOTE]
 > 'Don't delete the lock file by hand.' <!-- same finding -->
+
+The cache holds the last response. <!-- same finding -->
+
+Note: The cache holds the last response.
+####### Run the migration first. <!-- same finding -->
+
+The cache holds the last response. <!-- same finding -->
+
+Note: The cache holds the last response. Fix
+#1234 first. Run the migration first. <!-- same finding -->
+
+The cache holds the last response. <!-- same finding -->
+
+Note: The cache holds the last response. <!-- same finding -->
+####### The cache holds the last hundred reads. <!-- same finding -->
+
+Tip: The cache warms in a minute.

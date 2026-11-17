@@ -21,7 +21,9 @@
 #   MyST directive opener each leave one. A rule ahead of the include
 #   counts the non-blank lines, so prose() can tell a skipped blank line
 #   from skipped code.
-# - A heading, written with `#` marks or underlined with `=` or `-`.
+# - A heading, written with one to six `#` marks or underlined with `=`
+#   or `-`. CommonMark reads a line with seven or more marks as text, so
+#   its words join the run (`####### It starts the worker.`).
 # - A list of two or more items, and a table of two or more body rows.
 # - A `:::` closer, a definition-list line that opens with `: `, and a
 #   Hugo shortcode line that opens with `{{`.
@@ -187,7 +189,7 @@ function prose(text,   n, rule) {
 
   settle()
 
-  if (text ~ /^[ \t]*(#+([ \t]|$)|:::|:[ \t]|\{\{)/) {
+  if (text ~ /^[ \t]*(#{1,6}([ \t]|$)|:::|:[ \t]|\{\{)/) {
     close_run()
     return
   }

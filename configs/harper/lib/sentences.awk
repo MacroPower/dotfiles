@@ -44,6 +44,11 @@
 # horizontal rules, and HTML lines do not hold a sentence, and the
 # marker that opens a list item is not a token.
 #
+# A heading opens with one to six `#` marks. CommonMark reads a line
+# with seven or more marks as text, and so does the library. Such a line
+# right after a paragraph continues the paragraph, and its marks and
+# words are tokens of its sentences (`####### It starts the worker.`).
+#
 # A setext heading is a paragraph with an underline, a line of only `=`
 # or only `-` right under it. The underline turns the whole paragraph
 # into a heading. So sentence() runs on the sentences of a paragraph
@@ -355,7 +360,7 @@ function prose(text,   rest, pos, t, col, line, e) {
     split_line = FNR
     return
   }
-  if (FILENAME != split_file || FNR != split_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || horizontal_rule(line) || (FNR == para_line + 1 && quote_depth() > para_quote) || (in_table ? !index(text, "|") || quote_depth() != table_quote : text ~ /^[ \t]*</)) {
+  if (FILENAME != split_file || FNR != split_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#{1,6})([ \t]|$)/ || horizontal_rule(line) || (FNR == para_line + 1 && quote_depth() > para_quote) || (in_table ? !index(text, "|") || quote_depth() != table_quote : text ~ /^[ \t]*</)) {
     end_paragraph()
     in_table = 0
   } else if (index(text, "|") && text ~ /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/) {
@@ -374,7 +379,7 @@ function prose(text,   rest, pos, t, col, line, e) {
   split_line = FNR
   # A line that holds only a code span or a URL passes this test. It
   # joins the paragraph, so an underline can follow it.
-  if (in_table || bare_line || text ~ /^[ \t]*(#+([ \t]|$)|[|<])/ || horizontal_rule(line)) {
+  if (in_table || bare_line || text ~ /^[ \t]*(#{1,6}([ \t]|$)|[|<])/ || horizontal_rule(line)) {
     return
   }
   if (FNR != para_line + 1) {

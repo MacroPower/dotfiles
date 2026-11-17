@@ -28,3 +28,6 @@ The loader reads "`a.nix`." The loader reads "`b.nix`." The loader reads "`c.nix
 "A lease?" the guide asks before the build. "A lease?" the guide asks after the tests. "A lease?" the guide asks at the end.
 
 “An entry?” the guide asks before the build. “An entry?” the guide asks after the tests. “An entry?” the guide asks at the end.
+
+The loader reads `a.nix`. The loader reads `b.nix`.
+####### The loader reads `c.nix`. <!-- same finding -->

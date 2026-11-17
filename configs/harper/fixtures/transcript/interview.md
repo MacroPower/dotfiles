@@ -21,6 +21,7 @@ Frankly, the script saved the host and/or the guest a week.
 ## Next Steps
 
 **Raj Kumar Patel**: Honestly, the team needs a break.
+####### I think the team earned it.
 
 ## Questions
 

@@ -155,12 +155,12 @@ function verb(tok, word) {
 }
 
 function prose(text,   rest, pos, tok, col, word, base, e) {
-  if (FILENAME != last_file || FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
+  if (FILENAME != last_file || FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#{1,6})([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
     reset()
   }
   last_file = FILENAME
   last_line = FNR
-  if (text ~ /^[ \t]*(#+([ \t]|$)|[|<])/) {
+  if (text ~ /^[ \t]*(#{1,6}([ \t]|$)|[|<])/) {
     return
   }
   if (fresh) {

@@ -109,3 +109,8 @@ The importer prints "Batch written!" each time it writes a batch of rows to the 
 
 The importer prints "Batch written!"
 each time it writes a batch of rows to the destination table, and then it reads the next batch of rows from the source table for the operators on call. <!-- same finding -->
+
+The importer reads every row of the source table, converts each value to the target type,
+####### checks it against the schema, and writes the rows in batches of one hundred to the destination table. <!-- same finding -->
+
+####### The importer reads every row of the source table, converts each value to the target type, checks it against the schema, and writes the rows in batches of one hundred to the destination table.

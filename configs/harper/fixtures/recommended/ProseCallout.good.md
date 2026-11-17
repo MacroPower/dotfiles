@@ -73,3 +73,20 @@ The guide describes the lock.
 The lock outlives the run.
 
 **Note:** ‘Keep in mind that the lock stays,’ the guide says.
+
+The migration rewrites the cache.
+
+<!-- prettier-ignore-start -->
+Note: The cache holds the last response.
+## Run the Migration
+<!-- prettier-ignore-end -->
+
+Tip: The migration takes a minute.
+
+The migration rewrites the cache.
+
+> [!NOTE]
+>
+> ## Run the Migration
+>
+> The migration takes a minute.

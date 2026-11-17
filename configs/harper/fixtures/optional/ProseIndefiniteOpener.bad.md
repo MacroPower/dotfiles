@@ -37,3 +37,6 @@ A user typed "`stop`." A user then left.
 A lease is a lock. "A lease?" the guide asks.
 
 “A lease,” the guide says before the build. “A lease,” the guide says after the tests.
+
+A task is a unit of work. <!-- same finding -->
+####### A user reported the bug.

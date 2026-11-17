@@ -292,9 +292,11 @@ in
     # paragraphs, in either form. A speaker talks more than once, and a
     # label such as `**Note:**` rarely repeats. Each turn of a
     # transcript runs from a label to the next heading, because an
-    # answer often takes several paragraphs. A line inside a fenced code
-    # block is neither a label nor a heading. speech_lines in measure.py
-    # finds the same lines.
+    # answer often takes several paragraphs. A heading opens with one to
+    # six `#` marks. CommonMark reads a line with seven or more marks as
+    # text, so such a line stays inside the turn. A line inside a fenced
+    # code block is neither a label nor a heading. speech_lines in
+    # measure.py finds the same lines.
     drop_transcript_opinions() {
       SRC="$1" awk '
         BEGIN {
@@ -303,7 +305,7 @@ in
             n++
             if (src ~ /^[ \t>]*(```|~~~)/) {
               fenced = !fenced
-            } else if (!fenced && src ~ /^ {0,3}#+([ \t]|$)/) {
+            } else if (!fenced && src ~ /^ {0,3}#{1,6}([ \t]|$)/) {
               heading[n] = 1
             } else if (!fenced && blank && (match(src, /^ {0,3}[*][*][^* :]+( [^* :]+)?( [^* :]+)?([*][*]:|:[*][*])/) ||
               match(src, /^ {0,3}([*][*]|<b>)?[A-Z][A-Z\047.-]+( [A-Z][A-Z\047.-]+)( [A-Z][A-Z\047.-]+)?:/))) {
@@ -1387,7 +1389,10 @@ in
         # The first turn holds a paragraph with no label and a fenced
         # block with a `#` line, and neither ends the turn. It also holds
         # an `and/or`, and the ProseAndOr finding there still prints,
-        # because the guard drops only the findings of ProseOpinion. A
+        # because the guard drops only the findings of ProseOpinion. Raj's
+        # second turn holds a line that opens with seven `#` marks.
+        # CommonMark reads that line as text, so its opinion marker passes
+        # only when the guard does not read the line as a heading. A
         # commit message with the same text draws the same findings, and
         # so does a copy of the file named interview.markdown.
         #
@@ -1437,11 +1442,11 @@ in
           }
 
           lint=${lib.getExe finalAttrs.finalPackage}
-          expect interview.md "$(findings ProseOpinion "$lint" "$PWD/interview.md")" "3 31"
-          expect "interview.md as a message" "$(findings ProseOpinion "$lint" --commit <interview.md)" "3 31"
+          expect interview.md "$(findings ProseOpinion "$lint" "$PWD/interview.md")" "3 32"
+          expect "interview.md as a message" "$(findings ProseOpinion "$lint" --commit <interview.md)" "3 32"
           expect "interview.md and/or" "$(findings ProseAndOr "$lint" "$PWD/interview.md")" "19"
           expect "interview.md and/or as a message" "$(findings ProseAndOr "$lint" --commit <interview.md)" "19"
-          expect interview.markdown "$(findings ProseOpinion "$lint" "$PWD/interview.markdown")" "3 31"
+          expect interview.markdown "$(findings ProseOpinion "$lint" "$PWD/interview.markdown")" "3 32"
           expect podcast.md "$(findings ProseOpinion "$lint" "$PWD/podcast.md")" "3 25 27"
           expect labels.md "$(findings ProseOpinion "$lint" "$PWD/labels.md")" "3 5 7 10"
           touch "$out"

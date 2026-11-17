@@ -417,7 +417,7 @@ SPEAKER = re.compile(
     r"^ {0,3}(?:\*\*([^* :]+(?: [^* :]+){0,2})(?:\*\*:|:\*\*)"
     r"|(?:\*\*|<b>)?([A-Z][A-Z'.-]+(?: [A-Z][A-Z'.-]+){1,2}):)"
 )
-HEADING = re.compile(r"^ {0,3}#+([ \t]|$)")
+HEADING = re.compile(r"^ {0,3}#{1,6}([ \t]|$)")
 FENCE = re.compile(r"^[ \t>]*(```|~~~)")
 
 
@@ -432,8 +432,10 @@ def speech_lines(path: Path) -> set[int]:
     capitals with a colon after it, and `**` or `<b>` can open it
     (`CRAIG BOX:`). A file is a transcript when one name opens two or
     more of its paragraphs, in either form. Each turn of a transcript
-    runs from a label to the next heading. A line inside a fenced code
-    block is neither a label nor a heading.
+    runs from a label to the next heading. A heading opens with one to
+    six `#` marks. CommonMark reads a line with seven or more marks as
+    text, so such a line stays inside the turn. A line inside a fenced
+    code block is neither a label nor a heading.
     """
     # awk splits lines at a newline only, so this split does the same.
     lines = path.read_bytes().decode(errors="replace").split("\n")

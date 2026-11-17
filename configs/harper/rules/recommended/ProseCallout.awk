@@ -26,6 +26,13 @@
 # MyST directive, so the block before the `@include` line reads that
 # line.
 #
+# A label callout runs to the end of its paragraph. A blank line, a line
+# with no letter, a heading, or a list item ends it. A heading opens
+# with one to six `#` marks and a space, as CommonMark reads it. A line
+# that opens with seven or more marks (`####### Run the migration
+# first`) or with an issue number (`#1234 first`) therefore continues
+# the note.
+#
 # For the first misuse, the check reads the sentences of each note,
 # info, or important callout. It reports a sentence that opens with a
 # command verb (`Run`, `Ensure`, `Do not`) or holds `you must`, `you
@@ -57,6 +64,13 @@
 # `Don’t` therefore draws the finding that `Don't` draws. prose-lint
 # straightens the apostrophe in the copy that Harper reads, but this
 # check reads the original markdown file or commit message.
+#
+# The check also skips seven or more `#` marks before the first word, so
+# a continuation line such as `####### Run the migration first` holds a
+# sentence that opens with `run`. A heading inside an alert, a
+# shortcode, or a directive keeps its one to six marks (`> ## Run the
+# Migration`). Its first word then does not hold a letter, so a command
+# verb that opens the heading does not draw the finding.
 #
 # For the second misuse, the check reports a callout when no prose line
 # sits between it and the callout before it. A line that
@@ -174,7 +188,7 @@ function end_callout(   m, pieces, seps, n, sents, i, s, t, e, w, parts, lead) {
     }
     for (i = 1; i <= n; i++) {
       s = sents[i]
-      sub(/^[ \t*_]+/, "", s)
+      sub(/^([ \t*_]|#{7,}[ \t])+/, "", s)
       split(tolower(s), parts, /[ \t]+/)
       # A curly apostrophe between two letters becomes a straight one, so
       # `don’t` matches `don't` in the `imper` list. The pattern names
@@ -262,7 +276,7 @@ function prose(text,   lower, k) {
     return
   }
   if (in_block == "label") {
-    if (FNR == label_last + 1 && text ~ /[A-Za-z]/ && text !~ /^[ \t]*(#|([-*+]|[0-9]+[.)])[ \t])/) {
+    if (FNR == label_last + 1 && text ~ /[A-Za-z]/ && text !~ /^[ \t]*(#{1,6}([ \t]|$)|([-*+]|[0-9]+[.)])[ \t])/) {
       body = body " " text
       label_last = FNR
       return
