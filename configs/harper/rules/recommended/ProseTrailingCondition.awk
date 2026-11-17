@@ -140,18 +140,22 @@
 # so the check skips them. ProseVagueCriterion matches such a phrase
 # only when nothing but emphasis, a footnote reference, or the markup of
 # a markdown link sits between its two words. The check skips the phrase
-# in that case, so it still skips `if **needed**`, `if[^1] needed`, and
-# `if [needed](https://example.com)`.
+# in that case, so it still skips `if **needed**`, `if[^1] needed`,
+# `if [^1] needed`, and `if [needed](https://example.com)`. A footnote
+# reference needs a label, and Harper reads `[^]` as text, so
+# `if [^] needed` fires. The check reads a reference whose label holds
+# a space as two words (`[^a` and `b]`), so an `if` before it draws a
+# finding from both rules (`if [^a b] needed`).
 #
 # The check also skips the phrase after some marks that Harper reads as
 # text, so neither rule reports the `if`. A lone `*` or `_` counts as
 # emphasis when no later mark closes it (`if* needed`). The check drops
 # a footnote reference before it tests the marks, so it skips
-# `if**[^1]** needed`, as it skips `if**** needed`. lib/markdown.awk
-# blanks a bare URL, so the check reads
-# `if [needed](https://example.com/a b)` as a link to `b`. The check
-# also reads a title that no mark closes as a title that runs to the end
-# of the sentence (`if [needed](see "Setup) now.`).
+# `if**[^1]** needed` and `if [^1]** needed`, as it skips
+# `if**** needed`. lib/markdown.awk blanks a bare URL, so the check
+# reads `if [needed](https://example.com/a b)` as a link to `b`. The
+# check also reads a title that no mark closes as a title that runs to
+# the end of the sentence (`if [needed](see "Setup) now.`).
 #
 # The check does not read link definitions, so it skips the phrase in a
 # reference link with no definition, which Harper reads as text
@@ -199,6 +203,9 @@ function BEGIN_CHECK() {
   imperative = "^(add|apply|avoid|build|call|change|choose|click|combine|configure|copy|create|define|delete|deploy|disable|do|don't|download|edit|enable|follow|include|increase|install|keep|limit|leave|mark|move|open|pass|pick|place|provide|push|put|read|remove|rename|replace|restart|restrict|retry|return|run|save|see|select|send|set|skip|specify|start|stop|store|try|turn|update|upgrade|use|wait|write)$"
   vague = "^(needed|necessary|applicable|appropriate|possible)$"
   checking = "^(check|checks|checked|checking|test|tests|tested|testing|determine|determines|determined|determining|verify|verifies|verified|verifying|see|sees|seeing|decide|decides|decided|deciding|ask|asks|asked|asking|detect|detects|detected|detecting|tell|tells|telling|know|knows|notice|notices|wonder|matter|matters)$"
+  # A run of emphasis marks, and a footnote reference with its label.
+  emphasis = "([*_]|~~)*"
+  footnote = "\\[\\^[^][]+\\]"
 }
 
 # Returns token i in lowercase without the punctuation around it. The
@@ -229,14 +236,37 @@ function word_before_bracket(i,   w) {
   return w
 }
 
+# Reports whether token i holds only footnote references, such as
+# `[^1]`, and emphasis around them (`**[^1]**`). Harper skips a footnote
+# reference, so such a token does not hold a word. A reference needs a
+# label, so `[^]` does not count, and Harper reads it as text.
+function footnote_only(i,   t) {
+  t = tok[i]
+  return gsub(footnote, "", t) > 0 && t ~ ("^" emphasis "$")
+}
+
+# Returns the index of the token that holds the first word after token
+# i. The function passes over each token that footnote_only() accepts
+# (`if [^1] needed`, `if **[^1]** [^2] needed`). It does not pass over
+# token n, the last token of the sentence.
+function next_word(n, i,   j) {
+  j = i + 1
+  while (j < n && footnote_only(j)) {
+    j++
+  }
+  return j
+}
+
 # Reports whether Harper reads the last word of token i and the first
-# word of token i + 1 side by side. Only emphasis, a footnote reference,
-# and the markup of a markdown link can sit between the two words.
-# Emphasis is a run of `*`, `_`, and `~~` marks, which can close token i
-# (`**restart if** needed`) or open token i + 1 (`if **needed**`).
-# Harper reads a lone `~` as text, so `if ~needed~` does not pass. Every
-# other mark between the words counts as text, such as a quote, a paren,
-# a bracket, or a comma (`if "needed"`, `if (needed)`, `if, needed`).
+# word of token j side by side. next_word() finds token j, so each token
+# between the two holds only footnote references and emphasis. Only
+# emphasis, a footnote reference, and the markup of a markdown link can
+# sit between the two words. Emphasis is a run of `*`, `_`, and `~~`
+# marks, which can close token i (`**restart if** needed`) or open
+# token j (`if **needed**`). Harper reads a lone `~` as text, so
+# `if ~needed~` does not pass. Every other mark between the words
+# counts as text, such as a quote, a paren, a bracket, or a comma
+# (`if "needed"`, `if (needed)`, `if, needed`).
 #
 # Harper skips a footnote reference, such as `[^1]`, so one can close
 # token i next to the emphasis marks (`if[^1] needed`,
@@ -281,8 +311,7 @@ function word_before_bracket(i,   w) {
 # (`if [[needed]](https://example.com)`). lib/markdown.awk blanks the
 # second `]` of such a wikilink with the `(url)` after it. Every other
 # `[[` fires (`if [[needed] now]`).
-function side_by_side(n, i,   e, dest, title, open_title, tail, head, wiki, rest, j, d, p, c) {
-  e = "([*_]|~~)*"
+function side_by_side(n, i, j,   dest, title, open_title, tail, head, wiki, rest, d, p, c) {
   # The `(` of an inline link and its destination, a title that a mark
   # closes, and a title that runs to the end of the sentence.
   dest = "^\\([ \t]*(<[^<>]*>|([^ \t<()]|\\([^ \t()]*\\))([^ \t()]|\\([^ \t()]*\\))*)?"
@@ -290,22 +319,22 @@ function side_by_side(n, i,   e, dest, title, open_title, tail, head, wiki, rest
   open_title = "[ \t]+(\"[^\"]*|'[^']*|\\([^()]*)$"
   tail = tok[i]
   sub(/^.*[A-Za-z]/, "", tail)
-  gsub(/\[\^[^][]*\]/, "", tail)
-  head = tok[i + 1]
+  gsub(footnote, "", tail)
+  head = tok[j]
   sub(/[A-Za-z].*$/, "", head)
-  if (tail !~ ("^" e "$")) {
+  if (tail !~ ("^" emphasis "$")) {
     return 0
   }
-  if (head ~ ("^" e "$")) {
+  if (head ~ ("^" emphasis "$")) {
     return 1
   }
-  wiki = head ~ ("^" e "\\[\\[$")
-  if (!wiki && head !~ ("^" e "\\[" e "$")) {
+  wiki = head ~ ("^" emphasis "\\[\\[$")
+  if (!wiki && head !~ ("^" emphasis "\\[" emphasis "$")) {
     return 0
   }
-  rest = substr(tok[i + 1], index(tok[i + 1], "[") + 1)
-  for (j = i + 2; j <= n; j++) {
-    rest = rest " " tok[j]
+  rest = substr(tok[j], index(tok[j], "[") + 1)
+  for (p = j + 1; p <= n; p++) {
+    rest = rest " " tok[p]
   }
   if (wiki && rest ~ /^\[[^][|]*\]\]/) {
     return 1
@@ -323,7 +352,7 @@ function side_by_side(n, i,   e, dest, title, open_title, tail, head, wiki, rest
   return 1
 }
 
-function sentence(n,   i, k, m, at, depth, w, t, limited, quoted, resume, resume_end) {
+function sentence(n,   i, j, k, m, at, depth, w, t, limited, quoted, resume, resume_end) {
   if (word(1) !~ imperative || tok[1] !~ /^[^A-Za-z]*[A-Z]/) {
     return
   }
@@ -350,10 +379,7 @@ function sentence(n,   i, k, m, at, depth, w, t, limited, quoted, resume, resume
     at[++m] = i
   }
   # The skips read up to three tokens past the last token that the check
-  # reads. gawk 5.3 aborts when the check passes word() an element of
-  # `at` that does not exist and then compares that element
-  # (`at[k + 1] == i + 1`). So each of those three elements points at
-  # token 0.
+  # reads, so each of those three elements points at token 0.
   # lib/sentences.awk never sets token 0, so word() reads it as empty.
   at[m + 1] = at[m + 2] = at[m + 3] = 0
   depth = 0
@@ -370,11 +396,17 @@ function sentence(n,   i, k, m, at, depth, w, t, limited, quoted, resume, resume
     if (w == "if" && depth == 0 && t ~ /^[a-z]/) {
       # ProseVagueCriterion matches its words only when Harper reads them
       # side by side. An attribution between the words stops the match.
-      # The check therefore skips the words only when the next token that
-      # it reads is the token right after the `if`. The test reads that
-      # token up to its first `]`, and side_by_side() then tests the marks
-      # between the two words.
-      if (word(at[k + 1]) ~ /^(any|so)$/ || (at[k + 1] == i + 1 && word_before_bracket(i + 1) ~ vague && side_by_side(n, i)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
+      # Token j holds the word after the `if`, past each token that holds
+      # only footnote references and emphasis (`if [^1] needed`). The
+      # check therefore skips the words only when the tokens that it reads
+      # next run from the token right after the `if` to token j. The test
+      # reads token j up to its first `]`, and side_by_side() then tests
+      # the marks between the two words. gawk 5.3 aborts when the check
+      # passes word() an element of `at` that does not exist and then
+      # compares that element. The test of `m` keeps the check from
+      # comparing such an element.
+      j = next_word(n, i)
+      if (word(at[k + 1]) ~ /^(any|so)$/ || (k + j - i <= m && at[k + j - i] == j && word_before_bracket(j) ~ vague && side_by_side(n, i, j)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
         continue
       }
       if ((word(at[k + 1]) ~ /^(it|they)$/ && word(at[k + 2]) ~ /^exists?$/ && tok[at[k + 2]] ~ /[.:,]([")*_\]']|\342\200\235|\342\200\231)*$/) || (word(at[k + 1]) == "there" && word(at[k + 2]) == "is" && word(at[k + 3]) == "one")) {

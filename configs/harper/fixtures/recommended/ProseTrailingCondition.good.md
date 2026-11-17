@@ -198,6 +198,18 @@ Restart the **agent if[^1]** needed.
 
 Restart the **agent if**[^1] needed.
 
+Restart the agent if [^1] needed.
+
+Restart the agent if **[^1]** needed.
+
+Retry the request if [^1] possible.
+
+Restart the agent if [^1] [^2] needed.
+
+Restart the **agent if [^1]** needed.
+
+Restart the agent if [^1] [needed](https://example.com).
+
 [ref]: https://example.com
 [needed]: https://example.com
 

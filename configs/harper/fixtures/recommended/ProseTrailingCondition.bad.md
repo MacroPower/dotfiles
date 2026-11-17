@@ -145,3 +145,13 @@ Restart the agent if [[needed] now][ref].
 Restart the agent if [needed][^1].
 
 Restart the agent if [needed](<a 'T').
+
+Restart the agent if[^] needed.
+
+Restart the agent if [^] needed.
+
+Restart the agent if [^1], needed.
+
+Restart the agent if [^1] (needed).
+
+Restart the agent if **[^1]**, needed.
