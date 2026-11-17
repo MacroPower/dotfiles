@@ -94,7 +94,10 @@ func runServe(ctx context.Context, args []string) error {
 		"sa-expiration", 0,
 		"ServiceAccount token lifetime in seconds (default: 3600, max: 86400)",
 	)
-	logFile := fs.String("log-file", "", "path to JSON log file (append)")
+	logFile := fs.String(
+		"log-file", "",
+		"path to JSON log file (append). serve fails to start when the last element of the path is a symlink",
+	)
 	socketSlots := fs.Int(
 		"socket-slots",
 		defaultSocketSlots,
@@ -237,17 +240,27 @@ func runServe(ctx context.Context, args []string) error {
 
 // openLogger creates a JSON [*slog.Logger] writing to the named file.
 // Returns a discard logger and no-op closer when path is empty.
+//
+// openLogger creates each missing parent directory of path with mode
+// 0700. home/claude.nix puts the log in mcp-kubectx-run, and the
+// sockets in that directory need mode 0700 on it.
+// It opens path with O_NOFOLLOW, so it fails when the last element
+// of path is a symlink. A process that can change the entries of the
+// log directory then cannot send the log lines through a symlink to
+// another file. O_NOFOLLOW does not stop a hard link at path, so the
+// log belongs in a directory that only the user's own processes
+// change.
 func openLogger(path string) (*slog.Logger, func(), error) {
 	if path == "" {
 		return slog.New(slog.DiscardHandler), func() {}, nil
 	}
 
-	err := os.MkdirAll(filepath.Dir(path), 0o755)
+	err := os.MkdirAll(filepath.Dir(path), 0o700)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating log directory: %w", err)
 	}
 
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND|syscall.O_NOFOLLOW, 0o644)
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening %s: %w", path, err)
 	}

@@ -1073,20 +1073,23 @@ through the same bind mount.
 
 Through that mount, the guest can create, change, and delete the
 files of the mcp-kubectx state dir of the host. It can also replace
-each of them with a symlink. The directory holds these files:
+each of them with a symlink. The directory holds the scoped
+kubeconfig `kubeconfig.<pid>.guest.yaml` of each guest-side `serve`.
+`host select` writes the file on the host, and the guest-side `serve`
+reads it through the mount. So every guest can rewrite the
+kubeconfig of each guest-side `serve`.
 
-- `kubeconfig.<pid>.guest.yaml`: the scoped kubeconfig of each
-  guest-side `serve`. `host select` writes it on the host, and the
-  guest-side `serve` reads it through the mount. So every guest can
-  rewrite the kubeconfig of each guest-side `serve`.
-- `kubectx.log`: the log of host-side serves, at the path that
-  `home/claude.nix` passes as `--log-file`. A host-side `serve` opens
-  this path for append and follows a symlink there. So a guest that
-  replaces `kubectx.log` with a symlink makes the next host-side
-  `serve` append its log lines to any file of the host that the user
-  can write.
+The writes of `mcp-kubectx` do not follow a symlink that a guest
+plants:
 
-The files that host-side processes trust lie in
+- `host select` writes each kubeconfig to a new file under a random
+  name in the directory of the path. Then it renames that file to the
+  path. So a symlink at the path, or at any other name in the
+  directory, does not receive the kubeconfig.
+- `serve` opens its `--log-file` with `O_NOFOLLOW`. When the last
+  element of that path is a symlink, `serve` fails to start.
+
+The files that host-side serves write or trust lie in
 `<host's $XDG_STATE_HOME>/mcp-kubectx-run`, beside the sockets and
 the [provision records](#provision-records):
 
@@ -1100,6 +1103,8 @@ the [provision records](#provision-records):
   its resources and for the selector of its orphan sweep. The startup
   sweep deletes each resource with that `host-id` whose `serve` is
   missing from its live set.
+- `kubectx.log`: the log of host-side serves, at the path that
+  `home/claude.nix` passes as `--log-file`.
 
 Every guest-side `serve` resolves its state dirs in the guest, under
 the home directory of the guest. So the `guest.id` of guest-side
@@ -1107,8 +1112,8 @@ serves stays in `mcp-kubectx-run` on the disk of the guest VM.
 `serve` writes its log to the `--log-file` path as given, and
 `home/claude.nix` renders that path from the `xdg.stateHome` of the
 machine that it configures. So on a guest VM that `home/claude.nix`
-configures, the log of guest-side serves lies in the state dir of
-the guest too.
+configures, the log of guest-side serves lies in `mcp-kubectx-run`
+on the disk of the guest VM too.
 
 The hook-router sidecar symlink published by [*handler.publishSidecar]
 points at the host-absolute path of the scoped kubeconfig. In a

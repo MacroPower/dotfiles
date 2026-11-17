@@ -744,19 +744,15 @@ let
           # Through this mount, the guest can create, change, and
           # delete the files of this directory of the host, and
           # replace each with a symlink. The directory holds the
-          # scoped kubeconfig files of guest-side serves. It also
-          # holds the kubectx.log of host-side serves, the --log-file
-          # of servers.kubectx. A host-side serve follows a symlink at
-          # kubectx.log and does not run in the sandbox of
-          # `workmux host-exec`. So a symlink that the guest plants
-          # there sends a host-side write to any file of the user on
-          # the host. On a guest, this module renders the --log-file
-          # of servers.kubectx in the state dir of the guest.
+          # scoped kubeconfig files of guest-side serves. `host select`
+          # writes each of them to a new file under a random name and
+          # renames that file into place. So it does not write through
+          # a symlink that a guest plants.
           #
-          # The files that host-side processes trust lie in
+          # The files that host-side serves write or trust lie in
           # mcp-kubectx-run, which no entry of this list mounts. They
-          # include host.id and the kubeconfig of each host-side
-          # serve.
+          # include host.id, the kubeconfig of each host-side serve,
+          # and kubectx.log, the --log-file of servers.kubectx.
           host_path = "${config.xdg.stateHome}/mcp-kubectx";
           guest_path = "${config.xdg.stateHome}/mcp-kubectx";
           writable = true;
@@ -4664,8 +4660,11 @@ in
             "--sa-role-name"
             cfg.kubeClusterRole
             "--sa-cluster-scoped"
+            # The log lies in mcp-kubectx-run, outside the state dir
+            # that the extra_mounts of the Lima sandbox mount into
+            # each guest. So no guest can replace it with a symlink.
             "--log-file"
-            "${config.xdg.stateHome}/mcp-kubectx/kubectx.log"
+            "${config.xdg.stateHome}/mcp-kubectx-run/kubectx.log"
             "--socket-slots"
             (toString cfg.kubectxSocketSlots)
           ]
@@ -5540,9 +5539,10 @@ in
       # and guest profiles need this dir at mode 0700 to match
       # listenSocket's parent-dir invariant; create it
       # unconditionally so non-Lima Darwin hosts also get it. The
-      # dir also holds the files that host-side mcp-kubectx trusts,
-      # such as host.id and the kubeconfig of each host-side serve.
-      # So the extra_mounts of the Lima sandbox must not mount it.
+      # dir also holds the files that host-side mcp-kubectx writes or
+      # trusts, such as host.id, the kubeconfig of each host-side
+      # serve, and kubectx.log. So the extra_mounts of the Lima
+      # sandbox must not mount it.
       activation.ensureMcpKubectxRunDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         run install -d -m 700 "${config.xdg.stateHome}/mcp-kubectx-run"
       '';

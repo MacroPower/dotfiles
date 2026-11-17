@@ -295,8 +295,9 @@ func TestListenWritesSidecar(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 
-	_, err = os.Stat(SidecarPath(path) + ".tmp")
-	assert.True(t, os.IsNotExist(err), "tmp file must be removed after rename")
+	tmps, err := filepath.Glob(filepath.Join(dir, "*.tmp"))
+	require.NoError(t, err)
+	assert.Empty(t, tmps, "tmp file must be removed after rename")
 }
 
 // TestListenOmitsSidecarOnEmptyInstanceID pins the test-only path

@@ -159,7 +159,9 @@
 //     (default: 3600, max: 86400).
 //   - --log-file: path to JSON log file (append). Logs warnings and
 //     cleanup events, and the log records of each `host *`
-//     subcommand that `serve` runs. Defaults to discard.
+//     subcommand that `serve` runs. Defaults to discard. serve
+//     fails to start when the last element of the path is a
+//     symlink.
 //   - --socket-slots: number of UDS slot paths probed at startup
 //     (default 16, must be >= 1). Each slot maps to one literal
 //     entry in the Claude Code sandbox allowUnixSockets allowlist.
@@ -355,27 +357,28 @@
 // in workmux's extra_mounts. Through that mount, the guest can
 // create, change, and delete the files of <stateHomeDir> of the host.
 // It can also replace each of them with a symlink. The directory
-// holds these files:
+// holds the scoped kubeconfig files of guest-side serves. `host
+// select` writes each of them on the host, and each guest-side serve
+// reads its file through the mount. So every guest can rewrite the
+// kubeconfig of each guest-side serve.
 //
-//   - The scoped kubeconfig files of guest-side serves. `host select`
-//     writes each of them on the host, and each guest-side serve
-//     reads its file through the mount. So every guest can rewrite
-//     the kubeconfig of each guest-side serve.
-//   - The log file of host-side serves, at the path that
-//     home/claude.nix passes as --log-file. A host-side serve opens
-//     this path for append and follows a symlink there. So a guest
-//     that replaces the log file with a symlink makes the next
-//     host-side serve append its log lines to any file of the host
-//     that the user can write.
+// `host select` writes each kubeconfig with [statefile.WriteSecure],
+// which writes a new file under a random name and renames it to the
+// path. So a symlink that a guest plants in <stateHomeDir> does not
+// receive the kubeconfig. serve opens its --log-file with
+// O_NOFOLLOW, and it fails to start when the last element of that
+// path is a symlink.
 //
-// The files that host-side processes trust lie in <runDir> of the
-// host, which workmux does not mount into a guest. These files are
-// the scoped kubeconfig of each host-side serve and the `host.id`
-// file of host-side serves. Host-side kubectl reads such a
-// kubeconfig through the hook-router sidecar symlink and runs the
-// exec plugin that the file names. Each host-side serve reads
-// `host.id` at startup for the `host-id` label of its resources and
-// for the selector of its orphan sweep.
+// The files that host-side serves write or trust lie in <runDir> of
+// the host, which workmux does not mount into a guest. These files
+// include the scoped kubeconfig of each host-side serve and the
+// `host.id` file of host-side serves. They also include the log file
+// of host-side serves, at the path that home/claude.nix passes as
+// --log-file. Host-side kubectl reads such a kubeconfig through the
+// hook-router sidecar symlink and runs the exec plugin that the file
+// names. Each host-side serve reads `host.id` at startup for the
+// `host-id` label of its resources and for the selector of its
+// orphan sweep.
 //
 // A guest-side serve resolves <runDir> in the guest. So it keeps
 // `guest.id` on the disk of the guest, outside the mount.

@@ -40,6 +40,8 @@ func Dir() string {
 // host-side serve. Host-side kubectl runs the exec plugin that such
 // a kubeconfig names. The startup sweep of a host-side serve deletes
 // resources by the host id. So neither file goes in [Dir].
+// home/claude.nix also passes a path in this directory as the
+// --log-file of serve.
 func RunDir() string {
 	return Subdir("mcp-kubectx-run")
 }
