@@ -374,11 +374,19 @@ line endings. It fails with one line for each finding that the copy
 drops and one line for each finding that the copy adds. A finding that
 moves to another column therefore prints two lines.
 
+The fixture checks and the CRLF check run each awk rule under a UTF-8
+locale. Under the C locale, gawk counts bytes in place of characters.
+The build therefore also runs each awk rule under the C locale, on its
+fixtures and on their copies with CRLF line endings. It fails with one
+line for each finding that the C locale drops and one line for each
+finding that it adds.
+
 The build also runs `test_check.py`, the unit tests of `check.py`. They
-cover the comment check, the CRLF check, and the lines that `check.py`
-expects a bad fixture to lint. Every rule file follows the layout, and
-every awk rule reads CRLF line endings. Only these tests therefore show
-that a breach or a misread fails the build.
+cover the comment check, the CRLF check, the locale check, and the
+lines that `check.py` expects a bad fixture to lint. Every rule file
+follows the layout, and every awk rule prints the same findings for
+CRLF line endings and under the C locale. Only these tests therefore
+show that a breach or a misread fails the build.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; in pkgs.callPackage ./pkgs/prose-weirpack.nix { }'
@@ -406,16 +414,13 @@ on a set of files.
   earlier in the word that holds the finding. The test expects the
   character column of each finding under the C locale and under a
   UTF-8 locale. `check.py` compares the column of a finding only with
-  its column in the copy with CRLF line endings. Only this test checks
-  a column against the character that holds the finding.
+  its column in the copy with CRLF line endings and with its column
+  under the C locale. Only this test checks a column against the
+  character that holds the finding.
 - `sentence-ends` lints its file under the C locale and under a UTF-8
   locale. It expects the same ProseSentenceLength findings from both,
-  and no ProseTrailingCondition finding from either. The sandbox of
-  the weirpack build starts `check.py` under the C locale, and Python
-  sets `LC_CTYPE` to C.UTF-8 for the awk checks that it starts. The
-  fixtures therefore run under C.UTF-8 alone, and only this test checks
-  the curly quotes under the C locale. The file holds these sentences,
-  once with each curly quote:
+  and no ProseTrailingCondition finding from either. The file holds
+  these sentences, once with each curly quote:
   - Sentences that end at a period and a curly closing quote, after a
     word or right after a bare URL.
   - A sentence with three periods and a curly quote in its middle.

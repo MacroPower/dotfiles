@@ -1,17 +1,20 @@
-"""Tests for the comment check and the CRLF check in check.py, and for
-the lines that check.py expects a bad fixture to lint.
+"""Tests for the comment check, the CRLF check, and the locale check in
+check.py, and for the lines that check.py expects a bad fixture to lint.
 
 Run with: python3 test_check.py. The weirpack build runs the tests
 before check.py reads the rule files. Every rule file follows the
-comment layout, and every awk rule reads a file with CRLF line endings
-the way it reads the file with LF endings. Only these tests therefore
+comment layout. Every awk rule reads a file with CRLF line endings the
+way it reads the file with LF endings, and it prints the same findings
+under the C locale as under a UTF-8 locale. Only these tests therefore
 show that a breach or a misread fails.
 """
 
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # Importing check writes a __pycache__ directory beside it unless this
 # flag is set, and git shows the directory as untracked.
@@ -101,21 +104,40 @@ class RequiredSectionsTest(unittest.TestCase):
 
 # An awk check that reports each line that ends in a period.
 PERIOD_CHECK = r'/\.$/ { printf "%s:%d:1: Style::ProsePeriod: Period.\n", FILENAME, FNR }' "\n"
+# An awk BEGIN block that drops the `\r` of each line that ends in CRLF.
+DROP_CR = r'BEGIN { RS = "\r?\n" }' "\n"
+
+
+def awk_failures(run, check_code: str, fixture: str = "One sentence.\n") -> list[str]:
+    """Return the failures that `run` reports for an awk check and its bad fixture.
+
+    `run` is a function of check.py that takes a rule, the fixtures
+    directory, and the awk lib directory. The function cuts each path in
+    a failure below the fixtures directory.
+
+    `run` starts each awk process with LC_ALL=C in its environment.
+    Python sets LC_CTYPE to C.UTF-8 when it starts under the C locale,
+    as in the sandbox of the weirpack build, and each awk process
+    inherits that variable. LC_ALL=C overrides it, so the UTF-8 side of
+    each check gets its locale only from the LC_ALL that awk_report()
+    sets.
+    """
+    with mock.patch.dict(os.environ, {"LC_ALL": "C"}), tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        tier = root / "fixtures" / "required"
+        tier.mkdir(parents=True)
+        (tier / "ProsePeriod.bad.md").write_text(fixture, encoding="utf-8")
+        script = root / "ProsePeriod.awk"
+        script.write_text(check_code)
+        rule = check.Rule("ProsePeriod", "required", "awk", script)
+        found = run(rule, root / "fixtures", root)
+        return [f.removeprefix(f"{tmp}/fixtures/") for f in found]
 
 
 class CrlfTest(unittest.TestCase):
     def failures(self, check_code: str) -> list[str]:
         """Return the CRLF failures of an awk check, with each path cut below the fixtures."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            tier = root / "fixtures" / "required"
-            tier.mkdir(parents=True)
-            (tier / "ProsePeriod.bad.md").write_text("One sentence.\n")
-            script = root / "ProsePeriod.awk"
-            script.write_text(check_code)
-            rule = check.Rule("ProsePeriod", "required", "awk", script)
-            found = check.check_crlf(rule, root / "fixtures", root)
-            return [f.removeprefix(f"{tmp}/fixtures/") for f in found]
+        return awk_failures(check.check_crlf, check_code)
 
     def test_crlf(self):
         cases = {
@@ -127,7 +149,7 @@ class CrlfTest(unittest.TestCase):
                 ],
             ),
             "a check that drops the \\r passes": (
-                r'BEGIN { RS = "\r?\n" }' "\n" + PERIOD_CHECK,
+                DROP_CR + PERIOD_CHECK,
                 [],
             ),
             "a check that fires on the \\r fails": (
@@ -145,6 +167,78 @@ class CrlfTest(unittest.TestCase):
                     " (missing when the lines end in CRLF)",
                     "required/ProsePeriod.bad.md:1:14: Style::ProsePeriod: Period."
                     " (reported only when the lines end in CRLF)",
+                ],
+            ),
+        }
+        for label, (code, want) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(self.failures(code), want)
+
+
+# The fixture of the locale cases. Its `é` is one character under a
+# UTF-8 locale and two bytes under the C locale.
+CAFE = "Caf\xe9 closed.\n"
+# An awk condition that holds under a UTF-8 locale alone. gawk reads
+# the octal escapes as the two bytes of `é`.
+UTF8 = r'length("\303\251") == 1'
+
+
+class LocaleTest(unittest.TestCase):
+    def failures(self, check_code: str) -> list[str]:
+        """Return the locale failures of an awk check, with each path cut below the fixtures."""
+        return awk_failures(check.check_locale, check_code, CAFE)
+
+    def test_locale(self):
+        finding = "required/ProsePeriod.bad.md:1:{}: Style::ProsePeriod: Period."
+        quote = "required/ProsePeriod.bad.md:1:1: Style::ProsePeriod: Starts with `{}`."
+        cases = {
+            "a check that reads both locales alike passes": (
+                DROP_CR + PERIOD_CHECK,
+                [],
+            ),
+            "a check that needs a UTF-8 locale fails": (
+                DROP_CR
+                + f'{UTF8} && /\\.$/'
+                + ' { printf "%s:%d:1: Style::ProsePeriod: Period.\\n", FILENAME, FNR }\n',
+                [
+                    finding.format(1) + " (missing under the C locale)",
+                    finding.format(1)
+                    + " (missing under the C locale when the lines end in CRLF)",
+                ],
+            ),
+            "a check that drops the \\r under a UTF-8 locale alone fails": (
+                f'BEGIN {{ RS = {UTF8} ? "\\r?\\n" : "\\n" }}\n' + PERIOD_CHECK,
+                [
+                    finding.format(1)
+                    + " (missing under the C locale when the lines end in CRLF)",
+                ],
+            ),
+            "a check whose column counts bytes fails on both sides": (
+                DROP_CR + r'{ printf "%s:%d:%d: Style::ProsePeriod: Period.\n", FILENAME, FNR,'
+                r' index($0, "closed") }'
+                "\n",
+                [
+                    finding.format(6) + " (missing under the C locale)",
+                    finding.format(7) + " (reported only under the C locale)",
+                    finding.format(6)
+                    + " (missing under the C locale when the lines end in CRLF)",
+                    finding.format(7)
+                    + " (reported only under the C locale when the lines end in CRLF)",
+                ],
+            ),
+            # Under the C locale, the first four bytes of the line end
+            # in the first byte of `é`, which is not UTF-8 on its own.
+            "a check that splits a character under the C locale fails": (
+                DROP_CR + r'{ printf "%s:%d:1: Style::ProsePeriod: Starts with `%s`.\n",'
+                r" FILENAME, FNR, substr($0, 1, 4) }"
+                "\n",
+                [
+                    quote.format("Caf\xe9") + " (missing under the C locale)",
+                    quote.format(r"Caf\xc3") + " (reported only under the C locale)",
+                    quote.format("Caf\xe9")
+                    + " (missing under the C locale when the lines end in CRLF)",
+                    quote.format(r"Caf\xc3")
+                    + " (reported only under the C locale when the lines end in CRLF)",
                 ],
             ),
         }

@@ -40,11 +40,12 @@
 # therefore tests `bare_line` and never the blank text.
 #
 # gawk counts an offset in characters under a UTF-8 locale and in bytes
-# under the C locale that the nix build sandbox uses. Blanking writes
-# one space for each character or each byte that it removes. An offset
-# in the text that prose() gets is therefore the same offset in the
-# line. column() converts the offset to the character column that a
-# person sees in an editor.
+# under the C locale. prose-lint runs the checks under the locale of the
+# user, and check.py runs each check on its fixtures under both locales.
+# Blanking writes one space for each character or each byte that it
+# removes. An offset in the text that prose() gets is therefore the
+# same offset in the line. column() converts the offset to the character
+# column that a person sees in an editor.
 #
 # With RAW=1 in the environment, lib/markdown.awk passes every line to
 # prose() whole, string literals included, for a source file with no
@@ -73,8 +74,8 @@ BEGIN {
   span_open = 0
   raw_mode = ENVIRON["RAW"] != ""
   shadow_mode = ENVIRON["SHADOW"] != ""
-  # A UTF-8 locale reads é as one character, and the C locale that the
-  # nix build sandbox runs under reads it as two bytes.
+  # A UTF-8 locale reads é as one character, and the C locale reads it
+  # as two bytes.
   utf8 = length("é") == 1
   BEGIN_CHECK()
 }
@@ -291,8 +292,8 @@ function column(off) {
 # locale. Each quote is an alternative of its own, because a bracket
 # expression of the bytes of both quotes misses `’` under a UTF-8
 # locale. Under the C locale, such a bracket expression matches any one
-# of the bytes. The sentence-ends test of prose-lint runs the patterns
-# under both locales.
+# of the bytes. check.py and the sentence-ends test of prose-lint run
+# the patterns under both locales.
 function ends_sentence(t) {
   if (t ~ /\.\.\.(["')*_\]]|\342\200\235|\342\200\231)*$/ || tolower(t) ~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
     return 0

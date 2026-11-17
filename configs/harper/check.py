@@ -34,6 +34,15 @@ shared file, with every line ending in CRLF. It must print the same
 findings there, at the same lines and columns. A file with CRLF line
 endings then draws the findings of its copy with LF endings.
 
+The checks run each awk rule under a UTF-8 locale. Each awk rule also
+reads each of its fixtures, the shared file, and their copies with CRLF
+line endings under the C locale. It must print the same findings there,
+at the same lines and columns and with the same messages. gawk counts
+characters under a UTF-8 locale and bytes under the C locale, and
+lib/markdown.awk takes a branch of its own for each, such as in chars()
+and column(). prose-lint runs the checks under the locale of the user,
+which can be either one.
+
 Each plain phrase a Weir rule lists in its main expression, directly
 or through a referenced list, must also fire on its own in a probe
 sentence. List entries that a guard or a typo has broken therefore
@@ -80,6 +89,7 @@ under two tiers fails, and so does an entry under rules/ that is not a
 tier directory. Exits 1 with one line per failure.
 """
 
+import functools
 import json
 import os
 import re
@@ -107,6 +117,10 @@ SECTIONS = ("Overview", "Expression", "False Positives", "Related Rules", "Measu
 REQUIRED_SECTIONS = frozenset({"Overview", "Measurement"})
 # The words that open the last lines of an awk rule's comment.
 OUTPUT_FORMAT = "Output format"
+# The locale under which gawk counts bytes. check_locale() runs each
+# awk rule under it and compares the findings with those under
+# utf8_locale().
+C_LOCALE = "C"
 
 
 @dataclass(frozen=True)
@@ -204,13 +218,40 @@ def harper_findings(pack: Path, rule: str, target: Path) -> set[tuple[int, str]]
     return found
 
 
+@functools.cache
+def utf8_locale() -> str:
+    """Return the name of a UTF-8 locale that gawk reads.
+
+    glibc names its UTF-8 locale C.UTF-8, and macOS has en_US.UTF-8.
+    gawk reads a locale that the system lacks as the C locale, so the
+    function asks gawk to count the characters of `é` under each name.
+    """
+    for locale in ("C.UTF-8", "en_US.UTF-8"):
+        proc = subprocess.run(
+            ["awk", r'BEGIN { exit length("\303\251") != 1 }'],
+            env={**os.environ, "LC_ALL": locale},
+            check=False,
+        )
+        if proc.returncode == 0:
+            return locale
+    raise RuntimeError("gawk found no UTF-8 locale")
+
+
 def awk_lines(awk: Path, lib: Path, target: Path, raw: bool = False) -> set[int]:
     return {line for line, _ in awk_findings(awk, lib, target, raw)}
 
 
-def awk_report(awk: Path, lib: Path, target: Path, raw: bool = False) -> list[str]:
-    """Return each finding the check prints, without the file name before its line."""
-    env = {**os.environ, "AWKPATH": str(lib)}
+def awk_report(
+    awk: Path, lib: Path, target: Path, raw: bool = False, locale: str | None = None
+) -> list[str]:
+    """Return each finding the check prints, without the file name before its line.
+
+    The check runs under `locale`, or under utf8_locale() when `locale`
+    is None. LC_ALL overrides each locale variable of the environment,
+    such as the LC_CTYPE that Python sets when it starts under the C
+    locale.
+    """
+    env = {**os.environ, "AWKPATH": str(lib), "LC_ALL": locale or utf8_locale()}
     if raw:
         env["RAW"] = "1"
     # A finding can quote a `\r` from the line, so the output splits at
@@ -221,7 +262,11 @@ def awk_report(awk: Path, lib: Path, target: Path, raw: bool = False) -> list[st
         check=True,
         env=env,
     )
-    lines = proc.stdout.decode().split("\n")
+    # Under the C locale, a check that cuts the line by a length can
+    # split a UTF-8 character in its finding. The decode writes each
+    # such byte as an escape, such as `\xc3`, so check_locale() reports
+    # the finding.
+    lines = proc.stdout.decode(errors="backslashreplace").split("\n")
     return [line.split(":", 1)[1] for line in lines if line]
 
 
@@ -236,6 +281,24 @@ def awk_findings(
     return found
 
 
+def awk_targets(rule: Rule, fixtures: Path) -> list[tuple[Path, bool]]:
+    """Return each file that an awk rule reads, and whether it reads the file with RAW=1."""
+    targets = (
+        (fixtures / rule.tier / f"{rule.name}.bad.md", False),
+        (fixtures / rule.tier / f"{rule.name}.good.md", False),
+        (fixtures / COMMON, False),
+        (fixtures / rule.tier / f"{rule.name}.raw.txt", True),
+    )
+    return [(target, raw) for target, raw in targets if target.is_file()]
+
+
+def crlf_copy(target: Path, tmp: Path) -> Path:
+    """Write a copy of `target` into `tmp` with every line ending in CRLF."""
+    copy = tmp / target.name
+    copy.write_bytes(target.read_bytes().replace(b"\n", b"\r\n"))
+    return copy
+
+
 def check_crlf(rule: Rule, fixtures: Path, lib: Path) -> list[str]:
     """Fail each finding of an awk rule that a fixture with CRLF line endings changes.
 
@@ -243,25 +306,40 @@ def check_crlf(rule: Rule, fixtures: Path, lib: Path) -> list[str]:
     it must print the findings of the fixture at the same lines and
     columns.
     """
-    targets = (
-        (fixtures / rule.tier / f"{rule.name}.bad.md", False),
-        (fixtures / rule.tier / f"{rule.name}.good.md", False),
-        (fixtures / COMMON, False),
-        (fixtures / rule.tier / f"{rule.name}.raw.txt", True),
-    )
     failures: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
-        for target, raw in targets:
-            if not target.is_file():
-                continue
-            copy = Path(tmp) / target.name
-            copy.write_bytes(target.read_bytes().replace(b"\n", b"\r\n"))
+        for target, raw in awk_targets(rule, fixtures):
+            copy = crlf_copy(target, Path(tmp))
             lf = set(awk_report(rule.path, lib, target, raw))
             crlf = set(awk_report(rule.path, lib, copy, raw))
             for finding in sorted(lf - crlf):
                 failures.append(f"{target}:{finding} (missing when the lines end in CRLF)")
             for finding in sorted(crlf - lf):
                 failures.append(f"{target}:{finding} (reported only when the lines end in CRLF)")
+    return failures
+
+
+def check_locale(rule: Rule, fixtures: Path, lib: Path) -> list[str]:
+    """Fail each finding of an awk rule that the C locale changes.
+
+    The rule reads each file that awk_targets() returns, and its copy
+    with CRLF line endings, under the C locale and under utf8_locale().
+    It must print the same findings under both, at the same lines and
+    columns and with the same messages.
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for target, raw in awk_targets(rule, fixtures):
+            copies = ((target, ""), (crlf_copy(target, Path(tmp)), " when the lines end in CRLF"))
+            for path, ending in copies:
+                utf8 = set(awk_report(rule.path, lib, path, raw))
+                c = set(awk_report(rule.path, lib, path, raw, locale=C_LOCALE))
+                for finding in sorted(utf8 - c):
+                    failures.append(f"{target}:{finding} (missing under the C locale{ending})")
+                for finding in sorted(c - utf8):
+                    failures.append(
+                        f"{target}:{finding} (reported only under the C locale{ending})"
+                    )
     return failures
 
 
@@ -542,6 +620,7 @@ def main(argv: list[str]) -> int:
         failures += check_rule(rule, pack, fixtures, lib)
         if rule.kind == "awk":
             failures += check_crlf(rule, fixtures, lib)
+            failures += check_locale(rule, fixtures, lib)
         if rule.kind == "weir":
             failures += check_entries(rule, pack)
 

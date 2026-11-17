@@ -172,12 +172,14 @@ stdenvNoCC.mkDerivation {
   # note when none exists. Pointing HOME at the build dir keeps that
   # lookup inside the sandbox.
   #
-  # Every rule file follows the comment layout, and every awk rule reads
-  # CRLF line endings. check.py alone therefore never shows that a
-  # breach or a misread fails. test_check.py runs the comment check of
-  # check.py on comments that break the layout. It also runs the CRLF
-  # check on awk checks that keep the `\r` of each line. The `\r` drops
-  # a finding of one check and adds a finding to another.
+  # Every rule file follows the comment layout, and every awk rule
+  # prints the same findings for CRLF line endings and under the C
+  # locale. check.py alone therefore never shows that a breach or a
+  # misread fails, so test_check.py runs these checks on inputs that
+  # fail them. It runs the comment check on comments that break the
+  # layout. It runs the CRLF check on awk checks that keep the `\r` of
+  # each line. It runs the locale check on awk checks that count bytes
+  # under the C locale.
   checkPhase = ''
     runHook preCheck
     export HOME="$TMPDIR"

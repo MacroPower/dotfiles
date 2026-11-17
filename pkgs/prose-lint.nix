@@ -1247,13 +1247,9 @@ in
         # the C locale and under a UTF-8 locale, and it expects the same
         # ProseSentenceLength and ProseTrailingCondition findings from
         # both. ends_sentence() and opens_quote() in lib/markdown.awk
-        # name each curly quote by its UTF-8 bytes. In the weirpack
-        # build, check.py runs the fixtures under one locale only. The
-        # sandbox starts Python under the C locale, and Python sets
-        # `LC_CTYPE` to C.UTF-8 for the awk checks that it starts. The
-        # prose hook runs under the locale of the user, which can be
-        # either one. The command in configs/harper/CLAUDE.md builds
-        # this test too.
+        # name each curly quote by its UTF-8 bytes. The prose hook runs
+        # under the locale of the user, which can be either one. The
+        # command in configs/harper/CLAUDE.md builds this test too.
         tests.sentence-ends = runCommand "prose-lint-sentence-ends" { nativeBuildInputs = [ gawk ]; } ''
           # The first paragraph holds a sentence of 17 words and a
           # sentence of 18 words, and the second holds two sentences of
