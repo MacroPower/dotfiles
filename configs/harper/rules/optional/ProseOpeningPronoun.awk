@@ -29,7 +29,11 @@
 # `bare_line`, a heading, a table row, an HTML line, a list item, or a
 # horizontal rule ends the paragraph. So does a line that opens with
 # more `>` markers than the first line of the paragraph, because it
-# opens a deeper blockquote (`> to restart the pod.`).
+# opens a deeper blockquote (`> to restart the pod.`). That line opens a
+# paragraph in the quote, and an underline or a rule under it ends that
+# paragraph. The check does not report a paragraph that opens this way,
+# although GFM reads it as a paragraph (`The pod holds the cache.`,
+# `> It runs on the node.`).
 #
 # A heading opens with one to six `#` marks. CommonMark reads a line
 # with seven or more marks as text, and so do the check and
@@ -50,6 +54,42 @@
 # four or more spaces past the text of the paragraph as an underline.
 # The check therefore drops that paragraph, although GFM reads the line
 # as more text of the paragraph.
+#
+# A horizontal rule repeats one mark, `-`, `*`, or `_`, three or more
+# times, with or without spaces between the marks (`***`, `- - -`). A
+# line of three or more `-` marks that fails the tests for an underline
+# is a rule. A rule is not a list item, and it does not open a
+# paragraph. The line after it therefore opens a paragraph, with or
+# without a blank line above the rule (`The pod holds the cache.`,
+# `***`, `It runs on the node.`). A rule does not count toward the
+# first paragraph of the file either.
+#
+# Outside a list and a blockquote, the check reads a line indented four
+# or more spaces after a rule as indented code, as GFM does (`***`,
+# `    This is some code.`). Only blank lines can sit between the rule
+# and the line. lib/markdown.awk skips indented code only after a blank
+# line and outside a list, so the check skips that line and each
+# indented line after it. The first line that is not indented opens a
+# paragraph.
+#
+# lib/markdown.awk reads `- - -` and `* * *` as list items. It also
+# counts a rule right under a paragraph of a list item as part of the
+# list. It keeps the list open after each of these rules. A rule with
+# no indent cannot sit in a list item. The check therefore counts a
+# rule as part of a list only when a list is open above the rule and
+# the rule is indented. A rule outside a list closes the list for the
+# lines after it, until a list item opens one.
+#
+# Code under `- - -` or `  - - -` outside a list therefore passes, and
+# so does code under a `***` that ends a list. Code under a later
+# indented rule passes too (`* * *`, `The pod holds the cache.`,
+# `  ***`, `    This is some code.`). A line of `-` marks under an
+# indented paragraph after such a rule stays an underline.
+#
+# The check skips the lines after a heading, a table row, an HTML line,
+# or a list item, up to the next blank line. It skips a rule there too.
+# It therefore misses a paragraph right after such a rule, which GFM
+# reads as a paragraph (`## Setup`, `***`, `It runs on the node.`).
 #
 # ends_sentence() in lib/markdown.awk finds the end of the first
 # sentence, so `e.g.`, `i.e.`, `vs.`, `cf.`, and a three-period
@@ -87,6 +127,29 @@
 # blank line (`> ## Setup`, `>`, `> This is the setup step.`). The
 # first paragraph of a file passes when front matter or any other line
 # sits above it, because there the pronoun points at the page.
+#
+# The check reads a horizontal rule at any indent. GFM reads a line of
+# rule marks indented four or more spaces past the left edge of the
+# block that holds the paragraph as more text of the paragraph (`It may
+# help`, `    ***`, `to restart the pod.`). The check ends the paragraph
+# at that line instead. The guards then miss the words after the line,
+# and the next line can draw a finding of its own.
+#
+# Outside a list, the left edge of the block is the start of the line,
+# even under an indented paragraph (`   The pod holds the cache.`,
+# `    ***`). In a list item, the edge is the column where the text of
+# the item starts. In a blockquote, it sits after the `>` marker and the
+# space that follows the marker.
+#
+# The check reads an indented line after a rule as code only outside a
+# list and a blockquote. After an indented rule in a list, or after a
+# rule in a blockquote, GFM can read the line as code. The check can
+# still report it there (`> ***`, `>     This is some code.`). The
+# check also counts an indented rule left of the text of a list item as
+# part of the list. GFM ends the list at that rule and reads an
+# indented line under it as code. The check can report that line (`  The
+# pod holds the cache.` in a list item, ` ***`, `    This is some
+# code.`).
 #
 # The check reads markdown only. Go doc comments open later paragraphs
 # with `It` by convention, and there the first paragraph names the
@@ -138,11 +201,16 @@ function BEGIN_CHECK() {
   verb = "^(is|are|was|were|has|have|had|does|do|did|can|cannot|will|would|could|should|must|may|might|also|then|only|still|runs|returns|uses|needs|requires|includes|provides|helps|leads|results|applies|depends|reads|writes|holds|set|sets|adds|removes|creates|changes|tells|shows)$"
   expletive = "^(recommended|suggested|certainly|advised|encouraged|discouraged|important|necessary|possible|impossible|advisable|best|common|easy|hard|difficult|useful|helpful|safe|worth|likely|unlikely|not|a|an|good|better|unclear|clear|true|false|essential|required|often|usually|generally|sometimes|up|also)$"
   consequence = "^(means|meant|ensures|happens|prevents|causes|keeps|works|matters|leads|led|results|resulted|makes|allows|lets|gives)$"
+  hrule = "^[ \t]*((-[ \t]*){3,}|(\\*[ \t]*){3,}|(_[ \t]*){3,})$"
   last_file = ""
   last_line = 0
   gap = 1
   paras = 0
   pending = 0
+  in_para = 0
+  rule_above = 0
+  rule_list = 0
+  list_seen = 0
 }
 
 # Returns token t in lowercase without the punctuation around it.
@@ -210,8 +278,45 @@ function finish() {
   printf "%s:%d:%d: Style::ProseOpeningPronoun: Opening pronoun. The paragraph opens with `%s`, so the reader must look back for its noun. Name the noun.\n", pending_file, pending_line, pending_col, pending_shown
 }
 
-function prose(text,   start, rest, t1, t2, t3, w1, shown, line) {
+# Opens a paragraph at the line. `in_para` holds until the paragraph
+# ends, whether or not the paragraph draws a finding. An underline must
+# sit at the quote depth of the paragraph. When `item` marks the
+# paragraph as part of a list item, the underline must also reach the
+# column where the paragraph's text starts, as underline() in
+# lib/sentences.awk requires.
+function open_para(item) {
+  in_para = 1
+  para_quote = quote_depth()
+  para_item = 0
+  if (item) {
+    match($0, /^([ \t]*>)*[ \t]*/)
+    para_item = RLENGTH
+  }
+}
+
+function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, list_before) {
   start = (FILENAME != last_file || FNR != last_line + 1 || gap)
+  # `rule_above` marks a horizontal rule, or indented code under one, on
+  # the last line that reached prose(). `prev_nb` names the last line
+  # above this one that is not blank, so only blank lines sit between
+  # the two.
+  after_rule = rule_above && FILENAME == last_file && prev_nb == last_line
+  rule_above = 0
+  # lib/markdown.awk changes `in_list` only on a line that reaches
+  # prose(), so `list_before` holds the list state from before this
+  # line.
+  list_before = FILENAME == last_file ? list_seen : 0
+  # The tests for an underline and a horizontal rule read the line
+  # before lib/markdown.awk blanks code spans. An emphasized code span
+  # (``**`make`**``) then does not read as a rule of four `*` marks.
+  line = blank(raw, "<!--([^-]|-[^-])*-->")
+  # `list_seen` follows `in_list`, but a rule outside a list, and the
+  # code under such a rule, close the list for the lines after them.
+  # lib/markdown.awk keeps `in_list` on there. Only a list item opens
+  # the list again, and `- - -` and `* * *` count as rules, although
+  # lib/markdown.awk sets `in_list` on each. A paragraph sits in a list
+  # only when `list_seen` holds.
+  list_seen = in_list && (list_before || (text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ && line !~ hrule))
   if (FILENAME != last_file) {
     paras = 0
   }
@@ -220,23 +325,57 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line) {
   # A bare line ends the paragraph.
   if (bare_line) {
     finish()
+    in_para = 0
     gap = 1
     return
   }
   gap = 0
-  if (!start && pending) {
-    # The tests for an underline and a horizontal rule read the line
-    # before lib/markdown.awk blanks code spans. An emphasized code span
-    # (``**`make`**``) then does not read as a rule of four `*` marks.
-    line = blank(raw, "<!--([^-]|-[^-])*-->")
-    # A setext underline makes the paragraph a heading. An empty list
-    # item cannot interrupt a paragraph, so a lone `-` there is an
-    # underline. This test therefore runs before the test for a list
-    # item.
-    if (quote_depth() == pending_quote && line ~ /^[ \t]*(=+|-+)[ \t]*$/ && match(line, /[^ \t]/) > pending_item) {
-      pending = 0
-      return
-    }
+  # A setext underline makes the paragraph a heading. An empty list item
+  # cannot interrupt a paragraph, so a lone `-` there is an underline.
+  # This test therefore runs before the test for a list item. A line of
+  # three or more `-` marks that fails this test is a horizontal rule.
+  if (!start && in_para && quote_depth() == para_quote && line ~ /^[ \t]*(=+|-+)[ \t]*$/ && match(line, /[^ \t]/) > para_item) {
+    pending = 0
+    in_para = 0
+    return
+  }
+  # A horizontal rule ends the paragraph before it and does not open
+  # one, so the next line opens a paragraph. The test runs before the
+  # test for a list item, because `- - -` is a rule and not a list item.
+  # A rule among the lines after a heading, a table row, an HTML line,
+  # or a list item falls through. The check skips it with those lines.
+  if (line ~ hrule && (start || in_para)) {
+    finish()
+    in_para = 0
+    gap = 1
+    rule_above = 1
+    # lib/markdown.awk sets `in_list` for `- - -` and `* * *`, because
+    # it reads each as a list item. It also keeps `in_list` for a rule
+    # right under a paragraph of a list item. A rule with no indent
+    # cannot sit in a list item. `rule_list` therefore marks a rule in a
+    # list only when a list is open above the rule and the rule is
+    # indented. `line` has its `>` markers blanked to spaces, so a rule
+    # in a quoted list counts as indented. A rule outside a list closes
+    # the list for the lines after it.
+    rule_list = list_before && line ~ /^[ \t]/
+    list_seen = rule_list
+    return
+  }
+  # No paragraph is open after a rule, so an indented line there opens
+  # indented code, with or without blank lines between the two.
+  # lib/markdown.awk skips indented code only after a blank line and
+  # outside a list, and it reads `- - -` and `* * *` as list items. This
+  # test therefore skips the code after a rule. The test skips no line
+  # after a rule in a list, where code must sit four columns past the
+  # text of the item. It skips no line in a blockquote either, because
+  # `$0` opens with the `>` markers. The code ends at the first line
+  # that is not indented, and that line opens a paragraph. A code line
+  # that looks like a list item (`    - foo`) does not open a list.
+  if (after_rule && !rule_list && $0 ~ /^(    |\t)/) {
+    gap = 1
+    rule_above = 1
+    list_seen = 0
+    return
   }
   # A heading opens with one to six `#` marks. A line with more marks is
   # text, as in CommonMark, so it opens or continues a paragraph.
@@ -248,16 +387,20 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line) {
   # list item are not paragraphs either.
   if (text ~ /^[ \t]*(#{1,6}([ \t]|$)|[|<])/ || text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/) {
     finish()
+    in_para = 0
     return
   }
   if (!start) {
-    if (!pending) {
+    if (!in_para) {
       return
     }
-    if (quote_depth() > pending_quote || line ~ /^[ \t]*((-[ \t]*){3,}|(\*[ \t]*){3,}|(_[ \t]*){3,})$/) {
-      # A deeper blockquote or a horizontal rule ends the paragraph.
+    if (quote_depth() > para_quote) {
+      # A deeper blockquote ends the paragraph and opens one in the
+      # quote. That paragraph does not draw a finding, but an underline
+      # or a rule under it still ends it.
       finish()
-    } else if (!first_done) {
+      open_para(list_seen)
+    } else if (pending && !first_done) {
       # Any other line continues the paragraph, so it can hold the rest
       # of the first sentence.
       first = first "\n"
@@ -267,6 +410,7 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line) {
   }
   # The line opens a paragraph, so the paragraph before it has ended.
   finish()
+  open_para(list_seen)
   paras++
   # The first paragraph under a title or front matter points at the
   # page.
@@ -316,15 +460,6 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line) {
   pending_col = column(index(text, t1))
   pending_shown = shown
   pending_word = w1
-  # An underline must sit at the quote depth of the paragraph. In a
-  # list item, it must also reach the column where the paragraph's text
-  # starts, as underline() in lib/sentences.awk requires.
-  pending_quote = quote_depth()
-  pending_item = 0
-  if (in_list) {
-    match($0, /^([ \t]*>)*[ \t]*/)
-    pending_item = RLENGTH
-  }
   first = ""
   first_end = 0
   first_done = 0

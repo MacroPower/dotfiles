@@ -1,3 +1,9 @@
+<!-- prettier-ignore-start -->
+***
+<!-- prettier-ignore-end -->
+
+It runs on every commit.
+
 The hook lints each file it writes.
 
 These are the tiers:
@@ -164,6 +170,164 @@ The hook lints each file.
 <!-- prettier-ignore-start -->
   This is the setup
 ---
+<!-- prettier-ignore-end -->
+
+The pod holds the cache.
+
+<!-- prettier-ignore-start -->
+Setup
+-----
+It runs on the node.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+<div>
+***
+It runs on the node.
+</div>
+<!-- prettier-ignore-end -->
+
+The pod holds the cache.
+
+<!-- prettier-ignore-start -->
+***
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+***
+	This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+___
+    This is some code.
+    It runs in a shell.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- - -
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+* * *
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+
+  The pod holds the cache.
+***
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- - -
+   It runs on the node.
+---
+<!-- prettier-ignore-end -->
+
+The pod holds the cache.
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+  - - -
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+  - - -
+  It runs on the node.
+---
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- - -
+
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+- - -
+  ***
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+
+  The pod holds the cache.
+***
+The pod holds the cache.
+  ***
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+* * *
+The pod holds the cache.
+  ***
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+***
+    - make test
+  ***
+    This is some code.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+* * *
+
+   The pod holds the cache.
+
+   It runs on the node.
+---
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+* * *
+The pod holds the cache.
+>   The pod holds the cache.
+> ---
+> It runs on the node.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+## Setup
+* * *
+
+  ***
+    This is some code.
+<!-- prettier-ignore-end -->
+
+The pod holds the cache.
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+> The pod holds the cache.
+> ---
+> It runs on the node.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+It may help
+    to restart the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+***
+[guide]: https://example.com
+    make test
+It runs on the node.
 <!-- prettier-ignore-end -->
 
 The tool waits for the lock.
