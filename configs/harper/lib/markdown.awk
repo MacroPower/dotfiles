@@ -424,17 +424,20 @@ in_comment {
   }
   # A list runs from its first item to the next line that follows a
   # blank line without an indent. A heading or a table row also ends it.
+  # A heading opens with one to six `#` marks. CommonMark reads a line
+  # with seven or more marks as text, so that line continues the list
+  # item or the code span above it.
   if (raw ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/) {
     in_list = 1
   } else if (prev_blank && raw !~ /^[ \t]/) {
     in_list = 0
-  } else if (raw ~ /^ {0,3}(#+([ \t]|$)|\|)/) {
+  } else if (raw ~ /^ {0,3}(#{1,6}([ \t]|$)|\|)/) {
     in_list = 0
   }
   prev_blank = 0
   # A list item, heading, table row, or HTML line starts a new block,
   # so a code span open on the line before ends there.
-  if (raw ~ /^[ \t]*(([-*+]|[0-9]+[.)])[ \t]|#+([ \t]|$)|[|<])/) {
+  if (raw ~ /^[ \t]*(([-*+]|[0-9]+[.)])[ \t]|#{1,6}([ \t]|$)|[|<])/) {
     span_open = 0
   }
   bare_line = blank(raw, "<!--([^-]|-[^-])*-->|<pre([ \t][^>]*)?>([^<]|<[^/])*</pre>") ~ /^[ \t]*$/

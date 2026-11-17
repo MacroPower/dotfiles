@@ -129,6 +129,20 @@ The pod holds the cache.
 to restart the pod.
 <!-- prettier-ignore-end -->
 
+The pod holds the cache.
+
+<!-- prettier-ignore-start -->
+It may help
+####### to restart the pod.
+<!-- prettier-ignore-end -->
+
+The pod holds the cache.
+
+<!-- prettier-ignore-start -->
+It may help with `x
+####### y` to restart the pod.
+<!-- prettier-ignore-end -->
+
 The hook lints each file.
 
 <!-- prettier-ignore-start -->

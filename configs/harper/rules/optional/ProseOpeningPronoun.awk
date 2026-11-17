@@ -31,6 +31,13 @@
 # more `>` markers than the first line of the paragraph, because it
 # opens a deeper blockquote (`> to restart the pod.`).
 #
+# A heading opens with one to six `#` marks. CommonMark reads a line
+# with seven or more marks as text, and so do the check and
+# lib/markdown.awk. Such a line right after a paragraph continues the
+# paragraph (`####### to restart the pod.`). A code span or a list item
+# also runs on across the line. A paragraph after the line does not sit
+# under a heading, so the check can report it.
+#
 # A setext underline is a line of only `=` or only `-` marks right
 # after a paragraph. It turns the paragraph into a heading, so the check
 # drops the finding. A lone `-` there is an underline and not an empty
@@ -227,13 +234,15 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line) {
       return
     }
   }
-  if (text ~ /^[ \t]*#+([ \t]|$)/) {
+  # A heading opens with one to six `#` marks. A line with more marks is
+  # text, as in CommonMark, so it opens or continues a paragraph.
+  if (text ~ /^[ \t]*#{1,6}([ \t]|$)/) {
     heading_line = FNR
   }
   # Headings, table rows, HTML lines, and list items are not paragraphs,
   # so each one ends the paragraph before it. The lines that continue a
   # list item are not paragraphs either.
-  if (text ~ /^[ \t]*(#+([ \t]|$)|[|<])/ || text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/) {
+  if (text ~ /^[ \t]*(#{1,6}([ \t]|$)|[|<])/ || text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/) {
     finish()
     return
   }
