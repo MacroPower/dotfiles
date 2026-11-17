@@ -35,6 +35,12 @@
 # curly (`"`, `'`, `”`, or `’`), and the pattern names each curly quote
 # by its UTF-8 bytes, as ends_sentence() in lib/markdown.awk does.
 #
+# The check reads a curly apostrophe between two letters of the first
+# word as a straight one. A note that opens with `Don’t` therefore draws
+# the finding that `Don't` draws. prose-lint straightens the apostrophe
+# in the copy that Harper reads, but this check reads the original
+# markdown file or commit message.
+#
 # For the second misuse, the check reports a callout when no prose line
 # sits between it and the callout before it. A line that
 # lib/markdown.awk skips, such as code, also separates two callouts.
@@ -126,7 +132,11 @@ function end_callout(   n, sents, i, s, w, parts) {
       s = sents[i]
       sub(/^[ \t*_]+/, "", s)
       split(tolower(s), parts, /[ \t]+/)
-      w = parts[1]
+      # A curly apostrophe between two letters becomes a straight one, so
+      # `don’t` matches `don't` in the `imper` list. The pattern names
+      # the curly apostrophe by its UTF-8 bytes, so it matches under the
+      # C locale and under a UTF-8 locale.
+      w = gensub(/([a-z])\342\200\231([a-z])/, "\\1'\\2", "g", parts[1])
       gsub(/[^a-z']/, "", w)
       if ((w ~ imper && tolower(s) !~ /^keep in mind/) || (tolower(s) ~ modal && tolower(s) !~ purpose)) {
         printf "%s:%d:1: Style::ProseCallout: Callout. A note holds an instruction, and readers skip notes. Move the instruction into the text, or into a warning when skipping it causes harm.\n", body_file, body_line

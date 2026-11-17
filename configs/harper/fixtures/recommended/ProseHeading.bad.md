@@ -45,3 +45,9 @@
 ## Interactive Python shell in the virtual machine
 
 ## How `nix flake update` works
+
+## Don’t skip the backup
+
+### What’s New
+
+## Files ‘we’ keep

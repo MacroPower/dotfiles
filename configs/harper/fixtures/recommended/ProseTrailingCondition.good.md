@@ -27,3 +27,5 @@ Read the log and notice if the job retried.
 Set the flag only when the job runs on a shared node if the node allows it.
 
 Use the flag if it exists.
+
+Restart the agent if ‘needed’.

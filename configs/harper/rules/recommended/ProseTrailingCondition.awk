@@ -17,6 +17,11 @@
 # form that gives a command, such as `run` in `run make`. The check
 # reports the first `if` after the verb that sits outside parentheses.
 #
+# The check reads a curly apostrophe inside a word as a straight one, so
+# `Don’t` counts as an imperative, the same as `Don't`. prose-lint
+# straightens the apostrophe in the copy that Harper reads, but this
+# check reads the original markdown file or commit message.
+#
 # False Positives
 #
 # The check skips `if any` and `if so`, because both read worse at the
@@ -63,10 +68,16 @@ function BEGIN_CHECK() {
   checking = "^(check|checks|checked|checking|test|tests|tested|testing|determine|determines|determined|determining|verify|verifies|verified|verifying|see|sees|seeing|decide|decides|decided|deciding|ask|asks|asked|asking|detect|detects|detected|detecting|tell|tells|telling|know|knows|notice|notices|wonder|matter|matters)$"
 }
 
-# Returns token i in lowercase without the punctuation around it.
+# Returns token i in lowercase without the punctuation around it. A
+# curly apostrophe inside the word then becomes a straight one, so
+# `don’t` reads as `don't`. The strip runs first, because it keeps a
+# straight `'`, so a curly closing quote after the word still drops.
+# The pattern names the curly apostrophe by its UTF-8 bytes, so it
+# matches under the C locale and under a UTF-8 locale.
 function word(i,   w) {
   w = tolower(tok[i])
   gsub(/^[^a-z']+|[^a-z']+$/, "", w)
+  gsub(/\342\200\231/, "'", w)
   return w
 }
 

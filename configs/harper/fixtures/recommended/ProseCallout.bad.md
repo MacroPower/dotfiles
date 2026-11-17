@@ -13,3 +13,13 @@ The daemon reads its config at startup. <!-- same finding -->
 The daemon writes its log at shutdown. <!-- same finding -->
 
 **Note:** The tool prints ‘done.’ Run the migration first.
+
+The migration reads the lock file. <!-- same finding -->
+
+> [!NOTE]
+> Don’t delete the lock file by hand. <!-- same finding -->
+
+The job writes the lock file at startup. <!-- same finding -->
+
+> [!NOTE]
+> ‘Remove’ the lock file only after the job stops. <!-- same finding -->
