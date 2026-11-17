@@ -913,10 +913,10 @@ func TestHostReleaseRequiresRecord(t *testing.T) { //nolint:paralleltest // muta
 	}
 }
 
-// TestHostReleaseAlwaysSucceeds asserts that release exits cleanly
-// even when both Delete* calls fail. Returning non-zero would force
-// serve to retry the release for the entire process lifetime over
-// a single transient error.
+// TestHostReleaseAlwaysSucceeds asserts that release exits 0 even
+// when both Delete* calls fail. Release is best-effort, so it logs
+// each failure as a warning, and the provision record stays for a
+// later `host sweep`.
 func TestHostReleaseAlwaysSucceeds(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &kubetest.Fake{
 		DeleteSAErr:          errors.New("not found"),

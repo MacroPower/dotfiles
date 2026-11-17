@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -177,6 +179,67 @@ func TestSelectRestoresPrevCleanupOnFailure(t *testing.T) { //nolint:paralleltes
 	}
 
 	assert.Equal(t, 1, releaseCalls, "prev release must run on shutdown")
+}
+
+// TestSelectRunsFailedReleaseOneTime pins that serve runs each
+// release closure one time, whatever the exit status of `host
+// release`. A release that fails during the drain of a later select
+// leaves no closure behind. So the shutdown cleanup runs only the
+// release of the latest SA.
+func TestSelectRunsFailedReleaseOneTime(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	neutralizeWrapperEnv(t)
+
+	var (
+		step     int
+		released []string
+	)
+
+	fake := func(_ context.Context, sub string, args []string) ([]byte, error) {
+		switch sub {
+		case "select":
+			step++
+
+			return json.Marshal(testSelectResult(fmt.Sprintf("claude-sa-%d", step)))
+
+		case "release":
+			i := slices.Index(args, "--sa")
+			require.NotEqual(t, -1, i, "release args must name the SA")
+			require.Less(t, i+1, len(args), "--sa must carry a value")
+
+			released = append(released, args[i+1])
+
+			return nil, fmt.Errorf("%w %q: exit 1: release refused", ErrHostExec, sub)
+		}
+
+		return nil, errors.New("unexpected sub: " + sub)
+	}
+
+	h := &handler{
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake,
+	}
+
+	for range 2 {
+		r, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
+		require.NoError(t, err)
+		require.False(t, r.IsError, resultText(t, r))
+	}
+
+	assert.Equal(t, []string{"claude-sa-1"}, released,
+		"the second select must drain the release of the first SA")
+
+	h.mu.Lock()
+	fns := h.cleanupFuncs
+	h.mu.Unlock()
+
+	// Process-shutdown cleanup runs each remaining closure.
+	for _, fn := range fns {
+		fn(t.Context())
+	}
+
+	assert.Equal(t, []string{"claude-sa-1", "claude-sa-2"}, released,
+		"shutdown must not run the failed release of the first SA again")
 }
 
 // TestSelectDoesNotDrainEmptyPrev guards against accidentally

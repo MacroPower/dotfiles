@@ -89,8 +89,9 @@
 //     directly by kubectl. It mints only for a ServiceAccount whose
 //     provision record names the caller as its owner.
 //   - host release: deletes a ServiceAccount and its binding.
-//     Best-effort: always exits 0 so `serve` never retries the
-//     call across the rest of its lifetime. It deletes only a
+//     The release is best-effort, so it logs each failure as a
+//     warning and always exits 0. `serve` runs each release one
+//     time, whatever the exit status. `host release` deletes only a
 //     ServiceAccount whose provision record names the caller as its
 //     owner. After the cluster holds neither resource, it removes
 //     the provision records of the ServiceAccount from the ledger.
@@ -265,15 +266,19 @@
 //
 // # host release flags
 //
-// Best-effort delete of a ServiceAccount and its binding. Always
-// exits 0 (transient API hiccups and exec failures alike) so
-// `serve` never retries across its lifetime. Without a provision
-// record of the ServiceAccount that names the --host-id and
-// --instance-id of the caller, it logs a warning and deletes
-// nothing. The record says whether the binding is a
-// ClusterRoleBinding. A resource that the cluster does not hold
-// counts as deleted. After the cluster holds neither resource,
-// `host release` removes every provision record that locates the
+// Best-effort delete of a ServiceAccount and its binding. `host
+// release` logs each failure as a warning and always exits 0, for a
+// transient API failure and for an exec failure alike. After a
+// failed release, the provision records stay, and the record pass
+// of a `host sweep` deletes the ServiceAccount after the `serve`
+// that owns it has died.
+//
+// Without a provision record of the ServiceAccount that names the
+// --host-id and --instance-id of the caller, `host release` logs a
+// warning and deletes nothing. The record says whether the binding
+// is a ClusterRoleBinding. A resource that the cluster does not hold
+// counts as deleted. After the cluster holds neither resource, `host
+// release` removes every provision record that locates the
 // ServiceAccount by the same kubeconfig path, context, namespace,
 // and name.
 //

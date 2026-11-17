@@ -542,12 +542,12 @@ func runHostToken(ctx context.Context, kubeconfigPath string, cfg hostConfig, ar
 }
 
 // runHostRelease deletes a ServiceAccount and its associated binding.
-// It logs each failure and always exits 0, for a transient API
-// failure and for an exec failure alike. A non-zero exit makes
-// serve retry the cleanup for the rest of its lifetime, and that
-// retry is worse than the leak. Each failure is a warning, and a
-// `serve` that runs the release adds that warning to its own log
-// through [runHostCommand].
+// Release is best-effort, so runHostRelease always exits 0. It logs
+// each failure as a warning, for a transient API failure and for an
+// exec failure alike. A `serve` that runs the release adds each
+// warning to its own log through [runHostCommand]. serve runs each
+// release one time, whatever the exit status, so a failed release
+// leaves the SA to a later `host sweep`.
 //
 // runHostRelease deletes only a ServiceAccount whose provision
 // record names the --host-id and --instance-id of the caller. The
@@ -572,9 +572,9 @@ func runHostRelease(ctx context.Context, kubeconfigPath string, args []string) e
 
 	err := fs.Parse(args)
 	if err != nil {
-		// flag.ContinueOnError already prints the error to stderr,
-		// but we still log a structured warning and return success
-		// so that serve never retries the call.
+		// flag.ContinueOnError already prints the error to stderr.
+		// Like every other failure of a release, a parse error
+		// becomes a structured warning and exits 0.
 		slog.WarnContext(ctx, "parse host release flags", slog.Any("error", err))
 		return nil
 	}
