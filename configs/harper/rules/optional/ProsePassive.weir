@@ -87,11 +87,11 @@
 # of `missed`, because a Go doc uses each to name a state (`the field is
 # exported`, `the method is deprecated`).
 #
-# A `by` that names no actor passes. The filter on the first word of the
-# `by` form skips a degree (`off by one`) and a deadline (`empty by the
-# time`). The limit on the word after `by` skips a dimension (`64 by
-# 64`), a criterion (`keyed by path`), and the phrases `by default`, `by
-# design`, and `by hand`.
+# A `by` that does not name an actor passes. The filter on the first
+# word of the `by` form skips a degree (`off by one`) and a deadline
+# (`empty by the time`). The limit on the word after `by` skips a
+# dimension (`64 by 64`), a criterion (`keyed by path`), and the phrases
+# `by default`, `by design`, and `by hand`.
 #
 # Forms of `get` stay out on purpose. Matching ignores case, so a
 # `get VERB` branch fires on `Get returns the value` in a Go doc

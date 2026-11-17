@@ -1,6 +1,6 @@
 # Overview
 #
-# Reports link text that names no destination in markdown prose
+# Reports link text that does not name a destination in markdown prose
 # (`[here](url)`, `[this page][ref]`, `[more info](url)`, `[this
 # section](#x)`). A reader who scans the links sees `here` with no hint
 # of where it goes. The fix names the page or the section that the link
@@ -28,7 +28,7 @@
 # Measurement
 #
 # The rule hit 9 lines in the measure.py corpus, and 9 of 9 sampled hits
-# named no destination.
+# did not name a destination.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseLinkText: <message>

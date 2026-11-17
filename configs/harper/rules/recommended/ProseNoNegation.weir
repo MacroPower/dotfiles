@@ -7,8 +7,8 @@
 # puts the verb first, so the reader takes `matches` as a positive claim
 # until `no` turns it around. The fix moves the negation onto the verb
 # and writes `any` before the object. The rule sits at Recommended,
-# because a few phrases read as fixed idiom (`leaving no room`), where
-# the fix reads no clearer.
+# because a few phrases read as fixed idiom (`leaving no room`), and the
+# fix does not make them clearer.
 #
 # Expression
 #

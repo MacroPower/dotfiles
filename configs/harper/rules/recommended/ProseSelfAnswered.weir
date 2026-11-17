@@ -27,8 +27,8 @@
 #
 # Measurement
 #
-# The rule hit no lines in the measure.py corpus, so no sample measures
-# its precision.
+# The rule did not hit any line in the measure.py corpus, so no sample
+# measures its precision.
 expr setup [result, catch, upshot, kicker, verdict, takeaway, twist, payoff, culprit, trick, secret, downside, upside]
 expr main [(the @setup?), (the [best, worst] part?), (the [good, bad] news?), (the short answer?)]
 let message "Self-answered question. State the point as a sentence instead of asking for it."

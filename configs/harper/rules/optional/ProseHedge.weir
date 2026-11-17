@@ -28,9 +28,9 @@
 # False Positives
 #
 # `relatively` sometimes states a real comparison (`relatively few nodes
-# run the agent, compared with the fleet`). Most hits give no baseline
-# (`a relatively small number of objects`), so the fix gives the number
-# or the baseline.
+# run the agent, compared with the fleet`). Most hits do not give a
+# baseline (`a relatively small number of objects`), so the fix gives
+# the number or the baseline.
 #
 # `virtually` and `practically` each read two ways. `virtually` means
 # `almost` or names a virtual copy (`virtually hoisted`), and

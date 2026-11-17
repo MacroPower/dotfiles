@@ -49,7 +49,10 @@ leaves out, and its precision in the same place in each file.
 The prose hook lints the comments in `.weir` and `.awk` files, so every
 comment must also pass the prose rules. The hook lints only files that
 Write and Edit touch, so run `prose-lint <file>` on each rule file you
-edit through Bash.
+edit through Bash. A new or changed rule can also report a phrase in
+the comment of a rule file that you did not edit. The `rule-comments`
+test in Verification lints every rule file, so rewrite each comment
+that it reports in the same change.
 
 The weirpack build in Verification checks the comment of every rule
 file against the layout in Sections. `check.py` prints one line for
@@ -122,12 +125,12 @@ period. An example line that you indent further does not need the
 period.
 
 Every comment carries Overview and Measurement, and `check.py` fails a
-comment that lacks either one. When a rule hits no lines in the corpus,
-write the sentence that the Measurement section of this file gives for
-that case. Leave out any other section that has nothing to say, and
-keep the remaining sections in order. Never write a placeholder
-sentence such as `No related rules.`, because the prose rules reject it
-as filler.
+comment that lacks either one. When a rule does not hit any line in the
+corpus, write the sentence that the Measurement section of this file
+gives for that case. Leave out any other section that has nothing to
+say, and keep the remaining sections in order. Never write a
+placeholder sentence such as `No related rules.`, because the prose
+rules reject it as filler.
 
 Awk rules use the same section names, and the Expression section of an
 awk rule covers its awk logic. The `Output format` lines stay last,
@@ -307,12 +310,12 @@ hits were conjunctions.
 ```
 
 The counts in every rule comment come from the `measure.py` corpus.
-When a rule hits no lines in the corpus, its comment says that no
-sample measures the precision:
+When a rule does not hit any line in the corpus, its comment says that
+no sample measures the precision:
 
 ```text
-The rule hit no lines in the measure.py corpus, so no sample measures
-its precision.
+The rule did not hit any line in the measure.py corpus, so no sample
+measures its precision.
 ```
 
 ## Measured and Rejected
@@ -382,7 +385,7 @@ nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); p
 ```
 
 Build the tests of prose-lint after you change `pkgs/prose-lint.nix`,
-an awk check, or a file under `lib/`. Each test runs the built wrapper
+a rule file, or a file under `lib/`. Each test runs the built wrapper
 on a set of files.
 
 - `license-headers` lints source files that open with a license header
@@ -414,6 +417,10 @@ on a set of files.
   expects the ProseAndOr finding inside a turn, because the guard
   drops only ProseOpinion findings. It also lints a file in which no
   label repeats, and it expects every ProseOpinion finding there.
+- `rule-comments` lints every rule file under `rules/` and every awk
+  library under `lib/`. It fails on each Required or Recommended
+  finding. A change to one rule therefore fails the test when the rule
+  reports a phrase in the comment of another rule file.
 
 This command builds every test.
 

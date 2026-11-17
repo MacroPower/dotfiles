@@ -70,9 +70,9 @@
 # that docs use as adjectives (`must be set`, `can be enabled`) and the
 # naming idioms (`can be called name`).
 #
-# A `by` that names no actor passes. The limit on the word after `by`
-# skips a dimension (`64 by 64`) and the phrases `by default` and `by
-# hand`.
+# A `by` that does not name an actor passes. The limit on the word after
+# `by` skips a dimension (`64 by 64`) and the phrases `by default` and
+# `by hand`.
 #
 # Related Rules
 #

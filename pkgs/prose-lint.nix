@@ -1308,6 +1308,40 @@ in
           expect labels.md "$(findings ProseOpinion "$lint" "$PWD/labels.md")" "3 5 7 10"
           touch "$out"
         '';
+
+        # Lints the comments of every rule file in configs/harper/rules
+        # and of every awk library in configs/harper/lib, and fails on
+        # each Required or Recommended finding. A change to a rule that
+        # reports a phrase in another rule file's comment therefore
+        # fails here until that comment changes too. The command in
+        # configs/harper/CLAUDE.md builds this test too.
+        tests.rule-comments = runCommand "prose-lint-rule-comments" { } ''
+          mkdir harper
+          cp -r ${../configs/harper/rules} harper/rules
+          cp -r ${../configs/harper/lib} harper/lib
+          cd harper
+          bad=0
+          for f in rules/*/*.weir rules/*/*.awk lib/*.awk; do
+            if [ ! -f "$f" ]; then
+              echo "$f: no file matches the pattern" >&2
+              exit 1
+            fi
+            rc=0
+            found=$(${lib.getExe finalAttrs.finalPackage} "$f") || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "$f: prose-lint exited $rc" >&2
+              exit 1
+            fi
+            if printf '%s\n' "$found" | grep -E '\[(Required|Recommended)\]' >&2; then
+              bad=1
+            fi
+          done
+          if [ "$bad" = 1 ]; then
+            echo "the rule comments above draw a Required or Recommended finding" >&2
+            exit 1
+          fi
+          touch "$out"
+        '';
       };
     }
   )

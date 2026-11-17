@@ -34,7 +34,7 @@
 #
 # False Positives
 #
-# `no matter` opens no negation, so it stays out. The prefix list leaves
+# `no matter` is not a negation, so it stays out. The prefix list leaves
 # out `unknown`, which names a value (`means zero, not unknown`).
 #
 # A `without` that names a property of the noun before it (`nodes

@@ -27,8 +27,8 @@
 #
 # Measurement
 #
-# The rule hit no lines in the measure.py corpus, so no sample measures
-# its precision.
+# The rule did not hit any line in the measure.py corpus, so no sample
+# measures its precision.
 expr literal [$wall, $beam, $column]
 expr main load[-, ( )]bearing!(( )@literal)
 let message "`load-bearing`. Name what breaks without it, or delete the word."

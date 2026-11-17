@@ -5,9 +5,9 @@
 # the whole sentence after it instead of on one verb or adjective. Each
 # adverb in this rule opens a sentence by rating the point that follows
 # (`Clearly, the cache is cold`, `Unfortunately, the cache is cold`).
-# The rating tells the reader how to judge the point and adds no fact to
-# it. The fix deletes the adverb and lets the point carry its own
-# weight. The rule sits at Required, because each adverb counts only
+# The rating tells the reader how to judge the point but does not add a
+# fact to it. The fix deletes the adverb and lets the point carry its
+# own weight. The rule sits at Required, because each adverb counts only
 # with a comma glued to it and the fix is mechanical.
 #
 # `Ultimately,` rates a point as the one that matters in the end

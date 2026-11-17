@@ -17,8 +17,8 @@
 # or `not just` unless a comma or an open paren comes before it. Weir
 # has no lookbehind, so the branch consumes the token before the space
 # ahead of `not`, and the filter narrows the finding back to the phrase.
-# A comma fails that token, and an open paren leaves no space before
-# `not`.
+# A comma fails that token, and an open paren does not leave a space
+# before `not`.
 #
 # The `just` in `which` carries a guard that skips `any`. A negated word
 # after a space needs a word to consume, so `just` right before a comma
@@ -45,7 +45,7 @@
 # make`). The first branch reports the full form of that sentence for
 # the same reason.
 #
-# `can't` stays out of `short`, because its full form `cannot` holds no
+# `can't` stays out of `short`, because its full form `cannot` has no
 # separate `not`, and the rule passes `cannot just`. Rarer contractions
 # such as `mightn't` and `shan't` stay out too, so `mightn't just`
 # passes but `might not just` counts. The fourth branch needs `only` or

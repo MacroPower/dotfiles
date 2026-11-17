@@ -20,7 +20,7 @@
 # False Positives
 #
 # The check skips `if any` and `if so`, because both read worse at the
-# front. It skips `if` after `as` and `even`, where `if` opens no
+# front. It skips `if` after `as` and `even`, where `if` does not open a
 # condition. It skips `if it exists`, `if they exist`, and `if there is
 # one`, because each reads the same at either end.
 #

@@ -33,7 +33,8 @@
 # Measurement
 #
 # The rule hit 7 lines in the measure.py corpus, and 7 of 7 sampled hits
-# vouched for a choice and gave no reason. Each one was `by design`.
+# vouched for a choice but did not give a reason. Each one was `by
+# design`.
 expr main [(this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design)]
 let message "Deliberate choice. Give the reason for the choice, or delete the phrase."
 let description "Flags phrases that vouch a choice was deliberate without giving the reason."

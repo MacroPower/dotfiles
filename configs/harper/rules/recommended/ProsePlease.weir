@@ -1,10 +1,10 @@
 # Overview
 #
-# `please` softens an instruction but adds no content to it (`Please
-# restart the server`), so the reader gains nothing from the word. The
-# technical-writing skill bans it. The fix deletes the word and gives
-# the instruction. The rule sits at Recommended, because a README
-# invites contributions with `please`, the way the Recommended
+# `please` softens an instruction but does not add content to it
+# (`Please restart the server`), so the reader gains nothing from the
+# word. The technical-writing skill bans it. The fix deletes the word
+# and gives the instruction. The rule sits at Recommended, because a
+# README invites contributions with `please`, the way the Recommended
 # ProseChatbot keeps `feel free to`.
 #
 # Expression

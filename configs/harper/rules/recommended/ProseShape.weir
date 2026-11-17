@@ -36,8 +36,8 @@
 #
 # The rule still reports `output shapes` and `the same shape` in
 # machine-learning docs, where nearly every hit names the size of a
-# tensor. The measure.py corpus holds no machine-learning docs, so no
-# sample counts that misfire.
+# tensor. The measure.py corpus does not hold machine-learning docs, so
+# no sample counts that misfire.
 #
 # Measurement
 #

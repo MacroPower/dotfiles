@@ -1,11 +1,11 @@
 # Overview
 #
 # A vague audience is a pitch to every possible reader (`Whether you're
-# a beginner or an expert, the CLI fits your workflow`). The pitch names
-# no reader in particular, so no reader learns whether the feature suits
-# them. The fix names who the feature is for or drops the pitch. The
-# rule sits at Recommended, because a real condition can open with the
-# same words.
+# a beginner or an expert, the CLI fits your workflow`). The pitch does
+# not name a particular reader, so no reader learns whether the feature
+# suits them. The fix names who the feature is for or drops the pitch.
+# The rule sits at Recommended, because a real condition can open with
+# the same words.
 #
 # Expression
 #
@@ -26,8 +26,8 @@
 #
 # Measurement
 #
-# The rule hit no lines in the measure.py corpus, so no sample measures
-# its precision.
+# The rule did not hit any line in the measure.py corpus, so no sample
+# measures its precision.
 expr you [you're, (you are)]
 expr main [(whether @you [a, an] * or), (whether @you [a, an] * * or), (whether @you [a, an] * * * or), (whether @you new to)]
 let message "Vague audience. Name who the feature is for, or delete the clause."

@@ -24,9 +24,10 @@
 # Measurement
 #
 # The rule hit 119 lines in the measure.py corpus, and 18 of 20 sampled
-# hits lost no meaning without `various`. Only 7 of the 18 read clearer.
-# The 2 misfires meant `different` (`various sizes`). Deleting `various`
-# there changes the meaning, as in `users from various backgrounds`.
+# hits kept their meaning without `various`. Only 7 of the 18 read
+# clearer. The 2 misfires meant `different` (`various sizes`). Deleting
+# `various` there changes the meaning, as in `users from various
+# backgrounds`.
 expr main [<(various !different), various>]
 let message "Vague quantity. Name the items, or delete `various` when the items follow."
 let description "Flags `various`, which inflates a count without giving it."

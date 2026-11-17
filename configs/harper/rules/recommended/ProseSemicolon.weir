@@ -30,8 +30,8 @@
 # False Positives
 #
 # A closing paren before the semicolon passes, so a call in a comment
-# (`foo();`) draws no finding. Loop headers in source comments still
-# match (`for (i = 0; i < n; i++)`).
+# (`foo();`) does not draw a finding. Loop headers in source comments
+# still match (`for (i = 0; i < n; i++)`).
 #
 # Related Rules
 #

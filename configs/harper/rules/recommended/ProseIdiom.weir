@@ -21,9 +21,9 @@
 #
 # With any other subject, `on the same page` takes its literal sense, a
 # place in one document (`a fragment on the same page`, `the figures
-# appear on the same page`), so it passes. The other phrases carry no
-# such guard, so each still matches in its literal sense (`the moving
-# parts of the pump`).
+# appear on the same page`), so it passes. The other phrases lack that
+# guard, so each still matches in its literal sense (`the moving parts
+# of the pump`).
 #
 # Related Rules
 #

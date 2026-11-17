@@ -58,8 +58,8 @@
 # validating policy from a mutating one, and the fix deletes that fact.
 # On a getter, the phrase vouches (`Value returns the current count
 # without changing it`), and the rule passes that sentence too. The
-# phrase hit no lines in the measure.py corpus, so no sample measures a
-# guard that separates the two senses.
+# phrase did not hit any line in the measure.py corpus, so no sample
+# measures a guard that separates the two senses.
 #
 # Related Rules
 #

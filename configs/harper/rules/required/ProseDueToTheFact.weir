@@ -13,8 +13,8 @@
 #
 # Measurement
 #
-# The rule hit no lines in the measure.py corpus, so no sample measures
-# its precision.
+# The rule did not hit any line in the measure.py corpus, so no sample
+# measures its precision.
 expr main due to the fact that
 let message "`due to the fact that`. Write `because`."
 let description "Shortens `due to the fact that`."

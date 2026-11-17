@@ -18,9 +18,9 @@
 # and the guard skips a citation in parens or brackets (`Research shows
 # (Smith 2021) that`). Harper's part-of-speech tagger marks each word
 # with a tag for its word class, and `tagged` lists those tags. A paren
-# or a bracket carries no tag, so `!@tagged` matches it, and the outer
-# `!` then rejects the phrase. A word carries a tag, so the phrase still
-# counts before a word. The tagger tags only words, so a guard on
+# or a bracket does not carry a tag, so `!@tagged` matches it, and the
+# outer `!` then rejects the phrase. A word carries a tag, so the phrase
+# still counts before a word. The tagger tags only words, so a guard on
 # `PUNCT` (a punctuation mark) or on `SYM` (a symbol) does not match a
 # paren or a bracket. A space in a pattern is a whitespace token, so the
 # guard sits glued to the verb and reads the token right after the
@@ -49,8 +49,8 @@
 #
 # Measurement
 #
-# The rule hit no lines in the measure.py corpus, so no sample measures
-# its precision.
+# The rule did not hit any line in the measure.py corpus, so no sample
+# measures its precision.
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr claim [believe, say, agree, suggest, warn, recommend, argue, claim]
 expr finding [show, shows, showed, suggest, suggests, indicate, indicates]

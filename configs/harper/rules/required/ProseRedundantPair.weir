@@ -11,8 +11,8 @@
 # Each verb carries its forms for tense and person. `$merge` expands to
 # merge, merges, merged, and merging through Harper's dictionary.
 # `return`, `reply`, and `plan` list their forms by hand, because the
-# dictionary gives no past tense for them. `continue on` counts only
-# before `to` (`continues on to the next entry`).
+# dictionary does not list a past tense for them. `continue on` counts
+# only before `to` (`continues on to the next entry`).
 #
 # False Positives
 #

@@ -2,10 +2,10 @@
 #
 # Reports a word or a phrase that sells a feature instead of describing
 # it (`seamless`, `powerful`, `battle-tested`). The word tells the
-# reader that the feature is good and gives no fact to judge it by. The
-# fix states the fact and lets the reader judge its weight. The rule
-# sits at Recommended, because some of the words also carry a literal
-# sense.
+# reader that the feature is good but does not give a fact to judge it
+# by. The fix states the fact and lets the reader judge its weight. The
+# rule sits at Recommended, because some of the words also carry a
+# literal sense.
 #
 # Expression
 #

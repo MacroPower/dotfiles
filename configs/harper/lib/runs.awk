@@ -54,7 +54,7 @@
 @include "markdown.awk"
 
 # Counts the words in s and records the column of the first one in
-# `first_col`, or 0 when s holds no word.
+# `first_col`, or 0 when s has no word.
 function count_words(s,   rest, pos, t, n) {
   rest = s
   pos = 0
@@ -75,7 +75,7 @@ function count_words(s,   rest, pos, t, n) {
 }
 
 # Adds n words that start at line and col to the run, and opens the run
-# at that position when it holds no word yet.
+# at that position when the run is empty.
 function add_words(n, file, line, col) {
   if (n == 0) {
     return
@@ -165,8 +165,8 @@ function prose(text,   n, rule) {
   }
 
   # A table row extends a pending table. Rows count only after the
-  # delimiter row under the header. Lines that open with `|` but hold no
-  # delimiter row therefore count no rows.
+  # delimiter row under the header. Lines that open with `|` but lack a
+  # delimiter row therefore do not count as rows.
   if (text ~ /^[ \t]*\|/) {
     if (pend_kind != "table") {
       settle()

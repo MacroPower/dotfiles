@@ -2,10 +2,10 @@
 #
 # Each phrase frames a claim as someone's view, the writer's own (`I
 # think`) or an unnamed arguer's (`it could be argued`). The frame tells
-# the reader that the claim might not hold and gives no way to check it.
-# The fix states the claim or gives the evidence for it. The rule sits
-# at Recommended, because the writer chooses between the two fixes, and
-# because quoted speech with no speaker label also matches.
+# the reader that the claim might not hold but does not say how to check
+# it. The fix states the claim or gives the evidence for it. The rule
+# sits at Recommended, because the writer chooses between the two fixes,
+# and because quoted speech with no speaker label also matches.
 #
 # Expression
 #
@@ -52,13 +52,13 @@
 # spoken. A speaker's turn therefore passes.
 #
 # Other quoted speech still draws a finding. Initials in capitals
-# (`MS: Honestly,`) form one word, so they make no label. In a short
-# exchange, no label repeats. A quotation in a blockquote or in
-# quotation marks carries no label.
+# (`MS: Honestly,`) form one word, so they do not count as a label. In a
+# short exchange, no label repeats. A quotation in a blockquote or in
+# quotation marks has no label.
 #
-# Two senses that frame no claim also draw a finding. `think about`
-# means `consider` (`the way we think about network policies`), and
-# `feel` before an adjective names a feeling (`I feel fortunate`).
+# Two senses that do not frame a claim also draw a finding. `think
+# about` means `consider` (`the way we think about network policies`),
+# and `feel` before an adjective names a feeling (`I feel fortunate`).
 #
 # Related Rules
 #
@@ -70,8 +70,8 @@
 # The rule hit 8 lines in the measure.py corpus, and 6 of 8 sampled
 # hits framed a claim that the writer can state outright. The 2
 # misfires sat in one published interview that prints each question in
-# bold and names no speaker (`It's a neverending mission, however, we
-# think`).
+# bold and does not name a speaker (`It's a neverending mission,
+# however, we think`).
 expr main [(in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said), (I'd argue), (I'd say), (I would say), (in my experience), (to be honest), (if you ask me), (honestly,), (frankly,), (personally,)]
 let message "Opinion marker. State the claim, or give the evidence for it."
 let description "Flags phrases that frame a claim as someone's view instead of stating it."

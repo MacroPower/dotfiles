@@ -26,8 +26,8 @@
 #
 # Measurement
 #
-# The rule hit no lines in the measure.py corpus, so no sample measures
-# its precision.
+# The rule did not hit any line in the measure.py corpus, so no sample
+# measures its precision.
 expr literal [flashing, tape, tapes, sealer, sealant, roof, roofs, roofing, weld, welds, welded, metal, allowance, ripper]
 expr main [seam, seams]![(( )@literal), /]
 let message "`seam`. Name the function, interface, or hook it means, or delete the word."
