@@ -20,6 +20,19 @@
 # `Those` before a verb or a helping verb from a list (`is`, `can`,
 # `requires`).
 #
+# The guards for `to`, `that`, and a colon read the first sentence on
+# the first line of the paragraph. ends_sentence() in lib/markdown.awk
+# finds the end of that sentence, so `e.g.`, `i.e.`, `vs.`, `cf.`, and
+# a three-period ellipsis do not end it (`It may help, e.g. to restart
+# the pod`). A quoted `.`, `?`, or `!` before a lowercase word does not
+# end it either (`It writes "Done!" to the log`). continues_sentence()
+# in lib/markdown.awk holds that test.
+#
+# A first sentence that ends in a three-period ellipsis, quoted or not,
+# joins the next sentence. A `to` or `that` in that sentence, or a colon
+# at the end of the line, then passes the paragraph (`It can hang...
+# Then it fails to start`).
+#
 # False Positives
 #
 # `This cache` names its noun, so a noun after the pronoun passes. A
@@ -27,12 +40,13 @@
 # `s` after `These`, `Those`, or `They` counts as a noun (`These changes
 # simplify`).
 #
-# A paragraph whose first line ends in a colon passes, because its
-# pronoun points forward at the block below (`These are the tiers:`). A
-# paragraph directly under a heading passes, because there the pronoun
-# points at the heading's topic, which the reader can see. The first
-# paragraph of a file passes when front matter or any other line sits
-# above it, because there the pronoun points at the page.
+# A paragraph passes when its first sentence ends in a colon at the end
+# of the first line (`These are the tiers:`). Its pronoun then points
+# forward at the block below. A paragraph directly under a heading
+# passes, because there the pronoun points at the heading's topic, which
+# the reader can see. The first paragraph of a file passes when front
+# matter or any other line sits above it, because there the pronoun
+# points at the page.
 #
 # The check reads markdown only. Go doc comments open later paragraphs
 # with `It` by convention, and there the first paragraph names the
@@ -92,6 +106,32 @@ function word(t,   w) {
   w = tolower(t)
   gsub(/^[^a-z']+|[^a-z']+$/, "", w)
   return w
+}
+
+# Returns the first sentence of text, through the token that ends it.
+# ends_sentence() in lib/markdown.awk reads each token, so `e.g.` and
+# `reading...` do not end the sentence. After a token for which it
+# returns 2, the sentence continues when continues_sentence() in
+# lib/markdown.awk accepts the next token. When no token ends the
+# sentence, the text ends inside its first sentence, so the function
+# returns the whole text.
+function first_sentence(text,   rest, pos, t, e) {
+  rest = text
+  pos = 0
+  e = 0
+  while (match(rest, /[^ \t]+/)) {
+    t = substr(rest, RSTART, RLENGTH)
+    if (e == 2 && !continues_sentence(t)) {
+      return substr(text, 1, pos)
+    }
+    pos += RSTART + RLENGTH - 1
+    rest = substr(rest, RSTART + RLENGTH)
+    e = ends_sentence(t)
+    if (e == 1) {
+      return substr(text, 1, pos)
+    }
+  }
+  return text
 }
 
 function prose(text,   start, rest, t1, t2, t3, w1, first, shown) {
@@ -157,12 +197,14 @@ function prose(text,   start, rest, t1, t2, t3, w1, first, shown) {
   }
   # An `it` with `to` or `that` later in its sentence is a placeholder
   # subject that points at no earlier noun (`It may help to play`).
-  first = text
-  sub(/[.?!]([ \t].*)?$/, "", first)
+  first = first_sentence(text)
   if (w1 == "it" && first ~ /[ \t](to|that)[ \t]/) {
     return
   }
-  if (text ~ /:[ \t]*$/ && text !~ /[.?!][ \t]/) {
+  # A first sentence that runs to a colon at the end of the line points
+  # at the block below. A sentence that ends earlier ends in a mark, so
+  # it does not end in a colon.
+  if (first ~ /:[ \t]*$/) {
     return
   }
   shown = t1
