@@ -80,7 +80,14 @@
 #
 # ProseHiddenList reports three sentences in a row that open with the
 # same two words. It skips openings with `a` or `an`, so only this rule
-# reports those sentences.
+# reports those sentences. A sentence that opens with a quotation and
+# goes on past a quoted `.`, `?`, or `!` does not open a run here (`"A
+# lease?" the guide asks`). ProseHiddenList therefore compares its
+# opening too. Three sentences in a row that open with `"A lease?"` draw
+# a finding only from ProseHiddenList, unless a sentence that opens with
+# `a` or `an` comes right before them. When a present-tense verb sits
+# inside the quotation (`"A lease is held?" the guide asks`), this rule
+# reports each of the three sentences too.
 #
 # Measurement
 #

@@ -42,3 +42,5 @@ A user typed "`stop`." a second time, and the job ended.
 “A lease?” the guide asks. A lease is a lock on one task.
 
 (“A lease?” the guide asks.) A lease is a lock on one task.
+
+"A lease?" the guide asks before the build. "A lease?" the guide asks after the tests. "A lease?" the guide asks at the end.

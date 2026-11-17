@@ -67,16 +67,25 @@
 #
 # Openings with `a` or `an` (`A pod`) pass, because
 # ProseIndefiniteOpener reports those sentences and asks for a plural
-# subject instead of a list. Sentences that open with a quotation whose
-# first word is `a` or `an` pass too (`"A lease?" the guide asks`). When
-# the quotation ends in `.`, `?`, or `!`, ProseIndefiniteOpener stops
-# its subject scan at the closing quote. It also does not count such a
-# sentence as the first of a run of sentences that open with `a` or
-# `an`. It reports the sentence only when a present-tense verb sits
-# inside the quotation (`"A lease is held?" the guide asks`), or when
-# the sentence comes second in such a run (`A lease is a lock. "A
-# lease?" the guide asks.`). Three sentences in a row that open with `"A
-# lease?"` therefore draw a finding from neither rule.
+# subject instead of a list. A quotation that ends in a comma does not
+# end the sentence, so `"A lease," the guide says` opens with `a` for
+# both rules, and this rule skips it.
+#
+# A sentence that opens with a quotation and goes on past a quoted `.`,
+# `?`, or `!` keeps its key, even when the quotation opens with `a` or
+# `an` (`"A lease?" the guide asks`). ProseIndefiniteOpener stops its
+# subject scan at the closing quote. It does not count such a sentence
+# as the first of a run of sentences that open with `a` or `an`. Three
+# sentences in a row that open with `"A lease?"` therefore draw a
+# finding from this rule.
+#
+# ProseIndefiniteOpener reports some of these sentences too. When a
+# sentence that opens with `a` or `an` comes right before the three (`A
+# lease is a lock. "A lease?" the guide asks.`), ProseIndefiniteOpener
+# reports the first of them as the second sentence of a run. When a
+# present-tense verb sits inside the quotation (`"A lease is held?" the
+# guide asks`), ProseIndefiniteOpener reports each of the three
+# sentences.
 #
 # Measurement
 #
@@ -110,6 +119,8 @@ function reset() {
   cur_key = ""
   table = 0
   quote_end = 0
+  quoted = 0
+  quote_opener = 0
 }
 
 function flush(   parts) {
@@ -137,8 +148,11 @@ function end_sentence() {
     cur_key = ""
   }
   # ProseIndefiniteOpener reports the sentences that open with `a` or
-  # `an`, and its fix (a plural subject) differs from a list.
-  if (cur_key ~ /^(a|an) /) {
+  # `an`, and its fix (a plural subject) differs from a list. A sentence
+  # that opens with a quotation and goes on past a quoted `.`, `?`, or
+  # `!` does not open a run in ProseIndefiniteOpener. Such a sentence
+  # keeps its key.
+  if (cur_key ~ /^(a|an) / && !quote_opener) {
     cur_key = ""
   }
   if (cur_key != "" && cur_key == prev_key) {
@@ -153,6 +167,8 @@ function end_sentence() {
   cur_key = ""
   cur_words = 0
   opening = 1
+  quoted = 0
+  quote_opener = 0
 }
 
 function prose(text,   rest, pos, tok, col, word, e) {
@@ -182,9 +198,15 @@ function prose(text,   rest, pos, tok, col, word, e) {
       continue
     }
     # The token before ended in a mark and a closing quote. The sentence
-    # ended there unless this token continues it.
-    if (quote_end && !continues_sentence(tok)) {
-      end_sentence()
+    # ended there unless this token continues it. A sentence that opened
+    # with a quote and goes on here opens with a quotation, by the same
+    # test that ProseIndefiniteOpener applies.
+    if (quote_end) {
+      if (!continues_sentence(tok)) {
+        end_sentence()
+      } else if (quoted) {
+        quote_opener = 1
+      }
     }
     quote_end = 0
     if (tok !~ /[A-Za-z0-9]/) {
@@ -204,13 +226,16 @@ function prose(text,   rest, pos, tok, col, word, e) {
     }
     word = tolower(tok)
     gsub(/[^a-z0-9]/, "", word)
-    if (opening && word ~ seq) {
-      nseq++
-      if (word ~ counts) {
-        ordinal = 1
-      }
-      if (index(" " distinct " ", " " word " ") == 0) {
-        distinct = distinct " " word
+    if (opening) {
+      quoted = opens_quote(tok)
+      if (word ~ seq) {
+        nseq++
+        if (word ~ counts) {
+          ordinal = 1
+        }
+        if (index(" " distinct " ", " " word " ") == 0) {
+          distinct = distinct " " word
+        }
       }
     }
     opening = 0

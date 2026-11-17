@@ -24,3 +24,7 @@ The loader reads "`a.nix`." The loader reads "`b.nix`." The loader reads "`c.nix
 "Save changes?" appears when you close the editor. "Save changes?" shows when you quit the app. "Save changes?" pops up when the session ends.
 
 “Ready?” the wizard asks before the build. “Ready?” the prompt asks after the tests. “Ready?” the dialog asks at the end.
+
+"A lease?" the guide asks before the build. "A lease?" the guide asks after the tests. "A lease?" the guide asks at the end.
+
+“An entry?” the guide asks before the build. “An entry?” the guide asks after the tests. “An entry?” the guide asks at the end.

@@ -26,4 +26,12 @@ The wizard asks "Run `make`?" next, and it waits for an answer. Then it writes t
 
 "Ready?" the wizard asks before the build. "Ready?" a prompt says after the tests. "Ready?" one dialog shows at the end.
 
-"A lease?" the guide asks before the build. "A lease?" the guide asks after the tests. "A lease?" the guide asks at the end.
+"A lease," the guide says before the build. "A lease," the guide says after the tests. "A lease," the guide says at the end.
+
+A user typed "stop." and the job ended. A user typed "stop." and the pod ended. A user typed "stop." and the run ended.
+
+"Ready?" the wizard asks before the build. A node runs the kubelet. A node reports its status. A node joins one cluster.
+
+"Stop!" the guide says in these cases:
+
+A lease is held. "A lease?" the guide asks. "A lease?" the doc asks.
