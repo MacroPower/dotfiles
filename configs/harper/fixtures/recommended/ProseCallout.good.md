@@ -21,3 +21,22 @@ task switch
 
 > [!TIP]
 > Use `--dry-run` to preview the plan.
+
+The build runs each step in order.
+
+**Note:** The tool prints "Done!" always, even when a step fails.
+
+The runner keeps a log of each step.
+
+> [!NOTE]
+> The installer asks “Overwrite the file?” always, even when the file is empty.
+
+The installer writes one file per run.
+
+> [!NOTE]
+> The sync job prints ‘Up to date.’
+> never more than once a day.
+
+The tool reports each step.
+
+**Note:** The tool prints 'Done!' always, even when a step fails.

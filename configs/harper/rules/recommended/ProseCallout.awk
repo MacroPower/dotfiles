@@ -33,7 +33,11 @@
 # sentence ends at a `.`, `?`, or `!` before a space, after any closing
 # quote, paren, bracket, or emphasis. A closing quote is straight or
 # curly (`"`, `'`, `”`, or `’`), and the pattern names each curly quote
-# by its UTF-8 bytes, as ends_sentence() in lib/markdown.awk does.
+# by its UTF-8 bytes, as ends_sentence() in lib/markdown.awk does. A
+# quote after the mark can close a quotation inside the sentence, so a
+# lowercase word after the quote continues the sentence (`prints "Done!"
+# always`). continues_sentence() in lib/markdown.awk holds that test,
+# and lib/sentences.awk calls it too.
 #
 # The check reads a curly apostrophe between two letters of the first
 # word as a straight one. A note that opens with `Don’t` therefore draws
@@ -125,9 +129,23 @@ function start_callout(k, line) {
 }
 
 # Reports the first instruction in a note.
-function end_callout(   n, sents, i, s, w, parts) {
+function end_callout(   m, pieces, seps, n, sents, i, s, t, w, parts) {
   if (kind ~ /^(note|info|important)$/ && body ~ /[A-Za-z]/) {
-    n = split(body, sents, /[.!?](["')*_\]]|\342\200\235|\342\200\231)*[ \t]+/)
+    m = split(body, pieces, /[.!?](["')*_\]]|\342\200\235|\342\200\231)*[ \t]+/, seps)
+    # A quote after the mark can close a quotation inside the sentence
+    # (`prints "Done!" always`). The piece after such a quote then
+    # continues the sentence when continues_sentence() in
+    # lib/markdown.awk accepts its first token.
+    n = 0
+    for (i = 1; i <= m; i++) {
+      t = pieces[i]
+      sub(/[ \t].*$/, "", t)
+      if (i > 1 && seps[i - 1] ~ /["']|\342\200\235|\342\200\231/ && continues_sentence(t)) {
+        sents[n] = sents[n] seps[i - 1] pieces[i]
+      } else {
+        sents[++n] = pieces[i]
+      }
+    }
     for (i = 1; i <= n; i++) {
       s = sents[i]
       sub(/^[ \t*_]+/, "", s)

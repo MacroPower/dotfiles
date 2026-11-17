@@ -23,3 +23,11 @@ The job writes the lock file at startup. <!-- same finding -->
 
 > [!NOTE]
 > ‘Remove’ the lock file only after the job stops. <!-- same finding -->
+
+The cleanup removes the temporary files. <!-- same finding -->
+
+**Note:** The tool prints "Done!" always. Run the cleanup after it.
+
+The cleanup writes a log. <!-- same finding -->
+
+**Note:** The cleanup takes a minute. remove the log after it.
