@@ -46,12 +46,43 @@
 #   fills’`). A plural possessive with no mark after it ends the
 #   quotation when the quotation closes at another word that ends in `s`
 #   and the quote (`‘Never run the users’ jobs unless the build passes’
-#   is the rule`). The opener also does not count for an `unless` in the
-#   second part of a quotation that an attribution splits (`"Never," the
-#   guide says, "deploy unless the tests pass."`). The scan from that
-#   `unless` stops at the first closing quote, so a negative word in the
-#   first part does not count either (`"Copy nothing," the guide says,
-#   "unless the tests pass."`).
+#   is the rule`).
+#
+#   An attribution can split the quotation that opens the sentence
+#   (`"Copy nothing," the guide says, "unless the tests pass."`). An
+#   `unless` in the second part then belongs to the quoted speech, so
+#   the opener counts for it. The scan from that `unless` skips the
+#   attribution and goes on into the first part, so the eight words
+#   count only the words of the quotation. In single quotes, a word with
+#   a dropped letter ends the second part early, as it ends the first
+#   part (`‘Never’, the guide says, ‘stop goin’ unless the build
+#   fails’.`).
+#
+#   split_quotation() in lib/sentences.awk finds the second part. It
+#   opens at the first later word that opens with a quote of the same
+#   kind, single or double, as the first part. split_quotation() needs a
+#   comma at the end of the first part and at the end of the
+#   attribution. No other word of the attribution can end in a comma, a
+#   period, or another mark that closes a clause. The attribution also
+#   cannot hold a word from a list in split_quotation() of words that
+#   can join a second clause to it, such as `and`, `but`, `then`, `if`,
+#   `unless`, `when`, `until`, `after`, or `because`. These tests keep
+#   out a main clause that quotes a second string and holds such a mark
+#   or word (`"Don't panic," appears in the log when the tooltip says,
+#   "Retry unless busy."`).
+#
+#   A split quotation that lacks either comma passes (`"Never" the guide
+#   says "deploy unless the tests pass."`). So does one with a mark that
+#   closes a clause inside the attribution (`"Copy nothing," the guide,
+#   page 4, says, "unless the tests pass."`). So does one whose
+#   attribution holds a word from that list (`"Copy nothing," the guide
+#   and the wiki say, "unless the tests pass."`, `"Copy nothing," the
+#   guide says when asked, "unless the tests pass."`). So does one whose
+#   attribution holds a word that opens with a quote of the same kind as
+#   the first part (`"Copy nothing," the "Ops" guide says, "unless the
+#   tests pass."`, `‘Never’, the '90s guide says, ‘deploy unless the
+#   tests pass’.`). split_quotation() then reads that word as the start
+#   of the second part, and the word before it does not end in a comma.
 # - `without` or `except` with a negative word in the six words before
 #   it (`cannot start without a certificate`). The scan stops at a word
 #   that opens a clause (`and`, `because`, `which`). It also stops at a
@@ -78,6 +109,24 @@
 # A `without` that names a property of the noun before it (`nodes
 # without swap`) still fires, because a word list cannot tell it from
 # `cannot start without a certificate`.
+#
+# Two quoted strings read as a split quotation when a comma follows the
+# first string and the words between them. Those words must pass the
+# tests of split_quotation(), but they can run to any length (`"Don't
+# panic," appears in red on the screen, "Retry unless busy" in gray`).
+# An `unless` in the second string then fires when the first string
+# opens with the opener. It also fires when a negative word of the first
+# string sits within the eight words of the scan (`"Not now," in red,
+# "Retry unless busy" in gray`). The scan skips the words between the
+# strings.
+#
+# The list in split_quotation() leaves out `that`, `which`, `who`, and
+# `as`, because each of them also opens a phrase inside an attribution
+# (`the guide that ships with the tool says,`, `as the guide says,`). A
+# main clause that one of them joins to the words between the strings
+# therefore still fires (`"Don't panic," appears above a button that
+# says, "Retry unless busy."`, `"Don't panic," appears in the log as the
+# tooltip says, "Retry unless busy."`).
 #
 # Related Rules
 #
@@ -155,11 +204,20 @@ function report(i) {
   printf "%s:%d:%d: Style::ProseDoubleNegative: %s\n", sentence_file, tok_line[i], tok_col[i], msg
 }
 
-function sentence(n,   i, j, w, d, t, opener, quoted, depth_at) {
+function sentence(n,   i, j, w, d, t, lo, opener, quoted, resume, resume_end, resumed, depth_at) {
   opener = (word(1) == "don't" || word(1) == "never" || (word(1) == "do" && word(2) == "not"))
   # An opener inside a quotation that opens the sentence negates only
   # the steps inside the quotation (`"Don't panic!" appears unless`).
   quoted = quoted_opening(n)
+  # When an attribution splits that quotation, its second part runs from
+  # token `resume` to token `resume_end` (`"Never," the guide says,
+  # "deploy unless the tests pass."`). A second part that no token
+  # closes runs to the end of the sentence.
+  resume = split_quotation(n, quoted)
+  resume_end = resume ? quotation_end(n, resume) : 0
+  if (resume && !resume_end) {
+    resume_end = n
+  }
   d = 0
   for (i = 1; i <= n; i++) {
     depth_at[i] = d
@@ -169,21 +227,37 @@ function sentence(n,   i, j, w, d, t, opener, quoted, depth_at) {
   for (i = 1; i <= n; i++) {
     w = word(i)
     if (w == "unless") {
-      if (opener && depth_at[i] == 0 && (!quoted || i < quoted)) {
+      # An `unless` in the second part of a split quotation belongs to
+      # the quoted speech, which the first part opens.
+      resumed = resume && i >= resume && i <= resume_end
+      if (opener && depth_at[i] == 0 && (!quoted || i < quoted || resumed)) {
         report(i)
         return
       }
-      for (j = i - 1; j >= 1 && j >= i - 8; j--) {
+      lo = i - 8
+      for (j = i - 1; j >= 1 && j >= lo; j--) {
+        # The attribution does not belong to the quoted speech, so the
+        # scan jumps from the second part to the end of the first part.
+        # The eight words then count only the words of the quotation.
+        if (resumed && j == resume - 1) {
+          lo -= j - quoted
+          j = quoted
+        }
         # A quotation that closes with a mark holds a clause of its own,
         # so its negation stays inside the quotation (`says "Never!"
         # unless`). So does the negation of a quotation that opens the
-        # sentence (`"Do not disturb" stays on the door unless`).
-        if (ends_sentence(tok[j]) == 2 || j == quoted) {
+        # sentence (`"Do not disturb" stays on the door unless`), for an
+        # `unless` outside the second part of that quotation.
+        if (ends_sentence(tok[j]) == 2 || (j == quoted && !resumed)) {
           break
         }
         # Skip back over the words in parentheses, whose negation stays
-        # inside them.
-        if (tok[j] ~ /\)[,;:.]?$/ && tok[j] !~ /\(/) {
+        # inside them. A closing quote can sit before or after the mark
+        # that follows the paren, as at the end of the first part of a
+        # split quotation (`"Restart the job (not the node)," the
+        # runbook says, "unless it hangs."`). The pattern writes each
+        # curly quote as its UTF-8 bytes, as closes_clause() does.
+        if (tok[j] ~ /\)[,;:.]?(["']|\342\200\235|\342\200\231)?[,;:.]?$/ && tok[j] !~ /\(/) {
           while (j > 1 && tok[j] !~ /\(/) {
             j--
           }

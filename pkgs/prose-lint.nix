@@ -1247,7 +1247,7 @@ in
         # the C locale and under a UTF-8 locale, and it expects the same
         # ProseSentenceLength and ProseTrailingCondition findings from
         # both. ends_sentence() and opens_quote() in lib/markdown.awk
-        # and quoted_opening() in lib/sentences.awk name each curly
+        # and quotation_end() in lib/sentences.awk name each curly
         # quote by its UTF-8 bytes. The prose hook runs under the
         # locale of the user, which can be either one. The command in
         # configs/harper/CLAUDE.md builds this test too.

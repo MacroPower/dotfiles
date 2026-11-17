@@ -41,3 +41,27 @@ Do not type "yes!" unless the tool asks.
 “Never run "make" unless the tests pass,” the guide says.
 
 ‘Never copy the users’ files unless the job prints ‘Done’, then restart the job’ the guide says.
+
+"Please do not copy," he said, "unless asked."
+
+"Copy nothing," the guide says, "unless the tests pass."
+
+“Copy nothing,” the guide says, “unless the tests pass.”
+
+"Never," the guide says, "deploy unless the tests pass."
+
+‘Never’, the guide says, ‘deploy unless the tests pass’.
+
+"Copy nothing to the shared folder," the release notes say, "on the server unless the tests pass."
+
+"Never," the guide says, "run "make" unless the tests pass."
+
+"Never," the '90s guide says, "deploy unless the tests pass."
+
+"Never copy the build files," the guide says, "to the shared folder on the server unless the tests pass."
+
+"Copy nothing," the guide says, "unless the tests pass. Then tag it."
+
+"Restart nothing (the node)," the runbook says, "unless it hangs."
+
+"Ship it," nobody says, "on Fridays" unless the tests pass.

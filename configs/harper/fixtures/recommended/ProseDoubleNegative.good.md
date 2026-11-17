@@ -98,6 +98,58 @@ The tool says "Never." unless the lock is held.
 
 " Do not disturb" stays on the door unless the room is free.
 
+"Do not disturb" hangs on the front door, "Knock unless busy" on the back door.
+
+"Don't panic," appears above "Retry unless busy" on the screen.
+
+"Don't panic," appears in the log, and the tooltip says, "Retry unless busy."
+
+"Don't panic," appears in red above the tooltip, which says, "Retry unless busy."
+
+"Don't panic," appears in red above the _tooltip,_ which says, "Retry unless busy."
+
+"Don't panic," appears in the log; the tooltip says, "Retry unless busy."
+
+"Don't panic," appears in the log: the tooltip says, "Retry unless busy."
+
+"Don't panic," it says in red; below, "Retry unless busy."
+
+"Don't panic," appears in the log... the tooltip says, "Retry unless busy."
+
+"Don't panic," appears in the log and the tooltip says, "Retry unless busy."
+
+"Don't panic," appears in the log _and_ the tooltip says, "Retry unless busy."
+
+"Don't panic," appears in the log when the tooltip says, "Retry unless busy."
+
+"Don't panic," appears in the log if the tooltip says, "Retry unless busy."
+
+"Don't panic," appears in red then the tooltip says, "Retry unless busy."
+
+"Don't panic," stays unless the tooltip says, "Retry unless busy."
+
+"Nothing to report," the status line reads while the second line says, "Retry unless busy."
+
+‘Never’, ‘Retry unless busy’, and ‘Save’ are the labels.
+
+"Never," the guide says, "on Fridays," and the team ships unless the tests fail.
+
+"Nothing copies the shared folder files," he said, "from one place unless the tests pass."
+
+"Never," the guide (unless updated) says, "deploy on Fridays."
+
+"Restart the job (not the node)," the runbook says, "unless it hangs."
+
+"Restart the job (not the node)", the runbook says, "unless it hangs."
+
+“Restart the job (not the node),” the runbook says, “unless it hangs.”
+
+‘Restart the job (not the node)’, the runbook says, ‘unless it hangs’.
+
+'Restart the job (not the node)', the runbook says, 'right away unless it hangs'.
+
+The guide says "restart the job (not the node)" unless it hangs.
+
 <!-- prettier-ignore-start -->
 Why does the hook not run unless the caller holds the lock?
 -
