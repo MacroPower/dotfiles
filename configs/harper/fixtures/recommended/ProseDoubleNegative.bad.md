@@ -15,3 +15,11 @@ You can't just run make without reading the docs.
 The server “cannot” start without a valid certificate.
 
 The change is “not” unsafe.
+
+The change is ‘not’ unsafe.
+
+The server can’t start without a valid certificate.
+
+You can’t just run make without reading the docs.
+
+Don’t run the migration script against the production database unless the backup finishes.

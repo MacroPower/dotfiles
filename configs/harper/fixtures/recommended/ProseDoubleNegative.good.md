@@ -44,6 +44,12 @@ The job hadn't just failed without a log.
 
 You needn't just wait for the lock without a timeout.
 
+You don’t just run make without reading the docs.
+
+The hook doesn’t only run without a lock.
+
+The parser didn’t just skip the header without a warning.
+
 The check said "not now," then ran without a lock.
 
 The check said “not now,” then ran without a lock.

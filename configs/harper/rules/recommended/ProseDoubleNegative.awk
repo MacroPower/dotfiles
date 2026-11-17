@@ -15,7 +15,11 @@
 # boundaries, and reads each sentence of markdown prose. The negative
 # words are `not`, `never`, `no`, `cannot`, `none`, `nothing`,
 # `neither`, `nor`, `nobody`, and every word that ends in `n't`. The
-# check reports three forms:
+# check reads a curly apostrophe inside a word as a straight one, so
+# `can’t` counts the same as `can't`. prose-lint straightens the
+# apostrophe in the copy that Harper reads, but this check reads the
+# original markdown file or commit message. The check reports three
+# forms:
 #
 # - `unless` with a negative word in the eight words before it. The scan
 #   stops at `and`, `but`, `so`, `or`, and `yet`, which open a new
@@ -51,9 +55,11 @@
 # ProseNotOnly reports `not only` and `not just` and their contracted
 # forms (`doesn't just`), so neither `not` nor such a contraction counts
 # as a negative word before `only` or `just`. The `short` pattern holds
-# the contractions of the `short` list in ProseNotOnly. `can't` stays
-# out of both, because ProseNotOnly passes `can't just`, so `can't just
-# run make without the docs` still counts.
+# the contractions of the `short` list in ProseNotOnly. Harper reads
+# `doesn’t just` with a straight apostrophe, so ProseNotOnly reports it,
+# and the `short` pattern matches it after word() straightens the
+# apostrophe. `can't` stays out of both, because ProseNotOnly passes
+# `can't just`, so `can't just run make without the docs` still counts.
 #
 # The built-in LitotesDirectPositive reports `not` before `unusual`,
 # `unreasonable`, `unlikely`, `unimportant`, `infrequent`, `inaccurate`,
@@ -62,7 +68,7 @@
 #
 # Measurement
 #
-# The rule hit 50 lines in the measure.py corpus, and 20 of 20 sampled
+# The rule hit 55 lines in the measure.py corpus, and 20 of 20 sampled
 # hits stacked two negatives.
 #
 # Output format, one line per finding:
@@ -78,10 +84,17 @@ function BEGIN_CHECK() {
   msg = "Double negative. State the positive case, so `does not run unless the caller holds the lock` becomes `runs only when the caller holds the lock`."
 }
 
-# Returns token i in lowercase without the punctuation around it.
+# Returns token i in lowercase without the punctuation around it. A
+# curly apostrophe inside the word then becomes a straight one, so
+# `can’t` reads as `can't`. The strip runs first, because it keeps a
+# straight `'`. In the other order, the closing quote of `‘not’`
+# becomes a straight `'` that the strip keeps, and the word reads as
+# `not'`. The pattern names the curly apostrophe by its UTF-8 bytes, as
+# closes_clause() does.
 function word(i,   w) {
   w = tolower(tok[i])
   gsub(/^[^a-z']+|[^a-z']+$/, "", w)
+  gsub(/\342\200\231/, "'", w)
   return w
 }
 
