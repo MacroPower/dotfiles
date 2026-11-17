@@ -129,16 +129,100 @@ function end_paragraph(   s, i) {
 }
 
 # Returns the index of the token that closes a quotation at the start of
-# the sentence with a mark and a closing quote. The function returns 0
-# when the sentence does not open with such a quotation. The sentence
-# continues past that token (`"Save changes?" appears if you close the
-# editor`), so its first word sits inside the quotation. A check that
-# reads the first word as the opener of the sentence applies it only to
-# the words up to that token.
-function quoted_opening(n,   i) {
-  if (!opens_quote(tok[1])) {
+# the sentence. That token ends in a closing quote of the same family as
+# the opening quote. A double quote opens with `"` or `“` and closes
+# with `"` or `”`. A single quote opens with `'` or `‘` and closes with
+# `'` or `’`. A quotation can therefore open with a straight quote and
+# close with a curly one (`"Save changes?” appears`). A mark, a closing
+# paren, a bracket, or emphasis can follow the quote (`"Save",`). The
+# closing quote must come from the family of the opening one. An
+# apostrophe at the end of a word (`"Copy the users' files"`) therefore
+# does not close a quotation in double quotes.
+#
+# A later token that opens with a quote of the family opens an inner
+# quotation (`“Run "make" if the tests pass,” the guide says`). The
+# function skips the closing quote of each inner quotation, so the first
+# quotation closes at `pass,”`.
+#
+# When no token closes the quotation, the function returns the first
+# token for which ends_sentence() returns 2. That token holds a period,
+# a question mark, or an exclamation mark before a closing quote of the
+# other family (`"Save changes?’ appears`). The function returns 0 when
+# the sentence does not open with a quote, or when it finds neither
+# token.
+#
+# The sentence continues past that token (`"Save" appears if the file
+# changed`, `"Save changes?" appears if you close the editor`), so its
+# first word sits inside the quotation. A check that reads the first
+# word as the opener of the sentence applies it only to the words up to
+# that token.
+#
+# A single closing quote is the same mark as an apostrophe. In single
+# quotes, a word that ends in `s` and the quote can therefore be a
+# plural possessive (`'Copy the users' files'`) or the end of the
+# quotation (`'Save logs' appears`). The function holds the first such
+# token and skips each later one. Emphasis can follow the quote of such
+# a token (`logs'**`). A plural possessive comes before its noun. A
+# token with a mark, a closing paren, or a bracket after the quote
+# (`fails',`, `logs'.`) is therefore not such a token. The function
+# returns the first token that ends in the quote and that it neither
+# holds nor skips, such as `data'`, `fills!'`, or `fails',`. It returns
+# the held token when no such token follows. A later quotation after the
+# held token counts as an inner quotation (`'Save logs' appears if the
+# run prints 'Done!'`), so its closing quote does not end the search.
+#
+# The patterns write each curly quote as its UTF-8 bytes, as
+# ends_sentence() in lib/markdown.awk does.
+function quoted_opening(n,   i, t, o, q, held, inner) {
+  t = tok[1]
+  if (!opens_quote(t)) {
     return 0
   }
+  sub(/^[(\[*_]*/, "", t)
+  # o matches each opening quote of the family, and q each closing one.
+  if (t ~ /^("|\342\200\234)/) {
+    o = "(\"|\342\200\234)"
+    q = "(\"|\342\200\235)"
+  } else {
+    o = "('|\342\200\230)"
+    q = "('|\342\200\231)"
+  }
+  # Drop the opening quote, so a first token that holds only the opening
+  # quote (`" Save" appears`) does not close the quotation.
+  sub(/^(["']|\342\200\234|\342\200\230)/, "", t)
+  held = 0
+  inner = 0
+  for (i = 1; i <= n; i++) {
+    if (i > 1) {
+      t = tok[i]
+      # A token that opens another quotation of the same family opens an
+      # inner quotation, and the next closing quote ends it. That quote
+      # can end the same token (`“Run "make" if`).
+      if (t ~ ("^[(\\[*_]*" o)) {
+        inner++
+      }
+    }
+    if (t !~ (q "[)*_\\],;:.?!]*$")) {
+      continue
+    }
+    if (inner) {
+      inner--
+      continue
+    }
+    if (o ~ /'/ && t ~ ("[sS]" q "[*_]*$")) {
+      if (!held) {
+        held = i
+      }
+      continue
+    }
+    return i
+  }
+  if (held) {
+    return held
+  }
+  # No closing quote of the family closes the quotation. A mark before a
+  # quote of the other family still closes it (`"Save changes?’
+  # appears`).
   for (i = 1; i <= n; i++) {
     if (ends_sentence(tok[i]) == 2) {
       return i

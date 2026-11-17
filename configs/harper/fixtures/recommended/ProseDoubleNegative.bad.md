@@ -27,3 +27,17 @@ Don’t run the migration script against the production database unless the back
 Do not type "yes!" unless the tool asks.
 
 "Do not run the migration script against the production database unless the backup finishes!" the guide says.
+
+"Don't touch the users' files unless the job asks!" the guide says.
+
+‘Don’t touch the users’ files unless the job asks!’ the guide says.
+
+'Don't touch the users' files unless the job asks!' the guide says.
+
+‘Never move the users’ data unless the backup ran’ stays on the door.
+
+‘Never copy the users’ files unless the job fails’, the guide says.
+
+“Never run "make" unless the tests pass,” the guide says.
+
+‘Never copy the users’ files unless the job prints ‘Done’, then restart the job’ the guide says.

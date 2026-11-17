@@ -36,12 +36,28 @@
 # grows, split it`). A clause is a subject and its verb, such as
 # `the tests pass`.
 #
-# A sentence can open with a quotation that ends in a period, a
-# question mark, or an exclamation mark, with a lowercase word after the
-# closing quote (`"Save changes?" appears if you close the editor`). The
-# imperative then sits inside the quotation, and the `if` after it
-# states the condition of the verb after the quotation. So the check
-# reads only the words up to the closing quote.
+# A sentence can open with a quotation, such as the label of a button,
+# and go on after the closing quote (`"Save" appears in the menu if the
+# file changed`). A period, a question mark, or an exclamation mark can
+# sit before that quote when a lowercase word follows it (`"Save
+# changes?" appears if you close the editor`). The imperative then sits
+# inside the quotation, and the `if` after it states the condition of
+# the verb after the quotation. So the check reads only the words up to
+# the closing quote, which quoted_opening() in lib/sentences.awk finds.
+#
+# In single quotes, the closing quote is the same mark as an apostrophe.
+# quoted_opening() can therefore end a quotation early at a word inside
+# it that ends in an apostrophe, and an `if` after that word passes. A
+# word with a dropped letter ends the quotation (`‘Keep goin’ if the
+# build fails’`). So does a plural possessive with a punctuation mark
+# after it (`‘Copy the users’, the admins’, and the guests’ files if the
+# disk fills’`). A plural possessive with no mark after it ends the
+# quotation when the quotation closes at another word that ends in `s`
+# and the quote (`‘Copy the users’ files if the job runs’ is the rule`).
+# A quoted imperative also passes (`"Run" the build if the tests pass`).
+# A quotation that an attribution splits passes when the `if` sits in
+# its second part (`"Copy the files," the guide says, "then restart the
+# job if it hangs."`).
 #
 # `unless` passes. After an imperative, it names the exception to a
 # default (`Use the standard edition unless you need extra features`),

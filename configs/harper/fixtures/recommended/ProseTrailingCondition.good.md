@@ -37,3 +37,29 @@ Restart the agent if ‘needed’.
 (“Save changes?” appears if you close the editor with unsaved edits.)
 
 [“Save changes?”](https://example.com/dialog) appears if you close the editor with unsaved edits.
+
+"Save" appears in the menu if the file changed.
+
+‘Save all’ appears in the menu if a file changed.
+
+‘Save logs’ appears if the run prints ‘Done!’ at the end.
+
+‘Save logs’ appears in the menu if a file changed.
+
+"Save", the first button, appears in the menu if the file changed.
+
+**"Save"** appears in the menu if the file changed.
+
+"Save changes?’ appears if you close the editor with unsaved edits.
+
+"Save changes?” appears if you click "Close" with unsaved edits.
+
+("Save") appears in the menu if the file changed.
+
+[‘Save logs’] appears in the menu if a file changed.
+
+“Save" appears in the menu if the file changed.
+
+‘Save logs’ appears in the menu if the users’ files changed.
+
+"Save logs" appears in the menu if the 12" cable fails.

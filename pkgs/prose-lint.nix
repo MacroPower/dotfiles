@@ -1247,9 +1247,10 @@ in
         # the C locale and under a UTF-8 locale, and it expects the same
         # ProseSentenceLength and ProseTrailingCondition findings from
         # both. ends_sentence() and opens_quote() in lib/markdown.awk
-        # name each curly quote by its UTF-8 bytes. The prose hook runs
-        # under the locale of the user, which can be either one. The
-        # command in configs/harper/CLAUDE.md builds this test too.
+        # and quoted_opening() in lib/sentences.awk name each curly
+        # quote by its UTF-8 bytes. The prose hook runs under the
+        # locale of the user, which can be either one. The command in
+        # configs/harper/CLAUDE.md builds this test too.
         tests.sentence-ends = runCommand "prose-lint-sentence-ends" { nativeBuildInputs = [ gawk ]; } ''
           # The first paragraph holds a sentence of 17 words and a
           # sentence of 18 words, and the second holds two sentences of
@@ -1274,9 +1275,13 @@ in
           # and single in the other. A lowercase word after the quote
           # continues the sentence, and an `if` follows later.
           # ProseTrailingCondition reads only the imperative inside the
-          # quotation, so neither paragraph draws a finding. Only the
-          # third, fourth, seventh, and eighth paragraphs draw a
-          # finding, and each one is a ProseSentenceLength finding.
+          # quotation, so neither paragraph draws a finding. The
+          # eleventh and twelfth paragraphs each open with a quotation
+          # of one word and no mark, double in one paragraph and single
+          # in the other. They pass only when quoted_opening() finds the
+          # curly closing quote after the word. Only the third, fourth,
+          # seventh, and eighth paragraphs draw a finding, and each one
+          # is a ProseSentenceLength finding.
           # printf writes each curly quote from its octal bytes.
           printf 'He said \342\200\234the proxy retries each failed request once before it returns the error to the client.\342\200\235 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >ends.md
           printf 'The guide says \342\200\230the proxy retries each failed request once before it returns the error to the client.\342\200\231 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >>ends.md
@@ -1287,7 +1292,9 @@ in
           printf 'The importer prints \342\200\234Batch written!\342\200\235 each time it writes a batch of rows to the destination table, and then it reads the next batch of rows from the source table for the operators on call.\n\n' >>ends.md
           printf 'The importer asks \342\200\230Skip the rejected rows?\342\200\231 each time it reads a batch of rows from the source table, and then it writes the remaining rows to the destination table for the operators on call.\n\n' >>ends.md
           printf '\342\200\234Run the tests.\342\200\235 shows up in the log if the build passes.\n\n' >>ends.md
-          printf '\342\200\230Run the tests.\342\200\231 shows up in the log if the build passes.\n' >>ends.md
+          printf '\342\200\230Run the tests.\342\200\231 shows up in the log if the build passes.\n\n' >>ends.md
+          printf '\342\200\234Save\342\200\235 appears in the menu if the file changed.\n\n' >>ends.md
+          printf '\342\200\230Save\342\200\231 appears in the menu if the file changed.\n' >>ends.md
 
           cat >want <<'EOF'
           ends.md:5:1 ProseSentenceLength

@@ -84,6 +84,20 @@ The tool says "Never." unless the lock is held.
 
 ["Never!" stays on the sign unless the room is free.]
 
+"Do not disturb" stays on the door unless the room is free.
+
+"Not now" stays on the screen unless the job ends.
+
+‘Don’t’ stays on the sign unless the room is free.
+
+“Never!’ stays on the sign unless the room is free.
+
+“Never!" stays on the sign unless the room shows “Free”.
+
+"Do not disturb” stays on the door unless the room is free.
+
+" Do not disturb" stays on the door unless the room is free.
+
 <!-- prettier-ignore-start -->
 Why does the hook not run unless the caller holds the lock?
 -

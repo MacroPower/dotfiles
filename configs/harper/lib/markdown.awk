@@ -326,11 +326,12 @@ function continues_sentence(t) {
 # Reports whether token t opens with a straight or a curly opening
 # quote. The quote can follow any opening paren, bracket, or emphasis,
 # as in continues_sentence() (`"Save`, `(“Save`, `**“Stop!”**`). A
-# sentence that opens with such a token and continues past a quoted
-# mark opens with a quotation (`"Save changes?" appears`). Its first
-# words then belong to the quotation, not to the clause after it. The
-# pattern writes `“` and `‘` as their UTF-8 bytes, `\342\200\234` and
-# `\342\200\230`, as ends_sentence() writes the closing quotes.
+# sentence that opens with such a token and goes on after the closing
+# quote opens with a quotation (`"Save" appears`, `"Save changes?"
+# appears`). Its first words then belong to the quotation, not to the
+# clause after it. The pattern writes `“` and `‘` as their UTF-8 bytes,
+# `\342\200\234` and `\342\200\230`, as ends_sentence() writes the
+# closing quotes.
 function opens_quote(t) {
   return t ~ /^[(\[*_]*(["']|\342\200\234|\342\200\230)/
 }

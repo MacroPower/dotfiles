@@ -27,12 +27,31 @@
 #   stays inside them. It also stops at a word that ends in a period, a
 #   question mark, or an exclamation mark and a closing quote (`says
 #   “Never!” unless the lock is held`). The quotation holds a clause of
-#   its own. A sentence that opens with `Do not`, `Don't`, or `Never`
-#   negates every step in it, so any `unless` outside parentheses
-#   counts, at any distance. The opener does not count when it sits
-#   inside a quotation that opens the sentence and closes with such a
-#   mark before the `unless` (`"Don't panic!" appears in the log unless
-#   the run fails`).
+#   its own. The scan also stops at the closing quote of a quotation
+#   that opens the sentence, such as the text of a sign (`"Do not
+#   disturb" stays on the door unless the room is free`). The negation
+#   of that quotation stays inside it. A sentence that opens with `Do
+#   not`, `Don't`, or `Never` negates every step in it, so any `unless`
+#   outside parentheses counts, at any distance. The opener does not
+#   count when it sits inside a quotation that opens the sentence and
+#   closes before the `unless` (`"Don't panic!" appears in the log
+#   unless the run fails`). quoted_opening() in lib/sentences.awk finds
+#   that quotation. In single quotes, the closing quote is the same mark
+#   as an apostrophe. quoted_opening() can therefore end a quotation
+#   early at a word inside it that ends in an apostrophe, and an
+#   `unless` after that word passes. A word with a dropped letter ends
+#   the quotation (`‘Never stop goin’ unless the build fails’`). So does
+#   a plural possessive with a punctuation mark after it (`‘Never copy
+#   the users’, the admins’, and the guests’ files unless the disk
+#   fills’`). A plural possessive with no mark after it ends the
+#   quotation when the quotation closes at another word that ends in `s`
+#   and the quote (`‘Never run the users’ jobs unless the build passes’
+#   is the rule`). The opener also does not count for an `unless` in the
+#   second part of a quotation that an attribution splits (`"Never," the
+#   guide says, "deploy unless the tests pass."`). The scan from that
+#   `unless` stops at the first closing quote, so a negative word in the
+#   first part does not count either (`"Copy nothing," the guide says,
+#   "unless the tests pass."`).
 # - `without` or `except` with a negative word in the six words before
 #   it (`cannot start without a certificate`). The scan stops at a word
 #   that opens a clause (`and`, `because`, `which`). It also stops at a
@@ -157,8 +176,9 @@ function sentence(n,   i, j, w, d, t, opener, quoted, depth_at) {
       for (j = i - 1; j >= 1 && j >= i - 8; j--) {
         # A quotation that closes with a mark holds a clause of its own,
         # so its negation stays inside the quotation (`says "Never!"
-        # unless`).
-        if (ends_sentence(tok[j]) == 2) {
+        # unless`). So does the negation of a quotation that opens the
+        # sentence (`"Do not disturb" stays on the door unless`).
+        if (ends_sentence(tok[j]) == 2 || j == quoted) {
           break
         }
         # Skip back over the words in parentheses, whose negation stays

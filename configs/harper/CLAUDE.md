@@ -428,6 +428,8 @@ on a set of files.
     `?` and a curly quote.
   - A sentence that opens with a quoted command in curly quotes and
     has an `if` after the quotation.
+  - A sentence that opens with a quoted word in curly quotes, with no
+    mark before the closing quote, and has an `if` after the quotation.
 - `transcripts` lints two transcripts. One marks each speaker with a
   bold label, and the test lints it as a `.md` file, as a `.markdown`
   file, and as a commit message. The other names each speaker in
