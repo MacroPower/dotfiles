@@ -46,3 +46,48 @@ Docs|The docs job built the site and published it to the pages branch of the rep
 The scheduler reads the queue and then starts one worker for each job that it finds at https://example.com/queue. The worker runs the job and then writes the result of the job to the store that the scheduler reads.
 
 The release notes describe each change that the team made to the scheduler and the worker in the early spring of the year at https://example.com/blog/2024/how-we-cut-the-build-time-of-the-monorepo-in-half.
+
+<!-- prettier-ignore-start -->
+Deploying the service to a cluster with several worker nodes
+===
+The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- Deploying the service to a cluster with several worker nodes
+  ---
+  The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- `kubectl` deploys the service to a cluster with several worker nodes
+  ===
+  The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
+
+  `kubectl` deploys the service to a cluster with several worker nodes
+  ===
+  The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> Deploying the service to a cluster with several worker nodes
+> ===
+> The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- Deploying the service to a cluster with several worker nodes
+---
+The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+Deploying the service to a cluster with several worker nodes
+***
+The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+Deploying the service to a cluster with several worker nodes
+> The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
+<!-- prettier-ignore-end -->

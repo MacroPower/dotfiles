@@ -1019,15 +1019,21 @@ in
         # license.go. A blank line sits between the shebang and the
         # license header of license.py. The comment after that header
         # holds an empty comment line and a line that ends in a dash.
+        # In boxed.sh, a sentence of 34 words sits between two lines of
+        # `-` marks, and ProseSentenceLength must still report it. A line
+        # of `-` marks under markdown text underlines a heading, whose
+        # sentences the check drops. The same line in a comment frames
+        # the comment.
         tests.crlf = runCommand "prose-lint-crlf" { } ''
           mkdir lf crlf
           cp ${../configs/harper/fixtures/crlf}/* lf/
-          files="deploy.yaml license.go license.py main.tf"
+          files="boxed.sh deploy.yaml license.go license.py main.tf"
           for f in $files; do
             sed 's/$/\r/' "lf/$f" >"crlf/$f"
           done
 
           cat >want <<'END'
+          boxed.sh:4:3 ProseSentenceLength
           deploy.yaml:1:17 ProseAndOr
           license.go:5:31 ProseAndOr
           license.py:7:17 ProseAndOr

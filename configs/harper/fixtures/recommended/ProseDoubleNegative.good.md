@@ -43,3 +43,9 @@ The workers haven't just read the queue without a lock.
 The job hadn't just failed without a log.
 
 You needn't just wait for the lock without a timeout.
+
+<!-- prettier-ignore-start -->
+Why does the hook not run unless the caller holds the lock?
+-
+The hook runs only when the caller holds the lock.
+<!-- prettier-ignore-end -->
