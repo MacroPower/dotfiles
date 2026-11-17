@@ -115,7 +115,27 @@ func TestRewrite(t *testing.T) {
 		"grep BRE pattern with -E rewrites": {
 			command: `grep -E '\(a\)' .`,
 			cfg:     fullConfig(),
-			want:    `rg -E '\(a\)' . -g '!.git' -g '!.worktrees' -g '!.claude/worktrees' -g '!**/.claude/worktrees'`,
+			want:    `rg '\(a\)' . -g '!.git' -g '!.worktrees' -g '!.claude/worktrees' -g '!**/.claude/worktrees'`,
+			changed: true,
+		},
+		"grep BRE pattern with --extended-regexp rewrites": {
+			command: `grep --extended-regexp '\(a\)' .`,
+			cfg:     fullConfig(),
+			want:    `rg '\(a\)' . -g '!.git' -g '!.worktrees' -g '!.claude/worktrees' -g '!**/.claude/worktrees'`,
+			changed: true,
+		},
+		"grep -E drops the flag": {
+			// rg reads -E as --encoding, which takes a value, so keeping
+			// the flag makes rg read the pattern as an encoding name.
+			command: `grep -E '^== check' g.txt`,
+			cfg:     fullConfig(),
+			want:    `rg '^== check' g.txt -g '!.git' -g '!.worktrees' -g '!.claude/worktrees' -g '!**/.claude/worktrees'`,
+			changed: true,
+		},
+		"grep -E in a short-flag cluster drops the flag": {
+			command: `grep -rnE 'a|b' src`,
+			cfg:     fullConfig(),
+			want:    `rg -n 'a|b' src -g '!.git' -g '!.worktrees' -g '!.claude/worktrees' -g '!**/.claude/worktrees'`,
 			changed: true,
 		},
 		"stdin grep falls through": {

@@ -64,10 +64,13 @@ var findActionWords = map[string]bool{
 }
 
 // grepShortFlags maps a bundled grep short-flag character to its rg
-// token. An empty string drops the flag (rg is recursive by default, so
-// -r/-R vanish). A character absent from this map makes the whole grep
-// rewrite fall through, so unmapped or value-taking short flags (-A, -e,
-// -m, ...) are left untranslated rather than guessed.
+// token. An empty string drops the flag. rg is recursive by default, so
+// -r and -R vanish. rg's default dialect already accepts ERE syntax, so
+// -E vanishes too. rg reads -E as --encoding, which takes a value, so
+// keeping -E makes rg read the pattern as an encoding name. A character
+// absent from this map makes the whole grep rewrite fall through. The
+// rewrite never guesses at an unmapped or value-taking short flag such
+// as -A, -e, or -m.
 var grepShortFlags = map[rune]string{
 	'r': "",
 	'R': "",
@@ -81,7 +84,7 @@ var grepShortFlags = map[rune]string{
 	'l': "-l",
 	'H': "-H",
 	'F': "-F",
-	'E': "-E",
+	'E': "",
 }
 
 // grepLongFlags maps a grep long flag to its rg token, with the same
@@ -99,7 +102,7 @@ var grepLongFlags = map[string]string{
 	"--files-with-matches": "-l",
 	"--with-filename":      "-H",
 	"--fixed-strings":      "-F",
-	"--extended-regexp":    "-E",
+	"--extended-regexp":    "",
 }
 
 // breConstructs are BRE backslash sequences that mean something different
@@ -328,7 +331,8 @@ func rewriteGrep(call *syntax.CallExpr, command string, excludes []string) (stri
 
 // mapShortCluster maps a bundled short-flag cluster (the chars after the
 // leading '-') to rg tokens, returning false if any character is
-// unmapped. Dropped flags (-r/-R) contribute no token.
+// unmapped. Flags that map to an empty string, such as -r and -E,
+// contribute no token.
 func mapShortCluster(chars string) ([]string, bool) {
 	var out []string
 
