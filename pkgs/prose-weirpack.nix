@@ -64,7 +64,7 @@ let
 
   builtinRules = lib.concatMap (t: t.builtin) tiersList;
 
-  # The directory under $out that holds the shared awk reader.
+  # The directory under $out that holds the awk libraries of lib/.
   awkLib = "share/harper/awk/lib";
 
   # One entry per awk check: the internal name prose-lint tags it

@@ -9,17 +9,18 @@
 # run() reads the file that holds the run from `run_file`, and the line
 # and character column of its first word from `run_line` and `run_col`.
 #
-# Blank lines between paragraphs continue a run. So do lines that the
-# reader blanks to whitespace. A line that holds only a code span
-# becomes one, and so does a bare `>` between two quoted paragraphs.
+# Blank lines between paragraphs continue a run. So do lines that
+# lib/markdown.awk blanks to whitespace. A line that holds only a code
+# span becomes one, and so does a bare `>` between two quoted
+# paragraphs.
 #
 # These lines end a run:
 #
-# - Every non-blank line that the reader skips. Fenced code, Mermaid
-#   included, indented code, a multi-line HTML comment, and a MyST
-#   directive opener each leave one. A rule ahead of the include counts
-#   the non-blank lines, so prose() can tell a skipped blank line from
-#   skipped code.
+# - Every non-blank line that lib/markdown.awk skips. Fenced code,
+#   Mermaid included, indented code, a multi-line HTML comment, and a
+#   MyST directive opener each leave one. A rule ahead of the include
+#   counts the non-blank lines, so prose() can tell a skipped blank line
+#   from skipped code.
 # - A heading, written with `#` marks or underlined with `=` or `-`.
 # - A list of two or more items, and a table of two or more body rows.
 # - A `:::` closer, a definition-list line that opens with `: `, and a
@@ -38,9 +39,9 @@
 # URLs. A list item that holds only an emphasized code span or URL,
 # such as ``- **`kubectl`**``, therefore counts as a list item.
 #
-# Words are tokens that hold a letter. The reader blanks code spans, so
-# a span counts as none. The title above a `=` or `-` underline counts
-# toward the run that the underline ends.
+# Words are tokens that hold a letter. lib/markdown.awk blanks code
+# spans, so a span counts as none. The title above a `=` or `-`
+# underline counts toward the run that the underline ends.
 
 {
   if (FNR == 1) {

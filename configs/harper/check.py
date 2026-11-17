@@ -7,9 +7,9 @@ recommended, or optional. A .weir file is a Weir rule the weirpack
 carries under the internal name <Rule>_<Tier>, an .awk file is a check
 run with awk in place of Harper, and builtins.txt names the Harper
 built-ins the tier enables. The awk lib dir goes on AWKPATH, so a check
-can `@include` the shared markdown reader. For each rule,
-fixtures/<tier>/<Rule>.bad.md must produce a lint on every non-blank
-line, and both fixtures/<tier>/<Rule>.good.md and the shared
+can `@include` the libraries in lib/, such as lib/markdown.awk. For
+each rule, fixtures/<tier>/<Rule>.bad.md must produce a lint on every
+non-blank line, and both fixtures/<tier>/<Rule>.good.md and the shared
 fixtures/common.good.md must produce none. A line that holds only `>`
 marks is a blank line inside a blockquote, so it counts as blank. A bad
 line that ends in an HTML comment that holds `same finding` does not

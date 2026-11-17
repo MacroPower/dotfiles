@@ -1,11 +1,11 @@
-# Reads markdown for a prose check. A check file pulls this reader in
-# with `@include "markdown.awk"`, and its caller puts this directory on
-# AWKPATH. The check defines two functions:
+# Reads markdown for a prose check. A check file pulls lib/markdown.awk
+# in with `@include "markdown.awk"`, and its caller puts this directory
+# on AWKPATH. The check defines two functions:
 #
 #   BEGIN_CHECK()  runs once at startup, after `utf8` is set
 #   prose(text)    runs on each prose line
 #
-# The reader passes each prose line to prose() after blanking code
+# lib/markdown.awk passes each prose line to prose() after blanking code
 # spans, HTML code, kbd, samp, and pre elements, autolinks, link
 # destinations, and bare URLs to spaces, so columns stay put. It skips
 # YAML front matter, fenced code at any indentation or inside a
@@ -16,25 +16,25 @@
 # `:name: value` option lines under it, because ProseEmoji's shortcode
 # pattern matches an option such as `:class: tip`.
 #
-# The reader drops the `\r` from each line that ends in `\r\n`. A file
-# with CRLF line endings therefore draws the same findings as its copy
-# with LF endings. The reader sets RS in BEGIN, and gawk runs BEGIN
-# before it reads the first line. A rule that a check puts ahead of the
-# include therefore reads the same lines.
+# lib/markdown.awk drops the `\r` from each line that ends in `\r\n`. A
+# file with CRLF line endings therefore draws the same findings as its
+# copy with LF endings. lib/markdown.awk sets RS in BEGIN, and gawk runs
+# BEGIN before it reads the first line. A rule that a check puts ahead
+# of the include therefore reads the same lines.
 #
 # A bare URL never ends in an ASCII mark that closes a sentence, a
 # clause, a quote, a bracket, or emphasis. The period after the URL in
 # `Read https://example.com.` therefore still ends the sentence.
 #
-# Before each call to prose(), the reader sets `bare_line` to 1 when the
-# line holds only `>` markers, HTML comments, `pre` elements, and
-# whitespace, and to 0 otherwise. A check that splits paragraphs ends
-# one at a bare line, such as a bare `>` between two quoted paragraphs.
-# CommonMark reads a line that opens with an HTML comment or with `<pre`
-# as an HTML block, and that block ends the open paragraph. A line
-# that holds only a code span, a URL, or an inline `code`, `kbd`, or
-# `samp` element also reaches prose() as spaces. That line still holds
-# text, so it continues the sentence of the line above it. A check
+# Before each call to prose(), lib/markdown.awk sets `bare_line` to 1
+# when the line holds only `>` markers, HTML comments, `pre` elements,
+# and whitespace, and to 0 otherwise. A check that splits paragraphs
+# ends one at a bare line, such as a bare `>` between two quoted
+# paragraphs. CommonMark reads a line that opens with an HTML comment or
+# with `<pre` as an HTML block, and that block ends the open paragraph.
+# A line that holds only a code span, a URL, or an inline `code`, `kbd`,
+# or `samp` element also reaches prose() as spaces. That line still
+# holds text, so it continues the sentence of the line above it. A check
 # therefore tests `bare_line` and never the blank text.
 #
 # gawk counts an offset in characters under a UTF-8 locale and in bytes
@@ -44,19 +44,19 @@
 # line. column() converts the offset to the character column that a
 # person sees in an editor.
 #
-# With RAW=1 in the environment, the reader passes every line to
+# With RAW=1 in the environment, lib/markdown.awk passes every line to
 # prose() whole, string literals included, for a source file with no
 # markdown structure.
 #
-# With SHADOW=1 in the environment, the reader takes the comment shadow
-# that prose-lint builds from a source file. Each comment line keeps its
-# line and column there, and every other line reads `x`. The reader
-# takes an `x` line as blank, so the comments on each side of a line of
-# code stay apart. It blanks the comment marker (`#`, `//`, `///`,
-# `//!`, or `--`) to spaces, so the columns stay put, and drops the ` x`
-# that the shadow adds after a line that ends in `-`, `#`, `/`, `*`, or
-# `!`. It also turns off the indented-code rule, because comment text
-# is often indented under its marker.
+# With SHADOW=1 in the environment, lib/markdown.awk takes the comment
+# shadow that prose-lint builds from a source file. Each comment line
+# keeps its line and column there, and every other line reads `x`.
+# lib/markdown.awk takes an `x` line as blank, so the comments on each
+# side of a line of code stay apart. It blanks the comment marker (`#`,
+# `//`, `///`, `//!`, or `--`) to spaces, so the columns stay put, and
+# drops the ` x` that the shadow adds after a line that ends in `-`,
+# `#`, `/`, `*`, or `!`. It also turns off the indented-code rule,
+# because comment text is often indented under its marker.
 
 BEGIN {
   RS = "\r?\n"

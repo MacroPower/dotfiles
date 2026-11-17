@@ -701,11 +701,11 @@ in
     }
 
     # Runs the awk checks that commentChecks names over the comment
-    # shadow of a source file, with SHADOW=1 so the reader blanks each
-    # comment marker. It prints the findings under their internal names,
-    # the way markdown_checks does. The second argument is the comment
-    # kind, and a check skips each kind that comment-checks.txt lists
-    # after its name.
+    # shadow of a source file, with SHADOW=1 so lib/markdown.awk blanks
+    # each comment marker. It prints the findings under their internal
+    # names, the way markdown_checks does. The second argument is the
+    # comment kind, and a check skips each kind that comment-checks.txt
+    # lists after its name.
     comment_checks() {
       local internal script name dir
       dir=$(mktemp -d -p "$tmp_dir")
