@@ -87,3 +87,61 @@ Set the label to ["restart if"] needed.
 Set the label to _"restart if"_ needed.
 
 (Set the label to "restart if") needed.
+
+Restart the agent if (needed).
+
+Restart the agent if [needed].
+
+Restart the agent if, needed.
+
+Restart the agent if: needed.
+
+Retry the request if (possible).
+
+Restart the agent if [needed now].
+
+Restart the agent if ~needed~.
+
+Restart the agent if {needed}.
+
+Restart the agent if 1needed.
+
+Restart the agent if ![needed](https://example.com/needed.png).
+
+Set the label to [restart if] needed.
+
+(Restart the agent if) needed.
+
+Restart the agent if [needed now] [ref].
+
+Restart the agent if [needed [now]].
+
+Restart the agent if [needed](see below).
+
+Restart the agent if [needed now](see below).
+
+Restart the agent if [needed](it's below).
+
+Restart the agent if [[needed] now].
+
+Restart the agent if [[needed now|label]].
+
+Restart the agent if [[**needed**]].
+
+Restart the agent if [needed]("on" or "off").
+
+Restart the agent if [needed](see 'quoted' text).
+
+Restart the agent if [needed](see "below" now).
+
+Restart the agent if [needed](a (b) c).
+
+Restart the agent if [needed](<see below).
+
+Restart the agent if [needed]((see below)).
+
+Restart the agent if [[needed] now][ref].
+
+Restart the agent if [needed][^1].
+
+Restart the agent if [needed](<a 'T').

@@ -137,16 +137,44 @@
 #
 # The Recommended ProseVagueCriterion reports `if needed`,
 # `if necessary`, `if applicable`, `if appropriate`, and `if possible`,
-# so the check skips them. ProseVagueCriterion does not match such a
-# phrase across an attribution or a quote. The check therefore skips the
-# phrase only when neither sits between the two words. An `if` that ends
-# a quotation, or the first part of a split quotation, then fires
-# (`"Restart the agent if," the guide says, "needed."`, `"Restart the
-# agent if" needed.`). So does an `if` before a word in quotes
-# (`Restart the agent if "needed".`). Such an `if` can also open a
-# condition on a quoted string (`Restart the agent if "needed" appears
-# in the log`). Emphasis does not stop ProseVagueCriterion, so the check
-# still skips `if **needed**`.
+# so the check skips them. ProseVagueCriterion matches such a phrase
+# only when nothing but emphasis, a footnote reference, or the markup of
+# a markdown link sits between its two words. The check skips the phrase
+# in that case, so it still skips `if **needed**`, `if[^1] needed`, and
+# `if [needed](https://example.com)`.
+#
+# The check also skips the phrase after some marks that Harper reads as
+# text, so neither rule reports the `if`. A lone `*` or `_` counts as
+# emphasis when no later mark closes it (`if* needed`). The check drops
+# a footnote reference before it tests the marks, so it skips
+# `if**[^1]** needed`, as it skips `if**** needed`. lib/markdown.awk
+# blanks a bare URL, so the check reads
+# `if [needed](https://example.com/a b)` as a link to `b`. The check
+# also reads a title that no mark closes as a title that runs to the end
+# of the sentence (`if [needed](see "Setup) now.`).
+#
+# The check does not read link definitions, so it skips the phrase in a
+# reference link with no definition, which Harper reads as text
+# (`if [needed now][ref]`). It reads a shortcut reference link, which
+# holds only the text in brackets, as a plain bracket. An `if` before
+# one therefore draws a finding from both rules when the file defines
+# its label (`if [needed]` and `[needed]: https://example.com`).
+#
+# The check cannot tell a wikilink before a `(url)`
+# (`if [[needed]](https://example.com)`) from a link whose text opens
+# with a bracket. So neither rule reports an `if` before such a link
+# (`if [[needed] now](https://example.com)`) or before the broken
+# `if [[needed] now.`.
+#
+# An attribution between the two words stops ProseVagueCriterion, so an
+# `if` at the end of the first part of a split quotation fires
+# (`"Restart the agent if," the guide says, "needed."`). So does an `if`
+# before a quote, a paren, a plain bracket, or a comma (`"Restart the
+# agent if" needed.`, `Restart the agent if "needed".`, `Restart the
+# agent if (needed).`, `Restart the agent if [needed].`, `Restart the
+# agent if, needed.`). An `if` before a quote can also open a condition
+# on a quoted string (`Restart the agent if "needed" appears in the
+# log`).
 #
 # ProseIfWhether reports `if` after a verb of checking (`check if`,
 # `notice if`), so the check skips that `if` too. ProseIfWhether does
@@ -188,16 +216,111 @@ function word(i,   w) {
   return w
 }
 
-# Reports whether a quote sits between token i and token i + 1. The
-# quote can close token i (`if"`) or open token i + 1 (`"needed`). A
-# paren, a bracket, or emphasis can sit outside the quote
-# (`if **"needed"**`). Each straight and curly quote counts on either
-# side, so a curly quote that faces the wrong way counts too
-# (`if ”needed”`). The pattern writes each curly quote as its UTF-8
-# bytes, as ends_sentence() in lib/markdown.awk does.
-function quote_between(i,   q) {
-  q = "([\"']|\342\200\230|\342\200\231|\342\200\234|\342\200\235)"
-  return tok[i] ~ (q "[)*_\\]]*$") || tok[i + 1] ~ ("^[(\\[*_]*" q)
+# Returns token i up to its first `]`, in lowercase and without the
+# punctuation around it. A `]` closes the text of a link, so the vague
+# test in sentence() reads the text of a reference link apart from its
+# label. `[needed][ref].` then reads as `needed`, and word() reads the
+# same token as `needed][ref`.
+function word_before_bracket(i,   w) {
+  w = tok[i]
+  sub(/\].*$/, "", w)
+  w = tolower(w)
+  gsub(/^[^a-z]+|[^a-z]+$/, "", w)
+  return w
+}
+
+# Reports whether Harper reads the last word of token i and the first
+# word of token i + 1 side by side. Only emphasis, a footnote reference,
+# and the markup of a markdown link can sit between the two words.
+# Emphasis is a run of `*`, `_`, and `~~` marks, which can close token i
+# (`**restart if** needed`) or open token i + 1 (`if **needed**`).
+# Harper reads a lone `~` as text, so `if ~needed~` does not pass. Every
+# other mark between the words counts as text, such as a quote, a paren,
+# a bracket, or a comma (`if "needed"`, `if (needed)`, `if, needed`).
+#
+# Harper skips a footnote reference, such as `[^1]`, so one can close
+# token i next to the emphasis marks (`if[^1] needed`,
+# `**restart if**[^1] needed`). The check drops each footnote reference
+# before it tests the marks.
+#
+# The function counts the brackets after a `[` before the second word to
+# find the `]` that closes it. That `[` opens a link when no `]` closes
+# it, because lib/markdown.awk blanks the `](url)` of most links
+# (`if [needed](https://example.com)`). It also opens a link when a `[`
+# follows the `]` directly, as the label of a reference link does
+# (`if [needed][ref]`, `if [needed now][ref]`, `if [needed][]`). A
+# footnote reference after the `]` is not such a label, so
+# `if [needed][^1]` fires. Every other `]` closes a plain bracket, which
+# Harper reads as text (`if [needed now]`).
+#
+# A `(` right after the `]` can open a link destination that
+# lib/markdown.awk leaves in place, such as a URL in angle brackets
+# (`if [needed](<https://example.com/a b>)`) or a URL before a title in
+# single quotes. The check reads the `(` as the start of a link only
+# when the text after it follows the CommonMark grammar of an inline
+# link. Every other `(` opens a plain paren, and the `]` before it
+# closes a plain bracket (`if [needed](see below)`,
+# `if [needed]("on" or "off")`, `if [needed](a (b) c)`).
+#
+# The text of an inline link holds an optional destination, an optional
+# title, and the `)`, and spaces can sit between the parts. A space must
+# sit between a destination and a title. A destination sits in angle
+# brackets, or it does not hold a space and nests parens at most one
+# level deep (`a(b)c`). A title sits in double quotes, single quotes, or
+# parens.
+# The check reads only the text up to the end of the sentence, which
+# can fall inside a title. So it also accepts a title that no mark
+# closes before that end (`if [needed](#anchor 'Read this. Then go.')`).
+#
+# Harper reads a `[[` as a wikilink when `]]` closes it and no `[` or
+# `]` sits between (`if [[needed]]`, `if [[needed now]]`). Harper shows
+# only the text after a `|`, so the check passes a wikilink only when no
+# `|` sits inside it, and `if [[needed now|label]]` fires. Harper also
+# reads emphasis inside a wikilink as text, so `if [[**needed**]]`
+# fires. The first `[` of a `[[` also opens a link when no `]` closes it
+# (`if [[needed]](https://example.com)`). lib/markdown.awk blanks the
+# second `]` of such a wikilink with the `(url)` after it. Every other
+# `[[` fires (`if [[needed] now]`).
+function side_by_side(n, i,   e, dest, title, open_title, tail, head, wiki, rest, j, d, p, c) {
+  e = "([*_]|~~)*"
+  # The `(` of an inline link and its destination, a title that a mark
+  # closes, and a title that runs to the end of the sentence.
+  dest = "^\\([ \t]*(<[^<>]*>|([^ \t<()]|\\([^ \t()]*\\))([^ \t()]|\\([^ \t()]*\\))*)?"
+  title = "[ \t]+(\"[^\"]*\"|'[^']*'|\\([^()]*\\))"
+  open_title = "[ \t]+(\"[^\"]*|'[^']*|\\([^()]*)$"
+  tail = tok[i]
+  sub(/^.*[A-Za-z]/, "", tail)
+  gsub(/\[\^[^][]*\]/, "", tail)
+  head = tok[i + 1]
+  sub(/[A-Za-z].*$/, "", head)
+  if (tail !~ ("^" e "$")) {
+    return 0
+  }
+  if (head ~ ("^" e "$")) {
+    return 1
+  }
+  wiki = head ~ ("^" e "\\[\\[$")
+  if (!wiki && head !~ ("^" e "\\[" e "$")) {
+    return 0
+  }
+  rest = substr(tok[i + 1], index(tok[i + 1], "[") + 1)
+  for (j = i + 2; j <= n; j++) {
+    rest = rest " " tok[j]
+  }
+  if (wiki && rest ~ /^\[[^][|]*\]\]/) {
+    return 1
+  }
+  d = 1
+  for (p = 1; p <= length(rest); p++) {
+    c = substr(rest, p, 1)
+    if (c == "[") {
+      d++
+    } else if (c == "]" && --d == 0) {
+      c = substr(rest, p + 1)
+      return !wiki && ((c ~ /^\[/ && c !~ /^\[\^/) || c ~ (dest "(" title ")?[ \t]*\\)") || c ~ (dest open_title))
+    }
+  }
+  return 1
 }
 
 function sentence(n,   i, k, m, at, depth, w, t, limited, quoted, resume, resume_end) {
@@ -245,11 +368,13 @@ function sentence(n,   i, k, m, at, depth, w, t, limited, quoted, resume, resume
       sub(/^[*_]*(["']|\342\200\234|\342\200\230)/, "", t)
     }
     if (w == "if" && depth == 0 && t ~ /^[a-z]/) {
-      # ProseVagueCriterion does not match across an attribution or a
-      # quote. The check skips its words only when the next token that the
-      # check reads is the token right after the `if`. When quote_between()
-      # finds a quote between the two tokens, the check does not skip them.
-      if (word(at[k + 1]) ~ /^(any|so)$/ || (at[k + 1] == i + 1 && word(i + 1) ~ vague && !quote_between(i)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
+      # ProseVagueCriterion matches its words only when Harper reads them
+      # side by side. An attribution between the words stops the match.
+      # The check therefore skips the words only when the next token that
+      # it reads is the token right after the `if`. The test reads that
+      # token up to its first `]`, and side_by_side() then tests the marks
+      # between the two words.
+      if (word(at[k + 1]) ~ /^(any|so)$/ || (at[k + 1] == i + 1 && word_before_bracket(i + 1) ~ vague && side_by_side(n, i)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
         continue
       }
       if ((word(at[k + 1]) ~ /^(it|they)$/ && word(at[k + 2]) ~ /^exists?$/ && tok[at[k + 2]] ~ /[.:,]([")*_\]']|\342\200\235|\342\200\231)*$/) || (word(at[k + 1]) == "there" && word(at[k + 2]) == "is" && word(at[k + 3]) == "one")) {

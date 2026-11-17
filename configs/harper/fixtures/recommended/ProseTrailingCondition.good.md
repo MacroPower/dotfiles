@@ -119,3 +119,88 @@ Set the label to "if the job fails".
 Restart the agent if **needed**.
 
 Restart the agent if _needed_.
+
+Restart the agent if [needed](https://example.com).
+
+Restart the agent if [needed now](https://example.com).
+
+Restart the agent if **[needed](https://example.com)**.
+
+Restart the agent if [**needed**](https://example.com).
+
+Restart the agent if [needed](https://example.com) [1].
+
+Restart the agent if ~~needed~~.
+
+Restart the **agent if** needed.
+
+Restart the [agent if](https://example.com) needed.
+
+Restart the agent if [needed][ref].
+
+Restart the agent if [_needed_][ref].
+
+Retry the request if [possible][ref].
+
+Restart the agent if [needed now][ref].
+
+Restart the agent if [needed][].
+
+Restart the agent if [needed](<https://example.com/a b>).
+
+Restart the agent if [needed now](<https://example.com/a b>).
+
+Restart the agent if [needed](https://example.com) [a [b] c].
+
+Restart the agent if [[needed]].
+
+Restart the agent if [[needed now]].
+
+Retry the request if [[possible]] values change.
+
+Restart the agent if **[[needed]]**.
+
+Restart the agent if [[needed]][ref].
+
+Restart the agent if [[needed]](https://example.com).
+
+Restart the agent if [[needed now]](https://example.com).
+
+<!-- prettier-ignore -->
+Restart the agent if [needed](#anchor 'A Title').
+
+<!-- prettier-ignore -->
+Restart the agent if [needed](./guide.md (A Title)).
+
+<!-- prettier-ignore -->
+Restart the agent if [needed](https://example.com 'A Title').
+
+Restart the agent if [needed](<see below>).
+
+<!-- prettier-ignore -->
+Restart the agent if [needed](#anchor 'Read this. Then go.').
+
+Restart the agent if [needed](<docs/a b.md> "Title").
+
+Restart the agent if [needed](<docs/a b.md> "Read this. Then go.").
+
+<!-- prettier-ignore -->
+Restart the agent if [needed]( <docs/a b.md> ).
+
+<!-- prettier-ignore -->
+Restart the agent if [needed](./guide.md (Read this. Then go.)).
+
+Restart the agent if[^1] needed.
+
+Retry the request if[^1][^2] possible.
+
+Restart the **agent if[^1]** needed.
+
+Restart the **agent if**[^1] needed.
+
+[ref]: https://example.com
+[needed]: https://example.com
+
+[^1]: A note.
+
+[^2]: A note.

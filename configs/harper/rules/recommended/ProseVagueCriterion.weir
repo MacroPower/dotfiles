@@ -33,9 +33,13 @@
 #
 # ProseTrailingCondition skips `if needed`, `if necessary`,
 # `if applicable`, `if appropriate`, and `if possible`, so only this
-# rule reports them. This rule does not match such a phrase across a
-# quote (`if "needed"`), so ProseTrailingCondition does not skip that
-# `if`.
+# rule reports them. This rule matches such a phrase only when nothing
+# but emphasis, a footnote reference, or the markup of a markdown link
+# sits between its two words (`if **needed**`, `if[^1] needed`,
+# `if [needed](https://example.com)`).
+# ProseTrailingCondition skips the phrase in that case, and it reports
+# the `if` in `if "needed"`, `if (needed)`, `if [needed]`, and
+# `if, needed`.
 #
 # Measurement
 #
