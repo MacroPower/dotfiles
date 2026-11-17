@@ -12,3 +12,7 @@ The loader reads https://example.com/a. The loader reads https://example.com/b. 
 
 The guide for the loader lives at
 https://example.com/guide: read it first. The loader reads `a.nix`. The loader reads `b.nix`. The loader reads `c.nix`. <!-- same finding -->
+
+The loader reads the file that the guide at
+https://example.com/guide <!-- same finding -->
+names. The loader reads `b.nix`. The loader reads `c.nix`. <!-- same finding -->

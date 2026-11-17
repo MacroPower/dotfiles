@@ -101,7 +101,7 @@ function prose(text,   start, rest, t1, t2, t3, w1, first, shown) {
   }
   last_file = FILENAME
   last_line = FNR
-  if (text ~ /^[ \t]*$/) {
+  if (bare_line) {
     gap = 1
     return
   }
@@ -143,8 +143,8 @@ function prose(text,   start, rest, t1, t2, t3, w1, first, shown) {
   if (w1 == "it" && word(t2) ~ /^(is|was)$/ && word(t3) ~ expletive) {
     return
   }
-  # A plural pronoun takes no `-s` verb, so `These changes` names a
-  # noun.
+  # A plural pronoun does not take an `-s` verb, so `These changes`
+  # names a noun.
   if (w1 ~ /^(these|those|they)$/ && word(t2) ~ /s$/) {
     return
   }

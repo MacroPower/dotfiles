@@ -92,3 +92,11 @@ https://example.com/* covers, and it blocks every request to the other hosts of 
 
 The scheduler reads the queue and then starts one worker for each job that it finds in the queue, and the guide at
 *https://example.com/guide* covers the rest of the steps that the worker runs after it starts the job. <!-- same finding -->
+
+The scheduler reads the queue and then starts one worker for each job that it finds in the queue, and the guide at
+https://example.com/guide <!-- same finding -->
+covers the rest of the steps that the worker runs after it starts the job. <!-- same finding -->
+
+The importer reads every row of the source table and converts each value to the target type, and the command
+`importer --dry-run` <!-- same finding -->
+prints each row that it would write to the destination table without writing any of them. <!-- same finding -->

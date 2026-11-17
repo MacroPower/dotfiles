@@ -91,3 +91,25 @@ The scheduler reads the queue and picks the oldest job whose lease has expired, 
 Deploying the service to a cluster with several worker nodes
 > The scheduler reads the queue and picks the oldest job whose lease has expired, and then it assigns that job to the next idle worker.
 <!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The importer reads every row of the source table, converts each value to the target type, checks it against the schema, and then writes the rows in batches of one hundred to the destination table with
+`importer --batch`
+---
+<!-- prettier-ignore-end -->
+
+> The scheduler reads the queue and then starts one worker for each job that it finds in the queue
+>
+> The importer reads every row of the source table and converts each value to the target type for the destination table
+
+<!-- prettier-ignore-start -->
+The scheduler reads the queue and then starts one worker for each job that it finds in the queue, and the guide
+<pre>make build</pre>
+covers the rest of the steps that the worker runs after it starts the job.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The scheduler reads the queue and then starts one worker for each job that it finds in the queue, and the guide
+<!-- note -->
+covers the rest of the steps that the worker runs after it starts the job.
+<!-- prettier-ignore-end -->

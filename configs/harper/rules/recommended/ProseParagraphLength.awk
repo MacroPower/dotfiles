@@ -12,7 +12,9 @@
 #
 # The check includes lib/markdown.awk and reads one paragraph at a time.
 # The paragraph boundaries follow ProseSentenceLength. A paragraph ends
-# at a line that lib/markdown.awk skips or passes as blank. It also ends
+# at a line that lib/markdown.awk skips or marks in `bare_line`, such as
+# a bare `>` between two quoted paragraphs. A line that holds only a
+# code span or a URL continues the paragraph. A paragraph also ends
 # where a list item, heading, table row, or HTML line starts, so each
 # list item counts as its own paragraph.
 #
@@ -83,7 +85,7 @@ function flush() {
 }
 
 function prose(text,   rest, pos, tok, col) {
-  if (FNR != last_line + 1 || text ~ /^[ \t]*$/ || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
+  if (FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
     flush()
   }
   last_line = FNR

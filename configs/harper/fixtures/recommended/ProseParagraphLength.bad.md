@@ -18,3 +18,7 @@ The launch page is at https://example.com/launch! _The guide is at https://examp
 
 The scheduler reads the queue. It picks the oldest job. The guide at
 *https://example.com/guide* covers the lease. It starts the worker. The worker runs the job. The worker writes the result. The scheduler marks the job done. <!-- same finding -->
+
+The scheduler reads the queue. It picks the oldest job. It checks the lease with
+`lease --check` <!-- same finding -->
+before it starts the worker. The worker runs the job. The worker writes the result. It logs the run. The scheduler marks the job done. <!-- same finding -->

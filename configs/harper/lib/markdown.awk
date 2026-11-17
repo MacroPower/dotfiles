@@ -26,6 +26,17 @@
 # clause, a quote, a bracket, or emphasis. The period after the URL in
 # `Read https://example.com.` therefore still ends the sentence.
 #
+# Before each call to prose(), the reader sets `bare_line` to 1 when the
+# line holds only `>` markers, HTML comments, `pre` elements, and
+# whitespace, and to 0 otherwise. A check that splits paragraphs ends
+# one at a bare line, such as a bare `>` between two quoted paragraphs.
+# CommonMark reads a line that opens with an HTML comment or with `<pre`
+# as an HTML block, and that block ends the open paragraph. A line
+# that holds only a code span, a URL, or an inline `code`, `kbd`, or
+# `samp` element also reaches prose() as spaces. That line still holds
+# text, so it continues the sentence of the line above it. A check
+# therefore tests `bare_line` and never the blank text.
+#
 # gawk counts an offset in characters under a UTF-8 locale and in bytes
 # under the C locale that the nix build sandbox uses. Blanking writes
 # one space for each character or each byte that it removes. An offset
@@ -67,6 +78,7 @@ BEGIN {
 }
 
 raw_mode {
+  bare_line = $0 ~ /^[ \t]*$/
   prose($0)
   next
 }
@@ -330,5 +342,6 @@ in_comment {
   if (raw ~ /^[ \t]*(([-*+]|[0-9]+[.)])[ \t]|#+([ \t]|$)|[|<])/) {
     span_open = 0
   }
+  bare_line = blank(raw, "<!--([^-]|-[^-])*-->|<pre([ \t][^>]*)?>([^<]|<[^/])*</pre>") ~ /^[ \t]*$/
   prose(clean(raw))
 }

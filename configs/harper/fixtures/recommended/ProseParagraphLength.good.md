@@ -41,3 +41,7 @@ GitHub Pages|See [details](https://example.com/github).
 GitLab Pages|See [details](https://example.com/gitlab).
 NGINX|See [details](https://example.com/nginx).
 Netlify|See [details](https://example.com/netlify).
+
+> The scheduler reads the queue. It picks the oldest job. It checks the lease. It starts the worker.
+>
+> The worker runs the job. The worker writes the result. It logs the run. The scheduler marks the job done.

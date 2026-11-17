@@ -134,7 +134,7 @@ function verb(tok, word) {
 }
 
 function prose(text,   rest, pos, tok, col, word, base) {
-  if (FILENAME != last_file || FNR != last_line + 1 || text ~ /^[ \t]*$/ || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
+  if (FILENAME != last_file || FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
     reset()
   }
   last_file = FILENAME

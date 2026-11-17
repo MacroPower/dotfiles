@@ -19,3 +19,7 @@ The worker reads `queue.toml`. A task runs on one worker.
 A new worker is `idle`. One task wakes it up.
 
 The worker reads https://example.com/queue. A task runs on one worker.
+
+A worker reads the queue with
+`queue --list` <!-- same finding -->
+and picks the oldest entry. A lease is a lock on that entry.

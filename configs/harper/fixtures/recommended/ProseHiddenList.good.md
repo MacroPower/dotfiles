@@ -15,3 +15,7 @@ The `--force` flag skips the check. It also hides the summary. The `--dry-run` f
 A node runs the kubelet. A node reports its status. A node joins one cluster.
 
 Run `make`. Run `make test`. Run `make lint`.
+
+> The loader reads `a.nix`. The loader reads `b.nix`.
+>
+> The loader reads `c.nix`.
