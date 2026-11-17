@@ -68,11 +68,13 @@ func runServe(ctx context.Context, args []string) error {
 	output := fs.String(
 		"output",
 		"",
-		"path where scoped kubeconfig is written (default: <host's $XDG_STATE_HOME>/mcp-kubectx-run/kubeconfig.<pid>.host.yaml "+
+		"path of the scoped kubeconfig (default: <host's $XDG_STATE_HOME>/mcp-kubectx-run/kubeconfig.<pid>.host.yaml "+
 			"for a host-side serve, <host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.guest.yaml for a Lima-guest serve). "+
-			"In a Lima guest, an explicit path must be host-resolvable; shutdown cleanup uses a local os.Remove on this "+
-			"branch (not host cleanup), so the path must also be writable from the guest -- typically only true under a "+
-			"writable bind mount. Default operation does not need a writable mount.",
+			"A Lima-guest serve removes the file at shutdown with a local os.Remove, so the guest must be able to write "+
+			"to the path. The default path of a Lima-guest serve lies under the writable bind mount of "+
+			"<host's $XDG_STATE_HOME>/mcp-kubectx that home/claude.nix declares, so a Lima-guest serve needs that mount. "+
+			"In a Lima guest, an explicit path must also resolve on the host. Usually only a path under a writable "+
+			"bind mount meets both conditions.",
 	)
 	saRole := fs.String(
 		"sa-role-name", "",

@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,4 +80,43 @@ func TestOpenLoggerRefusesSymlink(t *testing.T) {
 			assert.Equal(t, tc.before, data)
 		})
 	}
+}
+
+// TestServeOutputUsage runs `serve --help` of this test binary as a
+// child process and reads the usage of --output. A Lima-guest serve
+// removes its kubeconfig through the writable bind mount that
+// home/claude.nix declares. So the usage must name that mount as a
+// need of the default path.
+func TestServeOutputUsage(t *testing.T) {
+	t.Parallel()
+
+	self, err := os.Executable()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, self, subServe, "--help")
+
+	var stderr bytes.Buffer
+
+	cmd.Env = append(os.Environ(), runMainEnv+"=1")
+	cmd.Stderr = &stderr
+
+	var exitErr *exec.ExitError
+
+	require.ErrorAs(t, cmd.Run(), &exitErr, "serve exits 1 after --help")
+
+	_, entry, found := strings.Cut(stderr.String(), "\n  -output string\n")
+	require.True(t, found, "usage lists --output: %s", stderr.String())
+
+	entry, _, _ = strings.Cut(entry, "\n  -")
+
+	assert.Contains(
+		t,
+		entry,
+		"writable bind mount of <host's $XDG_STATE_HOME>/mcp-kubectx that home/claude.nix declares",
+	)
+	assert.Contains(t, entry, "a Lima-guest serve needs that mount")
+	assert.NotContains(t, entry, "does not need a writable mount")
 }
