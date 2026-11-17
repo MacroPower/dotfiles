@@ -430,6 +430,12 @@ on a set of files.
     has an `if` after the quotation.
   - A sentence that opens with a quoted word in curly quotes, with no
     mark before the closing quote, and has an `if` after the quotation.
+- `single-quotes` lints sentences that open with a quotation in double
+  quotes, and a copy of them in straight single quotes. It expects the
+  ProseLongParenthetical and ProseSentenceLength findings that it lists
+  from both files, messages included. `check.py` expects a finding on
+  each bad line of a fixture, whatever its message. Only this test
+  therefore checks the split that a ProseSentenceLength message names.
 - `transcripts` lints two transcripts. One marks each speaker with a
   bold label, and the test lints it as a `.md` file, as a `.markdown`
   file, and as a commit message. The other names each speaker in

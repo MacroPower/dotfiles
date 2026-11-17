@@ -18,6 +18,9 @@
 # as none either. Each finding names the line and column where the
 # sentence starts.
 #
+# The check drops the punctuation around each word that it compares, a
+# straight `'` included, so `'If`, `"If`, and `‘If` each count as `if`.
+#
 # The message names where to split, from the first of these steps that
 # fits the sentence:
 #
@@ -68,10 +71,13 @@ function BEGIN_CHECK() {
   subordinators = "^(if|when|whenever|unless|although|though|because|since|while|whereas|once)$"
 }
 
-# Returns token i in lowercase without the punctuation around it.
+# Returns token i in lowercase without the punctuation around it. The
+# strip drops a straight `'` at either end of the word, as it drops a
+# double quote, so `'If` reads as `if`. No word that the check compares
+# opens or ends with an apostrophe.
 function word(i,   w) {
   w = tolower(tok[i])
-  gsub(/^[^a-z']+|[^a-z']+$/, "", w)
+  gsub(/^[^a-z]+|[^a-z]+$/, "", w)
   return w
 }
 

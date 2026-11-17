@@ -1322,6 +1322,58 @@ in
           touch "$out"
         '';
 
+        # Lints sentences that open with a quotation in double quotes,
+        # and a copy of them in straight single quotes. The test expects
+        # the ProseLongParenthetical and ProseSentenceLength findings
+        # that want lists from both files, messages included. check.py
+        # expects a finding on each bad line of a fixture, whatever its
+        # message. Only this test therefore checks the split that a
+        # ProseSentenceLength message names. The command in
+        # configs/harper/CLAUDE.md builds this test too.
+        tests.single-quotes = runCommand "prose-lint-single-quotes" { } ''
+          # The first paragraph holds a sentence of 38 words, and the
+          # second holds a sentence of 30 words. Each one opens with
+          # `If`, and `, and the` follows the comma that closes the
+          # condition. Neither message names that `and` as a split
+          # point. The third paragraph holds a sentence of 30 words
+          # whose only join is `, then` after the condition, so it draws
+          # no finding. The fourth paragraph opens with `The hook,` and
+          # an aside of 15 words.
+          cat >double.md <<'EOF'
+          "If the cache is cold and the node restarts after the upgrade, the scheduler moves every pod to the spare pool, and the team waits for the warmup to finish before it opens the gate." the runbook says.
+
+          "If the cache is cold when the node restarts, the scheduler moves every pod to the spare pool, and the team waits before it opens the gate." the runbook says.
+
+          "If the cache is cold when the node restarts after the upgrade, then the scheduler moves every pod to the spare pool before it opens the gate." the runbook says.
+
+          "The hook, which runs after every Write and Edit of a markdown file or a source file, tags each finding" is the rule.
+          EOF
+          sed "s/\"/'/g" double.md >single.md
+
+          cat >want <<'EOF'
+          1:1: [Recommended] Readability::ProseSentenceLength: Sentence of 38 words, past the 32-word limit. Split it between two thoughts, and carry the relation into the next sentence with `so`, `but`, or `then`.
+          3:1: [Optional] Readability::ProseSentenceLength: Sentence of 30 words, past the 25-word limit. Split it between two thoughts, and carry the relation into the next sentence with `so`, `but`, or `then`.
+          7:6: [Recommended] Readability::ProseLongParenthetical: Long parenthetical of 15 words. Move the aside to its own sentence after this one, and name its subject.
+          EOF
+
+          for f in double.md single.md; do
+            rc=0
+            found=$(${lib.getExe finalAttrs.finalPackage} "$f") || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "$f: prose-lint exited $rc" >&2
+              exit 1
+            fi
+            printf '%s\n' "$found" |
+              sed -nE 's,^[^:]+:([0-9]+:[0-9]+: \[[A-Za-z]+\] [A-Za-z]+::(ProseLongParenthetical|ProseSentenceLength): .*),\1,p' |
+              sort -t: -k1,1n >got
+            if ! diff want got; then
+              echo "$f: the ProseLongParenthetical or ProseSentenceLength findings differ from want" >&2
+              exit 1
+            fi
+          done
+          touch "$out"
+        '';
+
         # Lints two transcripts and expects a ProseOpinion finding only
         # on the lines outside the turns of their speakers. The command
         # in configs/harper/CLAUDE.md builds this test too.

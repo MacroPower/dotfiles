@@ -36,6 +36,10 @@
 # `who` after the comma. The aside ends at the next comma, and a
 # lowercase word after it must carry on the sentence.
 #
+# The check drops the punctuation around each word that it compares, a
+# straight `'` included, so `'The`, `"The`, and `‘The` each count as the
+# determiner `the`.
+#
 # False Positives
 #
 # A parenthesized aside at the end of a sentence passes.
@@ -72,10 +76,13 @@ function BEGIN_CHECK() {
   stops = "^(and|or|but|the|a|an|this|that|it|they|we|you|which|who|so|then|for|in|on|at|to|of|with|as|if|when|because|until|before|after|unless|although|though|since|while|once|whereas)$"
 }
 
-# Returns token i in lowercase without the punctuation around it.
+# Returns token i in lowercase without the punctuation around it. The
+# strip drops a straight `'` at either end of the word, as it drops a
+# double quote, so `'The` reads as `the`. No word that the check
+# compares opens or ends with an apostrophe.
 function word(i,   w) {
   w = tolower(tok[i])
-  gsub(/^[^a-z']+|[^a-z']+$/, "", w)
+  gsub(/^[^a-z]+|[^a-z]+$/, "", w)
   return w
 }
 

@@ -58,3 +58,5 @@ The importer asks "Should it skip the rows that the schema rejects?" It then wri
 <img alt="A diagram of the job queue.
 The scheduler reads the queue, picks the oldest job whose lease has expired, and hands that job to the next idle worker in the pool."
 src="img/scheduler-queue-diagram.svg" class="center" style="width: 50%;" />
+
+'If the cache is cold when the node restarts after the upgrade, then the scheduler moves every pod to the spare pool before it opens the gate.' the runbook says.

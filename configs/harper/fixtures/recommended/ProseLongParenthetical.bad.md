@@ -5,3 +5,5 @@ Each worker reads the queue (or the backlog, when the queue is empty and the fla
 The hook, which runs after every Write and Edit of a markdown file or a source file, tags each finding.
 
 https://example.com/docs, which the team moved to a new host in the spring of last year, now serves the guide.
+
+'The hook, which runs after every Write and Edit of a markdown file or a source file, tags each finding' is the rule.
