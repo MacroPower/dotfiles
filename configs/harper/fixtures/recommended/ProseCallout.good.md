@@ -61,3 +61,15 @@ The parser reads each date in the log.
 The installer waits for the lock.
 
 **Note:** The installer prints Waiting... always, even when the lock is free.
+
+The lock file guards the cache.
+
+**Note:** 'Keep in mind that the lock stays,' the guide says.
+
+The guide describes the lock.
+
+**Note:** "Keep in mind that the lock stays," the guide says.
+
+The lock outlives the run.
+
+**Note:** ‘Keep in mind that the lock stays,’ the guide says.

@@ -49,11 +49,14 @@
 # (`prints Waiting... Run the cleanup`). Phrases such as `you must` in
 # the next sentence still draw the finding.
 #
-# The check reads a curly apostrophe between two letters of the first
-# word as a straight one. A note that opens with `Don’t` therefore draws
-# the finding that `Don't` draws. prose-lint straightens the apostrophe
-# in the copy that Harper reads, but this check reads the original
-# markdown file or commit message.
+# The check drops the punctuation around the first word, a straight `'`
+# included, so `'Run`, `"Run`, and `‘Run` each count as the command verb
+# `run`. The `keep in mind` guard in Related Rules skips the same
+# leading punctuation. The check reads a curly apostrophe between two
+# letters of the first word as a straight one. A note that opens with
+# `Don’t` therefore draws the finding that `Don't` draws. prose-lint
+# straightens the apostrophe in the copy that Harper reads, but this
+# check reads the original markdown file or commit message.
 #
 # For the second misuse, the check reports a callout when no prose line
 # sits between it and the callout before it. A line that
@@ -139,7 +142,7 @@ function start_callout(k, line) {
 }
 
 # Reports the first instruction in a note.
-function end_callout(   m, pieces, seps, n, sents, i, s, t, e, w, parts) {
+function end_callout(   m, pieces, seps, n, sents, i, s, t, e, w, parts, lead) {
   if (kind ~ /^(note|info|important)$/ && body ~ /[A-Za-z]/) {
     m = split(body, pieces, /[.!?](["')*_\]]|\342\200\235|\342\200\231)*[ \t]+/, seps)
     # ends_sentence() in lib/markdown.awk reads the token that ends at
@@ -176,10 +179,18 @@ function end_callout(   m, pieces, seps, n, sents, i, s, t, e, w, parts) {
       # A curly apostrophe between two letters becomes a straight one, so
       # `don’t` matches `don't` in the `imper` list. The pattern names
       # the curly apostrophe by its UTF-8 bytes, so it matches under the
-      # C locale and under a UTF-8 locale.
+      # C locale and under a UTF-8 locale. The strip then drops a
+      # straight `'` at either end of the word, as it drops a double
+      # quote, so `'Run` reads as `run`. No word in the `imper` list
+      # opens or ends with an apostrophe.
       w = gensub(/([a-z])\342\200\231([a-z])/, "\\1'\\2", "g", parts[1])
-      gsub(/[^a-z']/, "", w)
-      if ((w ~ imper && tolower(s) !~ /^keep in mind/) || (tolower(s) ~ modal && tolower(s) !~ purpose)) {
+      gsub(/^[^a-z]+|[^a-z]+$/, "", w)
+      # The `keep in mind` guard skips the same leading punctuation, so
+      # a note that opens with `'Keep in mind` passes as `Keep in mind`
+      # does.
+      lead = tolower(s)
+      sub(/^[^a-z]+/, "", lead)
+      if ((w ~ imper && lead !~ /^keep in mind/) || (tolower(s) ~ modal && tolower(s) !~ purpose)) {
         printf "%s:%d:1: Style::ProseCallout: Callout. A note holds an instruction, and readers skip notes. Move the instruction into the text, or into a warning when skipping it causes harm.\n", body_file, body_line
         break
       }

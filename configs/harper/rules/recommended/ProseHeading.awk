@@ -31,11 +31,13 @@
 # anywhere. It also reports a level-two heading that runs past six
 # words.
 #
-# The check reads a curly apostrophe between two letters as a straight
-# one, so `Don’t skip the backup` draws the finding that `Don't skip
-# the backup` draws. prose-lint straightens the apostrophe in the copy
-# that Harper reads, but this check reads the original markdown file or
-# commit message.
+# The check drops the punctuation around each word, a straight `'`
+# included, so `'How'` counts as `how`, the same as `"How"`. It reads a
+# curly apostrophe between two letters as a straight one, so `Don’t
+# skip the backup` draws the finding that `Don't skip the backup`
+# draws. prose-lint straightens the apostrophe in the copy that Harper
+# reads, but this check reads the original markdown file or commit
+# message.
 #
 # A trailing attribute list (`{#linux-security}`) is markup, so the
 # check drops it first. The word count treats a code span as one word
@@ -207,9 +209,12 @@ fence_char != "" {
     # A curly apostrophe between two letters becomes a straight one, so
     # `don’t` matches `don't` in the word lists. The pattern names the
     # curly apostrophe by its UTF-8 bytes, so it matches under the C
-    # locale and under a UTF-8 locale.
+    # locale and under a UTF-8 locale. The strip then drops a straight
+    # `'` at either end of the word, as it drops a double quote, so
+    # `'How'` reads as `how`. No word in the lists opens or ends with an
+    # apostrophe.
     word = gensub(/([a-z])\342\200\231([a-z])/, "\\1'\\2", "g", parts[i])
-    gsub(/[^a-z']/, "", word)
+    gsub(/^[^a-z]+|[^a-z]+$/, "", word)
     if (i == 1 && word in opener) {
       narrates = 1
     }

@@ -39,3 +39,12 @@ The flag reads one directory. <!-- same finding -->
 The tool waits for the lock. <!-- same finding -->
 
 **Note:** The tool prints Waiting... You must run the cleanup after it.
+
+The migration needs a backup. <!-- same finding -->
+
+**Note:** 'Run the migration first,' the guide says.
+
+The backup holds the lock file. <!-- same finding -->
+
+> [!NOTE]
+> 'Don't delete the lock file by hand.' <!-- same finding -->
