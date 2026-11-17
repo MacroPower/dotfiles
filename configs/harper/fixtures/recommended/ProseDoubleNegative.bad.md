@@ -65,3 +65,13 @@ Do not type "yes!" unless the tool asks.
 "Restart nothing (the node)," the runbook says, "unless it hangs."
 
 "Ship it," nobody says, "on Fridays" unless the tests pass.
+
+'Never run the migration script against the production database unless the backup finishes.'
+
+'Do not run the migration script against the production database unless the backup finishes!' the guide says.
+
+The guide says 'copy nothing' unless the tests pass.
+
+The tool prints 'do not' unless the lock is held.
+
+The server 'cannot' start without a valid certificate.

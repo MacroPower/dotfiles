@@ -15,11 +15,13 @@
 # boundaries, and reads each sentence of markdown prose. The negative
 # words are `not`, `never`, `no`, `cannot`, `none`, `nothing`,
 # `neither`, `nor`, `nobody`, and every word that ends in `n't`. The
-# check reads a curly apostrophe inside a word as a straight one, so
-# `can’t` counts the same as `can't`. prose-lint straightens the
-# apostrophe in the copy that Harper reads, but this check reads the
-# original markdown file or commit message. The check reports three
-# forms:
+# check drops the punctuation around each word, a straight `'`
+# included, so `'Never` counts as `never` and `nothing'` as `nothing`,
+# the same as in double quotes. It reads a curly apostrophe inside a
+# word as a straight one, so `can’t` counts the same as `can't`.
+# prose-lint straightens the apostrophe in the copy that Harper reads,
+# but this check reads the original markdown file or commit message.
+# The check reports three forms:
 #
 # - `unless` with a negative word in the eight words before it. The scan
 #   stops at `and`, `but`, `so`, `or`, and `yet`, which open a new
@@ -110,6 +112,23 @@
 # without swap`) still fires, because a word list cannot tell it from
 # `cannot start without a certificate`.
 #
+# In single quotes, a quotation that opens the sentence can also run
+# past its closing quote. A word that ends in `s` and the quote can be a
+# plural possessive, so quoted_opening() passes over it. The quotation
+# ends instead at the first later word that ends in the quote without
+# an `s` before it, or with a mark after the quote. The closing quote of
+# each later quotation in single quotes ends only that quotation, so
+# `'Never skip tests' appears in the log unless the run prints 'Done'`
+# passes. The word that ends the quotation can be a foot mark (`12'`),
+# a word with a dropped letter, a quoted value (`mode='full'`), or a
+# plural possessive in a list (`users',`).
+#
+# The opener counts for an `unless` before the word that ends the
+# quotation (`'Never skip tests' appears in the log unless the job keeps
+# goin'`). So does a negative word inside the quotation, because the
+# scan from `unless` does not stop at its closing quote (`'No tests'
+# appear in the log unless the job keeps goin'`).
+#
 # Two quoted strings read as a split quotation when a comma follows the
 # first string and the words between them. Those words must pass the
 # tests of split_quotation(), but they can run to any length (`"Don't
@@ -162,16 +181,16 @@ function BEGIN_CHECK() {
   msg = "Double negative. State the positive case, so `does not run unless the caller holds the lock` becomes `runs only when the caller holds the lock`."
 }
 
-# Returns token i in lowercase without the punctuation around it. A
-# curly apostrophe inside the word then becomes a straight one, so
-# `can’t` reads as `can't`. The strip runs first, because it keeps a
-# straight `'`. In the other order, the closing quote of `‘not’`
-# becomes a straight `'` that the strip keeps, and the word reads as
-# `not'`. The pattern names the curly apostrophe by its UTF-8 bytes, as
-# closes_clause() does.
+# Returns token i in lowercase without the punctuation around it. The
+# strip drops a straight `'` at either end of the word, as it drops a
+# double quote, so `'Never` reads as `never` and `nothing'` as
+# `nothing`. No word that the check compares opens or ends with an
+# apostrophe. A curly apostrophe inside the word then becomes a
+# straight one, so `can’t` reads as `can't`. The pattern names the
+# curly apostrophe by its UTF-8 bytes, as closes_clause() does.
 function word(i,   w) {
   w = tolower(tok[i])
-  gsub(/^[^a-z']+|[^a-z']+$/, "", w)
+  gsub(/^[^a-z]+|[^a-z]+$/, "", w)
   gsub(/\342\200\231/, "'", w)
   return w
 }

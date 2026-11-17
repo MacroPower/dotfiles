@@ -17,7 +17,9 @@
 # form that gives a command, such as `run` in `run make`. The check
 # reports the first `if` after the verb that sits outside parentheses.
 #
-# The check reads a curly apostrophe inside a word as a straight one, so
+# The check drops the punctuation around each word, a straight `'`
+# included, so `'Run`, `"Run`, and `‘Run` each count as the imperative
+# `run`. It reads a curly apostrophe inside a word as a straight one, so
 # `Don’t` counts as an imperative, the same as `Don't`. prose-lint
 # straightens the apostrophe in the copy that Harper reads, but this
 # check reads the original markdown file or commit message.
@@ -59,6 +61,18 @@
 # its second part (`"Copy the files," the guide says, "then restart the
 # job if it hangs."`).
 #
+# In single quotes, the quotation can also run past its closing quote.
+# A word that ends in `s` and the quote can be a plural possessive, so
+# quoted_opening() passes over it. The quotation ends instead at the
+# first later word that ends in the quote without an `s` before it, or
+# with a mark after the quote. The closing quote of each later
+# quotation in single quotes ends only that quotation, so `'Save logs'
+# appears in the menu if the run prints 'Done'` passes. The word that
+# ends the quotation can be a foot mark (`12'`), a word with a dropped
+# letter, a quoted value (`mode='full'`), or a plural possessive in a
+# list (`users',`). An `if` before that word fires (`'Save logs'
+# appears in the menu if the 12' cable fails`).
+#
 # `unless` passes. After an imperative, it names the exception to a
 # default (`Use the standard edition unless you need extra features`),
 # and the technical-writing skill puts the exception after the common
@@ -91,15 +105,17 @@ function BEGIN_CHECK() {
   checking = "^(check|checks|checked|checking|test|tests|tested|testing|determine|determines|determined|determining|verify|verifies|verified|verifying|see|sees|seeing|decide|decides|decided|deciding|ask|asks|asked|asking|detect|detects|detected|detecting|tell|tells|telling|know|knows|notice|notices|wonder|matter|matters)$"
 }
 
-# Returns token i in lowercase without the punctuation around it. A
+# Returns token i in lowercase without the punctuation around it. The
+# strip drops a straight `'` at either end of the word, as it drops a
+# double quote, so `'Run` reads as `run` and `needed'` as `needed`. No
+# word that the check compares opens or ends with an apostrophe. A
 # curly apostrophe inside the word then becomes a straight one, so
-# `don’t` reads as `don't`. The strip runs first, because it keeps a
-# straight `'`, so a curly closing quote after the word still drops.
-# The pattern names the curly apostrophe by its UTF-8 bytes, so it
-# matches under the C locale and under a UTF-8 locale.
+# `don’t` reads as `don't`. The pattern names the curly apostrophe by
+# its UTF-8 bytes, so it matches under the C locale and under a UTF-8
+# locale.
 function word(i,   w) {
   w = tolower(tok[i])
-  gsub(/^[^a-z']+|[^a-z']+$/, "", w)
+  gsub(/^[^a-z]+|[^a-z]+$/, "", w)
   gsub(/\342\200\231/, "'", w)
   return w
 }

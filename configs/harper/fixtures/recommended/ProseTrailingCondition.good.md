@@ -44,7 +44,11 @@ Restart the agent if ‘needed’.
 
 ‘Save logs’ appears if the run prints ‘Done!’ at the end.
 
+'Save logs' appears in the menu if the run prints 'Done'.
+
 ‘Save logs’ appears in the menu if a file changed.
+
+'Save logs' appears in the menu if a file changed.
 
 "Save", the first button, appears in the menu if the file changed.
 
@@ -62,4 +66,10 @@ Restart the agent if ‘needed’.
 
 ‘Save logs’ appears in the menu if the users’ files changed.
 
+'Save logs' appears in the menu if the users' files changed.
+
 "Save logs" appears in the menu if the 12" cable fails.
+
+Restart the agent if 'needed'.
+
+'Run the build if needed' is the rule.

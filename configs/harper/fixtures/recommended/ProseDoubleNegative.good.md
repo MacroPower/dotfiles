@@ -80,6 +80,8 @@ The tool says "Never." unless the lock is held.
 
 "Don't panic!" appears in the log unless the run fails.
 
+'Don't panic!' appears in the log unless the run fails.
+
 “Do not disturb.” stays on the door unless the room is free.
 
 ["Never!" stays on the sign unless the room is free.]
@@ -89,6 +91,10 @@ The tool says "Never." unless the lock is held.
 "Not now" stays on the screen unless the job ends.
 
 ‘Don’t’ stays on the sign unless the room is free.
+
+'Don't' stays on the sign unless the room is free.
+
+'Never skip tests' appears in the log unless the run prints 'Done'.
 
 “Never!’ stays on the sign unless the room is free.
 
@@ -155,3 +161,5 @@ Why does the hook not run unless the caller holds the lock?
 -
 The hook runs only when the caller holds the lock.
 <!-- prettier-ignore-end -->
+
+You 'don't just' run make without reading the docs.

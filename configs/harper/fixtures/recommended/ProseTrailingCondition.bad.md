@@ -27,3 +27,7 @@ The tool says "Ready." - Run the build if the tests pass.
 ‘Copy the users’ files if the job prints ‘Done’, then restart the job’ the guide says.
 
 “Run ("make") if the tests pass,” the guide says.
+
+'Run the build if the tests pass!' the guide says.
+
+'Don't restart the server if the lock is held!' the guide says.
