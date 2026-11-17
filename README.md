@@ -588,6 +588,24 @@ Run `task switch` in the VM after you change these entries. The switch applies t
 printenv __HM_SESS_VARS_SOURCED
 ```
 
+### Host shims
+
+Workmux puts a directory of shims on the `PATH` of each agent in the VM, ahead of the Nix profiles. Each shim runs a command on the Mac:
+
+- `xclip` and `wl-paste` read the clipboard of the Mac, so Claude Code in the VM can paste an image.
+- `afplay` plays a sound on the Mac.
+- The shim of each name in `host_commands` of the workmux config runs that command on the Mac through `workmux host-exec <name>`.
+
+Workmux mounts the shim directory under the Lima guest home, which is `/home/<user>.guest` on Lima 2.1.0 and later. Upstream workmux puts `$HOME/.workmux-state/shims/bin` on the `PATH`, but `$HOME` in the VM is `/home/<user>`, so the agent finds no shim. `pkgs/workmux-guest-shim-path.patch` puts the path of the mount on the `PATH` instead.
+
+The workmux of the Mac starts each agent, so the patch applies only after a switch on the Mac. Run `sudo task switch` on the Mac, then restart each agent in the VM. To check an agent, run this command in its session, which prints the path of the `xclip` shim:
+
+```sh
+command -v xclip
+```
+
+A VM that ran with `mcp-kubectx` in `host_commands` keeps a stale `mcp-kubectx` shim, and that shim comes before the `mcp-kubectx` of the VM on the `PATH`. Delete the shim as [Existing VMs](tools/mcp-kubectx/README.md#existing-vms) in the mcp-kubectx README describes.
+
 ### Dagger engines
 
 Each Dagger version keeps its own engine container in the VM. Sessions in repositories that pin different Dagger versions can therefore run Dagger at the same time. `docker ps` lists each engine as `dagger-engine-<version>`.

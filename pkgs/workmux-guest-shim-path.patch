@@ -1,0 +1,62 @@
+diff --git a/src/command/sandbox_run.rs b/src/command/sandbox_run.rs
+--- a/src/command/sandbox_run.rs
++++ b/src/command/sandbox_run.rs
+@@ -261,6 +261,20 @@ fn write_env_file(dir: &Path, assignments: &[String]) -> Result<tempfile::NamedT
+     Ok(file)
+ }
+ 
++/// Build the `PATH` assignment that the guest shell exports before it runs the
++/// agent command. The assignment puts `shim_bin` ahead of every other directory.
++///
++/// `shim_bin` is the guest path of the shim directory, under the mount point of
++/// the state directory. A guest image can give its user a `$HOME` other than
++/// the Lima guest home that holds that mount point. So the assignment names
++/// `shim_bin` itself and not a path under `$HOME`.
++fn guest_path_export(shim_bin: &Path) -> String {
++    format!(
++        r#"PATH={}:"$HOME/.local/bin:/nix/var/nix/profiles/default/bin:$PATH""#,
++        crate::shell::shell_quote(&shim_bin.to_string_lossy())
++    )
++}
++
+ fn run_lima(
+     config: &Config,
+     frozen_config_path: &Path,
+@@ -324,7 +338,7 @@ fn run_lima(
+         .arg(&vm_name);
+ 
+     let mut env_exports = vec![
+-        r#"PATH="$HOME/.workmux-state/shims/bin:$HOME/.local/bin:/nix/var/nix/profiles/default/bin:$PATH""#.to_string(),
++        guest_path_export(&lima::mounts::lima_guest_state_dir(&state_dir).join("shims/bin")),
+         "WM_SANDBOX_GUEST=1".to_string(),
+         "WM_RPC_HOST=host.lima.internal".to_string(),
+         format!("WM_RPC_PORT={}", rpc_port),
+@@ -819,6 +833,28 @@ mod tests {
+         assert_eq!(name_val, Some("John O'Brien"));
+     }
+ 
++    #[test]
++    fn test_guest_path_export_names_shim_mount() {
++        // The mount point lies outside $HOME, and its path needs quoting.
++        let shim_bin = Path::new("/home/o'brien $USER.guest/.workmux-state/shims/bin");
++        let output = Command::new("sh")
++            .arg("-c")
++            .arg(format!(
++                r#"export {}; printf '%s' "$PATH""#,
++                guest_path_export(shim_bin)
++            ))
++            .env("HOME", "/home/obrien")
++            .output()
++            .unwrap();
++        let inherited = std::env::var("PATH").unwrap_or_default();
++        assert_eq!(
++            String::from_utf8_lossy(&output.stdout),
++            format!(
++                "/home/o'brien $USER.guest/.workmux-state/shims/bin:/home/obrien/.local/bin:/nix/var/nix/profiles/default/bin:{inherited}"
++            )
++        );
++    }
++
+     #[test]
+     fn test_write_env_file() {
+         let dir = tempfile::tempdir().unwrap();

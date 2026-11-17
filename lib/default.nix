@@ -241,6 +241,18 @@ let
         # per-VM state mount instead. The guest shell reads the file and
         # deletes it.
         ../pkgs/workmux-env-file-for-secrets.patch
+        # workmux mounts the per-VM state directory under the Lima guest
+        # home, `/home/<user>.guest` on Lima 2.1.0 and later. It puts the
+        # `shims/bin` directory of that mount on the PATH of the guest
+        # agent as `$HOME/.workmux-state/shims/bin`. The terrarium image
+        # gives the guest user the home `/home/<user>`, so that entry
+        # names a missing directory. The guest then finds none of the
+        # shims, such as the xclip and wl-paste shims that paste a host
+        # image into Claude Code. Put the mount path itself on PATH. The
+        # patch calls the function that
+        # workmux-env-file-for-secrets.patch adds, so it must follow that
+        # patch.
+        ../pkgs/workmux-guest-shim-path.patch
       ];
     });
   };
