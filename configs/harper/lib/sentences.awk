@@ -10,17 +10,24 @@
 # `tok_line[i]`, and its character column from `tok_col[i]`. The file
 # that holds the sentence is in `sentence_file`. sentence_words(n)
 # counts the words of the sentence for a length check.
+# quoted_opening(n) finds a quotation that opens the sentence, for a
+# check that reads the first word.
 #
 # Sentences run across the lines of a paragraph and end at a token that
 # ends in `.`, `?`, or `!`, after any closing quote, paren, bracket, or
 # emphasis. A closing quote is straight or curly (`"`, `'`, `”`, or
 # `’`). `e.g.`, `i.e.`, `vs.`, `cf.`, and a three-period ellipsis do
-# not end a sentence. ends_sentence() in lib/markdown.awk holds this
-# test. Paragraphs end at a skipped line, which a blank line or a
-# fenced block leaves. They also end at a bare line, which
-# lib/markdown.awk marks in `bare_line`. A bare line holds only `>`
-# markers, HTML comments, and `pre` elements. A bare `>` between two
-# quoted paragraphs is one. A line that holds only a code span or a URL
+# not end a sentence. A quote after the mark can close a quotation
+# inside a sentence, so a lowercase word after the quote continues the
+# sentence (`prints "Lucky penny!" every time`). That word can sit on
+# the next line of the paragraph. ends_sentence() and
+# continues_sentence() in lib/markdown.awk hold these tests.
+#
+# Paragraphs end at a skipped line, which a blank line or a fenced
+# block leaves. They also end at a bare line, which lib/markdown.awk
+# marks in `bare_line`. A bare line holds only `>` markers, HTML
+# comments, and `pre` elements. A bare `>` between two quoted
+# paragraphs is one. A line that holds only a code span or a URL
 # reaches prose() as spaces, but it continues the sentence of the line
 # above it.
 #
@@ -68,12 +75,17 @@
 # line before the delimiter row is the header row, and its tokens drop
 # out of the sentence that they joined. A header cell that ends in
 # `.`, `?`, or `!` ends its sentence before the delimiter row arrives,
-# so the words up to that cell still reach sentence(). Each later line
-# that holds a pipe is a body row, even one that opens with an HTML
-# tag (`<kbd>|Enter`). A skipped or blank line, a list item, a heading,
-# or a line without a pipe ends the table. So does a line that opens
-# with more or fewer `>` markers than the delimiter row, such as a
-# blockquote after the table.
+# so the words up to that cell still reach sentence(). When a closing
+# quote follows the mark (`Says "Hi!"`), the token after the quote
+# decides, as it does in prose, and a `|` ends the sentence. When the
+# quote ends the row, the end stays pending, and the delimiter row
+# drops the words of the row from the sentence.
+#
+# Each line after the delimiter row that holds a pipe is a body row,
+# even one that opens with an HTML tag (`<kbd>|Enter`). A skipped or
+# blank line, a list item, a heading, or a line without a pipe ends the
+# table. So does a line that opens with more or fewer `>` markers than
+# the delimiter row, such as a blockquote after the table.
 #
 # The library differs from GFM at two kinds of line after a table. GFM
 # reads a plain line without a pipe as a body row of one cell. Such a
@@ -97,6 +109,7 @@ function end_sentence(   i) {
     }
   }
   tok_n = 0
+  quote_end = 0
 }
 
 # Ends the paragraph and runs sentence() on each sentence that it holds.
@@ -113,6 +126,25 @@ function end_paragraph(   s, i) {
   }
   sent_n = 0
   para_line = -1
+}
+
+# Returns the index of the token that closes a quotation at the start of
+# the sentence with a mark and a closing quote. The function returns 0
+# when the sentence does not open with such a quotation. The sentence
+# continues past that token (`"Save changes?" appears if you close the
+# editor`), so its first word sits inside the quotation. A check that
+# reads the first word as the opener of the sentence applies it only to
+# the words up to that token.
+function quoted_opening(n,   i) {
+  if (!opens_quote(tok[1])) {
+    return 0
+  }
+  for (i = 1; i <= n; i++) {
+    if (ends_sentence(tok[i]) == 2) {
+      return i
+    }
+  }
+  return 0
 }
 
 # Returns the number of `>` markers that open the line.
@@ -138,13 +170,14 @@ function horizontal_rule(line) {
   return line ~ /^[ \t]*((-[ \t]*){3,}|(\*[ \t]*){3,}|(_[ \t]*){3,})$/
 }
 
-function prose(text,   rest, pos, t, col, line) {
+function prose(text,   rest, pos, t, col, line, e) {
   # `raw` holds the line before clean() in lib/markdown.awk blanks its
   # code spans and URLs.
   line = blank(raw, "<!--([^-]|-[^-])*-->")
   if (underline(line)) {
     # The paragraph is a heading, so its sentences drop.
     tok_n = 0
+    quote_end = 0
     sent_n = 0
     para_line = -1
     split_line = FNR
@@ -198,6 +231,15 @@ function prose(text,   rest, pos, t, col, line) {
     col = pos + RSTART
     pos += RSTART + RLENGTH - 1
     rest = substr(rest, RSTART + RLENGTH)
+    # The token before ended in a mark and a closing quote. The sentence
+    # ended there unless this token continues it. The sentence ends
+    # before the list marker test, so a marker after the quote
+    # (`"Done!" 2) Run`) drops out of the next sentence, as it does
+    # after `Done!`.
+    if (quote_end && !continues_sentence(t)) {
+      end_sentence()
+    }
+    quote_end = 0
     if (tok_n == 0 && t ~ /^([-*+]|[0-9]+[.)])$/) {
       continue
     }
@@ -208,8 +250,11 @@ function prose(text,   rest, pos, t, col, line) {
     if (tok_n == 1) {
       sentence_file = FILENAME
     }
-    if (ends_sentence(t)) {
+    e = ends_sentence(t)
+    if (e == 1) {
       end_sentence()
+    } else if (e == 2) {
+      quote_end = 1
     }
   }
 }

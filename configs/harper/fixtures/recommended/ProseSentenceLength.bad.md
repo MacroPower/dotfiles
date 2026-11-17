@@ -104,3 +104,8 @@ prints each row that it would write to the destination table without writing any
 The importer prints “reading rows...” for each batch that it reads from the source table, and then it writes the rows in batches of one hundred to the destination table for the operators on call.
 
 The importer prints ‘reading rows...’ for each batch that it reads from the source table, and then it writes the rows in batches of one hundred to the destination table for the operators on call.
+
+The importer prints "Batch written!" each time it writes a batch of rows to the destination table, and then it reads the next batch of rows from the source table for the operators on call.
+
+The importer prints "Batch written!"
+each time it writes a batch of rows to the destination table, and then it reads the next batch of rows from the source table for the operators on call. <!-- same finding -->

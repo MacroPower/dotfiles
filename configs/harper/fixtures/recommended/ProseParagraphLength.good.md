@@ -45,3 +45,7 @@ Netlify|See [details](https://example.com/netlify).
 > The scheduler reads the queue. It picks the oldest job. It checks the lease. It starts the worker.
 >
 > The worker runs the job. The worker writes the result. It logs the run. The scheduler marks the job done.
+
+The wizard prints "Done."
+
+The wizard asks "Overwrite the file?" before it writes. It waits for an answer. It reads the reply. It writes the file. It logs the change. It exits.

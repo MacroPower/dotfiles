@@ -52,3 +52,9 @@ retry|The proxy retries each failed request once, and then it returns the error
 force|The loader skips the schema check and reads every file in the tree
 
 The proxy reads the list of upstream routes and their weights from https://example.com/routes. It caches each route for one minute, and it reloads the file on a signal.
+
+The importer asks "Should it skip the rows that the schema rejects?" It then writes the remaining rows to the destination table, and it logs the count.
+
+<img alt="A diagram of the job queue.
+The scheduler reads the queue, picks the oldest job whose lease has expired, and hands that job to the next idle worker in the pool."
+src="img/scheduler-queue-diagram.svg" class="center" style="width: 50%;" />

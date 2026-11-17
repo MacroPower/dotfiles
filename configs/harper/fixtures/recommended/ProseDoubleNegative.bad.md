@@ -23,3 +23,7 @@ The server can’t start without a valid certificate.
 You can’t just run make without reading the docs.
 
 Don’t run the migration script against the production database unless the backup finishes.
+
+Do not type "yes!" unless the tool asks.
+
+"Do not run the migration script against the production database unless the backup finishes!" the guide says.

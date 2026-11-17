@@ -24,22 +24,32 @@
 # - `unless` with a negative word in the eight words before it. The scan
 #   stops at `and`, `but`, `so`, `or`, and `yet`, which open a new
 #   clause, and it skips the words inside parentheses, whose negation
-#   stays inside them. A sentence that opens with `Do not`, `Don't`, or
-#   `Never` negates every step in it, so any `unless` outside
-#   parentheses counts, at any distance.
+#   stays inside them. It also stops at a word that ends in a period, a
+#   question mark, or an exclamation mark and a closing quote (`says
+#   “Never!” unless the lock is held`). The quotation holds a clause of
+#   its own. A sentence that opens with `Do not`, `Don't`, or `Never`
+#   negates every step in it, so any `unless` outside parentheses
+#   counts, at any distance. The opener does not count when it sits
+#   inside a quotation that opens the sentence and closes with such a
+#   mark before the `unless` (`"Don't panic!" appears in the log unless
+#   the run fails`).
 # - `without` or `except` with a negative word in the six words before
 #   it (`cannot start without a certificate`). The scan stops at a word
 #   that opens a clause (`and`, `because`, `which`). It also stops at a
-#   word that ends in a comma, a colon, a semicolon, a period, or `)`.
-#   A straight or a curly closing quote can follow the mark (`said
-#   “not now,” then ran without a lock`).
+#   word that ends in a comma, a colon, a semicolon, a period, a
+#   question mark, an exclamation mark, or `)`. A straight or a curly
+#   closing quote can follow the mark (`said “not now,” then ran
+#   without a lock`). A question mark or an exclamation mark stays
+#   inside a sentence only before a closing quote (`said “Not now!”
+#   then ran without a lock`).
 # - `not` before a word with a negative prefix from a list (`not
 #   unlike`, `not unsafe`). Here the positive form also makes the claim
 #   stronger (`not unsafe` becomes `safe`), so the writer must settle
 #   which claim they meant. The branch skips a `not` that ends in a
-#   comma, a colon, a semicolon, or a period, because the mark closes
-#   the clause of `not`. A straight or a curly closing quote can follow
-#   the mark (`answers “not,” unlike the old guide`).
+#   comma, a colon, a semicolon, a period, a question mark, or an
+#   exclamation mark. The mark closes the clause of `not`. A straight
+#   or a curly closing quote can follow the mark (`answers “not,”
+#   unlike the old guide`).
 #
 # False Positives
 #
@@ -110,20 +120,27 @@ function negation(i,   w) {
   return w ~ neg || w ~ /n't$/
 }
 
-# Reports whether token i ends in a comma, a colon, a semicolon, or a
-# period, which closes a clause. A straight or a curly closing quote can
-# follow the mark. The pattern names each curly quote by its UTF-8 bytes,
-# as ends_sentence() in lib/markdown.awk does.
+# Reports whether token i ends in a comma, a colon, a semicolon, a
+# period, a question mark, or an exclamation mark, which closes a
+# clause. A straight or a curly closing quote can follow the mark.
+# lib/sentences.awk ends the sentence at a question mark or an
+# exclamation mark without a closing quote. The scans therefore meet
+# those two marks only before a quote that closes a quotation inside the
+# sentence (`said "Not now!" then ran`). The pattern names each curly
+# quote by its UTF-8 bytes, as ends_sentence() in lib/markdown.awk does.
 function closes_clause(i) {
-  return tok[i] ~ /[,;:.](["')*_\]]|\342\200\235|\342\200\231)*$/
+  return tok[i] ~ /[,;:.?!](["')*_\]]|\342\200\235|\342\200\231)*$/
 }
 
 function report(i) {
   printf "%s:%d:%d: Style::ProseDoubleNegative: %s\n", sentence_file, tok_line[i], tok_col[i], msg
 }
 
-function sentence(n,   i, j, w, d, t, opener, depth_at) {
+function sentence(n,   i, j, w, d, t, opener, quoted, depth_at) {
   opener = (word(1) == "don't" || word(1) == "never" || (word(1) == "do" && word(2) == "not"))
+  # An opener inside a quotation that opens the sentence negates only
+  # the steps inside the quotation (`"Don't panic!" appears unless`).
+  quoted = quoted_opening(n)
   d = 0
   for (i = 1; i <= n; i++) {
     depth_at[i] = d
@@ -133,11 +150,17 @@ function sentence(n,   i, j, w, d, t, opener, depth_at) {
   for (i = 1; i <= n; i++) {
     w = word(i)
     if (w == "unless") {
-      if (opener && depth_at[i] == 0) {
+      if (opener && depth_at[i] == 0 && (!quoted || i < quoted)) {
         report(i)
         return
       }
       for (j = i - 1; j >= 1 && j >= i - 8; j--) {
+        # A quotation that closes with a mark holds a clause of its own,
+        # so its negation stays inside the quotation (`says "Never!"
+        # unless`).
+        if (ends_sentence(tok[j]) == 2) {
+          break
+        }
         # Skip back over the words in parentheses, whose negation stays
         # inside them.
         if (tok[j] ~ /\)[,;:.]?$/ && tok[j] !~ /\(/) {

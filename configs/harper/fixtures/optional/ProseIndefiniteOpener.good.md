@@ -30,3 +30,15 @@ A user ran `make`. It builds each target.
 “A lease,” the glossary says, “means a lock on one task.”
 
 ‘A lease,’ the glossary says, ‘means a lock on one task.’
+
+A user typed "Stop!" a second time, and the job ended.
+
+A user typed "`stop`." a second time, and the job ended.
+
+"A lease?" the guide asks.
+
+“A lease!” the guide says.
+
+“A lease?” the guide asks. A lease is a lock on one task.
+
+(“A lease?” the guide asks.) A lease is a lock on one task.

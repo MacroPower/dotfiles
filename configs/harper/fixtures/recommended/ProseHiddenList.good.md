@@ -19,3 +19,7 @@ Run `make`. Run `make test`. Run `make lint`.
 > The loader reads `a.nix`. The loader reads `b.nix`.
 >
 > The loader reads `c.nix`.
+
+The wizard asks "Continue?" next, and it waits for an answer. Then it writes the config file.
+
+The wizard asks "Run `make`?" next, and it waits for an answer. Then it writes the config file.

@@ -408,16 +408,21 @@ on a set of files.
   UTF-8 locale. `check.py` compares the column of a finding only with
   its column in the copy with CRLF line endings. Only this test checks
   a column against the character that holds the finding.
-- `sentence-ends` lints sentences that end at a period and a curly
-  closing quote, two of them right after a bare URL. It also lints a
-  sentence with three periods and a curly quote in its middle, once
-  with each curly quote. The test expects the same
-  ProseSentenceLength findings under the C locale and under a UTF-8
-  locale. The sandbox of the weirpack build starts `check.py` under
-  the C locale, and Python sets `LC_CTYPE` to C.UTF-8 for the awk
-  checks that it starts. The fixtures therefore run under C.UTF-8
-  alone, and only this test checks the curly quotes under the C
-  locale.
+- `sentence-ends` lints its file under the C locale and under a UTF-8
+  locale. It expects the same ProseSentenceLength findings from both,
+  and no ProseTrailingCondition finding from either. The sandbox of
+  the weirpack build starts `check.py` under the C locale, and Python
+  sets `LC_CTYPE` to C.UTF-8 for the awk checks that it starts. The
+  fixtures therefore run under C.UTF-8 alone, and only this test checks
+  the curly quotes under the C locale. The file holds these sentences,
+  once with each curly quote:
+  - Sentences that end at a period and a curly closing quote, after a
+    word or right after a bare URL.
+  - A sentence with three periods and a curly quote in its middle.
+  - A sentence that a lowercase word continues past a quoted `!` or
+    `?` and a curly quote.
+  - A sentence that opens with a quoted command in curly quotes and
+    has an `if` after the quotation.
 - `transcripts` lints two transcripts. One marks each speaker with a
   bold label, and the test lints it as a `.md` file, as a `.markdown`
   file, and as a commit message. The other names each speaker in

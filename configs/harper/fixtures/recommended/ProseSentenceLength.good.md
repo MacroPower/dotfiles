@@ -121,3 +121,5 @@ The guide says ‘the proxy retries each failed request once before it returns t
 The proxy retries each failed request once before it returns the error to the client and then says “see https://example.com/guide.” The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.
 
 The proxy retries each failed request once before it returns the error to the client and then says ‘see https://example.com/guide.’ The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.
+
+The wizard asks "Should the installer overwrite the existing configuration file in the home directory of the current user?" Then it writes the new file and restarts the service for the operators on call.

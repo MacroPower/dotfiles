@@ -29,3 +29,11 @@ Set the flag only when the job runs on a shared node if the node allows it.
 Use the flag if it exists.
 
 Restart the agent if ‘needed’.
+
+"Save changes?" appears if you close the editor with unsaved edits.
+
+“Run the tests.” shows up in the log if the build passes.
+
+(“Save changes?” appears if you close the editor with unsaved edits.)
+
+[“Save changes?”](https://example.com/dialog) appears if you close the editor with unsaved edits.

@@ -63,8 +63,8 @@
 # sampled hits read better as two sentences. The misfires were serial
 # lists, a single fact with its condition or reason, and a colon inside
 # parentheses (`(for example: ...)`). The first step named a split point
-# on 218 lines, and 19 of 20 sampled points were the right place to
-# split. The second step named a clause on 255 lines, and 19 of 20
+# on 219 lines, and 19 of 20 sampled points were the right place to
+# split. The second step named a clause on 256 lines, and 19 of 20
 # sampled clauses read well as a sentence of their own.
 #
 # Output format, one line per finding:

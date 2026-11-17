@@ -29,3 +29,5 @@ The operator says “done.” A worker restarts each failed job.
 What is cached? “A token is.” The worker reads the file again.
 
 What is cached? ‘A token is.’ The worker reads the file again.
+
+A user typed "`stop`." A user then left.

@@ -32,7 +32,10 @@
 # stops at a comma and at a word in `stops` that ties the subject to
 # more words, such as `of`, `with`, or `and`, so `A list of tasks`
 # passes. A comma stops the scan before a straight or a curly closing
-# quote too (`“A lease,” the guide says`).
+# quote too (`“A lease,” the guide says`). So does a period, a question
+# mark, or an exclamation mark before a closing quote, even when a
+# lowercase word after the quote continues the sentence (`“A lease?”
+# the guide asks`).
 #
 # The check holds each finding of the first form until the paragraph
 # ends, and drops it when the text after it names the noun with `the`.
@@ -41,7 +44,9 @@
 # `a` or `an` in one paragraph (`A task is a unit of work. A task runs
 # on one worker.`). It catches openers that the verb test misses. Each
 # run reports once however long it grows, and its later sentences skip
-# the verb test.
+# the verb test. A quotation can open a sentence that goes on after the
+# closing quote (`“A lease?” the guide asks.`). The subject of such a
+# sentence follows the quotation, so the sentence does not open a run.
 #
 # False Positives
 #
@@ -60,6 +65,12 @@
 # Past-tense verbs do not end in `s`, so `A user reported the bug`
 # passes, and so does a quantity after the article (`A few seconds
 # later`).
+#
+# The check reports a run at the first word of its second sentence,
+# before it reads the rest of that sentence. A sentence that opens with
+# a quotation and goes on after it therefore still draws the run
+# finding when it follows a sentence that opens with `a` or `an` (`A
+# lease is a lock. “A lease?” the guide asks.`).
 #
 # List labels and speaker labels that are the letter `a` read as the
 # article (`**(a)** You must give any other recipients`, `**A: That
@@ -104,6 +115,8 @@ function reset() {
   opening = 1
   fresh = 1
   scan = 0
+  quote_end = 0
+  quoted = 0
 }
 
 # Prints each held finding unless the text after it in the paragraph
@@ -129,7 +142,7 @@ function verb(tok, word) {
   return word !~ /(ss|us|is|ics|ous|ness)$/
 }
 
-function prose(text,   rest, pos, tok, col, word, base) {
+function prose(text,   rest, pos, tok, col, word, base, e) {
   if (FILENAME != last_file || FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
     reset()
   }
@@ -152,11 +165,30 @@ function prose(text,   rest, pos, tok, col, word, base) {
     if (fresh && tok ~ /^([-*+]|[0-9]+[.)])$/) {
       continue
     }
-    if (tok !~ /[A-Za-z]/) {
-      if (!opening && ends_sentence(tok)) {
+    # The token before ended in a mark and a closing quote. The sentence
+    # ended there unless this token continues it. When the sentence
+    # opened with the quotation, its first word sits inside the
+    # quotation, so the sentence does not open a run. The run finding
+    # prints at the first word, so such a sentence still draws it when
+    # it comes second in a run.
+    if (quote_end) {
+      if (!continues_sentence(tok)) {
         opening = 1
-        scan = 0
+      } else if (quoted) {
+        run = 0
+      }
+    }
+    quote_end = 0
+    if (tok !~ /[A-Za-z]/) {
+      e = opening ? 0 : ends_sentence(tok)
+      if (e) {
         pending_def = 0
+        scan = 0
+      }
+      if (e == 1) {
+        opening = 1
+      } else if (e == 2) {
+        quote_end = 1
       }
       continue
     }
@@ -171,6 +203,7 @@ function prose(text,   rest, pos, tok, col, word, base) {
     }
     if (opening) {
       opening = 0
+      quoted = opens_quote(tok)
       if (word == "a" || word == "an") {
         run++
         if (run == 2) {
@@ -213,9 +246,16 @@ function prose(text,   rest, pos, tok, col, word, base) {
         scan = 0
       }
     }
-    if (ends_sentence(tok)) {
-      opening = 1
+    # The closing quote also ends the subject, whether or not the
+    # sentence goes on after it (`"A lease?" the guide asks`).
+    e = ends_sentence(tok)
+    if (e) {
       scan = 0
+    }
+    if (e == 1) {
+      opening = 1
+    } else if (e == 2) {
+      quote_end = 1
     }
   }
   para = para " " text

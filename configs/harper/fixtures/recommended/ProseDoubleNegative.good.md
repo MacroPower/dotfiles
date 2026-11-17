@@ -64,6 +64,26 @@ The guide answers “not,” unlike the old guide, which answers yes.
 
 The guide answers ‘not,’ unlike the old guide, which answers yes.
 
+The check said "Not now!" then ran without a lock.
+
+The check said “Not now!” then ran without a lock.
+
+The guide answers "not?" unlike the old guide, which answers yes.
+
+The guide answers ‘not!’ unlike the old guide, which answers yes.
+
+The tool says "Never!" unless the lock is held.
+
+The tool asks “Nothing?” unless the cache is warm.
+
+The tool says "Never." unless the lock is held.
+
+"Don't panic!" appears in the log unless the run fails.
+
+“Do not disturb.” stays on the door unless the room is free.
+
+["Never!" stays on the sign unless the room is free.]
+
 <!-- prettier-ignore-start -->
 Why does the hook not run unless the caller holds the lock?
 -

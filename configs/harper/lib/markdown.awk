@@ -269,11 +269,20 @@ function column(off) {
 # `i.e.`, `vs.`, `cf.`, and a three-period ellipsis do not end a
 # sentence.
 #
+# The function returns 1 for a token that ends a sentence, and 0 for any
+# other token. It returns 2 for a token whose closing marks hold a
+# quote, because such a quote can also close a quotation inside a
+# sentence (`prints "Lucky penny!" every time`). The token after it
+# then decides. The sentence continues when continues_sentence()
+# accepts that token, and it ends at the quote when another token
+# follows or the paragraph ends.
+#
 # Each check that reads a sentence one token at a time calls this
 # function, so those checks end a sentence at the same token.
 # ProseCallout splits a note into sentences with a pattern of its own.
 # That pattern ends a sentence at the same closing marks, curly quotes
-# included.
+# included. It does not read the word after a closing quote, so it also
+# ends a sentence at a quotation inside the sentence.
 #
 # The patterns write each curly closing quote as its UTF-8 bytes in
 # octal, `\342\200\235` for `”` and `\342\200\231` for `’`. They match
@@ -287,7 +296,40 @@ function ends_sentence(t) {
   if (t ~ /\.\.\.(["')*_\]]|\342\200\235|\342\200\231)*$/ || tolower(t) ~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
     return 0
   }
-  return t ~ /[.?!](["')*_\]]|\342\200\235|\342\200\231)*$/
+  if (t ~ /[.?!][)*_\]]*(["']|\342\200\235|\342\200\231)(["')*_\]]|\342\200\235|\342\200\231)*$/) {
+    return 2
+  }
+  return t ~ /[.?!][)*_\]]*$/
+}
+
+# Reports whether token t continues the sentence after a token for which
+# ends_sentence() returned 2. Such a token opens with a lowercase letter,
+# after any opening paren, bracket, or emphasis (`every`, `*every*`). A
+# new sentence opens with a capital, a digit, or another mark.
+#
+# An HTML attribute (`src="img/table.svg"`) also opens with a lowercase
+# letter, but it does not continue a sentence. Such an attribute
+# follows the `alt` text of an image tag that spans lines, after the
+# quote that closes the text.
+#
+# lib/markdown.awk blanks a code span, so the token after a span that
+# follows the quote decides. A sentence that opens with a span and then
+# a lowercase word (`"Done." `make` runs next`) therefore continues the
+# sentence before it.
+function continues_sentence(t) {
+  return t ~ /^[(\[*_]*[a-z]/ && t !~ /^[a-z][a-z0-9-]*=/
+}
+
+# Reports whether token t opens with a straight or a curly opening
+# quote. The quote can follow any opening paren, bracket, or emphasis,
+# as in continues_sentence() (`"Save`, `(“Save`, `**“Stop!”**`). A
+# sentence that opens with such a token and continues past a quoted
+# mark opens with a quotation (`"Save changes?" appears`). Its first
+# words then belong to the quotation, not to the clause after it. The
+# pattern writes `“` and `‘` as their UTF-8 bytes, `\342\200\234` and
+# `\342\200\230`, as ends_sentence() writes the closing quotes.
+function opens_quote(t) {
+  return t ~ /^[(\[*_]*(["']|\342\200\234|\342\200\230)/
 }
 
 FNR == 1 && $0 ~ /^---[ \t]*$/ {

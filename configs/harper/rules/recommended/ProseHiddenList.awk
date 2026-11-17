@@ -83,9 +83,15 @@ function reset() {
   cur_words = 0
   cur_key = ""
   table = 0
+  quote_end = 0
 }
 
 function flush(   parts) {
+  # A paragraph that ends at a mark and a closing quote ends its last
+  # sentence there.
+  if (quote_end) {
+    end_sentence()
+  }
   if (table) {
     reset()
     return
@@ -123,7 +129,7 @@ function end_sentence() {
   opening = 1
 }
 
-function prose(text,   rest, pos, tok, col, word) {
+function prose(text,   rest, pos, tok, col, word, e) {
   if (FILENAME != last_file || FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
     flush()
   }
@@ -149,9 +155,18 @@ function prose(text,   rest, pos, tok, col, word) {
     if (fresh && tok ~ /^([-*+]|[0-9]+[.)])$/) {
       continue
     }
+    # The token before ended in a mark and a closing quote. The sentence
+    # ended there unless this token continues it.
+    if (quote_end && !continues_sentence(tok)) {
+      end_sentence()
+    }
+    quote_end = 0
     if (tok !~ /[A-Za-z0-9]/) {
-      if (!opening && ends_sentence(tok)) {
+      e = opening ? 0 : ends_sentence(tok)
+      if (e == 1) {
         end_sentence()
+      } else if (e == 2) {
+        quote_end = 1
       }
       continue
     }
@@ -177,8 +192,11 @@ function prose(text,   rest, pos, tok, col, word) {
       cur_key = cur_words ? cur_key " " word : word
       cur_words++
     }
-    if (ends_sentence(tok)) {
+    e = ends_sentence(tok)
+    if (e == 1) {
       end_sentence()
+    } else if (e == 2) {
+      quote_end = 1
     }
   }
 }

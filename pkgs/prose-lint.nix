@@ -1242,16 +1242,18 @@ in
           touch "$out"
         '';
 
-        # Lints sentences that end at a curly closing quote. The test
-        # lints them under the C locale and under a UTF-8 locale, and it
-        # expects the same ProseSentenceLength finding from both.
-        # ends_sentence() in lib/markdown.awk names each curly quote by
-        # its UTF-8 bytes. In the weirpack build, check.py runs the
-        # fixtures under one locale only. The sandbox starts Python
-        # under the C locale, and Python sets `LC_CTYPE` to C.UTF-8 for
-        # the awk checks that it starts. The prose hook runs under the
-        # locale of the user, which can be either one. The command in
-        # configs/harper/CLAUDE.md builds this test too.
+        # Lints sentences that end at a curly closing quote, and
+        # sentences that continue past one. The test lints them under
+        # the C locale and under a UTF-8 locale, and it expects the same
+        # ProseSentenceLength and ProseTrailingCondition findings from
+        # both. ends_sentence() and opens_quote() in lib/markdown.awk
+        # name each curly quote by its UTF-8 bytes. In the weirpack
+        # build, check.py runs the fixtures under one locale only. The
+        # sandbox starts Python under the C locale, and Python sets
+        # `LC_CTYPE` to C.UTF-8 for the awk checks that it starts. The
+        # prose hook runs under the locale of the user, which can be
+        # either one. The command in configs/harper/CLAUDE.md builds
+        # this test too.
         tests.sentence-ends = runCommand "prose-lint-sentence-ends" { nativeBuildInputs = [ gawk ]; } ''
           # The first paragraph holds a sentence of 17 words and a
           # sentence of 18 words, and the second holds two sentences of
@@ -1261,23 +1263,41 @@ in
           # paragraphs each hold one sentence of 35 words. Three periods
           # and a curly closing quote sit in the middle of each
           # sentence, and they do not end it. The quote is double in the
-          # third paragraph and single in the fourth. The last two
-          # paragraphs each hold a sentence of 19 words and a sentence
-          # of 18 words. Their first sentence ends at a bare URL, a
-          # period, and a curly closing quote, double in one paragraph
-          # and single in the other. Only the third and fourth
-          # paragraphs draw a finding. printf writes each curly quote
-          # from its octal bytes.
+          # third paragraph and single in the fourth. The fifth and
+          # sixth paragraphs each hold a sentence of 19 words and a
+          # sentence of 18 words. Their first sentence ends at a bare
+          # URL, a period, and a curly closing quote, double in one
+          # paragraph and single in the other. The seventh and eighth
+          # paragraphs each hold one sentence of more than 32 words. A
+          # quotation that ends in `!` or `?` and a curly closing quote
+          # sits in the middle of each sentence. The lowercase word after
+          # the quote continues the sentence. The quote is double in the
+          # seventh paragraph and single in the eighth. The ninth and
+          # tenth paragraphs each open with a quotation that ends in a
+          # period and a curly closing quote, double in one paragraph
+          # and single in the other. A lowercase word after the quote
+          # continues the sentence, and an `if` follows later.
+          # ProseTrailingCondition reads only the imperative inside the
+          # quotation, so neither paragraph draws a finding. Only the
+          # third, fourth, seventh, and eighth paragraphs draw a
+          # finding, and each one is a ProseSentenceLength finding.
+          # printf writes each curly quote from its octal bytes.
           printf 'He said \342\200\234the proxy retries each failed request once before it returns the error to the client.\342\200\235 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >ends.md
           printf 'The guide says \342\200\230the proxy retries each failed request once before it returns the error to the client.\342\200\231 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >>ends.md
           printf 'The importer prints \342\200\234reading rows...\342\200\235 for each batch that it reads from the source table, and then it writes the rows in batches of one hundred to the destination table for the operators on call.\n\n' >>ends.md
           printf 'The importer prints \342\200\230reading rows...\342\200\231 for each batch that it reads from the source table, and then it writes the rows in batches of one hundred to the destination table for the operators on call.\n\n' >>ends.md
           printf 'The proxy retries each failed request once before it returns the error to the client and then says \342\200\234see https://example.com/guide.\342\200\235 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >>ends.md
-          printf 'The proxy retries each failed request once before it returns the error to the client and then says \342\200\230see https://example.com/guide.\342\200\231 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n' >>ends.md
+          printf 'The proxy retries each failed request once before it returns the error to the client and then says \342\200\230see https://example.com/guide.\342\200\231 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >>ends.md
+          printf 'The importer prints \342\200\234Batch written!\342\200\235 each time it writes a batch of rows to the destination table, and then it reads the next batch of rows from the source table for the operators on call.\n\n' >>ends.md
+          printf 'The importer asks \342\200\230Skip the rejected rows?\342\200\231 each time it reads a batch of rows from the source table, and then it writes the remaining rows to the destination table for the operators on call.\n\n' >>ends.md
+          printf '\342\200\234Run the tests.\342\200\235 shows up in the log if the build passes.\n\n' >>ends.md
+          printf '\342\200\230Run the tests.\342\200\231 shows up in the log if the build passes.\n' >>ends.md
 
           cat >want <<'EOF'
           ends.md:5:1 ProseSentenceLength
           ends.md:7:1 ProseSentenceLength
+          ends.md:13:1 ProseSentenceLength
+          ends.md:15:1 ProseSentenceLength
           EOF
 
           ${findUtf8Locale}
@@ -1290,8 +1310,13 @@ in
               exit 1
             fi
             printf '%s\n' "$found" |
-              sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::(ProseSentenceLength): .*,\1 \2,p' >got
+              sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::(ProseSentenceLength|ProseTrailingCondition): .*,\1 \2,p' >got
             if ! diff want got; then
+              # The message below names only sentence ends. The diff
+              # also fails when opens_quote() in lib/markdown.awk misses
+              # a curly opening quote. Each sentence end then stays in
+              # place, and ProseTrailingCondition reports the `if` of
+              # the ninth or tenth paragraph.
               echo "the $locale locale ends a sentence at another token" >&2
               exit 1
             fi

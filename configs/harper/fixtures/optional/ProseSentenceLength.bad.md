@@ -13,3 +13,7 @@ The proxy keeps one open connection to each upstream host that it contacted in t
 The proxy reads its routes from https://example.com/routes; it caches each route for one minute and reloads the whole file from the disk whenever the operator sends it a signal.
 
 The proxy reads the list of its routes from https://example.com/routes: it caches each route for one minute and reloads the whole file whenever the operator sends it a signal.
+
+The importer prints "Batch done!" each time it writes a batch to the destination table, but it still keeps the rows of the last batch in memory until it exits.
+
+The importer prints “Batch done!” _each_ time it writes a batch to the destination table, but it still keeps the rows of the last batch in memory until it exits.

@@ -36,6 +36,13 @@
 # grows, split it`). A clause is a subject and its verb, such as
 # `the tests pass`.
 #
+# A sentence can open with a quotation that ends in a period, a
+# question mark, or an exclamation mark, with a lowercase word after the
+# closing quote (`"Save changes?" appears if you close the editor`). The
+# imperative then sits inside the quotation, and the `if` after it
+# states the condition of the verb after the quotation. So the check
+# reads only the words up to the closing quote.
+#
 # `unless` passes. After an imperative, it names the exception to a
 # default (`Use the standard edition unless you need extra features`),
 # and the technical-writing skill puts the exception after the common
@@ -81,13 +88,19 @@ function word(i,   w) {
   return w
 }
 
-function sentence(n,   i, depth, w, t, limited) {
+function sentence(n,   i, depth, w, t, limited, last) {
   if (word(1) !~ imperative || tok[1] !~ /^[^A-Za-z]*[A-Z]/) {
     return
   }
+  # A quotation that opens the sentence holds the imperative, so the
+  # check reads only the words up to its closing quote.
+  last = quoted_opening(n)
+  if (!last) {
+    last = n
+  }
   depth = 0
   limited = 0
-  for (i = 2; i <= n; i++) {
+  for (i = 2; i <= last; i++) {
     t = tok[i]
     w = word(i)
     if (w == "if" && depth == 0 && t ~ /^[a-z]/) {

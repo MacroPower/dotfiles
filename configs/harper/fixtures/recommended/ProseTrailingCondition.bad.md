@@ -5,3 +5,7 @@ Restart the agent if the config changes.
 Increase the limit if the job runs out of memory.
 
 Don’t restart the server if the lock is held.
+
+The tool says "Ready." - Run the build if the tests pass.
+
+"Run the build if the tests pass!" the guide says.

@@ -31,9 +31,12 @@
 # after any closing quote, paren, bracket, or emphasis. A closing quote
 # is straight or curly (`"`, `'`, `”`, or `’`). `e.g.`, `i.e.`, `vs.`,
 # and `cf.` do not end a sentence, and neither does a three-period
-# ellipsis (`an implicit "About..." in front`). ends_sentence() in
-# lib/markdown.awk holds this test. Words after the last sentence end
-# count as one more sentence.
+# ellipsis (`an implicit "About..." in front`). A lowercase word after a
+# closing quote continues the sentence, because the quote closed a
+# quotation inside it (`prints "Lucky penny!" every time`).
+# ends_sentence() and continues_sentence() in lib/markdown.awk hold
+# these tests. Words after the last sentence end count as one more
+# sentence.
 #
 # lib/markdown.awk blanks code spans, link destinations, and bare URLs
 # to spaces. The period after a span, a link, or a URL then stands apart
@@ -84,9 +87,10 @@ function flush() {
   sentences = 0
   open = 0
   table = 0
+  quote_end = 0
 }
 
-function prose(text,   rest, pos, tok, col) {
+function prose(text,   rest, pos, tok, col, e) {
   if (FNR != last_line + 1 || bare_line || text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#+)([ \t]|$)/ || text ~ /^[ \t]*[|<]/) {
     flush()
   }
@@ -110,6 +114,13 @@ function prose(text,   rest, pos, tok, col) {
     if (tok ~ /^([-*+]|[0-9]+[.)])$/ && !open && sentences == 0) {
       continue
     }
+    # The token before ended in a mark and a closing quote. The sentence
+    # ended there unless this token continues it.
+    if (quote_end && !continues_sentence(tok)) {
+      sentences++
+      open = 0
+    }
+    quote_end = 0
     if (tok ~ /[A-Za-z]/) {
       if (!open && sentences == 0) {
         start_file = FILENAME
@@ -118,9 +129,12 @@ function prose(text,   rest, pos, tok, col) {
       }
       open = 1
     }
-    if (open && ends_sentence(tok)) {
+    e = open ? ends_sentence(tok) : 0
+    if (e == 1) {
       sentences++
       open = 0
+    } else if (e == 2) {
+      quote_end = 1
     }
   }
 }
