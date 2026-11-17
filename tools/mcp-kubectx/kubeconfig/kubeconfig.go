@@ -33,10 +33,11 @@ type Config struct {
 
 // NamedCluster is one entry in the kubeconfig clusters list. The
 // cluster body is opaque; use [ServerHost] to extract the apiserver
-// hostname.
+// hostname. The JSON keys match the YAML keys, so that `host select`
+// can pass the entry to `serve` in its JSON result.
 type NamedCluster struct {
-	Cluster any    `yaml:"cluster"`
-	Name    string `yaml:"name"`
+	Cluster any    `json:"cluster" yaml:"cluster"`
+	Name    string `json:"name"    yaml:"name"`
 }
 
 // NamedContext is one entry in the kubeconfig contexts list.

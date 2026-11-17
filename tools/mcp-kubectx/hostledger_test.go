@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +16,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubetest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/ledger"
@@ -67,19 +67,16 @@ func (c *hookClient) ListServiceAccounts(ctx context.Context, selector string) (
 }
 
 // selectProd runs `host select prod` against kubeconfigPath with
-// the ServiceAccount namespace ns and the extra flags.
-func selectProd(t *testing.T, kubeconfigPath string, extra ...string) error {
+// the ServiceAccount namespace ns and the extra flags. With
+// clusterScoped, the host config asks for a ClusterRoleBinding.
+func selectProd(t *testing.T, kubeconfigPath string, clusterScoped bool, extra ...string) error {
 	t.Helper()
 
-	args := []string{
-		"prod",
-		"--kubeconfig", kubeconfigPath,
-		"--out-path", filepath.Join(t.TempDir(), "k.yaml"),
-		"--sa-role-name", "view",
-		"--sa-namespace", "ns",
-	}
+	cfg := testHostConfig()
+	cfg.Namespace = "ns"
+	cfg.ClusterScoped = clusterScoped
 
-	return runHostSelect(t.Context(), append(args, extra...))
+	return runHostSelect(t.Context(), kubeconfigPath, cfg, append([]string{"prod"}, extra...))
 }
 
 // listRecords returns the records of l. It fails the test when the
@@ -108,12 +105,10 @@ func addRecords(t *testing.T, l *ledger.Ledger, records ...ledger.Record) {
 // call. It is on disk before the create call reaches the cluster.
 func TestHostSelectRecordsServiceAccount(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	tests := map[string]struct {
-		args          []string
 		clusterScoped bool
 	}{
 		"role binding": {},
 		"cluster role binding": {
-			args:          []string{"--sa-cluster-scoped=true"},
 			clusterScoped: true,
 		},
 	}
@@ -132,11 +127,12 @@ func TestHostSelectRecordsServiceAccount(t *testing.T) { //nolint:paralleltest /
 
 			path := writeTestKubeconfig(t, testKubeconfig())
 
-			args := append([]string{"--sa-instance-id", testInstanceID, "--sa-host-id", testHostID}, tc.args...)
-
 			before := time.Now()
 
-			require.NoError(t, selectProd(t, path, args...))
+			require.NoError(t, selectProd(t, path, tc.clusterScoped,
+				"--sa-instance-id", testInstanceID,
+				"--sa-host-id", testHostID,
+			))
 
 			after := time.Now()
 
@@ -150,7 +146,7 @@ func TestHostSelectRecordsServiceAccount(t *testing.T) { //nolint:paralleltest /
 			assert.False(t, written.After(after), "record written at %v, after the call at %v", written, after)
 
 			want := []ledger.Record{{
-				HostID:         testHostID,
+				HostID:         identity.Digest(testHostID),
 				InstanceID:     testInstanceID,
 				Kubeconfig:     path,
 				Context:        "prod",
@@ -162,65 +158,6 @@ func TestHostSelectRecordsServiceAccount(t *testing.T) { //nolint:paralleltest /
 
 			assert.Equal(t, want, got)
 			assert.Equal(t, want, atCreate, "the record must be on disk before the create call")
-		})
-	}
-}
-
-// TestHostSelectRecordsAbsoluteKubeconfig pins that a relative
-// --kubeconfig reaches the record, the client, and the result as an
-// absolute path. A later `host sweep` runs in another working
-// directory and must still find the file.
-//
-//nolint:paralleltest // mutates package-level state, uses t.Chdir
-func TestHostSelectRecordsAbsoluteKubeconfig(t *testing.T) {
-	records := withHostLedger(t)
-	clients := withHostKubeClients(t, map[string]kube.Client{"prod": &kubetest.Fake{}})
-	buf := withHostStdout(t)
-
-	path := writeTestKubeconfig(t, testKubeconfig())
-	t.Chdir(filepath.Dir(path))
-
-	require.NoError(t, selectProd(t, filepath.Base(path),
-		"--sa-instance-id", testInstanceID,
-		"--sa-host-id", testHostID,
-	))
-
-	var result HostSelectResult
-
-	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
-
-	assert.True(t, filepath.IsAbs(result.Kubeconfig), "result kubeconfig %q must be absolute", result.Kubeconfig)
-	assert.Equal(t, filepath.Base(path), filepath.Base(result.Kubeconfig))
-
-	got := listRecords(t, records)
-	require.Len(t, got, 1)
-	assert.Equal(t, result.Kubeconfig, got[0].Kubeconfig)
-
-	assert.Equal(t, []string{kubeClientCall(result.Kubeconfig, "prod")}, clients.Calls())
-}
-
-// TestHostSelectWritesNoRecordWithoutBothIDs pins the standalone
-// use of `host select`. Without both ids no `serve` owns the SA, so
-// the ledger stays empty. The call still creates the SA.
-func TestHostSelectWritesNoRecordWithoutBothIDs(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	tests := map[string][]string{
-		"no ids":           nil,
-		"host id only":     {"--sa-host-id", testHostID},
-		"instance id only": {"--sa-instance-id", testInstanceID},
-	}
-
-	for name, args := range tests { //nolint:paralleltest // subtests mutate package-level state
-		t.Run(name, func(t *testing.T) {
-			records := withHostLedger(t)
-			fake := &kubetest.Fake{}
-
-			withHostKubeClient(t, fake)
-			withHostStdout(t)
-
-			require.NoError(t, selectProd(t, writeTestKubeconfig(t, testKubeconfig()), args...))
-
-			assert.Len(t, fake.CreatedSAs, 1)
-			assert.Empty(t, listRecords(t, records))
 		})
 	}
 }
@@ -240,12 +177,12 @@ func TestHostSelectCreatesNothingWithoutRecord(t *testing.T) { //nolint:parallel
 		"malformed instance id": {
 			instanceID: "instance-xyz",
 			hostID:     testHostID,
-			err:        ledger.ErrInvalidID,
+			err:        ErrInvalidInstanceID,
 		},
 		"malformed host id": {
 			instanceID: testInstanceID,
 			hostID:     "host-abc",
-			err:        ledger.ErrInvalidID,
+			err:        ErrInvalidHostID,
 		},
 		"ledger directory cannot be created": {
 			blockLedger: true,
@@ -296,7 +233,7 @@ func TestHostSelectCreatesNothingWithoutRecord(t *testing.T) { //nolint:parallel
 			withHostKubeClient(t, fake)
 			withHostStdout(t)
 
-			err := selectProd(t, writeTestKubeconfig(t, testKubeconfig()),
+			err := selectProd(t, writeTestKubeconfig(t, testKubeconfig()), false,
 				"--sa-instance-id", tc.instanceID,
 				"--sa-host-id", tc.hostID,
 			)
@@ -318,10 +255,10 @@ func TestHostSelectCreatesNothingWithoutRecord(t *testing.T) { //nolint:parallel
 // of the SA failed, because the SA is then still there.
 func TestHostSelectRecordAfterFailedCreate(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	tests := map[string]struct {
-		fake  *kubetest.Fake
-		args  []string
-		err   error
-		stays bool
+		fake          *kubetest.Fake
+		err           error
+		stays         bool
+		clusterScoped bool
 	}{
 		"SA create is forbidden": {
 			fake: &kubetest.Fake{CreateSAErr: forbiddenErr("serviceaccounts", "claude-sa-1")},
@@ -358,10 +295,10 @@ func TestHostSelectRecordAfterFailedCreate(t *testing.T) { //nolint:paralleltest
 			stays: true,
 		},
 		"cluster role binding loses its connection": {
-			fake:  &kubetest.Fake{CreateClusterRoleBindingErr: errors.New("http2: server sent GOAWAY")},
-			args:  []string{"--sa-cluster-scoped=true"},
-			err:   serviceaccount.ErrCreateBinding,
-			stays: true,
+			fake:          &kubetest.Fake{CreateClusterRoleBindingErr: errors.New("http2: server sent GOAWAY")},
+			clusterScoped: true,
+			err:           serviceaccount.ErrCreateBinding,
+			stays:         true,
 		},
 		"binding is forbidden and the rollback fails": {
 			fake: &kubetest.Fake{
@@ -380,8 +317,10 @@ func TestHostSelectRecordAfterFailedCreate(t *testing.T) { //nolint:paralleltest
 			withHostKubeClient(t, tc.fake)
 			withHostStdout(t)
 
-			args := append([]string{"--sa-instance-id", testInstanceID, "--sa-host-id", testHostID}, tc.args...)
-			err := selectProd(t, writeTestKubeconfig(t, testKubeconfig()), args...)
+			err := selectProd(t, writeTestKubeconfig(t, testKubeconfig()), tc.clusterScoped,
+				"--sa-instance-id", testInstanceID,
+				"--sa-host-id", testHostID,
+			)
 			require.ErrorIs(t, err, tc.err)
 
 			got := listRecords(t, records)
@@ -395,7 +334,7 @@ func TestHostSelectRecordAfterFailedCreate(t *testing.T) { //nolint:paralleltest
 			require.Len(t, got, 1)
 			require.Len(t, tc.fake.CreatedSAs, 1)
 			assert.Equal(t, tc.fake.CreatedSAs[0], "ns/"+got[0].ServiceAccount)
-			assert.Equal(t, tc.args != nil, got[0].ClusterScoped,
+			assert.Equal(t, tc.clusterScoped, got[0].ClusterScoped,
 				"the record must name the binding kind that the create tried")
 		})
 	}
@@ -413,7 +352,7 @@ func TestHostReleaseRemovesRecordsOfTheServiceAccount(t *testing.T) {
 	withHostKubeClient(t, &kubetest.Fake{})
 
 	released := ledger.Record{
-		HostID:         testHostID,
+		HostID:         identity.Digest(testHostID),
 		InstanceID:     testInstanceID,
 		Kubeconfig:     "/admin/kube",
 		Context:        "prod",
@@ -438,54 +377,16 @@ func TestHostReleaseRemovesRecordsOfTheServiceAccount(t *testing.T) {
 
 	addRecords(t, records, released, otherOwner, otherName, otherNamespace, otherContext, otherKubeconfig)
 
-	require.NoError(t, runHostRelease(t.Context(), []string{
-		"--kubeconfig", "/admin/kube",
+	require.NoError(t, runHostRelease(t.Context(), "/admin/kube", append([]string{
 		"--context", "prod",
 		"--sa", "claude-sa-1",
 		"--namespace", "ns",
-	}))
+	}, ownerFlags()...)))
 
 	assert.ElementsMatch(t,
 		[]ledger.Record{otherName, otherNamespace, otherContext, otherKubeconfig},
 		listRecords(t, records),
 	)
-}
-
-// TestHostReleaseMatchesRelativeKubeconfig pins that `host release`
-// resolves a relative --kubeconfig before it looks for records,
-// because `host select` records the absolute path.
-//
-//nolint:paralleltest // mutates package-level state, uses t.Chdir
-func TestHostReleaseMatchesRelativeKubeconfig(t *testing.T) {
-	records := withHostLedger(t)
-
-	withHostKubeClient(t, &kubetest.Fake{})
-
-	dir := t.TempDir()
-	t.Chdir(dir)
-
-	// The working directory can differ from dir by a symlink, so
-	// the record takes the path that the process itself resolves.
-	absKubeconfig, err := filepath.Abs("kube")
-	require.NoError(t, err)
-
-	addRecords(t, records, ledger.Record{
-		HostID:         testHostID,
-		InstanceID:     testInstanceID,
-		Kubeconfig:     absKubeconfig,
-		Context:        "prod",
-		Namespace:      "ns",
-		ServiceAccount: "claude-sa-1",
-	})
-
-	require.NoError(t, runHostRelease(t.Context(), []string{
-		"--kubeconfig", "kube",
-		"--context", "prod",
-		"--sa", "claude-sa-1",
-		"--namespace", "ns",
-	}))
-
-	assert.Empty(t, listRecords(t, records))
 }
 
 // TestHostReleaseRecordFollowsCluster pins when `host release`
@@ -523,7 +424,7 @@ func TestHostReleaseRecordFollowsCluster(t *testing.T) { //nolint:paralleltest /
 			withHostKubeClient(t, tc.fake)
 
 			record := ledger.Record{
-				HostID:         testHostID,
+				HostID:         identity.Digest(testHostID),
 				InstanceID:     testInstanceID,
 				Kubeconfig:     "/admin/kube",
 				Context:        "prod",
@@ -532,12 +433,11 @@ func TestHostReleaseRecordFollowsCluster(t *testing.T) { //nolint:paralleltest /
 			}
 			addRecords(t, records, record)
 
-			require.NoError(t, runHostRelease(t.Context(), []string{
-				"--kubeconfig", "/admin/kube",
+			require.NoError(t, runHostRelease(t.Context(), "/admin/kube", append([]string{
 				"--context", "prod",
 				"--sa", "claude-sa-1",
 				"--namespace", "ns",
-			}))
+			}, ownerFlags()...)))
 
 			if tc.stays {
 				assert.Equal(t, []ledger.Record{record}, listRecords(t, records))
@@ -548,25 +448,25 @@ func TestHostReleaseRecordFollowsCluster(t *testing.T) { //nolint:paralleltest /
 	}
 }
 
-// TestHostReleaseToleratesUnreadableLedger pins that `host release`
-// deletes the SA and the binding, and exits 0, when it cannot read
-// the ledger. The records of the SA then stay, and a later sweep
-// finds the SA gone and removes them.
+// TestHostReleaseUnreadableLedger pins that `host release` deletes
+// nothing, and exits 0, when it cannot read the ledger. Without the
+// record, it cannot tell that the caller owns the SA. A sweep that
+// can read the ledger later deletes the SA after its `serve` has
+// died.
 //
 //nolint:paralleltest // mutates package-level state
-func TestHostReleaseToleratesUnreadableLedger(t *testing.T) {
+func TestHostReleaseUnreadableLedger(t *testing.T) {
 	withUnreadableHostLedger(t)
 
 	fake := &kubetest.Fake{}
 	withHostKubeClient(t, fake)
 
-	require.NoError(t, runHostRelease(t.Context(), []string{
-		"--kubeconfig", "/admin/kube",
+	require.NoError(t, runHostRelease(t.Context(), "/admin/kube", append([]string{
 		"--context", "prod",
 		"--sa", "claude-sa-1",
 		"--namespace", "ns",
-	}))
+	}, ownerFlags()...)))
 
-	assert.Equal(t, []string{"ns/claude-sa-1"}, fake.DeletedSAs)
-	assert.Equal(t, []string{"ns/claude-sa-1-binding"}, fake.DeletedRoleBindings)
+	assert.Empty(t, fake.DeletedSAs)
+	assert.Empty(t, fake.DeletedRoleBindings)
 }

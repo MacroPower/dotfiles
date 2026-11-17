@@ -60,9 +60,11 @@ const (
 )
 
 // Selector builds the LabelSelector used by every List call in
-// [CollectOrphans]. The selector pins on both the managed-by value
-// and the host id so cross-host resources are filtered out at the
-// apiserver before the classifier ever runs.
+// [CollectOrphans]. The selector pins on the managed-by value and on
+// hostID as the value of [serviceaccount.HostIDLabel]. So the
+// apiserver filters out the resources of other hosts before the
+// classifier runs. `host sweep` passes the digest of the host id,
+// which is the value that `host select` puts on that label.
 func Selector(hostID string) string {
 	return fmt.Sprintf("%s=%s,%s=%s",
 		serviceaccount.ManagedByLabel, serviceaccount.ManagedByValue,

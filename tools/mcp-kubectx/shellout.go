@@ -27,21 +27,23 @@ const guestEnvVar = "WM_SANDBOX_GUEST"
 
 // hostExecArgs returns the (command, argv) pair to run a `host *`
 // subcommand. On the macOS host the binary is invoked at its own
-// absolute path. Inside a Lima guest it goes through workmux
-// host-exec, which forwards the argv to the host-side mcp-kubectx
-// binary (resolved via the workmux host_commands allowlist + PATH).
+// absolute path. Inside a Lima guest it goes through `workmux
+// host-exec` as [hostCommand], which the workmux host_commands
+// allowlist names. workmux finds [hostCommand] on the PATH of the
+// host and passes it the subcommand and its flags. [dispatch] runs
+// only the `host` subcommands under that name.
 //
 // Reads h.envLookup so tests can flip the guest bit without mutating
-// process env. Only handler-bound code paths use this helper; the
-// host * subcommand entry points have no handler instance and so
+// process env. Only handler-bound code paths use this helper. The
+// host * subcommand entry points have no handler instance, so they
 // cannot recurse.
 func (h *handler) hostExecArgs(sub string, args []string) (string, []string, error) {
-	full := append([]string{"host", sub}, args...)
-
 	if h.isGuest() {
-		argv := append([]string{"host-exec", "mcp-kubectx"}, full...)
+		argv := append([]string{"host-exec", hostCommand, sub}, args...)
 		return "workmux", argv, nil
 	}
+
+	full := append([]string{subHost, sub}, args...)
 
 	self, err := os.Executable()
 	if err != nil {
@@ -72,7 +74,7 @@ type runHostFunc func(ctx context.Context, sub string, args []string) (stdout []
 const hostSubcommandKey = "subcommand"
 
 // defaultRunHost forks the mcp-kubectx binary (or `workmux
-// host-exec mcp-kubectx ...` when in a guest) through
+// host-exec mcp-kubectx-host ...` when in a guest) through
 // [runHostCommand]. runHostCommand adds the log records of the
 // subcommand to the default logger of serve.
 func (h *handler) defaultRunHost(ctx context.Context, sub string, args []string) ([]byte, error) {

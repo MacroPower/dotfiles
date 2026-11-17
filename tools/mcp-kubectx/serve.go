@@ -16,7 +16,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/execplugin"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statedir"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statefile"
 )
 
@@ -34,9 +36,9 @@ var (
 // currentSA is loaded by the UDS handler goroutine in
 // [*handler.handleSocketConn] and stored by [*handler.selectCtx]
 // after a successful host select. It carries the descriptor needed
-// to mint a token via [runHostToken] without re-reading any flag
-// state. Atomic rather than mutex-guarded so the socket goroutine
-// never contends with selectCtx's existing critical sections.
+// to mint a token via [runHostToken]. Atomic rather than
+// mutex-guarded so the socket goroutine never contends with
+// selectCtx's existing critical sections.
 //
 // socketPath / socketListener / socketWG track the per-`serve` UDS
 // lifecycle. socketListener is held only between [main.runServe]
@@ -47,32 +49,30 @@ var (
 // allowlist.
 //
 // instanceID is the per-`serve` random identifier tagged on every
-// provisioned SA and binding via [serviceaccount.InstanceIDLabel];
-// hostID is the persistent per-user-per-host identifier tagged via
-// [serviceaccount.HostIDLabel]. Both are populated by
-// [main.runServe] before [socket.Acquire] runs so the per-slot
-// sidecar and the resource labels stay aligned. sweepWG tracks the
+// provisioned SA and binding via [serviceaccount.InstanceIDLabel].
+// hostID is the persistent per-user-per-host identifier. `host
+// select` derives its [identity.Digest], and the digest is the value
+// of [serviceaccount.HostIDLabel]. [main.runServe] sets both before
+// [socket.Acquire] runs, so the per-slot sidecar and the resource
+// labels stay aligned. sweepWG tracks the
 // background `host sweep` goroutine launched at startup so shutdown
 // can wait for it to return.
 type handler struct {
-	socketListener  net.Listener
-	envLookup       func(string) string
-	runHost         runHostFunc
-	currentSA       atomic.Pointer[currentSA]
-	outputPath      string
-	kubeconfigPath  string
-	socketPath      string
-	lastOutputPath  string
-	instanceID      string
-	hostID          string
-	allowedAPIHosts []string
-	cleanupFuncs    []func(context.Context)
-	sa              serviceaccount.Config
-	socketWG        sync.WaitGroup
-	sweepWG         sync.WaitGroup
-	pid             int
-	socketSlots     int
-	mu              sync.Mutex
+	socketListener net.Listener
+	envLookup      func(string) string
+	runHost        runHostFunc
+	currentSA      atomic.Pointer[currentSA]
+	outputPath     string
+	socketPath     string
+	lastOutputPath string
+	instanceID     string
+	hostID         string
+	cleanupFuncs   []func(context.Context)
+	socketWG       sync.WaitGroup
+	sweepWG        sync.WaitGroup
+	pid            int
+	socketSlots    int
+	mu             sync.Mutex
 }
 
 // registerCleanup appends a function to run during session teardown.
@@ -151,11 +151,9 @@ func sidecarSymlinkPath() string {
 //     The listener close unlinks the per-slot sidecar at
 //     [socket.SidecarPath] and then the socket inode at
 //     h.socketPath, as [socket.Listen] describes.
-//  2. Unlink the scoped kubeconfig at h.lastOutputPath. For a
-//     host serve this path lies in [statedir.RunDir] of the host.
-//     For a guest serve it lies under the writable bind mount of
-//     `~/.local/state/mcp-kubectx` declared in workmux's
-//     extra_mounts. So the removal succeeds without any host-side
+//  2. Unlink the scoped kubeconfig at h.lastOutputPath. serve
+//     wrote the file on its own machine, by default in
+//     [statedir.RunDir], so the removal does not need a host-side
 //     shell-out.
 //  3. Unlink the hook-router sidecar symlink. It lives in a
 //     directory of the machine that runs this serve, which never
@@ -294,9 +292,7 @@ func (h *handler) list(
 	_ *mcp.CallToolRequest,
 	_ ListInput,
 ) (*mcp.CallToolResult, any, error) {
-	args := h.kubeconfigArgs()
-
-	stdout, err := h.runHost(ctx, "list", args)
+	stdout, err := h.runHost(ctx, "list", nil)
 	if err != nil {
 		return toolError(err), nil, nil
 	}
@@ -311,13 +307,17 @@ type SelectInput struct {
 	Context string `json:"context" jsonschema:"Context name to select"`
 }
 
-// selectCtx shells out to `host select` and registers a release
-// closure for the resulting ServiceAccount. Drain ordering:
-//   - snapshot the previous cleanup list, clear the live one;
-//   - run host select unlocked;
-//   - on failure, [handler.restoreCleanups] swaps prev back so it
-//     still runs at shutdown;
-//   - on success, append a new release closure and drain prev with
+// selectCtx shells out to `host select`, writes the scoped
+// kubeconfig of the resulting ServiceAccount with
+// [writeScopedKubeconfig], and registers a release closure for the
+// ServiceAccount. Drain ordering:
+//   - Snapshot the previous cleanup list, and clear the live one.
+//   - Run host select unlocked.
+//   - On failure, [handler.restoreCleanups] swaps prev back, so it
+//     still runs at shutdown.
+//   - When the write of the kubeconfig fails, release the new
+//     ServiceAccount and swap prev back.
+//   - On success, append a new release closure and drain prev with
 //     a 30-second [context.Background] timeout.
 //
 // The mutex is held only across snapshot/swap and registration,
@@ -379,10 +379,23 @@ func (h *handler) selectCtx(
 
 	releaseFn := h.releaseClosure(result)
 
+	outPath := h.kubeconfigPath()
+
+	err = writeScopedKubeconfig(outPath, result, h.socketPath)
+	if err != nil {
+		// No kubeconfig names the new ServiceAccount, so nothing
+		// can use it. The release derives from context.Background,
+		// as [drainCleanups] describes.
+		drainCleanups([]func(context.Context){releaseFn}) //nolint:contextcheck // see comment
+		rollback()
+
+		return toolError(err), nil, nil
+	}
+
 	h.registerCleanup(releaseFn)
 
 	h.mu.Lock()
-	h.lastOutputPath = result.Path
+	h.lastOutputPath = outPath
 	h.mu.Unlock()
 
 	// Storing the new descriptor before draining the prior cleanups
@@ -392,17 +405,13 @@ func (h *handler) selectCtx(
 	// pointer guarantees the socket goroutine sees a coherent
 	// old-or-new SA, never garbage.
 	h.currentSA.Store(&currentSA{
-		Kubeconfig: result.Kubeconfig,
-		Context:    result.Context,
-		SAName:     result.SAName,
-		Namespace:  result.Namespace,
-		Expiration: h.sa.Expiration,
+		Context:   result.Context,
+		SAName:    result.SAName,
+		Namespace: result.Namespace,
 	})
 
-	// result.Path is the path host select actually wrote, including
-	// any host-side defaulting; using it points the symlink and
-	// shutdown cleanup at the same file.
-	h.publishSidecar(result.Path)
+	// The symlink and the shutdown cleanup point at the same file.
+	h.publishSidecar(outPath)
 
 	// The external creds live in the sidecar (second merged entry),
 	// but current-context resolves first-file-wins from the local
@@ -421,7 +430,7 @@ func (h *handler) selectCtx(
 
 	return toolResult(fmt.Sprintf(
 		"Created ServiceAccount for context %q bound to %s.\nKubeconfig written to %s",
-		result.Context, serviceaccount.Describe(h.sa), result.Path,
+		result.Context, result.Binding, outPath,
 	)), nil, nil
 }
 
@@ -491,80 +500,84 @@ func (h *handler) selectLocalCtx(name string) (*mcp.CallToolResult, any, error) 
 	)), nil, nil
 }
 
-// selectArgs builds the argv passed to `host select`. Serve owns
-// the discriminator (pid + host/guest env) and forwards it as
-// --pid and --for-guest. host select passes both to
-// [statedir.KubeconfigPath] on the host to resolve the kubeconfig
-// path. When the user
-// passed --output to serve, h.outputPath is non-empty and serve
-// forwards it as --out-path so the user override still wins (host
-// select ignores --pid in that branch). The socket path is
-// forwarded directly from h.socketPath, the slot resolved once at
-// serve startup by [socket.Acquire]; selectArgs never re-derives
-// the path so the kubeconfig and the bound listener cannot drift.
-// Each allowed apiserver host is forwarded as a repeated
-// `--allow-apiserver-host` flag; an empty list yields no flags and
-// lets `host select` accept any apiserver.
-//
-// h.instanceID and h.hostID flow through as --sa-instance-id and
-// --sa-host-id so the SAs and bindings `host select` creates carry
-// [serviceaccount.InstanceIDLabel] and [serviceaccount.HostIDLabel];
-// empty values omit the flag entirely so the host select side
-// preserves existing test invariants for standalone CLI use.
+// selectArgs builds the argv passed to `host select`. The argv
+// names the context and the owner of the ServiceAccount, which is
+// h.hostID and h.instanceID. `host select` takes everything else,
+// such as the role and the apiserver allowlist, from the host
+// config. The SAs and bindings that `host select` creates carry
+// h.instanceID as [serviceaccount.InstanceIDLabel] and the
+// [identity.Digest] of h.hostID as [serviceaccount.HostIDLabel].
 func (h *handler) selectArgs(contextName string) []string {
-	guest := h.isGuest()
-
-	args := []string{contextName}
-	args = append(args, h.kubeconfigArgs()...)
-	args = append(args,
-		"--pid", strconv.Itoa(h.pid),
-		fmt.Sprintf("--for-guest=%t", guest),
-		"--socket-path", h.socketPath,
-		"--sa-role-name", h.sa.Role,
-		"--sa-role-kind", h.sa.RoleKind,
-		"--sa-namespace", h.sa.Namespace,
-		"--sa-expiration", strconv.Itoa(h.sa.Expiration),
-		fmt.Sprintf("--sa-cluster-scoped=%t", h.sa.ClusterScoped),
-	)
-
-	if h.outputPath != "" {
-		args = append(args, "--out-path", h.outputPath)
+	return []string{
+		contextName,
+		"--sa-instance-id", h.instanceID,
+		"--sa-host-id", h.hostID,
 	}
-
-	if h.instanceID != "" {
-		args = append(args, "--sa-instance-id", h.instanceID)
-	}
-
-	if h.hostID != "" {
-		args = append(args, "--sa-host-id", h.hostID)
-	}
-
-	for _, host := range h.allowedAPIHosts {
-		args = append(args, "--"+allowAPIServerHostFlag, host)
-	}
-
-	return args
 }
 
-// kubeconfigArgs returns the --kubeconfig flag pair for a host
-// subcommand, or an empty slice when the user did not pass an
-// explicit path to serve. Letting the host subcommand resolve the
-// default itself avoids leaking the serve process's $HOME (e.g. a
-// Lima guest's /home/user) into argv aimed at the macOS host.
-func (h *handler) kubeconfigArgs() []string {
-	if h.kubeconfigPath == "" {
-		return nil
+// ownerArgs returns the flags that name the owner of a
+// ServiceAccount to `host token` and `host release`.
+func (h *handler) ownerArgs() []string {
+	return []string{"--host-id", h.hostID, "--instance-id", h.instanceID}
+}
+
+// kubeconfigPath returns the path of the scoped kubeconfig of this
+// serve: the --output path when set, and otherwise
+// [statedir.KubeconfigPath] for the pid and the env of serve. serve
+// resolves the path on its own machine.
+func (h *handler) kubeconfigPath() string {
+	if h.outputPath != "" {
+		return h.outputPath
 	}
 
-	return []string{"--kubeconfig", h.kubeconfigPath}
+	return statedir.KubeconfigPath(h.pid, h.isGuest())
+}
+
+// writeScopedKubeconfig writes the scoped kubeconfig of result to
+// path with [statefile.WriteSecure]. The kubeconfig holds the
+// cluster entry of result and one context of that cluster. Its user
+// is the ServiceAccount of result, and its user.exec block runs
+// `mcp-kubectx exec-plugin` against the socket at socketPath. The
+// file carries no token.
+func writeScopedKubeconfig(path string, result HostSelectResult, socketPath string) error {
+	out := kubeconfig.Config{
+		APIVersion:     "v1",
+		Kind:           "Config",
+		CurrentContext: result.Context,
+		Clusters:       []kubeconfig.NamedCluster{result.Cluster},
+		Contexts: []kubeconfig.NamedContext{{
+			Name: result.Context,
+			Context: kubeconfig.Context{
+				Cluster:   result.Cluster.Name,
+				User:      result.SAName,
+				Namespace: result.Namespace,
+			},
+		}},
+		Users: []kubeconfig.NamedUser{{
+			Name: result.SAName,
+			User: map[string]any{"exec": execplugin.New(socketPath)},
+		}},
+	}
+
+	data, err := out.Marshal()
+	if err != nil {
+		return err //nolint:wrapcheck // Marshal already wraps kubeconfig.ErrWrite
+	}
+
+	err = statefile.WriteSecure(path, data)
+	if err != nil {
+		return fmt.Errorf("%w: %w", kubeconfig.ErrWrite, err)
+	}
+
+	return nil
 }
 
 // publishSidecar refreshes the per-Claude-session symlink at
-// [sidecarSymlinkPath] to point at target (the kubeconfig path
-// `host select` just wrote). The Claude Code hook-router resolves
-// kubectl invocations through this symlink. Failure is non-fatal:
-// hook-router falls back to its "no kubeconfig" denial, which is
-// the same behavior callers see today before this fix.
+// [sidecarSymlinkPath] to point at target, the scoped kubeconfig
+// that [writeScopedKubeconfig] wrote. The Claude Code hook-router
+// resolves kubectl invocations through this symlink. Failure is
+// non-fatal: hook-router falls back to its "no kubeconfig" denial,
+// which is the same behavior callers see today before this fix.
 func (h *handler) publishSidecar(target string) {
 	sidecar := sidecarSymlinkPath()
 	if sidecar == "" {
@@ -597,12 +610,11 @@ func (h *handler) publishSidecar(target string) {
 func (h *handler) releaseClosure(result HostSelectResult) func(context.Context) {
 	return func(ctx context.Context) {
 		args := []string{
-			"--kubeconfig", result.Kubeconfig,
 			"--context", result.Context,
 			"--sa", result.SAName,
 			"--namespace", result.Namespace,
-			fmt.Sprintf("--sa-cluster-scoped=%t", result.ClusterScoped),
 		}
+		args = append(args, h.ownerArgs()...)
 
 		_, err := h.runHost(ctx, "release", args)
 		if err != nil {

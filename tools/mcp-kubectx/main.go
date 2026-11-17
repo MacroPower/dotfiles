@@ -15,7 +15,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/socket"
 )
 
@@ -53,48 +52,24 @@ func run() int {
 }
 
 // runServe runs the MCP stdio server. It owns the long-lived
-// per-process state (kubeconfig path, SA cleanup registry) and
-// shells out to `host *` subcommands -- directly when on the
-// macOS host, via `workmux host-exec` when in a Lima guest -- to
-// touch the cluster. ctx carries the parent process's signal
-// cancellation; runServe itself does not call [signal.NotifyContext].
+// per-process state, such as the path of its scoped kubeconfig and
+// the SA cleanup registry. It shells out to `host *` subcommands to
+// touch the cluster. It runs them directly on the macOS host and
+// through `workmux host-exec` in a Lima guest. The `host`
+// subcommands take the role, the apiserver allowlist, and the host
+// kubeconfig from the host, so serve has no flag for them. ctx
+// carries the parent process's signal cancellation, and runServe
+// itself does not call [signal.NotifyContext].
 func runServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 
-	kubeconfig := fs.String(
-		"kubeconfig", "",
-		"path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)",
-	)
 	output := fs.String(
 		"output",
 		"",
-		"path of the scoped kubeconfig (default: <host's $XDG_STATE_HOME>/mcp-kubectx-run/kubeconfig.<pid>.host.yaml "+
-			"for a host-side serve, <host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.guest.yaml for a Lima-guest serve). "+
-			"A Lima-guest serve removes the file at shutdown with a local os.Remove, so the guest must be able to write "+
-			"to the path. The default path of a Lima-guest serve lies under the writable bind mount of "+
-			"<host's $XDG_STATE_HOME>/mcp-kubectx that home/claude.nix declares, so a Lima-guest serve needs that mount. "+
-			"In a Lima guest, an explicit path must also resolve on the host. Usually only a path under a writable "+
-			"bind mount meets both conditions.",
-	)
-	saRole := fs.String(
-		"sa-role-name", "",
-		"name of the Role or ClusterRole to bind the ServiceAccount to (required)",
-	)
-	saRoleKind := fs.String(
-		"sa-role-kind", serviceaccount.RoleKindClusterRole,
-		"kind of role to bind: Role or ClusterRole",
-	)
-	saClusterScoped := fs.Bool(
-		"sa-cluster-scoped", false,
-		"create a ClusterRoleBinding instead of a RoleBinding (requires ClusterRole kind)",
-	)
-	saNamespace := fs.String(
-		"sa-namespace", "",
-		"namespace for the ServiceAccount (default: context namespace or \"default\")",
-	)
-	saExpiration := fs.Int(
-		"sa-expiration", 0,
-		"ServiceAccount token lifetime in seconds (default: 3600, max: 86400)",
+		"path of the scoped kubeconfig that serve writes after each select of an external context "+
+			"(default: $XDG_STATE_HOME/mcp-kubectx-run/kubeconfig.<pid>.<env>.yaml, where <env> is host, "+
+			"or guest in a Lima guest). serve resolves the path and writes the file on the machine that runs serve, "+
+			"and it removes the file at shutdown.",
 	)
 	logFile := fs.String(
 		"log-file", "",
@@ -107,15 +82,6 @@ func runServe(ctx context.Context, args []string) error {
 			"Each slot maps to one literal entry in the Claude Code sandbox allowlist. "+
 			"Must be >= 1. Concurrent serves on the same host occupy distinct slots; "+
 			"startup fails when every slot is held by a live peer.",
-	)
-
-	var allowedAPIHosts stringSliceFlag
-
-	fs.Var(
-		&allowedAPIHosts,
-		allowAPIServerHostFlag,
-		"hostname permitted as cluster.server when selecting a context "+
-			"(repeatable; empty = allow any)",
 	)
 
 	err := fs.Parse(args)
@@ -135,25 +101,12 @@ func runServe(ctx context.Context, args []string) error {
 
 	slog.SetDefault(logger)
 
-	sa := serviceaccount.Config{
-		Role:          *saRole,
-		RoleKind:      *saRoleKind,
-		ClusterScoped: *saClusterScoped,
-		Namespace:     *saNamespace,
-		Expiration:    *saExpiration,
-	}
-
-	err = sa.Validate()
-	if err != nil {
-		return fmt.Errorf("invalid service account config: %w", err)
-	}
-
 	instanceID, err := identity.New()
 	if err != nil {
 		return fmt.Errorf("generate instance id: %w", err)
 	}
 
-	// The host id is per-env (host.id vs guest.id), because the
+	// The host id is per-env (host.key vs guest.key), because the
 	// sweep of each env can vouch only for the live serves of that
 	// env. Each id file lies in the run dir of the machine that runs
 	// serve, which workmux never mounts into a Lima guest. See
@@ -166,16 +119,13 @@ func runServe(ctx context.Context, args []string) error {
 	}
 
 	h := &handler{
-		kubeconfigPath:  *kubeconfig,
-		outputPath:      *output,
-		lastOutputPath:  *output,
-		allowedAPIHosts: allowedAPIHosts,
-		pid:             os.Getpid(),
-		socketSlots:     *socketSlots,
-		sa:              sa,
-		envLookup:       os.Getenv,
-		instanceID:      instanceID,
-		hostID:          hostID,
+		outputPath:     *output,
+		lastOutputPath: *output,
+		pid:            os.Getpid(),
+		socketSlots:    *socketSlots,
+		envLookup:      os.Getenv,
+		instanceID:     instanceID,
+		hostID:         hostID,
 	}
 
 	h.runHost = h.defaultRunHost

@@ -8,14 +8,17 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/ledger"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
 )
 
 // runMainEnv names the environment variable that makes the test
@@ -27,7 +30,10 @@ const runMainEnv = "MCP_KUBECTX_TEST_RUN_MAIN"
 // state directory of the user who runs the tests. `host release`
 // and `host sweep` read the ledger on every call, and `host select`
 // writes to it. A test that asserts on records takes a directory of
-// its own with [withHostLedger].
+// its own with [withHostLedger]. TestMain also points the host
+// config at a missing file in the same directory, so that no test
+// reads the host config of the user. A test that loads the host
+// config writes its own with [withHostConfigFile].
 //
 // With [runMainEnv] set to "1", TestMain runs [run] on the
 // arguments of the process and exits with its status.
@@ -43,6 +49,7 @@ func TestMain(m *testing.M) {
 	}
 
 	hostLedgerDir = func() string { return filepath.Join(dir, "ledger") }
+	hostConfigPath = func() (string, error) { return filepath.Join(dir, "config.json"), nil }
 
 	code := m.Run()
 
@@ -118,6 +125,68 @@ func withHostLedger(t *testing.T) *ledger.Ledger {
 	t.Cleanup(func() { hostLedgerDir = prev })
 
 	return ledger.New(dir)
+}
+
+// testHostConfig returns the host config that the tests of the host
+// subcommands pass: a RoleBinding to the ClusterRole view, with the
+// defaults of [serviceaccount.Config.Validate].
+func testHostConfig() hostConfig {
+	return hostConfig{Config: serviceaccount.Config{
+		Role:       "view",
+		RoleKind:   serviceaccount.RoleKindClusterRole,
+		Expiration: serviceaccount.DefaultExpiration,
+	}}
+}
+
+// withHostConfigFile writes data as the host config file of a
+// directory of the test, and points [hostConfigPath] at it. It
+// returns the path of the file.
+func withHostConfigFile(t *testing.T, data string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o600))
+
+	prev := hostConfigPath
+	hostConfigPath = func() (string, error) { return path, nil }
+
+	t.Cleanup(func() { hostConfigPath = prev })
+
+	return path
+}
+
+// testOwnedKubeconfig is the host kubeconfig path of each record of
+// [addOwnedRecord].
+const testOwnedKubeconfig = "/kc"
+
+// addOwnedRecord adds to l the provision record that `host select`
+// writes for the ServiceAccount ns/sa on the context prod of the
+// host kubeconfig at testOwnedKubeconfig. The record names
+// testHostID and testInstanceID as its owner.
+func addOwnedRecord(t *testing.T, l *ledger.Ledger, ns, sa string, clusterScoped bool) ledger.Record {
+	t.Helper()
+
+	r := ledger.Record{
+		HostID:         identity.Digest(testHostID),
+		InstanceID:     testInstanceID,
+		Kubeconfig:     testOwnedKubeconfig,
+		Context:        "prod",
+		Namespace:      ns,
+		ServiceAccount: sa,
+		ClusterScoped:  clusterScoped,
+		Written:        time.Now().UTC(),
+	}
+
+	require.NoError(t, l.Add(r))
+
+	return r
+}
+
+// ownerFlags returns the flags that name testHostID and
+// testInstanceID as the owner of a ServiceAccount to `host token`
+// and `host release`.
+func ownerFlags() []string {
+	return []string{"--host-id", testHostID, "--instance-id", testInstanceID}
 }
 
 // withUnreadableHostLedger points the host subcommands at a ledger

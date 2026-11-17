@@ -251,8 +251,89 @@ func TestRemove(t *testing.T) {
 	assert.Equal(t, []ledger.Record{kept}, got)
 }
 
-// TestRejectsInvalidIDs pins that neither Add nor Remove builds a
-// file name from a malformed id. A path separator in such an id
+// TestFind pins the lookup that `host token` and `host release` use
+// as the proof that a `serve` provisioned a ServiceAccount. Find
+// returns the stored record only when the owner and the location of
+// the key both match it. The time and the binding kind of the key
+// do not take part in the lookup.
+func TestFind(t *testing.T) {
+	t.Parallel()
+
+	stored := record("claude-sa-1")
+	stored.ClusterScoped = true
+	stored.Written = time.Date(2026, time.March, 4, 12, 30, 0, 0, time.UTC)
+
+	tests := map[string]struct {
+		key   func(r ledger.Record) ledger.Record
+		found bool
+	}{
+		"same owner and location": {
+			key: func(r ledger.Record) ledger.Record {
+				r.ClusterScoped = false
+				r.Written = time.Time{}
+
+				return r
+			},
+			found: true,
+		},
+		"other host": {
+			key:   func(r ledger.Record) ledger.Record { r.HostID = hostB; return r },
+			found: false,
+		},
+		"other instance": {
+			key:   func(r ledger.Record) ledger.Record { r.InstanceID = instance2; return r },
+			found: false,
+		},
+		"other kubeconfig": {
+			key:   func(r ledger.Record) ledger.Record { r.Kubeconfig = "/other"; return r },
+			found: false,
+		},
+		"other context": {
+			key:   func(r ledger.Record) ledger.Record { r.Context = "staging"; return r },
+			found: false,
+		},
+		"other namespace": {
+			key:   func(r ledger.Record) ledger.Record { r.Namespace = "kube-system"; return r },
+			found: false,
+		},
+		"other service account": {
+			key:   func(r ledger.Record) ledger.Record { r.ServiceAccount = "claude-sa-2"; return r },
+			found: false,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.New(t.TempDir())
+			require.NoError(t, l.Add(stored))
+
+			got, err := l.Find(tc.key(stored))
+			if !tc.found {
+				require.ErrorIs(t, err, ledger.ErrNotFound)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, stored, got)
+		})
+	}
+}
+
+// TestFindMissingDirectory pins that a ledger without a directory
+// holds no record to find.
+func TestFindMissingDirectory(t *testing.T) {
+	t.Parallel()
+
+	l := ledger.New(filepath.Join(t.TempDir(), "missing"))
+
+	_, err := l.Find(record("claude-sa-1"))
+	require.ErrorIs(t, err, ledger.ErrNotFound)
+}
+
+// TestRejectsInvalidIDs pins that Add, Remove, and Find never build
+// a file name from a malformed id. A path separator in such an id
 // leads out of the ledger directory.
 func TestRejectsInvalidIDs(t *testing.T) {
 	t.Parallel()
@@ -280,6 +361,9 @@ func TestRejectsInvalidIDs(t *testing.T) {
 
 			require.ErrorIs(t, l.Add(r), ledger.ErrInvalidID)
 			require.ErrorIs(t, l.Remove(r), ledger.ErrInvalidID)
+
+			_, err := l.Find(r)
+			require.ErrorIs(t, err, ledger.ErrInvalidID)
 			assert.NoDirExists(t, dir, "a rejected record must not touch the filesystem")
 		})
 	}

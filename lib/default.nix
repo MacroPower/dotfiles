@@ -206,14 +206,22 @@ let
           NIX_CFLAGS_LINK = "-fuse-ld=lld";
         };
 
-      # mcp-kubectx (declared in workmux host_commands) needs to read
+      # mcp-kubectx-host, the only entry of workmux host_commands, reads
       # ~/.kube/config. Upstream's host-exec sandbox unconditionally denies
-      # ~/.kube. Drop that single entry from DENY_READ_DIRS. Trade-off:
-      # every host_commands entry now gets read access to ~/.kube; today
-      # that's only mcp-kubectx, so blast radius matches the binary that
-      # needs it.
+      # ~/.kube. Drop that single entry from DENY_READ_DIRS. So every
+      # host_commands entry gets read access to ~/.kube, and the list
+      # must hold only commands that a guest cannot make run its own code.
       patches = (old.patches or [ ]) ++ [
         ../pkgs/workmux-allow-kube-read.patch
+        # Upstream's host-exec runs each host command other than its
+        # builtins in the toolchain of the worktree. It wraps the command
+        # in `nix develop` for a flake.nix, or in `devbox run` for a
+        # devbox.json. The guest writes the worktree, so the wrapper runs
+        # code of the guest on the host, with the read access to ~/.kube
+        # above. Run every host command without the wrapper. The guest
+        # agent still starts in the toolchain, because that wrapper runs
+        # in the guest.
+        ../pkgs/workmux-host-exec-no-toolchain.patch
         # ClaudeProfile's hardcoded skip-permissions flag starts every pane
         # in bypass mode. Swap to the opt-in
         # --allow-dangerously-skip-permissions so panes start in the

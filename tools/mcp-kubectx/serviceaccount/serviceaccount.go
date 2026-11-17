@@ -36,18 +36,20 @@ const (
 	InstanceIDLabel = "mcp-kubectx/instance-id"
 
 	// HostIDLabel identifies the persistent host the resource was
-	// provisioned from. The sweep selector pins on this label so two
-	// operators against a shared cluster never delete each other's
-	// resources. See [identity.LoadOrCreateHost].
+	// provisioned from. Its value is the [identity.Digest] of the
+	// host id, never the host id itself. The sweep selector pins on
+	// this label so two operators against a shared cluster never
+	// delete each other's resources. See
+	// [identity.LoadOrCreateHost].
 	HostIDLabel = "mcp-kubectx/host-id"
 )
 
 // Sentinel errors for ServiceAccount operations.
 var (
-	ErrMissingRole       = errors.New("--sa-role-name is required")
-	ErrInvalidRoleKind   = errors.New("--sa-role-kind must be Role or ClusterRole")
-	ErrClusterScopedRole = errors.New("--sa-cluster-scoped requires --sa-role-kind=ClusterRole")
-	ErrExpirationTooLong = errors.New("--sa-expiration exceeds maximum (86400)")
+	ErrMissingRole       = errors.New("role is required")
+	ErrInvalidRoleKind   = errors.New("roleKind must be Role or ClusterRole")
+	ErrClusterScopedRole = errors.New("clusterScoped requires roleKind ClusterRole")
+	ErrExpirationTooLong = errors.New("expiration exceeds maximum (86400)")
 	ErrCreateSA          = errors.New("create service account")
 	ErrCreateBinding     = errors.New("create role binding")
 	// ErrMaybeCreated marks a [CreateWithBinding] failure after which
@@ -68,25 +70,26 @@ var (
 	ErrDeleteBinding = errors.New("delete role binding")
 )
 
-// Config holds ServiceAccount configuration parsed from flags.
+// Config holds the ServiceAccount configuration. The JSON keys are
+// the keys of the host config file that the `host` subcommands read.
 type Config struct {
 	// Role is the name of the Role or ClusterRole to bind.
-	Role string
+	Role string `json:"role"`
 
 	// RoleKind is "ClusterRole" (default) or "Role".
-	RoleKind string
+	RoleKind string `json:"roleKind"`
 
 	// Namespace is the namespace for the ServiceAccount; empty
 	// defers to the context namespace, then "default" (see
 	// [ResolveNamespace]).
-	Namespace string
+	Namespace string `json:"namespace"`
 
 	// Expiration is the token lifetime in seconds.
-	Expiration int
+	Expiration int `json:"expiration"`
 
 	// ClusterScoped creates a ClusterRoleBinding instead of a
 	// RoleBinding. Requires RoleKind ClusterRole.
-	ClusterScoped bool
+	ClusterScoped bool `json:"clusterScoped"`
 }
 
 // IsClusterRole reports whether the configured role kind is
@@ -95,7 +98,8 @@ func (c *Config) IsClusterRole() bool {
 	return c.RoleKind == RoleKindClusterRole
 }
 
-// Validate checks flag consistency and applies defaults.
+// Validate checks the consistency of the fields and applies
+// defaults.
 func (c *Config) Validate() error {
 	if c.Role == "" {
 		return ErrMissingRole
@@ -195,9 +199,9 @@ func BindingName(saName string) string {
 //
 // The created resources carry instanceID as [InstanceIDLabel] and
 // hostID as [HostIDLabel], so that the orphan sweep attributes them
-// to one `serve` and one host. An empty string for either parameter
-// omits that label. The standalone `host select` CLI invocation
-// relies on that contract.
+// to one `serve` and one host. `host select` passes the
+// [identity.Digest] of the host id as hostID. An empty string for
+// either parameter omits that label.
 //
 // A failure leaves nothing on the cluster when its error wraps
 // neither [ErrMaybeCreated] nor [ErrRollback]. The error wraps

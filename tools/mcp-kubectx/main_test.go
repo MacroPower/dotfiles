@@ -83,10 +83,11 @@ func TestOpenLoggerRefusesSymlink(t *testing.T) {
 }
 
 // TestServeOutputUsage runs `serve --help` of this test binary as a
-// child process and reads the usage of --output. A Lima-guest serve
-// removes its kubeconfig through the writable bind mount that
-// home/claude.nix declares. So the usage must name that mount as a
-// need of the default path.
+// child process and reads the usage of --output. serve writes its
+// scoped kubeconfig on the machine that runs it, in mcp-kubectx-run,
+// so the default path needs no bind mount. The usage lists no flag
+// for the role, the apiserver allowlist, or the host kubeconfig,
+// because the `host` subcommands take them from the host.
 func TestServeOutputUsage(t *testing.T) {
 	t.Parallel()
 
@@ -112,11 +113,11 @@ func TestServeOutputUsage(t *testing.T) {
 
 	entry, _, _ = strings.Cut(entry, "\n  -")
 
-	assert.Contains(
-		t,
-		entry,
-		"writable bind mount of <host's $XDG_STATE_HOME>/mcp-kubectx that home/claude.nix declares",
-	)
-	assert.Contains(t, entry, "a Lima-guest serve needs that mount")
-	assert.NotContains(t, entry, "does not need a writable mount")
+	assert.Contains(t, entry, "$XDG_STATE_HOME/mcp-kubectx-run/kubeconfig.<pid>.<env>.yaml")
+	assert.Contains(t, entry, "writes the file on the machine that runs serve")
+	assert.NotContains(t, entry, "mount")
+
+	for _, flag := range []string{"-kubeconfig", "-sa-role-name", "-sa-cluster-scoped", "-allow-apiserver-host"} {
+		assert.NotContains(t, stderr.String(), "\n  "+flag+" ", "serve must not take %s", flag)
+	}
 }

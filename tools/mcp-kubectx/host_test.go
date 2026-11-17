@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/execplugin"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubetest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
@@ -44,7 +45,7 @@ func TestHostList(t *testing.T) { //nolint:paralleltest // uses withHostStdout, 
 
 			path := writeTestKubeconfig(t, tc.cfg)
 
-			err := runHostList([]string{"--kubeconfig", path})
+			err := runHostList(path, nil)
 			require.NoError(t, err)
 
 			assert.Equal(t, tc.want, buf.String())
@@ -55,16 +56,125 @@ func TestHostList(t *testing.T) { //nolint:paralleltest // uses withHostStdout, 
 func TestHostListMissingFile(t *testing.T) {
 	t.Parallel()
 
-	err := runHostList([]string{"--kubeconfig", "/no/such/kubeconfig"})
+	err := runHostList("/no/such/kubeconfig", nil)
 	require.ErrorIs(t, err, kubeconfig.ErrLoad)
+}
+
+// TestHostSubcommandsRejectHostSideFlags pins that no `host`
+// subcommand takes a host-side input from its argv. A Lima guest
+// runs these subcommands through `workmux host-exec` with an argv of
+// its own choice. A flag that picks the kubeconfig runs an exec
+// plugin of the guest on the host. A flag that picks the role or the
+// allowlist mints a ServiceAccount beyond the host config. A flag
+// that picks an output path writes a file where the guest chose.
+func TestHostSubcommandsRejectHostSideFlags(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		run  func(t *testing.T, path string, args []string) error
+		err  error
+		args []string
+	}{
+		"list kubeconfig": {
+			run:  func(_ *testing.T, path string, args []string) error { return runHostList(path, args) },
+			args: []string{"--kubeconfig", "/guest/kubeconfig"},
+			err:  ErrParseHostListFlags,
+		},
+		"select role": {
+			run:  runSelectForTest,
+			args: []string{"--sa-role-name", "cluster-admin"},
+			err:  ErrParseHostSelectFlags,
+		},
+		"select cluster scope": {
+			run:  runSelectForTest,
+			args: []string{"--sa-cluster-scoped=true"},
+			err:  ErrParseHostSelectFlags,
+		},
+		"select allowlist": {
+			run:  runSelectForTest,
+			args: []string{"--allow-apiserver-host", "evil.example.com"},
+			err:  ErrParseHostSelectFlags,
+		},
+		"select kubeconfig": {
+			run:  runSelectForTest,
+			args: []string{"--kubeconfig", "/guest/kubeconfig"},
+			err:  ErrParseHostSelectFlags,
+		},
+		"select out path": {
+			run:  runSelectForTest,
+			args: []string{"--out-path", "/home/user/.local/state/mcp-kubectx-run/host.key"},
+			err:  ErrParseHostSelectFlags,
+		},
+		"select env": {
+			run:  runSelectForTest,
+			args: []string{"--for-guest=false"},
+			err:  ErrParseHostSelectFlags,
+		},
+		"token kubeconfig": {
+			run: func(t *testing.T, path string, args []string) error {
+				t.Helper()
+
+				return runHostToken(t.Context(), path, testHostConfig(),
+					append([]string{"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns"}, args...))
+			},
+			args: []string{"--kubeconfig", "/guest/kubeconfig"},
+			err:  ErrParseHostTokenFlags,
+		},
+		"token expiration": {
+			run: func(t *testing.T, path string, args []string) error {
+				t.Helper()
+
+				return runHostToken(t.Context(), path, testHostConfig(),
+					append([]string{"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns"}, args...))
+			},
+			args: []string{"--sa-expiration", "86400"},
+			err:  ErrParseHostTokenFlags,
+		},
+		"sweep kubeconfig": {
+			run: func(t *testing.T, path string, args []string) error {
+				t.Helper()
+
+				return runHostSweep(t.Context(), path, append([]string{"--host-id", testHostID}, args...))
+			},
+			args: []string{"--kubeconfig", "/guest/kubeconfig"},
+			err:  ErrParseHostSweepFlags,
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
+			withHostKubeClient(t, mock)
+			withHostLedger(t)
+			withHostStdout(t)
+
+			path := writeTestKubeconfig(t, testKubeconfig())
+
+			err := tc.run(t, path, tc.args)
+			require.ErrorIs(t, err, tc.err)
+
+			assert.Empty(t, mock.CreatedSAs, "a rejected flag must not create an SA")
+			assert.Empty(t, mock.TokenRequests, "a rejected flag must not mint a token")
+		})
+	}
+}
+
+// runSelectForTest runs `host select prod` with the owner of the
+// tests, testHostConfig, and the extra args.
+func runSelectForTest(t *testing.T, path string, args []string) error {
+	t.Helper()
+
+	return runHostSelect(t.Context(), path, testHostConfig(), append([]string{
+		"prod",
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
+	}, args...))
 }
 
 // TestResolveHostKubeconfigPathSkipsScopedKubeconfig pins the
 // fallthrough that keeps `list` working when a user relies on the
-// default ~/.kube/config: the launcher wrapper rewrites $KUBECONFIG
-// to the scoped output under $CLAUDE_KUBECTX_DIR without preserving
-// $KUBECONFIG_HOST, so resolution must skip that scoped path rather
-// than read a kubeconfig that does not exist until the first select.
+// default ~/.kube/config. The launcher wrapper then rewrites
+// $KUBECONFIG to the scoped output under $CLAUDE_KUBECTX_DIR and
+// sets no $KUBECONFIG_HOST. So the resolution skips that scoped
+// path, which does not exist until the first select.
 func TestResolveHostKubeconfigPathSkipsScopedKubeconfig(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	scopedDir := t.TempDir()
 	scoped := filepath.Join(scopedDir, "kubeconfig")
@@ -73,14 +183,16 @@ func TestResolveHostKubeconfigPathSkipsScopedKubeconfig(t *testing.T) { //nolint
 	t.Setenv("CLAUDE_KUBECTX_DIR", scopedDir)
 	t.Setenv("KUBECONFIG", scoped)
 
-	got := resolveHostKubeconfigPath("")
+	got, err := resolveHostKubeconfigPath()
+	require.NoError(t, err)
 	assert.NotEqual(t, scoped, got, "scoped kubeconfig must not be treated as a host source")
 	assert.True(t, strings.HasSuffix(got, filepath.Join(".kube", "config")))
 }
 
 // TestResolveHostKubeconfigPathHonorsRealKubeconfig pins the
 // out-of-wrapper case: a $KUBECONFIG that does not sit inside
-// $CLAUDE_KUBECTX_DIR is a real source and must be returned as-is.
+// $CLAUDE_KUBECTX_DIR is a real source, and the resolution returns
+// it as-is.
 func TestResolveHostKubeconfigPathHonorsRealKubeconfig(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	realPath := filepath.Join(t.TempDir(), "config")
 
@@ -88,88 +200,102 @@ func TestResolveHostKubeconfigPathHonorsRealKubeconfig(t *testing.T) { //nolint:
 	t.Setenv("CLAUDE_KUBECTX_DIR", "/run/claude-kubectx.1")
 	t.Setenv("KUBECONFIG", realPath)
 
-	assert.Equal(t, realPath, resolveHostKubeconfigPath(""))
+	got, err := resolveHostKubeconfigPath()
+	require.NoError(t, err)
+	assert.Equal(t, realPath, got)
 }
 
-func TestHostSelectMissingPid(t *testing.T) {
-	t.Parallel()
+// TestResolveHostKubeconfigPathAbsolute pins that the path is
+// absolute, so that `host select`, `host token`, and a later `host
+// sweep` name the same file in each provision record, whatever
+// their working directories.
+func TestResolveHostKubeconfigPathAbsolute(t *testing.T) { //nolint:paralleltest // uses t.Setenv, t.Chdir
+	dir := t.TempDir()
+	t.Chdir(dir)
 
-	path := writeTestKubeconfig(t, testKubeconfig())
+	t.Setenv("KUBECONFIG_HOST", "config")
+	t.Setenv("KUBECONFIG", "")
 
-	err := runHostSelect(t.Context(), []string{
-		"prod",
-		"--kubeconfig", path,
-		"--sa-role-name", "view",
-	})
-	require.ErrorIs(t, err, ErrSelectMissingPid)
+	got, err := resolveHostKubeconfigPath()
+	require.NoError(t, err)
+
+	want, err := filepath.Abs("config")
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
 }
 
-// TestHostSelectDefaultsOutPath pins two distinct defaults that
-// fire when the corresponding flag is omitted. --out-path falls back
-// to kubeconfig.<pid>.<env>.yaml, where <pid> is the value of --pid,
-// used only as a filename discriminator. The file of the host env
-// lies in the run dir, which workmux does not mount into a Lima
-// guest. The file of the guest env lies in the state dir, which the
-// guest reads through the mount. --socket-path falls back to
-// <runDir>/serve.0.<env>.sock, slot 0 of the slot pool, whatever
-// --pid holds. --for-guest drives <env> in both names. In production
-// serve always forwards an explicit --socket-path, so only tests
-// reach the slot-0 default.
-func TestHostSelectDefaultsOutPath(t *testing.T) { //nolint:paralleltest // mutates package-level state, uses t.Setenv
+// TestResolveHostKubeconfigPathNeedsHome pins that the default
+// ~/.kube/config never becomes a path relative to the working
+// directory. `workmux host-exec` runs each `host` subcommand in a
+// worktree that the guest can write, so a relative kubeconfig there
+// would run an exec plugin of the guest on the host.
+func TestResolveHostKubeconfigPathNeedsHome(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	tests := map[string]struct {
-		forGuest   string
-		wantDir    string
-		want       string
-		wantSocket string
+		home string
 	}{
-		"host env": {
-			forGuest:   "false",
-			wantDir:    "mcp-kubectx-run",
-			want:       "kubeconfig.1234.host.yaml",
-			wantSocket: "serve.0.host.sock",
-		},
-		"guest env": {
-			forGuest:   "true",
-			wantDir:    "mcp-kubectx",
-			want:       "kubeconfig.1234.guest.yaml",
-			wantSocket: "serve.0.guest.sock",
-		},
+		"unset home":    {home: ""},
+		"relative home": {home: "home"},
 	}
 
 	for name, tc := range tests { //nolint:paralleltest // subtests use t.Setenv
 		t.Run(name, func(t *testing.T) {
-			withHostKubeClient(t, &kubetest.Fake{Token: "t", TokenExpiry: time.Now()})
+			t.Setenv("KUBECONFIG_HOST", "")
+			t.Setenv("KUBECONFIG", "")
+			t.Setenv("HOME", tc.home)
 
-			buf := withHostStdout(t)
+			_, err := resolveHostKubeconfigPath()
+			require.ErrorIs(t, err, ErrNoHome)
+		})
+	}
+}
 
-			stateHome := t.TempDir()
-			t.Setenv("XDG_STATE_HOME", stateHome)
+// TestHostSelectRequiresOwner pins that `host select` needs both ids
+// of the `serve` that owns the SA. `host token` and `host release`
+// act only on an SA whose provision record names that owner, so an
+// SA without a record serves no caller. A malformed id fails before
+// any cluster-side mutation and before the record write.
+func TestHostSelectRequiresOwner(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		err  error
+		args []string
+	}{
+		"no ids": {
+			err: ErrInvalidHostID,
+		},
+		"host id only": {
+			args: []string{"--sa-host-id", testHostID},
+			err:  ErrInvalidInstanceID,
+		},
+		"instance id only": {
+			args: []string{"--sa-instance-id", testInstanceID},
+			err:  ErrInvalidHostID,
+		},
+		"malformed host id": {
+			args: []string{"--sa-host-id", "../host", "--sa-instance-id", testInstanceID},
+			err:  ErrInvalidHostID,
+		},
+		"malformed instance id": {
+			args: []string{"--sa-host-id", testHostID, "--sa-instance-id", "UPPERCASE0000000"},
+			err:  ErrInvalidInstanceID,
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{}
+			withHostKubeClient(t, mock)
+
+			records := withHostLedger(t)
+
+			withHostStdout(t)
 
 			path := writeTestKubeconfig(t, testKubeconfig())
 
-			err := runHostSelect(t.Context(), []string{
-				"prod",
-				"--kubeconfig", path,
-				"--pid", "1234",
-				"--for-guest=" + tc.forGuest,
-				"--sa-role-name", "view",
-			})
-			require.NoError(t, err)
+			err := runHostSelect(t.Context(), path, testHostConfig(), append([]string{"prod"}, tc.args...))
+			require.ErrorIs(t, err, tc.err)
 
-			expected := filepath.Join(stateHome, tc.wantDir, tc.want)
-			expectedSocket := filepath.Join(stateHome, "mcp-kubectx-run", tc.wantSocket)
-
-			var result HostSelectResult
-
-			require.NoError(t, json.NewDecoder(strings.NewReader(buf.String())).Decode(&result))
-			assert.Equal(t, expected, result.Path)
-
-			_, statErr := os.Stat(expected)
-			require.NoError(t, statErr, "kubeconfig file must exist at the defaulted path")
-
-			plugin := readKubeconfigExec(t, expected)
-			assert.Equal(t, []string{"exec-plugin", "--socket", expectedSocket}, plugin.Args,
-				"defaulted socket path must be embedded in the exec plugin args")
+			assert.Empty(t, mock.CreatedSAs)
+			assert.Empty(t, listRecords(t, records))
 		})
 	}
 }
@@ -179,10 +305,9 @@ func TestHostSelectMissingContext(t *testing.T) {
 
 	path := writeTestKubeconfig(t, testKubeconfig())
 
-	err := runHostSelect(t.Context(), []string{
-		"--kubeconfig", path,
-		"--out-path", filepath.Join(t.TempDir(), "k.yaml"),
-		"--sa-role-name", "view",
+	err := runHostSelect(t.Context(), path, testHostConfig(), []string{
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
 	})
 	require.ErrorIs(t, err, ErrMissingContext)
 }
@@ -192,23 +317,44 @@ func TestHostSelectContextNotFound(t *testing.T) {
 
 	path := writeTestKubeconfig(t, testKubeconfig())
 
-	err := runHostSelect(t.Context(), []string{
+	err := runHostSelect(t.Context(), path, testHostConfig(), []string{
 		"nonexistent",
-		"--kubeconfig", path,
-		"--out-path", filepath.Join(t.TempDir(), "k.yaml"),
-		"--sa-role-name", "view",
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
 	})
 	require.ErrorIs(t, err, ErrContextNotFound)
 }
 
-// TestHostSelectClusterEntryMissing pins that a context whose
-// cluster entry is absent from the kubeconfig is refused before any
-// cluster-side mutation, even with no apiserver allowlist. Without
-// the guard, the SA and binding would be created and then stranded
-// behind a scoped kubeconfig with a dangling cluster reference.
+// TestHostSelectInvalidConfig pins that `host select` refuses a host
+// config that [serviceaccount.Config.Validate] rejects, before any
+// cluster-side mutation.
+func TestHostSelectInvalidConfig(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	mock := &kubetest.Fake{}
+	withHostKubeClient(t, mock)
+	withHostLedger(t)
+	withHostStdout(t)
+
+	path := writeTestKubeconfig(t, testKubeconfig())
+
+	err := runHostSelect(t.Context(), path, hostConfig{}, []string{
+		"prod",
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
+	})
+	require.ErrorIs(t, err, serviceaccount.ErrMissingRole)
+
+	assert.Empty(t, mock.CreatedSAs)
+}
+
+// TestHostSelectClusterEntryMissing pins that `host select` refuses
+// a context whose cluster entry is absent from the kubeconfig before
+// any cluster-side mutation, even with no apiserver allowlist.
+// Without the guard, the SA and binding stay behind a scoped
+// kubeconfig with a dangling cluster reference.
 func TestHostSelectClusterEntryMissing(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
 	withHostKubeClient(t, mock)
+	withHostLedger(t)
 	withHostStdout(t)
 
 	cfg := testKubeconfig()
@@ -218,88 +364,58 @@ func TestHostSelectClusterEntryMissing(t *testing.T) { //nolint:paralleltest // 
 	})
 
 	path := writeTestKubeconfig(t, cfg)
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
 
-	err := runHostSelect(t.Context(), []string{
+	err := runHostSelect(t.Context(), path, testHostConfig(), []string{
 		"dangling",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
 	})
 	require.ErrorIs(t, err, ErrClusterNotFound)
 
 	assert.Empty(t, mock.CreatedSAs, "missing cluster entry must not create the SA")
-
-	_, statErr := os.Stat(outPath)
-	assert.True(t, os.IsNotExist(statErr), "missing cluster entry must not write the kubeconfig")
 }
 
-// TestHostSelectExecPluginShape pins the uniform exec-plugin
-// block across forGuest=true/false. The two variants no longer
-// differ -- both write the same `mcp-kubectx exec-plugin --socket
-// <path>` block. Only the socket path env discriminator (`host`
-// vs. `guest`) flips. The test forwards --socket-path explicitly
-// (rather than relying on the slot-0 default) to mirror serve's
-// production behavior.
-func TestHostSelectExecPluginShape(t *testing.T) { //nolint:paralleltest // mutates package-level state, uses t.Setenv
-	tests := map[string]struct {
-		forGuest    string
-		wantSocket  string
-		clusterRole string
-	}{
-		"host env": {
-			forGuest:    "false",
-			wantSocket:  "serve.0.host.sock",
-			clusterRole: "ClusterRole",
+// TestHostSelectResult pins the JSON result of `host select`. It
+// carries the cluster entry of the context, from which `serve`
+// writes its scoped kubeconfig, and the binding that the host
+// config picked. `host select` writes no file outside the ledger.
+func TestHostSelectResult(t *testing.T) { //nolint:paralleltest // mutates package-level state, uses t.Setenv
+	mock := &kubetest.Fake{}
+	withHostKubeClient(t, mock)
+	withHostLedger(t)
+
+	buf := withHostStdout(t)
+
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	path := writeTestKubeconfig(t, testKubeconfig())
+
+	require.NoError(t, runHostSelect(t.Context(), path, testHostConfig(), []string{
+		"prod",
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
+	}))
+
+	var result HostSelectResult
+
+	require.NoError(t, json.NewDecoder(strings.NewReader(buf.String())).Decode(&result))
+
+	require.Len(t, mock.CreatedSAs, 1)
+	assert.Equal(t, HostSelectResult{
+		Cluster: kubeconfig.NamedCluster{
+			Name:    "prod-cluster",
+			Cluster: map[string]any{"server": "https://prod.example.com"},
 		},
-		"guest env": {
-			forGuest:    "true",
-			wantSocket:  "serve.0.guest.sock",
-			clusterRole: "ClusterRole",
-		},
-	}
+		SAName:    strings.TrimPrefix(mock.CreatedSAs[0], "default/"),
+		Namespace: "default",
+		Context:   "prod",
+		Binding:   `ClusterRole "view" (namespaced)`,
+	}, result)
 
-	for name, tc := range tests { //nolint:paralleltest // subtests use t.Setenv
-		t.Run(name, func(t *testing.T) {
-			withHostKubeClient(t, &kubetest.Fake{Token: "t", TokenExpiry: time.Now()})
-
-			buf := withHostStdout(t)
-
-			stateHome := t.TempDir()
-			t.Setenv("XDG_STATE_HOME", stateHome)
-
-			path := writeTestKubeconfig(t, testKubeconfig())
-			outPath := filepath.Join(t.TempDir(), "k.yaml")
-
-			err := runHostSelect(t.Context(), []string{
-				"prod",
-				"--kubeconfig", path,
-				"--out-path", outPath,
-				"--pid", "4242",
-				"--for-guest=" + tc.forGuest,
-				"--sa-role-name", "view",
-				"--sa-role-kind", tc.clusterRole,
-				"--sa-namespace", "kube-system",
-				"--sa-expiration", "3600",
-			})
-			require.NoError(t, err)
-
-			var result HostSelectResult
-
-			require.NoError(t, json.NewDecoder(strings.NewReader(buf.String())).Decode(&result))
-			assert.Equal(t, outPath, result.Path)
-
-			plugin := readKubeconfigExec(t, outPath)
-			assert.Equal(t, "mcp-kubectx", plugin.Command,
-				"command must be the bare program name, not workmux or an absolute path")
-			require.Len(t, plugin.Args, 3)
-			assert.Equal(t, "exec-plugin", plugin.Args[0])
-			assert.Equal(t, "--socket", plugin.Args[1])
-
-			expectedSocket := filepath.Join(stateHome, "mcp-kubectx-run", tc.wantSocket)
-			assert.Equal(t, expectedSocket, plugin.Args[2])
-		})
-	}
+	entries, err := os.ReadDir(stateHome)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "host select must not write a file in the state home")
 }
 
 // TestHostSelectBindingNameConvention pins the contract that
@@ -309,18 +425,18 @@ func TestHostSelectExecPluginShape(t *testing.T) { //nolint:paralleltest // muta
 func TestHostSelectBindingNameConvention(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
 	withHostKubeClient(t, mock)
-
+	withHostLedger(t)
 	withHostStdout(t)
 
 	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
 
-	require.NoError(t, runHostSelect(t.Context(), []string{
+	cfg := testHostConfig()
+	cfg.Namespace = "ns"
+
+	require.NoError(t, runHostSelect(t.Context(), path, cfg, []string{
 		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-		"--sa-namespace", "ns",
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
 	}))
 
 	require.Len(t, mock.CreatedSAs, 1)
@@ -331,248 +447,203 @@ func TestHostSelectBindingNameConvention(t *testing.T) { //nolint:paralleltest /
 	assert.Equal(t, "ns/"+serviceaccount.BindingName(saName), mock.CreatedRoleBindings[0])
 }
 
-// TestHostSelectOmitsInstanceAndHostLabelsWhenEmpty pins the
-// contract that `host select` only emits the new labels when the
-// corresponding flags are non-empty. Preserves existing test
-// invariants for standalone CLI use.
-//
-//nolint:paralleltest // mutates package-level state
-func TestHostSelectOmitsInstanceAndHostLabelsWhenEmpty(t *testing.T) {
-	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
-	withHostKubeClient(t, mock)
-
-	withHostStdout(t)
-
-	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
-
-	require.NoError(t, runHostSelect(t.Context(), []string{
-		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-	}))
-
-	require.Len(t, mock.CreatedSALabels, 1)
-
-	labels := mock.CreatedSALabels[0]
-	assert.Equal(t, serviceaccount.ManagedByValue, labels[serviceaccount.ManagedByLabel])
-
-	_, hasInstance := labels[serviceaccount.InstanceIDLabel]
-	_, hasHost := labels[serviceaccount.HostIDLabel]
-
-	assert.False(t, hasInstance, "missing --sa-instance-id must omit the instance-id label")
-	assert.False(t, hasHost, "missing --sa-host-id must omit the host-id label")
-}
-
-// TestHostSelectAppliesInstanceAndHostLabels pins that explicit
-// --sa-instance-id and --sa-host-id flags get tagged onto every
-// created resource so the sweep can attribute them.
+// TestHostSelectAppliesInstanceAndHostLabels pins the labels of
+// every created resource. The instance-id label carries the
+// --sa-instance-id flag. The host-id label carries the
+// [identity.Digest] of --sa-host-id and never the host id itself. A
+// Lima guest with a `view` token reads the labels, and the host id
+// is the proof of ownership that `host token`, `host release`, and
+// `host sweep` take.
 func TestHostSelectAppliesInstanceAndHostLabels(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
 	withHostKubeClient(t, mock)
 	withHostLedger(t)
-
 	withHostStdout(t)
 
 	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
 
-	require.NoError(t, runHostSelect(t.Context(), []string{
+	require.NoError(t, runHostSelect(t.Context(), path, testHostConfig(), []string{
 		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
 		"--sa-instance-id", testInstanceID,
 		"--sa-host-id", testHostID,
 	}))
 
+	digest := identity.Digest(testHostID)
+
 	require.Len(t, mock.CreatedSALabels, 1)
 	assert.Equal(t, testInstanceID, mock.CreatedSALabels[0][serviceaccount.InstanceIDLabel])
-	assert.Equal(t, testHostID, mock.CreatedSALabels[0][serviceaccount.HostIDLabel])
+	assert.Equal(t, digest, mock.CreatedSALabels[0][serviceaccount.HostIDLabel])
 
 	require.Len(t, mock.CreatedRoleBindingLabels, 1)
 	assert.Equal(t, testInstanceID, mock.CreatedRoleBindingLabels[0][serviceaccount.InstanceIDLabel])
-	assert.Equal(t, testHostID, mock.CreatedRoleBindingLabels[0][serviceaccount.HostIDLabel])
+	assert.Equal(t, digest, mock.CreatedRoleBindingLabels[0][serviceaccount.HostIDLabel])
+
+	for _, labels := range append(mock.CreatedSALabels, mock.CreatedRoleBindingLabels...) {
+		for key, value := range labels {
+			assert.NotEqual(t, testHostID, value, "label %s must not carry the host id", key)
+		}
+	}
 }
 
-func TestHostSelectDefaultNamespace(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
-	withHostKubeClient(t, mock)
+// TestHostSelectNamespace pins where the SA lies: the namespace of
+// the host config, then the namespace of the context, then
+// "default".
+func TestHostSelectNamespace(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		context   string
+		namespace string
+		want      string
+	}{
+		"context without namespace": {
+			context: "prod",
+			want:    "default/claude-sa-",
+		},
+		"context namespace": {
+			context: "staging",
+			want:    "default/claude-sa-",
+		},
+		"config namespace": {
+			context:   "staging",
+			namespace: "kube-system",
+			want:      "kube-system/claude-sa-",
+		},
+	}
 
-	withHostStdout(t)
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
+			withHostKubeClient(t, mock)
+			withHostLedger(t)
+			withHostStdout(t)
 
-	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
+			path := writeTestKubeconfig(t, testKubeconfig())
 
-	require.NoError(t, runHostSelect(t.Context(), []string{
-		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-		"--sa-expiration", "3600",
-	}))
+			cfg := testHostConfig()
+			cfg.Namespace = tc.namespace
 
-	require.Len(t, mock.CreatedSAs, 1)
-	assert.Contains(t, mock.CreatedSAs[0], "default/claude-sa-")
+			require.NoError(t, runHostSelect(t.Context(), path, cfg, []string{
+				tc.context,
+				"--sa-instance-id", testInstanceID,
+				"--sa-host-id", testHostID,
+			}))
+
+			require.Len(t, mock.CreatedSAs, 1)
+			assert.True(t, strings.HasPrefix(mock.CreatedSAs[0], tc.want), "created %s", mock.CreatedSAs[0])
+		})
+	}
 }
 
-func TestHostSelectContextNamespace(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
-	withHostKubeClient(t, mock)
+// TestHostSelectAPIServerAllowlist pins the apiserver allowlist of
+// the host config. An empty list allows every apiserver. A
+// non-empty list allows only the hosts that it names, whatever
+// their case, and refuses every other host before any cluster-side
+// mutation.
+func TestHostSelectAPIServerAllowlist(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		err     error
+		server  string
+		context string
+		allowed []string
+	}{
+		"allowed": {
+			context: "prod",
+			allowed: []string{"prod.example.com", "staging.example.com"},
+		},
+		"allowed whatever the case": {
+			context: "prod",
+			server:  "https://PROD.Example.COM:6443",
+			allowed: []string{"prod.example.com"},
+		},
+		"empty allowlist allows any": {
+			context: "dev",
+		},
+		"denied": {
+			context: "prod",
+			allowed: []string{"staging.example.com"},
+			err:     ErrAPIServerNotAllowed,
+		},
+	}
 
-	withHostStdout(t)
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
+			withHostKubeClient(t, mock)
 
-	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
+			records := withHostLedger(t)
 
-	require.NoError(t, runHostSelect(t.Context(), []string{
-		"staging",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-		"--sa-expiration", "3600",
-	}))
+			withHostStdout(t)
 
-	require.Len(t, mock.CreatedSAs, 1)
-	assert.Contains(t, mock.CreatedSAs[0], "default/claude-sa-")
+			kc := testKubeconfig()
+			if tc.server != "" {
+				kc.Clusters[0].Cluster = map[string]any{"server": tc.server}
+			}
+
+			path := writeTestKubeconfig(t, kc)
+
+			cfg := testHostConfig()
+			cfg.AllowedAPIServerHosts = tc.allowed
+
+			err := runHostSelect(t.Context(), path, cfg, []string{
+				tc.context,
+				"--sa-instance-id", testInstanceID,
+				"--sa-host-id", testHostID,
+			})
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				assert.Contains(t, err.Error(), "prod.example.com")
+				assert.Empty(t, mock.CreatedSAs, "denied select must not create the SA")
+				assert.Empty(t, listRecords(t, records), "denied select must not write a record")
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, mock.CreatedSAs, 1, "allowed select must create the SA")
+		})
+	}
 }
 
-func TestHostSelectFilePermissions(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	withHostKubeClient(t, &kubetest.Fake{Token: "t", TokenExpiry: time.Now()})
-	withHostStdout(t)
+// TestHostSelectBindingFromConfig pins that the host config picks the
+// role and the binding kind of each SA. The argv of `host select`
+// has no flag for either.
+func TestHostSelectBindingFromConfig(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		cfg                 func(cfg *hostConfig)
+		wantRoleBindings    int
+		wantClusterBindings int
+	}{
+		"role binding": {
+			cfg:              func(*hostConfig) {},
+			wantRoleBindings: 1,
+		},
+		"cluster role binding": {
+			cfg:                 func(cfg *hostConfig) { cfg.ClusterScoped = true },
+			wantClusterBindings: 1,
+		},
+	}
 
-	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
+			withHostKubeClient(t, mock)
+			withHostLedger(t)
+			withHostStdout(t)
 
-	require.NoError(t, runHostSelect(t.Context(), []string{
-		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-	}))
+			path := writeTestKubeconfig(t, testKubeconfig())
 
-	info, err := os.Stat(outPath)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
-}
+			cfg := testHostConfig()
+			tc.cfg(&cfg)
 
-func TestHostSelectAPIServerAllowed(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
-	withHostKubeClient(t, mock)
-	withHostStdout(t)
+			require.NoError(t, runHostSelect(t.Context(), path, cfg, []string{
+				"prod",
+				"--sa-instance-id", testInstanceID,
+				"--sa-host-id", testHostID,
+			}))
 
-	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
-
-	require.NoError(t, runHostSelect(t.Context(), []string{
-		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-		"--allow-apiserver-host", "prod.example.com",
-		"--allow-apiserver-host", "staging.example.com",
-	}))
-
-	assert.NotEmpty(t, mock.CreatedSAs, "allowed select must create the SA")
-
-	_, statErr := os.Stat(outPath)
-	assert.NoError(t, statErr, "allowed select must write the kubeconfig")
-}
-
-// TestHostSelectAPIServerAllowedCaseInsensitive pins that the
-// allowlist comparison ignores case: DNS hostnames are
-// case-insensitive, so a mixed-case `cluster.server` URL must
-// still match a lowercase allowlist entry.
-func TestHostSelectAPIServerAllowedCaseInsensitive(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
-	withHostKubeClient(t, mock)
-	withHostStdout(t)
-
-	cfg := testKubeconfig()
-	cfg.Clusters[0].Cluster = map[string]any{"server": "https://PROD.Example.COM:6443"}
-
-	path := writeTestKubeconfig(t, cfg)
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
-
-	require.NoError(t, runHostSelect(t.Context(), []string{
-		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-		"--allow-apiserver-host", "prod.example.com",
-	}))
-
-	assert.NotEmpty(t, mock.CreatedSAs, "case-different host must still match the allowlist")
-}
-
-func TestHostSelectAPIServerDenied(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
-	withHostKubeClient(t, mock)
-	withHostStdout(t)
-
-	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
-
-	err := runHostSelect(t.Context(), []string{
-		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-		"--allow-apiserver-host", "staging.example.com",
-	})
-	require.ErrorIs(t, err, ErrAPIServerNotAllowed)
-	assert.Contains(t, err.Error(), "prod.example.com")
-
-	assert.Empty(t, mock.CreatedSAs, "denied select must not create the SA")
-
-	_, statErr := os.Stat(outPath)
-	assert.True(t, os.IsNotExist(statErr), "denied select must not write the kubeconfig")
-}
-
-func TestHostSelectAPIServerEmptyAllowlistAllowsAny(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
-	withHostKubeClient(t, mock)
-	withHostStdout(t)
-
-	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
-
-	// Pin: omitting --allow-apiserver-host entirely lets any
-	// apiserver through. Selecting `dev` (cluster `dev.example.com`,
-	// not present in any allowlist test above) succeeds.
-	require.NoError(t, runHostSelect(t.Context(), []string{
-		"dev",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-	}))
-
-	assert.NotEmpty(t, mock.CreatedSAs, "no allowlist must still create the SA")
-
-	_, statErr := os.Stat(outPath)
-	assert.NoError(t, statErr, "no allowlist must still write the kubeconfig")
-}
-
-func TestHostSelectClusterScoped(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
-	withHostKubeClient(t, mock)
-
-	withHostStdout(t)
-
-	path := writeTestKubeconfig(t, testKubeconfig())
-	outPath := filepath.Join(t.TempDir(), "k.yaml")
-
-	require.NoError(t, runHostSelect(t.Context(), []string{
-		"prod",
-		"--kubeconfig", path,
-		"--out-path", outPath,
-		"--sa-role-name", "view",
-		"--sa-cluster-scoped=true",
-	}))
-
-	require.Len(t, mock.CreatedClusterRoleBindings, 1)
-	assert.Empty(t, mock.CreatedRoleBindings)
+			assert.Len(t, mock.CreatedRoleBindings, tc.wantRoleBindings)
+			assert.Len(t, mock.CreatedClusterRoleBindings, tc.wantClusterBindings)
+		})
+	}
 }
 
 func TestHostToken(t *testing.T) { //nolint:paralleltest // mutates package-level state
@@ -580,15 +651,19 @@ func TestHostToken(t *testing.T) { //nolint:paralleltest // mutates package-leve
 	mock := &kubetest.Fake{Token: "tok-xyz", TokenExpiry: expiry}
 	withHostKubeClient(t, mock)
 
+	records := withHostLedger(t)
 	buf := withHostStdout(t)
 
-	require.NoError(t, runHostToken(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
+	addOwnedRecord(t, records, "ns", "claude-sa-1", false)
+
+	cfg := testHostConfig()
+	cfg.Expiration = 600
+
+	require.NoError(t, runHostToken(t.Context(), testOwnedKubeconfig, cfg, append([]string{
 		"--context", "prod",
 		"--sa", "claude-sa-1",
 		"--namespace", "ns",
-		"--sa-expiration", "3600",
-	}))
+	}, ownerFlags()...)))
 
 	var cred execplugin.Credential
 
@@ -598,36 +673,135 @@ func TestHostToken(t *testing.T) { //nolint:paralleltest // mutates package-leve
 	assert.Equal(t, "ExecCredential", cred.Kind)
 	assert.Equal(t, "tok-xyz", cred.Status.Token)
 	assert.Equal(t, expiry.Format(time.RFC3339), cred.Status.ExpirationTimestamp)
+
+	assert.Equal(t, []string{"ns/claude-sa-1"}, mock.TokenRequests)
+	assert.Equal(t, []time.Duration{10 * time.Minute}, mock.TokenExpirations,
+		"the lifetime of the token comes from the host config")
 }
 
-func TestHostTokenMissingFlags(t *testing.T) {
-	t.Parallel()
+// TestHostTokenRequiresRecord pins that `host token` mints only for
+// an SA whose provision record names the caller as its owner. The
+// host kubeconfig can mint a token for any SA of a cluster, such as
+// an SA with cluster-admin in kube-system. A Lima guest that runs
+// `host token` through `workmux host-exec` must not reach such an
+// SA, nor the SA of another `serve`.
+func TestHostTokenRequiresRecord(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		args []string
+	}{
+		"no record": {
+			args: append([]string{"--context", "prod", "--sa", "admin", "--namespace", "kube-system"}, ownerFlags()...),
+		},
+		"record of another host id": {
+			args: []string{
+				"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns",
+				"--host-id", "fedcba9876543210", "--instance-id", testInstanceID,
+			},
+		},
+		"host id digest in place of the host id": {
+			args: []string{
+				"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns",
+				"--host-id", identity.Digest(testHostID), "--instance-id", testInstanceID,
+			},
+		},
+		"record of another instance": {
+			args: []string{
+				"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns",
+				"--host-id", testHostID, "--instance-id", "2222222222222222",
+			},
+		},
+		"record of another context": {
+			args: append([]string{"--context", "staging", "--sa", "claude-sa-1", "--namespace", "ns"}, ownerFlags()...),
+		},
+	}
 
-	err := runHostToken(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
-		"--context", "prod",
-		"--namespace", "ns",
-	})
-	require.Error(t, err)
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
+			withHostKubeClient(t, mock)
+
+			records := withHostLedger(t)
+			buf := withHostStdout(t)
+
+			addOwnedRecord(t, records, "ns", "claude-sa-1", false)
+
+			err := runHostToken(t.Context(), testOwnedKubeconfig, testHostConfig(), tc.args)
+			require.ErrorIs(t, err, ErrNotProvisioned)
+
+			assert.Empty(t, mock.TokenRequests, "a token without a record must not reach the apiserver")
+			assert.Empty(t, buf.String())
+		})
+	}
+}
+
+func TestHostTokenMissingFlags(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		err  error
+		args []string
+	}{
+		"no service account": {
+			args: append([]string{"--context", "prod", "--namespace", "ns"}, ownerFlags()...),
+			err:  ErrTokenMissingSA,
+		},
+		"no namespace": {
+			args: append([]string{"--context", "prod", "--sa", "claude-sa-1"}, ownerFlags()...),
+			err:  ErrTokenMissingNS,
+		},
+		"no host id": {
+			args: []string{
+				"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns",
+				"--instance-id", testInstanceID,
+			},
+			err: ErrInvalidHostID,
+		},
+		"no instance id": {
+			args: []string{
+				"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns",
+				"--host-id", testHostID,
+			},
+			err: ErrInvalidInstanceID,
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
+			withHostKubeClient(t, mock)
+
+			records := withHostLedger(t)
+			withHostStdout(t)
+
+			addOwnedRecord(t, records, "ns", "claude-sa-1", false)
+
+			err := runHostToken(t.Context(), testOwnedKubeconfig, testHostConfig(), tc.args)
+			require.ErrorIs(t, err, tc.err)
+
+			assert.Empty(t, mock.TokenRequests)
+		})
+	}
 }
 
 // TestHostTokenRejectsExcessiveExpiration pins that `host token`
-// enforces the same 86400-second cap as saConfig.validate on the
-// serve path. The subcommand is reachable directly, and an
-// unbounded value would both violate the documented cap and
-// overflow time.Duration for very large inputs.
+// enforces the 86400-second cap on the lifetime from the host
+// config. An unbounded value would both violate the documented cap
+// and overflow time.Duration for very large inputs.
 func TestHostTokenRejectsExcessiveExpiration(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &kubetest.Fake{Token: "t", TokenExpiry: time.Now()}
 	withHostKubeClient(t, mock)
+
+	records := withHostLedger(t)
 	withHostStdout(t)
 
-	err := runHostToken(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
+	addOwnedRecord(t, records, "ns", "claude-sa-1", false)
+
+	cfg := testHostConfig()
+	cfg.Expiration = 100000
+
+	err := runHostToken(t.Context(), testOwnedKubeconfig, cfg, append([]string{
 		"--context", "prod",
 		"--sa", "claude-sa-1",
 		"--namespace", "ns",
-		"--sa-expiration", "100000",
-	})
+	}, ownerFlags()...))
 	require.ErrorIs(t, err, serviceaccount.ErrExpirationTooLong)
 
 	assert.Empty(t, mock.TokenRequests, "an out-of-cap expiration must not reach the apiserver")
@@ -637,50 +811,106 @@ func TestHostTokenAPIError(t *testing.T) { //nolint:paralleltest // mutates pack
 	mock := &kubetest.Fake{TokenRequestErr: errors.New("unauthorized")}
 	withHostKubeClient(t, mock)
 
+	records := withHostLedger(t)
 	withHostStdout(t)
 
-	err := runHostToken(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
+	addOwnedRecord(t, records, "ns", "claude-sa-1", false)
+
+	err := runHostToken(t.Context(), testOwnedKubeconfig, testHostConfig(), append([]string{
 		"--context", "prod",
 		"--sa", "claude-sa-1",
 		"--namespace", "ns",
-	})
+	}, ownerFlags()...))
 	require.ErrorIs(t, err, ErrTokenRequest)
 }
 
-func TestHostReleaseRoleBinding(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{}
-	withHostKubeClient(t, mock)
+// TestHostReleaseBindingKind pins that `host release` deletes the
+// SA and the binding of the kind that the provision record names.
+func TestHostReleaseBindingKind(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		wantRoleBindings    []string
+		wantClusterBindings []string
+		clusterScoped       bool
+	}{
+		"role binding": {
+			wantRoleBindings: []string{"ns/claude-sa-1-binding"},
+		},
+		"cluster role binding": {
+			clusterScoped:       true,
+			wantClusterBindings: []string{"claude-sa-1-binding"},
+		},
+	}
 
-	require.NoError(t, runHostRelease(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
-		"--context", "prod",
-		"--sa", "claude-sa-1",
-		"--namespace", "ns",
-	}))
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{}
+			withHostKubeClient(t, mock)
 
-	require.Len(t, mock.DeletedRoleBindings, 1)
-	assert.Equal(t, "ns/claude-sa-1-binding", mock.DeletedRoleBindings[0])
-	require.Len(t, mock.DeletedSAs, 1)
-	assert.Equal(t, "ns/claude-sa-1", mock.DeletedSAs[0])
-	assert.Empty(t, mock.DeletedClusterRoleBindings)
+			records := withHostLedger(t)
+
+			addOwnedRecord(t, records, "ns", "claude-sa-1", tc.clusterScoped)
+
+			require.NoError(t, runHostRelease(t.Context(), testOwnedKubeconfig, append([]string{
+				"--context", "prod",
+				"--sa", "claude-sa-1",
+				"--namespace", "ns",
+			}, ownerFlags()...)))
+
+			assert.Equal(t, []string{"ns/claude-sa-1"}, mock.DeletedSAs)
+			assert.Equal(t, tc.wantRoleBindings, mock.DeletedRoleBindings)
+			assert.Equal(t, tc.wantClusterBindings, mock.DeletedClusterRoleBindings)
+			assert.Empty(t, listRecords(t, records), "a release removes the record")
+		})
+	}
 }
 
-func TestHostReleaseClusterRoleBinding(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &kubetest.Fake{}
-	withHostKubeClient(t, mock)
+// TestHostReleaseRequiresRecord pins that `host release` deletes
+// only an SA whose provision record names the caller as its owner.
+// A Lima guest that runs `host release` through `workmux host-exec`
+// must not delete an SA of the cluster through the host kubeconfig,
+// nor the SA of another `serve`.
+func TestHostReleaseRequiresRecord(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	tests := map[string]struct {
+		args []string
+	}{
+		"no record": {
+			args: append(
+				[]string{"--context", "prod", "--sa", "coredns", "--namespace", "kube-system"},
+				ownerFlags()...,
+			),
+		},
+		"record of another host id": {
+			args: []string{
+				"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns",
+				"--host-id", "fedcba9876543210", "--instance-id", testInstanceID,
+			},
+		},
+		"malformed host id": {
+			args: []string{
+				"--context", "prod", "--sa", "claude-sa-1", "--namespace", "ns",
+				"--host-id", "x", "--instance-id", testInstanceID,
+			},
+		},
+	}
 
-	require.NoError(t, runHostRelease(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
-		"--context", "prod",
-		"--sa", "claude-sa-1",
-		"--namespace", "ns",
-		"--sa-cluster-scoped=true",
-	}))
+	for name, tc := range tests { //nolint:paralleltest // subtests mutate package-level state
+		t.Run(name, func(t *testing.T) {
+			mock := &kubetest.Fake{}
+			withHostKubeClient(t, mock)
 
-	require.Len(t, mock.DeletedClusterRoleBindings, 1)
-	require.Len(t, mock.DeletedSAs, 1)
-	assert.Empty(t, mock.DeletedRoleBindings)
+			records := withHostLedger(t)
+
+			kept := addOwnedRecord(t, records, "ns", "claude-sa-1", false)
+
+			require.NoError(t, runHostRelease(t.Context(), testOwnedKubeconfig, tc.args), "host release always exits 0")
+
+			assert.Empty(t, mock.DeletedSAs)
+			assert.Empty(t, mock.DeletedRoleBindings)
+			assert.Empty(t, mock.DeletedClusterRoleBindings)
+			assert.Len(t, listRecords(t, records), 1)
+			assert.Equal(t, kept.ServiceAccount, listRecords(t, records)[0].ServiceAccount)
+		})
+	}
 }
 
 // TestHostReleaseAlwaysSucceeds asserts that release exits cleanly
@@ -694,28 +924,30 @@ func TestHostReleaseAlwaysSucceeds(t *testing.T) { //nolint:paralleltest // muta
 	}
 	withHostKubeClient(t, mock)
 
-	require.NoError(t, runHostRelease(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
+	records := withHostLedger(t)
+
+	addOwnedRecord(t, records, "ns", "claude-sa-1", false)
+
+	require.NoError(t, runHostRelease(t.Context(), testOwnedKubeconfig, append([]string{
 		"--context", "prod",
 		"--sa", "claude-sa-1",
 		"--namespace", "ns",
-	}))
+	}, ownerFlags()...)))
 }
 
 func TestHostReleaseMissingFlags(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &kubetest.Fake{}
 	withHostKubeClient(t, mock)
+	withHostLedger(t)
 
-	require.NoError(t, runHostRelease(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
-	}))
+	require.NoError(t, runHostRelease(t.Context(), testOwnedKubeconfig, nil))
 
 	assert.Empty(t, mock.DeletedSAs, "missing flags must skip the cluster call entirely")
 }
 
 // readKubeconfigExec reads the kubeconfig at path and returns its
 // users[0].user.exec block decoded into [execplugin.Plugin]. Helper for
-// asserting host select wrote the right exec-plugin block.
+// asserting that serve wrote the right exec-plugin block.
 func readKubeconfigExec(t *testing.T, path string) execplugin.Plugin {
 	t.Helper()
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"time"
@@ -17,11 +16,9 @@ import (
 // `host select`. Nil means no SA is selected yet (or the previous
 // select failed before storing).
 type currentSA struct {
-	Kubeconfig string
-	Context    string
-	SAName     string
-	Namespace  string
-	Expiration int
+	Context   string
+	SAName    string
+	Namespace string
 }
 
 // handleSocketConn writes the bytes of an [execplugin.Credential]
@@ -51,12 +48,11 @@ func (h *handler) handleSocketConn(ctx context.Context, conn net.Conn) {
 	sa := *saPtr
 
 	args := []string{
-		"--kubeconfig", sa.Kubeconfig,
 		"--context", sa.Context,
 		"--sa", sa.SAName,
 		"--namespace", sa.Namespace,
-		fmt.Sprintf("--sa-expiration=%d", sa.Expiration),
 	}
+	args = append(args, h.ownerArgs()...)
 
 	stdout, err := h.runHost(ctx, "token", args)
 	if err != nil {

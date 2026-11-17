@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -38,11 +39,9 @@ func TestServeSocketReturnsTokenJSON(t *testing.T) {
 
 	h := newServeSocketHandler(t, want, nil)
 	h.currentSA.Store(&currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "claude-sa-1",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "claude-sa-1",
+		Namespace: "ns",
 	})
 
 	l, err := socket.Listen(t.Context(), path, "")
@@ -56,6 +55,51 @@ func TestServeSocketReturnsTokenJSON(t *testing.T) {
 
 	got := dialAndRead(t, path)
 	assert.Equal(t, want, got)
+}
+
+// TestServeSocketTokenArgs pins the argv that the socket handler
+// passes to `host token`. It names the SA of currentSA and the owner
+// of that SA, which is the host id and the instance id of serve.
+// `host token` mints only for an SA whose provision record names
+// that owner, and it takes the lifetime of the token from the host
+// config.
+func TestServeSocketTokenArgs(t *testing.T) {
+	t.Parallel()
+
+	var got []string
+
+	h := &handler{hostID: testHostID, instanceID: testInstanceID}
+	h.runHost = func(_ context.Context, sub string, args []string) ([]byte, error) {
+		assert.Equal(t, "token", sub)
+
+		got = append([]string(nil), args...)
+
+		return []byte("cred"), nil
+	}
+	h.currentSA.Store(&currentSA{Context: "prod", SAName: "claude-sa-1", Namespace: "ns"})
+
+	server, client := net.Pipe()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		h.handleSocketConn(t.Context(), server)
+	}()
+
+	reply, err := io.ReadAll(client)
+	require.NoError(t, err)
+	<-done
+
+	assert.Equal(t, []byte("cred"), reply)
+	assert.Equal(t, []string{
+		"--context", "prod",
+		"--sa", "claude-sa-1",
+		"--namespace", "ns",
+		"--host-id", testHostID,
+		"--instance-id", testInstanceID,
+	}, got)
 }
 
 // TestServeSocketBeforeSelect dials the socket before any select
@@ -96,11 +140,9 @@ func TestServeSocketConcurrent(t *testing.T) {
 
 	h := newServeSocketHandler(t, want, nil)
 	h.currentSA.Store(&currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "sa",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "sa",
+		Namespace: "ns",
 	})
 
 	l, err := socket.Listen(t.Context(), path, "")
@@ -146,18 +188,14 @@ func TestServeSocketRotationDuringRequest(t *testing.T) {
 	path := filepath.Join(dir, "rotate.sock")
 
 	saA := &currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "sa-A",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "sa-A",
+		Namespace: "ns",
 	}
 	saB := &currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "sa-B",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "sa-B",
+		Namespace: "ns",
 	}
 
 	h := &handler{}
@@ -238,11 +276,9 @@ func TestServeSocketHandlerWaitsForCleanup(t *testing.T) {
 		return []byte("ok"), nil
 	}
 	h.currentSA.Store(&currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "sa",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "sa",
+		Namespace: "ns",
 	})
 
 	l, err := socket.Listen(t.Context(), path, "")

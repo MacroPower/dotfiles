@@ -20,7 +20,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/socket"
 )
 
@@ -71,43 +70,43 @@ func testKubeconfig() kubeconfig.Config {
 	}
 }
 
-func TestResolveKubeconfigPath(t *testing.T) { //nolint:tparallel // subtests use t.Setenv
-	t.Run("flag set", func(t *testing.T) {
-		t.Parallel()
+func TestResolveKubeconfigPath(t *testing.T) { //nolint:paralleltest // subtests use t.Setenv
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
 
-		assert.Equal(t, "/custom/kubeconfig", resolveHostKubeconfigPath("/custom/kubeconfig"))
-	})
-
-	t.Run("env set", func(t *testing.T) {
-		// Cannot use t.Parallel with t.Setenv.
-		t.Setenv("KUBECONFIG_HOST", "")
-		t.Setenv("KUBECONFIG", "/env/kubeconfig")
-
-		assert.Equal(t, "/env/kubeconfig", resolveHostKubeconfigPath(""))
-	})
-
-	t.Run("KUBECONFIG_HOST wins over KUBECONFIG", func(t *testing.T) {
-		// Cannot use t.Parallel with t.Setenv.
+	tests := map[string]struct {
+		host       string
+		kubeconfig string
+		want       string
+	}{
+		"env set": {
+			kubeconfig: "/env/kubeconfig",
+			want:       "/env/kubeconfig",
+		},
 		// The Claude Code launcher wrapper sets KUBECONFIG to a
 		// per-session symlink and preserves the user's original
 		// KUBECONFIG as KUBECONFIG_HOST. mcp-kubectx must read the
 		// preserved value when listing contexts or creating an SA.
-		t.Setenv("KUBECONFIG_HOST", "/user/kubeconfig")
-		t.Setenv("KUBECONFIG", "/run/user/1000/claude-kubectx.42/kubeconfig")
+		"KUBECONFIG_HOST wins over KUBECONFIG": {
+			host:       "/user/kubeconfig",
+			kubeconfig: "/run/user/1000/claude-kubectx.42/kubeconfig",
+			want:       "/user/kubeconfig",
+		},
+		"default": {
+			want: filepath.Join(home, ".kube", "config"),
+		},
+	}
 
-		assert.Equal(t, "/user/kubeconfig", resolveHostKubeconfigPath(""))
-	})
+	for name, tc := range tests { //nolint:paralleltest // subtests use t.Setenv
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("KUBECONFIG_HOST", tc.host)
+			t.Setenv("KUBECONFIG", tc.kubeconfig)
 
-	t.Run("default", func(t *testing.T) {
-		// Cannot use t.Parallel with t.Setenv.
-		t.Setenv("KUBECONFIG_HOST", "")
-		t.Setenv("KUBECONFIG", "")
-
-		home, err := os.UserHomeDir()
-		require.NoError(t, err)
-
-		assert.Equal(t, filepath.Join(home, ".kube", "config"), resolveHostKubeconfigPath(""))
-	})
+			got, err := resolveHostKubeconfigPath()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestSessionDir(t *testing.T) {
@@ -305,9 +304,8 @@ func TestList(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.
 			}
 
 			h := &handler{
-				kubeconfigPath: "/k",
-				envLookup:      constLookup(""),
-				runHost:        fake.run,
+				envLookup: constLookup(""),
+				runHost:   fake.run,
 			}
 
 			result, _, err := h.list(t.Context(), nil, ListInput{})
@@ -317,7 +315,7 @@ func TestList(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.
 
 			require.Len(t, fake.calls, 1)
 			assert.Equal(t, "list", fake.calls[0].sub)
-			assert.Contains(t, fake.calls[0].args, "/k")
+			assert.Empty(t, fake.calls[0].args, "the host side resolves the kubeconfig")
 		})
 	}
 }
@@ -346,9 +344,8 @@ func TestListMergesLocalContexts(t *testing.T) { //nolint:paralleltest // uses t
 	}
 
 	h := &handler{
-		kubeconfigPath: "/k",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
+		envLookup: constLookup(""),
+		runHost:   fake.run,
 	}
 
 	result, _, err := h.list(t.Context(), nil, ListInput{})
@@ -370,9 +367,8 @@ func runListWithHost(t *testing.T, hostOut string) string {
 
 	fake := &fakeRunHost{stdout: map[string][]byte{"list": []byte(hostOut)}}
 	h := &handler{
-		kubeconfigPath: "/k",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
+		envLookup: constLookup(""),
+		runHost:   fake.run,
 	}
 
 	result, _, err := h.list(t.Context(), nil, ListInput{})
@@ -521,9 +517,8 @@ func TestListShellError(t *testing.T) {
 	}
 
 	h := &handler{
-		kubeconfigPath: "/k",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
+		envLookup: constLookup(""),
+		runHost:   fake.run,
 	}
 
 	result, _, err := h.list(t.Context(), nil, ListInput{})
@@ -532,12 +527,11 @@ func TestListShellError(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "load kubeconfig")
 }
 
-// TestListOmitsKubeconfigWhenUnset pins that handler.list does not
-// pre-resolve the kubeconfig default on the serve side. The serve
-// process may run inside a Lima guest where os.UserHomeDir() differs
-// from the host that ultimately runs `host list`; forwarding a
-// resolved path would leak the guest's $HOME into the host argv.
-func TestListOmitsKubeconfigWhenUnset(t *testing.T) {
+// TestListSendsNoArgs pins that handler.list passes `host list` no
+// argv. The `host` subcommands resolve the host kubeconfig in their
+// own process, from the environment of the host. A serve in a Lima
+// guest has no say in which kubeconfig the host reads.
+func TestListSendsNoArgs(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeRunHost{
@@ -553,23 +547,7 @@ func TestListOmitsKubeconfigWhenUnset(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, fake.calls, 1)
-	assert.NotContains(t, fake.calls[0].args, "--kubeconfig",
-		"empty kubeconfigPath must not emit the flag")
-}
-
-// TestSelectArgsOmitsKubeconfigWhenUnset pins the same no-leak
-// invariant for selectArgs: an unset kubeconfigPath must not emit
-// the flag, so `host select` resolves the default in its own
-// process where os.UserHomeDir() reflects the host environment.
-func TestSelectArgsOmitsKubeconfigWhenUnset(t *testing.T) {
-	t.Parallel()
-
-	h := newSelectArgsHandler(nil)
-	h.kubeconfigPath = ""
-
-	args := h.selectArgs("prod")
-	assert.NotContains(t, args, "--kubeconfig",
-		"empty kubeconfigPath must not emit the flag")
+	assert.Empty(t, fake.calls[0].args)
 }
 
 func TestSelectCtxValidation(t *testing.T) {
@@ -593,7 +571,6 @@ func TestSelectCtxValidation(t *testing.T) {
 			h := &handler{
 				envLookup: constLookup(""),
 				runHost:   fake.run,
-				sa:        serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 			}
 
 			result, _, err := h.selectCtx(t.Context(), nil, tc.input)
@@ -606,30 +583,28 @@ func TestSelectCtxValidation(t *testing.T) {
 
 // TestSelectPublishesSidecarSymlink pins that a successful
 // selectCtx publishes the per-Claude-session symlink at
-// [sidecarSymlinkPath] pointing at the kubeconfig path returned by
-// `host select`. hook-router reads kubectl context through this
+// [sidecarSymlinkPath] pointing at the scoped kubeconfig that serve
+// wrote. hook-router reads kubectl context through this
 // symlink (see tools/hook-router/main.go's configFromEnv).
 func TestSelectPublishesSidecarSymlink(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	// Clear the wrapper env so the PPID-based fallback is exercised.
 	tmpDir := neutralizeWrapperEnv(t)
 
 	stdout, err := json.Marshal(HostSelectResult{
-		Path:       "/canonical/kubeconfig.yaml",
-		SAName:     "claude-sa-1",
-		Namespace:  "ns",
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
+		Cluster:   testProdCluster(),
+		Binding:   testBinding,
+		SAName:    "claude-sa-1",
+		Namespace: "ns",
+		Context:   "prod",
 	})
 	require.NoError(t, err)
 
 	fake := &fakeRunHost{stdout: map[string][]byte{"select": stdout}}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     "/canonical/kubeconfig.yaml",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -647,7 +622,7 @@ func TestSelectPublishesSidecarSymlink(t *testing.T) { //nolint:paralleltest // 
 
 	target, err := os.Readlink(sidecar)
 	require.NoError(t, err)
-	assert.Equal(t, "/canonical/kubeconfig.yaml", target)
+	assert.Equal(t, h.outputPath, target)
 }
 
 // TestSelectReplacesStaleSidecarSymlink pins that selectCtx
@@ -664,22 +639,20 @@ func TestSelectReplacesStaleSidecarSymlink(t *testing.T) { //nolint:paralleltest
 	require.NoError(t, os.Symlink("/dev/null", sidecar))
 
 	stdout, err := json.Marshal(HostSelectResult{
-		Path:       "/fresh/kubeconfig.yaml",
-		SAName:     "claude-sa-2",
-		Namespace:  "ns",
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
+		Cluster:   testProdCluster(),
+		Binding:   testBinding,
+		SAName:    "claude-sa-2",
+		Namespace: "ns",
+		Context:   "prod",
 	})
 	require.NoError(t, err)
 
 	fake := &fakeRunHost{stdout: map[string][]byte{"select": stdout}}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     "/fresh/kubeconfig.yaml",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
 	}
 
 	_, _, err = h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -687,7 +660,7 @@ func TestSelectReplacesStaleSidecarSymlink(t *testing.T) { //nolint:paralleltest
 
 	target, err := os.Readlink(sidecar)
 	require.NoError(t, err)
-	assert.Equal(t, "/fresh/kubeconfig.yaml", target)
+	assert.Equal(t, h.outputPath, target)
 }
 
 // TestSessionDirCleanupRemovesSidecarSymlink pins that the cleanup
@@ -822,11 +795,11 @@ func TestSelectShellsHostSelect(t *testing.T) { //nolint:paralleltest // uses t.
 	neutralizeWrapperEnv(t)
 
 	stdout, err := json.Marshal(HostSelectResult{
-		Path:       "/tmp/k.yaml",
-		SAName:     "claude-sa-1",
-		Namespace:  "ns",
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
+		Cluster:   testProdCluster(),
+		Binding:   testBinding,
+		SAName:    "claude-sa-1",
+		Namespace: "ns",
+		Context:   "prod",
 	})
 	require.NoError(t, err)
 
@@ -835,11 +808,11 @@ func TestSelectShellsHostSelect(t *testing.T) { //nolint:paralleltest // uses t.
 	}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     "/tmp/k.yaml",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
+		hostID:     testHostID,
+		instanceID: testInstanceID,
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -847,74 +820,16 @@ func TestSelectShellsHostSelect(t *testing.T) { //nolint:paralleltest // uses t.
 	require.False(t, result.IsError, resultText(t, result))
 
 	text := resultText(t, result)
-	assert.Contains(t, text, "Created ServiceAccount for context \"prod\"")
-	assert.Contains(t, text, "/tmp/k.yaml")
+	assert.Equal(t, "Created ServiceAccount for context \"prod\" bound to ClusterRole \"view\" (cluster-scoped).\n"+
+		"Kubeconfig written to "+h.outputPath, text)
 
 	require.Len(t, fake.calls, 1)
 	assert.Equal(t, "select", fake.calls[0].sub)
-
-	args := fake.calls[0].args
-	assert.Equal(t, "prod", args[0])
-	assert.Contains(t, args, "--for-guest=false")
-	assert.Contains(t, args, "--out-path")
-	assert.Contains(t, args, "/tmp/k.yaml")
-	assert.Contains(t, args, "--kubeconfig")
-	assert.Contains(t, args, "/admin/kube")
-}
-
-func newSelectArgsHandler(hosts []string) *handler {
-	return &handler{
-		kubeconfigPath:  "/k",
-		outputPath:      "/tmp/k.yaml",
-		allowedAPIHosts: hosts,
-		envLookup:       constLookup(""),
-		sa:              serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
-	}
-}
-
-func TestSelectArgsOmitsAllowedAPIHostsWhenEmpty(t *testing.T) {
-	t.Parallel()
-
-	args := newSelectArgsHandler(nil).selectArgs("prod")
-	assert.NotContains(t, args, "--allow-apiserver-host",
-		"empty allowlist must not emit the flag")
-}
-
-// TestSelectArgsForwardsAllowedAPIHosts pins both the order and
-// adjacency of the --allow-apiserver-host flag/value pairs by
-// asserting they form the literal tail of the argv. Substring
-// matching would silently accept padding or interleaving.
-func TestSelectArgsForwardsAllowedAPIHosts(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		hosts []string
-		want  []string
-	}{
-		"single host": {
-			hosts: []string{"a.example.com"},
-			want:  []string{"--allow-apiserver-host", "a.example.com"},
-		},
-		"multiple hosts repeat the flag": {
-			hosts: []string{"a.example.com", "b.example.com"},
-			want: []string{
-				"--allow-apiserver-host", "a.example.com",
-				"--allow-apiserver-host", "b.example.com",
-			},
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			args := newSelectArgsHandler(tc.hosts).selectArgs("prod")
-
-			require.GreaterOrEqual(t, len(args), len(tc.want))
-			assert.Equal(t, tc.want, args[len(args)-len(tc.want):],
-				"--allow-apiserver-host flags must form the argv tail")
-		})
-	}
+	assert.Equal(t, []string{
+		"prod",
+		"--sa-instance-id", testInstanceID,
+		"--sa-host-id", testHostID,
+	}, fake.calls[0].args, "the host side picks the role, the allowlist, the kubeconfig, and every path")
 }
 
 func TestSelectShellError(t *testing.T) { //nolint:paralleltest // uses t.Setenv
@@ -925,11 +840,9 @@ func TestSelectShellError(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     "/tmp/k.yaml",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -946,11 +859,9 @@ func TestSelectShellInvalidJSON(t *testing.T) { //nolint:paralleltest // uses t.
 	}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     "/tmp/k.yaml",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -961,27 +872,25 @@ func TestSelectShellInvalidJSON(t *testing.T) { //nolint:paralleltest // uses t.
 
 // TestSelectCtxPopulatesCurrentSA pins that a successful selectCtx
 // stores a [currentSA] descriptor populated from the host select
-// JSON result plus the handler's expiration.
+// JSON result.
 func TestSelectCtxPopulatesCurrentSA(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	neutralizeWrapperEnv(t)
 
 	stdout, err := json.Marshal(HostSelectResult{
-		Path:       "/canonical/kubeconfig.yaml",
-		SAName:     "claude-sa-new",
-		Namespace:  "kube-system",
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
+		Cluster:   testProdCluster(),
+		Binding:   testBinding,
+		SAName:    "claude-sa-new",
+		Namespace: "kube-system",
+		Context:   "prod",
 	})
 	require.NoError(t, err)
 
 	fake := &fakeRunHost{stdout: map[string][]byte{"select": stdout}}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     "/canonical/kubeconfig.yaml",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 7200},
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -990,11 +899,7 @@ func TestSelectCtxPopulatesCurrentSA(t *testing.T) { //nolint:paralleltest // us
 
 	got := h.currentSA.Load()
 	require.NotNil(t, got, "currentSA must be populated after success")
-	assert.Equal(t, "/admin/kube", got.Kubeconfig)
-	assert.Equal(t, "prod", got.Context)
-	assert.Equal(t, "claude-sa-new", got.SAName)
-	assert.Equal(t, "kube-system", got.Namespace)
-	assert.Equal(t, 7200, got.Expiration)
+	assert.Equal(t, &currentSA{Context: "prod", SAName: "claude-sa-new", Namespace: "kube-system"}, got)
 }
 
 // TestSelectCtxRestoresCurrentSAOnFailure pins that a host-select
@@ -1005,11 +910,9 @@ func TestSelectCtxRestoresCurrentSAOnFailure(t *testing.T) { //nolint:parallelte
 	neutralizeWrapperEnv(t)
 
 	prev := &currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "claude-sa-prev",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "claude-sa-prev",
+		Namespace: "ns",
 	}
 
 	fake := &fakeRunHost{
@@ -1017,11 +920,9 @@ func TestSelectCtxRestoresCurrentSAOnFailure(t *testing.T) { //nolint:parallelte
 	}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     "/tmp/k.yaml",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
 	}
 	h.currentSA.Store(prev)
 
@@ -1040,11 +941,9 @@ func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:parall
 	neutralizeWrapperEnv(t)
 
 	prev := &currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "claude-sa-prev",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "claude-sa-prev",
+		Namespace: "ns",
 	}
 
 	fake := &fakeRunHost{
@@ -1052,11 +951,9 @@ func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:parall
 	}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     "/tmp/k.yaml",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		outputPath: filepath.Join(t.TempDir(), "k.yaml"),
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
 	}
 	h.currentSA.Store(prev)
 
@@ -1071,8 +968,8 @@ func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:parall
 
 // TestSelectExternalWritesLocalCurrentContext pins that the external
 // select path records current-context in $CLAUDE_KUBECTX_LOCAL (the
-// merged-view source of truth) while leaving the scoped/sidecar
-// kubeconfig file byte-for-byte untouched.
+// merged-view source of truth). The scoped kubeconfig holds the
+// selected context, and the local file holds no context.
 func TestSelectExternalWritesLocalCurrentContext(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	tmp := neutralizeWrapperEnv(t)
 
@@ -1081,26 +978,22 @@ func TestSelectExternalWritesLocalCurrentContext(t *testing.T) { //nolint:parall
 	t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
 
 	scoped := filepath.Join(tmp, "scoped.yaml")
-	scopedBytes := []byte("apiVersion: v1\nkind: Config\nclusters: []\n")
-	require.NoError(t, os.WriteFile(scoped, scopedBytes, 0o600))
 
 	stdout, err := json.Marshal(HostSelectResult{
-		Path:       scoped,
-		SAName:     "claude-sa-1",
-		Namespace:  "ns",
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
+		Cluster:   testProdCluster(),
+		Binding:   testBinding,
+		SAName:    "claude-sa-1",
+		Namespace: "ns",
+		Context:   "prod",
 	})
 	require.NoError(t, err)
 
 	fake := &fakeRunHost{stdout: map[string][]byte{"select": stdout}}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		outputPath:     scoped,
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		outputPath: scoped,
+		envLookup:  constLookup(""),
+		runHost:    fake.run,
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -1112,10 +1005,11 @@ func TestSelectExternalWritesLocalCurrentContext(t *testing.T) { //nolint:parall
 	assert.Equal(t, "prod", cfg.CurrentContext,
 		"external select must record current-context in the local file")
 
-	got, err := os.ReadFile(scoped)
+	scopedCfg, err := kubeconfig.Load(scoped)
 	require.NoError(t, err)
-	assert.Equal(t, scopedBytes, got,
-		"the scoped/sidecar kubeconfig must stay byte-for-byte intact")
+	require.Len(t, scopedCfg.Contexts, 1, "the scoped kubeconfig holds only the selected context")
+	assert.Equal(t, "prod", scopedCfg.Contexts[0].Name)
+	assert.Empty(t, cfg.Contexts, "the local file holds only the selection")
 }
 
 // TestSelectLocalContext pins the local dispatch: a context defined
@@ -1141,12 +1035,10 @@ func TestSelectLocalContext(t *testing.T) { //nolint:paralleltest // uses t.Sete
 	fake := &fakeRunHost{}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		envLookup: constLookup(""),
+		runHost:   fake.run,
 	}
-	h.currentSA.Store(&currentSA{Context: "prod", SAName: "claude-sa-prev", Expiration: 3600})
+	h.currentSA.Store(&currentSA{Context: "prod", SAName: "claude-sa-prev"})
 
 	released := make(chan struct{}, 1)
 	h.registerCleanup(func(_ context.Context) { released <- struct{}{} })
@@ -1200,13 +1092,11 @@ func TestSelectLocalContextWriteFailureKeepsPriorState(t *testing.T) { //nolint:
 	//nolint:errcheck // best-effort restore so TempDir cleanup can remove dir
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
-	prevSA := &currentSA{Context: "prod", SAName: "claude-sa-prev", Expiration: 3600}
+	prevSA := &currentSA{Context: "prod", SAName: "claude-sa-prev"}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		envLookup:      constLookup(""),
-		runHost:        (&fakeRunHost{}).run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		envLookup: constLookup(""),
+		runHost:   (&fakeRunHost{}).run,
 	}
 	h.currentSA.Store(prevSA)
 
@@ -1252,12 +1142,10 @@ func TestSelectGuestContextRoutesLocal(t *testing.T) { //nolint:paralleltest // 
 	fake := &fakeRunHost{}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		envLookup: constLookup(""),
+		runHost:   fake.run,
 	}
-	h.currentSA.Store(&currentSA{Context: "prod", SAName: "claude-sa-prev", Expiration: 3600})
+	h.currentSA.Store(&currentSA{Context: "prod", SAName: "claude-sa-prev"})
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "tald"})
 	require.NoError(t, err)
@@ -1295,10 +1183,8 @@ func TestSelectGuestCollisionRoutesLocal(t *testing.T) { //nolint:paralleltest /
 	fake := &fakeRunHost{}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		envLookup: constLookup(""),
+		runHost:   fake.run,
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "shared"})
@@ -1351,10 +1237,8 @@ func TestSelectGuestContextRecreatesReapedLocal(t *testing.T) { //nolint:paralle
 	fake := &fakeRunHost{}
 
 	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		envLookup:      constLookup(""),
-		runHost:        fake.run,
-		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
+		envLookup: constLookup(""),
+		runHost:   fake.run,
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "admin@local"})
@@ -1403,11 +1287,9 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 		return []byte("ok"), nil
 	}
 	h.currentSA.Store(&currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "sa",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "sa",
+		Namespace: "ns",
 	})
 
 	listener, err := socket.Listen(t.Context(), socketPath, "ordering-inst")
@@ -1515,11 +1397,9 @@ func TestSessionDirKeepsLaterSlotOwner(t *testing.T) { //nolint:paralleltest // 
 		return []byte("ok"), nil
 	}
 	h.currentSA.Store(&currentSA{
-		Kubeconfig: "/admin/kube",
-		Context:    "prod",
-		SAName:     "sa",
-		Namespace:  "ns",
-		Expiration: 3600,
+		Context:   "prod",
+		SAName:    "sa",
+		Namespace: "ns",
 	})
 
 	listener, err := socket.Listen(t.Context(), socketPath, "old-inst")

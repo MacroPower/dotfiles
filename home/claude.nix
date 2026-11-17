@@ -699,7 +699,16 @@ let
       enabled = true;
       backend = "lima";
       image = "file://${config.home.homeDirectory}/.lima/_images/terrarium.qcow2";
-      host_commands = [ "mcp-kubectx" ];
+      # workmux checks only the command name, so each guest can run
+      # this command on the host with any argv. Under this name,
+      # mcp-kubectx runs only its `host` subcommands. They take every
+      # limit from the host config in xdg.configFile and every path
+      # from the host. workmux runs every host command without the
+      # project toolchain, because the workmuxOverlay in
+      # lib/default.nix patches out its wrapper. The wrapper runs the
+      # devbox.json or flake.nix of the worktree, which the guest
+      # writes.
+      host_commands = [ "mcp-kubectx-host" ];
       toolchain = "auto";
       env_passthrough = [
         "GITHUB_TOKEN"
@@ -733,28 +742,6 @@ let
         {
           host_path = researchDir;
           guest_path = researchDir;
-          writable = true;
-        }
-        {
-          # mcp-kubectx serve writes the scoped kubeconfig files of
-          # guest-side serves at this path via `host select` running
-          # on the macOS host. The guest's kubectl reads them through
-          # this bind mount, and shutdown cleanup uses a local
-          # os.Remove from the guest, so the mount must be writable.
-          # Through this mount, the guest can create, change, and
-          # delete the files of this directory of the host, and
-          # replace each with a symlink. The directory holds the
-          # scoped kubeconfig files of guest-side serves. `host select`
-          # writes each of them to a new file under a random name and
-          # renames that file into place. So it does not write through
-          # a symlink that a guest plants.
-          #
-          # The files that host-side serves write or trust lie in
-          # mcp-kubectx-run, which no entry of this list mounts. They
-          # include host.id, the kubeconfig of each host-side serve,
-          # and kubectx.log, the --log-file of servers.kubectx.
-          host_path = "${config.xdg.stateHome}/mcp-kubectx";
-          guest_path = "${config.xdg.stateHome}/mcp-kubectx";
           writable = true;
         }
         {
@@ -4655,23 +4642,18 @@ in
         servers.kubectx = {
           type = "stdio";
           command = "${pkgs.mcp-kubectx}/bin/mcp-kubectx";
+          # The role and the apiserver allowlist come from the host
+          # config in xdg.configFile, which the `host` subcommands read.
           args = [
             "serve"
-            "--sa-role-name"
-            cfg.kubeClusterRole
-            "--sa-cluster-scoped"
-            # The log lies in mcp-kubectx-run, outside the state dir
-            # that the extra_mounts of the Lima sandbox mount into
-            # each guest. So no guest can replace it with a symlink.
+            # The log lies in mcp-kubectx-run, which no extra_mounts
+            # entry of the Lima sandbox mounts into a guest. So no
+            # guest can replace it with a symlink.
             "--log-file"
             "${config.xdg.stateHome}/mcp-kubectx-run/kubectx.log"
             "--socket-slots"
             (toString cfg.kubectxSocketSlots)
-          ]
-          ++ lib.concatMap (host: [
-            "--allow-apiserver-host"
-            host
-          ]) cfg.kubeApiDomains;
+          ];
         };
         permissions.allow = [
           "mcp__kubectx__list"
@@ -5280,6 +5262,17 @@ in
     xdg.configFile = {
       "claude-powerline/config.json".text = claudePowerlineConfig;
       "workmux/config.yaml".source = workmuxConfig;
+      # The host config of mcp-kubectx. Its `host` subcommands take the
+      # role and the apiserver allowlist of each ServiceAccount from this
+      # file, never from their argv. A Lima guest runs those subcommands
+      # through `workmux host-exec mcp-kubectx-host` with an argv of its
+      # own choice, so the guest gets only what this file grants. The
+      # file lies outside every extra_mounts entry of the sandbox.
+      "mcp-kubectx/config.json".text = builtins.toJSON {
+        role = cfg.kubeClusterRole;
+        clusterScoped = true;
+        allowedAPIServerHosts = cfg.kubeApiDomains;
+      };
     };
 
     # The daily cleanup of /tmp does not reach the clone directory of a
@@ -5509,16 +5502,9 @@ in
           );
 
       # Lima refuses to start when an extra_mounts host_path is
-      # missing, and `host select` only creates this dir lazily on
-      # the first kubectx select. Pre-create it at activation so
-      # `task lima:rebuild` succeeds on a fresh host.
-      activation.ensureMcpKubectxStateDir = lib.mkIf cfg.lima.enable (
-        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          run mkdir -p "${config.xdg.stateHome}/mcp-kubectx"
-        ''
-      );
-
-      # Same Lima-needs-host-path-to-exist constraint as above.
+      # missing, and the web-archive skill creates this dir lazily.
+      # Pre-create it at activation so `task lima:rebuild` succeeds on
+      # a fresh host.
       activation.ensureArchivesDir = lib.mkIf cfg.lima.enable (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           run mkdir -p ${lib.escapeShellArg cfg.archivesDir}
@@ -5533,16 +5519,17 @@ in
         ''
       );
 
-      # Per-`serve` UDS lives outside the Lima bind-mounted state
-      # dir (UDS-over-bind-mount semantics on macOS-host are
-      # unverified; the safe design avoids the question). Both host
-      # and guest profiles need this dir at mode 0700 to match
-      # listenSocket's parent-dir invariant; create it
-      # unconditionally so non-Lima Darwin hosts also get it. The
-      # dir also holds the files that host-side mcp-kubectx writes or
-      # trusts, such as host.id, the kubeconfig of each host-side
-      # serve, and kubectx.log. So the extra_mounts of the Lima
-      # sandbox must not mount it.
+      # Each `serve` binds its UDS in this dir on its own machine, and
+      # no extra_mounts entry mounts the dir into a Lima guest. Nobody
+      # has checked how a UDS behaves across a mount from a macOS host,
+      # and the design avoids the question. Both host and guest
+      # profiles need this dir at mode 0700 to match listenSocket's
+      # parent-dir invariant. The activation creates it on every host,
+      # so non-Lima Darwin hosts also get it. The dir also holds the
+      # files that host-side mcp-kubectx writes or trusts, such as
+      # host.key, the provision records, the kubeconfig of each
+      # host-side serve, and kubectx.log. So the extra_mounts of the
+      # Lima sandbox must not mount it.
       activation.ensureMcpKubectxRunDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         run install -d -m 700 "${config.xdg.stateHome}/mcp-kubectx-run"
       '';

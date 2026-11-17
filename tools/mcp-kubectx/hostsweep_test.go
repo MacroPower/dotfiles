@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -14,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubetest"
@@ -96,8 +96,7 @@ func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates p
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--context", "prod",
 		"--host-id", testHostID,
 		"--live-instance-id", "live",
@@ -106,7 +105,8 @@ func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates p
 
 	require.Len(t, fake.ListedSAs, 1)
 	assert.Contains(t, fake.ListedSAs[0], serviceaccount.ManagedByLabel+"="+serviceaccount.ManagedByValue)
-	assert.Contains(t, fake.ListedSAs[0], serviceaccount.HostIDLabel+"="+testHostID)
+	assert.Contains(t, fake.ListedSAs[0], serviceaccount.HostIDLabel+"="+identity.Digest(testHostID))
+	assert.NotContains(t, fake.ListedSAs[0], testHostID, "the selector must carry the digest, not the host id")
 
 	assert.Equal(t, []string{"ns/sa-dead"}, fake.DeletedSAs,
 		"only orphan SAs (dead instance, host-id matching, created before the live set) should be deleted")
@@ -118,7 +118,7 @@ func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates p
 // boundary at the start of [runHostSweep]: empty values fail with
 // [ErrMissingHostID], any other malformed value fails with
 // [ErrInvalidHostID] before the selector is built. The injection
-// case covers a tampered host.id smuggling selector
+// case covers a tampered host.key smuggling selector
 // metacharacters past the validator.
 func TestRunHostSweepRejectsInvalidHostID(t *testing.T) {
 	t.Parallel()
@@ -139,8 +139,7 @@ func TestRunHostSweepRejectsInvalidHostID(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			err := runHostSweep(t.Context(), []string{
-				"--kubeconfig", "/dev/null",
+			err := runHostSweep(t.Context(), "/dev/null", []string{
 				"--host-id", tc.hostID,
 			})
 			require.ErrorIs(t, err, tc.err)
@@ -161,8 +160,7 @@ func TestRunHostSweepResolvesCurrentContextWhenEmpty(t *testing.T) {
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 	}))
 
@@ -195,8 +193,7 @@ func TestRunHostSweepEmptyLiveSetSweepsAll(t *testing.T) { //nolint:paralleltest
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--context", "prod",
 		"--host-id", testHostID,
 	}))
@@ -217,8 +214,7 @@ func TestRunHostSweepSkipsWhenNoContextResolved(t *testing.T) { //nolint:paralle
 
 	kubeconfigPath := writeTestKubeconfig(t, cfg)
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 	}))
 
@@ -243,8 +239,7 @@ func TestRunHostSweepToleratesPartialListForbidden(t *testing.T) {
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--context", "prod",
 		"--host-id", testHostID,
 	}))
@@ -269,8 +264,7 @@ func TestRunHostSweepSurfacesErrListWhenAllFail(t *testing.T) {
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	err := runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	err := runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--context", "prod",
 		"--host-id", testHostID,
 	})
@@ -282,7 +276,7 @@ func TestRunHostSweepSurfacesErrListWhenAllFail(t *testing.T) {
 // because that flag limits the sweep to one cluster and turns off
 // its record pass. The argv holds --host-id, the time of the live
 // set as --live-as-of, and one --live-instance-id flag per id. It
-// holds --kubeconfig only when the handler has a kubeconfig path.
+// holds no --kubeconfig, because the host side picks the kubeconfig.
 func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 	t.Parallel()
 
@@ -311,7 +305,7 @@ func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 
 	assert.Equal(t, subSweep, got.sub)
 	assert.NotContains(t, got.args, "--context", "a --context would turn off the record pass of the sweep")
-	assert.NotContains(t, got.args, "--kubeconfig", "kubeconfig is omitted when handler kubeconfigPath is empty")
+	assert.NotContains(t, got.args, "--kubeconfig", "the host side picks the kubeconfig")
 
 	hostIDIdx := indexOf(got.args, "--host-id")
 	require.GreaterOrEqual(t, hostIDIdx, 0)
@@ -337,31 +331,6 @@ func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 	}
 
 	assert.Equal(t, 3, count)
-}
-
-// TestHandlerRunSweepIncludesKubeconfigWhenSet pins the optional
-// --kubeconfig forwarding path.
-func TestHandlerRunSweepIncludesKubeconfigWhenSet(t *testing.T) {
-	t.Parallel()
-
-	var args []string
-
-	h := &handler{
-		kubeconfigPath: "/admin/kube",
-		hostID:         "host-1",
-		instanceID:     "host-1-inst",
-		envLookup:      constLookup(""),
-		runHost: func(_ context.Context, _ string, a []string) ([]byte, error) {
-			args = append([]string(nil), a...)
-			return nil, nil
-		},
-	}
-
-	h.runSweep(t.Context(), map[string]struct{}{"host-1-inst": {}}, time.Now())
-
-	idx := indexOf(args, "--kubeconfig")
-	require.GreaterOrEqual(t, idx, 0)
-	assert.Equal(t, "/admin/kube", args[idx+1])
 }
 
 // TestHandlerRunSweepLogsErrorWithoutPropagation pins that a
@@ -463,7 +432,7 @@ func TestRunHostSweepFlagParseError(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			err := runHostSweep(t.Context(), tc.args)
+			err := runHostSweep(t.Context(), "/dev/null", tc.args)
 			require.ErrorIs(t, err, ErrParseHostSweepFlags)
 		})
 	}
@@ -508,8 +477,7 @@ func TestRunHostSweepKeepsServiceAccountOfLateServe(t *testing.T) {
 
 	liveAsOf := time.Now()
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--context", "prod",
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
@@ -553,13 +521,12 @@ func TestRunHostSweepLiveAsOfBoundedByStart(t *testing.T) {
 			kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
 			args := []string{
-				"--kubeconfig", kubeconfigPath,
 				"--context", "prod",
 				"--host-id", testHostID,
 				"--live-instance-id", testInstanceID,
 			}
 
-			require.NoError(t, runHostSweep(t.Context(), append(args, tc.args...)))
+			require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, append(args, tc.args...)))
 
 			assert.Equal(t, []string{"ns/claude-sa-old"}, fake.DeletedSAs)
 		})
@@ -592,8 +559,7 @@ func TestRunHostSweepIgnoresEmptyLiveID(t *testing.T) { //nolint:paralleltest //
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--context", "prod",
 		"--host-id", testHostID,
 		"--live-instance-id", "",
@@ -604,14 +570,15 @@ func TestRunHostSweepIgnoresEmptyLiveID(t *testing.T) { //nolint:paralleltest //
 	assert.Equal(t, []string{"ns/sa-b"}, fake.DeletedSAs)
 }
 
-// sweepRecord returns a provision record of testHostID for the SA
+// sweepRecord returns a provision record of testHostID, under its
+// digest, for the SA
 // saName in the namespace ns. The record reaches its cluster
 // through contextName of the kubeconfig at kubeconfigPath.
 // `host select` wrote it at testCreated, before the live set of
 // every sweep.
 func sweepRecord(instanceID, kubeconfigPath, contextName, saName string) ledger.Record {
 	return ledger.Record{
-		HostID:         testHostID,
+		HostID:         identity.Digest(testHostID),
 		InstanceID:     instanceID,
 		Kubeconfig:     kubeconfigPath,
 		Context:        contextName,
@@ -640,7 +607,7 @@ func TestRunHostSweepKeepsRecordOfLateServe(t *testing.T) {
 
 	liveAsOf := time.Now()
 
-	require.NoError(t, selectProd(t, kubeconfigPath,
+	require.NoError(t, selectProd(t, kubeconfigPath, false,
 		"--sa-host-id", testHostID,
 		"--sa-instance-id", testOtherDeadID,
 	))
@@ -648,8 +615,7 @@ func TestRunHostSweepKeepsRecordOfLateServe(t *testing.T) {
 	late := listRecords(t, records)
 	require.Len(t, late, 1)
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
 		"--live-as-of", liveAsOf.UTC().Format(time.RFC3339Nano),
@@ -742,11 +708,10 @@ func TestRunHostSweepRecordPassComparesWriteTime(t *testing.T) {
 			}
 
 			args := []string{
-				"--kubeconfig", kubeconfigPath,
 				"--host-id", testHostID,
 			}
 
-			require.NoError(t, runHostSweep(t.Context(), append(args, tc.args...)))
+			require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, append(args, tc.args...)))
 
 			assert.ElementsMatch(t, tc.released, staging.DeletedSAs)
 			assert.ElementsMatch(t, kept, listRecords(t, records))
@@ -772,9 +737,8 @@ func TestRunHostSweepReleasesRecordedServiceAccounts(t *testing.T) {
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	// A serve with another --kubeconfig writes a record of another
-	// file, and so does a guest that runs `host select` through
-	// `workmux host-exec`.
+	// A caller whose environment resolves another host kubeconfig
+	// writes a record of another file.
 	otherKubeconfig := writeTestKubeconfig(t, testKubeconfig())
 
 	deadOnStaging := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-dead")
@@ -787,12 +751,11 @@ func TestRunHostSweepReleasesRecordedServiceAccounts(t *testing.T) {
 	liveOnStaging := sweepRecord(testInstanceID, kubeconfigPath, "staging", "claude-sa-live")
 
 	otherHost := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-foreign")
-	otherHost.HostID = testOtherHostID
+	otherHost.HostID = identity.Digest(testOtherHostID)
 
 	addRecords(t, records, deadOnStaging, deadOnDev, otherFile, liveOnStaging, otherHost)
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
 	}))
@@ -816,59 +779,35 @@ func TestRunHostSweepReleasesRecordedServiceAccounts(t *testing.T) {
 	}, clients.Calls(), "each record must reach its cluster through the swept kubeconfig and its own context")
 }
 
-// TestRunHostSweepSkipsRecordOfGuestKubeconfig pins that the record
-// pass never builds a client from the kubeconfig file of a record.
-// A Lima guest can run `host select` through `workmux host-exec`
-// with a --kubeconfig of its choice and with the host id of the
-// host. client-go runs the exec credential plugin of each
-// kubeconfig file that it loads. The startup sweep of a host-side
-// serve runs outside the sandbox of `workmux host-exec`, with the
-// default kubeconfig. So the sweep must keep the record of the
-// guest and leave its file alone.
+// TestRunHostSweepNeedsHostID pins that a sweep acts only on the
+// resources of the host id that its caller holds. The labels and
+// the provision records carry the [identity.Digest] of each host id.
+// A Lima guest with a `view` token can read the digest from the
+// labels. A sweep with that digest as --host-id selects the digest
+// of the digest, so it deletes nothing of the owner of the digest.
 //
-//nolint:paralleltest // mutates package-level state and the environment
-func TestRunHostSweepSkipsRecordOfGuestKubeconfig(t *testing.T) {
+//nolint:paralleltest // mutates package-level state
+func TestRunHostSweepNeedsHostID(t *testing.T) {
+	prod, staging := &kubetest.Fake{}, &kubetest.Fake{}
+
+	withHostKubeClients(t, map[string]kube.Client{"prod": prod, "staging": staging})
+
 	records := withHostLedger(t)
-	withHostStdout(t)
 
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("KUBECONFIG_HOST", "")
-	t.Setenv("KUBECONFIG", "")
+	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	defaultKubeconfig := filepath.Join(home, ".kube", "config")
-	require.Equal(t, defaultKubeconfig, resolveHostKubeconfigPath(""))
+	dead := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-dead")
+	addRecords(t, records, dead)
 
-	data, err := os.ReadFile(writeTestKubeconfig(t, testKubeconfig()))
-	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(filepath.Dir(defaultKubeconfig), 0o700))
-	require.NoError(t, os.WriteFile(defaultKubeconfig, data, 0o600))
-
-	guestKubeconfig := writeTestKubeconfig(t, testKubeconfig())
-
-	withHostKubeClients(t, map[string]kube.Client{"prod": &kubetest.Fake{}})
-
-	require.NoError(t, selectProd(t, guestKubeconfig,
-		"--sa-host-id", testHostID,
-		"--sa-instance-id", testDeadID,
-	))
-
-	guestRecords := listRecords(t, records)
-	require.Len(t, guestRecords, 1)
-	require.Equal(t, guestKubeconfig, guestRecords[0].Kubeconfig)
-
-	prod := &kubetest.Fake{}
-	clients := withHostKubeClients(t, map[string]kube.Client{"prod": prod})
-
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--host-id", testHostID,
-		"--live-instance-id", testInstanceID,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
+		"--host-id", identity.Digest(testHostID),
 	}))
 
-	assert.Equal(t, []string{kubeClientCall(defaultKubeconfig, "prod")}, clients.Calls(),
-		"only the label pass may build a client, from the default kubeconfig")
-	assert.Empty(t, prod.DeletedSAs)
-	assert.Equal(t, guestRecords, listRecords(t, records))
+	require.Len(t, prod.ListedSAs, 1)
+	assert.Contains(t, prod.ListedSAs[0], serviceaccount.HostIDLabel+"="+identity.Digest(identity.Digest(testHostID)))
+
+	assert.Empty(t, staging.DeletedSAs, "a sweep with the digest must not release the record of the host id")
+	assert.Equal(t, []ledger.Record{dead}, listRecords(t, records))
 }
 
 // TestRunHostSweepEmptyLiveSetReleasesEveryRecord pins the manual
@@ -886,7 +825,7 @@ func TestRunHostSweepEmptyLiveSetReleasesEveryRecord(t *testing.T) {
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
 	otherHost := sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-foreign")
-	otherHost.HostID = testOtherHostID
+	otherHost.HostID = identity.Digest(testOtherHostID)
 
 	addRecords(t, records,
 		sweepRecord(testInstanceID, kubeconfigPath, "staging", "claude-sa-a"),
@@ -894,8 +833,7 @@ func TestRunHostSweepEmptyLiveSetReleasesEveryRecord(t *testing.T) {
 		otherHost,
 	)
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 	}))
 
@@ -952,8 +890,7 @@ func TestRunHostSweepRecordFollowsCluster(t *testing.T) { //nolint:paralleltest 
 
 			addRecords(t, records, onStaging, onDev)
 
-			require.NoError(t, runHostSweep(t.Context(), []string{
-				"--kubeconfig", kubeconfigPath,
+			require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 				"--host-id", testHostID,
 				"--live-instance-id", testInstanceID,
 			}))
@@ -984,8 +921,7 @@ func TestRunHostSweepContextLimitsSweepToOneCluster(t *testing.T) { //nolint:par
 
 	addRecords(t, records, onStaging)
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--context", "prod",
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
@@ -1019,8 +955,7 @@ func TestRunHostSweepLabelPassSurvivesUnreadableLedger(t *testing.T) {
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
 	}))
@@ -1088,8 +1023,7 @@ func TestRunHostSweepRecordPassSurvivesLabelPass(t *testing.T) { //nolint:parall
 			// label pass.
 			addRecords(t, records, sweepRecord(testDeadID, sweptKubeconfig, "staging", "claude-sa-dead"))
 
-			err := runHostSweep(t.Context(), []string{
-				"--kubeconfig", sweptKubeconfig,
+			err := runHostSweep(t.Context(), sweptKubeconfig, []string{
 				"--host-id", testHostID,
 				"--live-instance-id", testInstanceID,
 			})
@@ -1126,8 +1060,7 @@ func TestRunHostSweepIgnoresRecordsAddedDuringLabelPass(t *testing.T) {
 
 	withHostKubeClients(t, map[string]kube.Client{"prod": prod, "staging": staging})
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
 	}))
@@ -1167,8 +1100,7 @@ func TestRunHostSweepRecordPassDoesNotWaitForLabelPass(t *testing.T) {
 
 	addRecords(t, records, sweepRecord(testDeadID, kubeconfigPath, "staging", "claude-sa-dead"))
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
 	}))
@@ -1220,8 +1152,7 @@ func TestRunHostSweepRecordPassTimeout(t *testing.T) { //nolint:paralleltest // 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 
-	require.NoError(t, runHostSweep(ctx, []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(ctx, kubeconfigPath, []string{
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
 	}))
@@ -1287,8 +1218,7 @@ func TestRunHostSweepRecordPassRunsClustersInParallel(t *testing.T) {
 		sweepRecord(testDeadID, kubeconfigPath, "dev", "claude-sa-dev"),
 	)
 
-	require.NoError(t, runHostSweep(t.Context(), []string{
-		"--kubeconfig", kubeconfigPath,
+	require.NoError(t, runHostSweep(t.Context(), kubeconfigPath, []string{
 		"--host-id", testHostID,
 		"--live-instance-id", testInstanceID,
 	}))

@@ -1,0 +1,21 @@
+--- a/src/sandbox/rpc.rs
++++ b/src/sandbox/rpc.rs
+@@ -1132,14 +1132,10 @@
+         return Ok(());
+     }
+ 
+-    // Skip toolchain wrapping for built-in host commands (e.g., afplay) since they
+-    // exist outside the project's devbox/nix environment
+-    let is_builtin = crate::sandbox::shims::BUILTIN_HOST_COMMANDS.contains(&command);
+-    let wrapper_script = if !is_builtin {
+-        crate::sandbox::toolchain::toolchain_wrapper_script(&ctx.detected_toolchain)
+-    } else {
+-        None
+-    };
++    // Run every host command without the project toolchain. The toolchain
++    // wrapper runs the devbox.json or flake.nix of the worktree, which the
++    // guest writes, so it would run code of the guest on the host.
++    let wrapper_script: Option<String> = None;
+ 
+     // Build the logical command (program + args), then delegate to sandbox
+     let (program, final_args) = if let Some(script) = wrapper_script {

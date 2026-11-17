@@ -29,6 +29,9 @@ var (
 	ErrList = errors.New("list provision records")
 	// ErrRemove wraps a failure to remove a record file.
 	ErrRemove = errors.New("remove provision record")
+	// ErrNotFound reports that the ledger holds no record under the
+	// owner and the location that [Ledger.Find] gets.
+	ErrNotFound = errors.New("no provision record")
 )
 
 // recordExt is the suffix of every record file.
@@ -40,9 +43,9 @@ const recordExt = ".json"
 // ServiceAccount locate the ServiceAccount. Written says when the
 // record came to the ledger.
 type Record struct {
-	// HostID is the persistent host id of the `serve` that owns
-	// the ServiceAccount. It comes from the name of the record
-	// file.
+	// HostID is the [identity.Digest] of the persistent host id of
+	// the `serve` that owns the ServiceAccount. It comes from the
+	// name of the record file.
 	HostID string `json:"-"`
 
 	// InstanceID is the instance id of the `serve` that owns the
@@ -159,6 +162,28 @@ func (l *Ledger) List() ([]Record, error) {
 	}
 
 	return records, nil
+}
+
+// Find returns the record that the ledger holds under the owner and
+// the location of key. It reads only the host id, the instance id,
+// and the four location fields of key.
+//
+// Find returns [ErrInvalidID] when the host id or the instance id of
+// key is malformed. It returns [ErrNotFound] when the ledger holds no
+// such record, and when the file of the record does not read or
+// parse as a record.
+func (l *Ledger) Find(key Record) (Record, error) {
+	name, err := fileName(key)
+	if err != nil {
+		return Record{}, err
+	}
+
+	r, ok := l.read(name)
+	if !ok {
+		return Record{}, fmt.Errorf("%w: %s", ErrNotFound, name)
+	}
+
+	return r, nil
 }
 
 // Remove deletes the record r. Removing a record that the ledger

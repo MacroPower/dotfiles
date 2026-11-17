@@ -14,17 +14,20 @@ The binary has three surface areas dispatched by a single flat
 switch in `cli.go`:
 
 - **`serve`** is the long-lived MCP stdio server. It owns per-process
-  state in `*handler`: the host kubeconfig path, the SA configuration
-  parsed from `--sa-*` flags, an atomic `currentSA` descriptor, the
-  per-`serve` UDS listener, and a slice of cleanup closures registered
-  on each `select`. It never touches the cluster directly.
+  state in `*handler`: the path of its scoped kubeconfig, an atomic
+  `currentSA` descriptor, the per-`serve` UDS listener, and a slice of
+  cleanup closures registered on each `select`. It never touches the
+  cluster directly.
 - **`host {list, select, token, release, sweep}`** are stateless
   one-shots. Each parses argv, talks to the cluster via client-go,
-  prints JSON or text on stdout, and exits. They share no state
-  with `serve`. The only state that they share with each other is
-  the [provision records](#provision-records) on disk. Cluster
-  state is the source of truth for what exists. In-process state in
-  `serve` only tracks ownership.
+  prints JSON or text on stdout, and exits. Each takes the host
+  kubeconfig, the role, and the apiserver allowlist from the host,
+  never from argv, as [Host-side inputs](#host-side-inputs)
+  describes. They share no state with `serve`. The only state that
+  they share with each other is the
+  [provision records](#provision-records) on disk. Cluster state is
+  the source of truth for what exists. In-process state in `serve`
+  only tracks ownership.
 - **`exec-plugin`** is the kubectl exec credential shim. It
   connects to `serve`'s UDS at `--socket <path>`, copies the bytes
   the server writes to stdout, and exits. Like the `host *`
@@ -65,7 +68,7 @@ kubectl exec plugin
 The shell-out boundary is the only place the guest/host distinction
 still matters. `*handler.hostExecArgs` decides whether to invoke
 `mcp-kubectx host *` directly (when `serve` is on the host) or wrap
-it with `workmux host-exec mcp-kubectx host *` (when `serve` is
+it with `workmux host-exec mcp-kubectx-host *` (when `serve` is
 inside a Lima guest, indicated by `WM_SANDBOX_GUEST=1`). The
 distinction is invisible to kubectl: both host- and guest-side
 serves write the same exec-plugin block, and routing happens
@@ -80,11 +83,12 @@ before it exits 0, such as a failed delete.
 ```
 mcp-kubectx serve              # MCP stdio mode, local to its Claude
 mcp-kubectx host list          # one-shot: print contexts
-mcp-kubectx host select <ctx>  # one-shot: create SA, write kubeconfig, print descriptor
+mcp-kubectx host select <ctx>  # one-shot: create SA, print descriptor
 mcp-kubectx host token         # one-shot: mint token, print ExecCredential JSON
 mcp-kubectx host release       # one-shot: delete SA + binding
 mcp-kubectx host sweep         # one-shot: delete orphan SAs + bindings from this host
 mcp-kubectx exec-plugin        # kubectl-facing UDS shim
+mcp-kubectx-host <sub>         # the host subcommands alone, for workmux host-exec
 ```
 
 ### Data flow
@@ -148,7 +152,7 @@ flowchart TB
 
   subgraph host["Host (outside the guest)"]
     wm["workmux RPC server"]
-    htoken["mcp-kubectx host token<br/>TokenRequest"]
+    htoken["mcp-kubectx-host token<br/>TokenRequest"]
     admin[("admin kubeconfig")]
     wm -->|"fork, sanitized env (no WM_*)"| htoken
     htoken --> admin
@@ -157,7 +161,7 @@ flowchart TB
   kcfg -->|"local ctx: inline admin creds"| lapi
   kcfg -.->|"external ctx: exec-plugin recipe"| plugin
   plugin -->|"UDS connect (guest-local)"| serve
-  serve -->|"hostExecArgs (WM_SANDBOX_GUEST=1)<br/>workmux host-exec mcp-kubectx host token"| wm
+  serve -->|"hostExecArgs (WM_SANDBOX_GUEST=1)<br/>workmux host-exec mcp-kubectx-host token"| wm
   htoken -.->|"ExecCredential (view token)"| serve
   serve -.->|"UDS bytes"| plugin
   plugin -.->|"stdout"| kubectl
@@ -173,10 +177,13 @@ See [Threat-model shift for local contexts](#threat-model-shift-for-local-contex
 
 ## Scoped kubeconfigs
 
-`host select` writes kubeconfigs with the same fields regardless of
-`--for-guest`. The cluster section is copied verbatim from the
-selected context in the host kubeconfig. The `user.exec` block is
-the same tiny UDS shim in both host- and guest-side kubeconfigs:
+`serve` writes the scoped kubeconfig of each external `select` on
+its own machine, from the result of `host select`. The kubeconfig has
+the same fields in a host-side and a guest-side `serve`. The cluster
+section is a verbatim copy of the cluster of the selected context in
+the host kubeconfig, which `host select` passes back in its result.
+The `user.exec` block is the same tiny UDS shim in both host- and
+guest-side kubeconfigs:
 
 ```yaml
 apiVersion: v1
@@ -212,14 +219,12 @@ kubectl to start over. `mcp-kubectx` is on PATH for both the
 host and the in-Lima profiles via `home.packages` in
 `home/claude.nix`.
 
-The `--for-guest` flag is a _path discriminator_ only. It flips the
-`<env>` token between `host` and `guest` in the defaulted kubeconfig
-and socket filenames, so a host serve and a Lima-guest serve cannot
-collide on the same path. It also picks the directory of the
-defaulted kubeconfig.
+The env of `serve`, `host` or `guest`, is a _path discriminator_
+only. It sets the `<env>` token in the names of the default
+kubeconfig and of the socket, so a host serve and a Lima-guest serve
+cannot collide on the same path.
 [Concurrent-select hazard and per-`serve` paths](#concurrent-select-hazard-and-per-serve-paths)
-describes both directories. Kubectl runs the same exec plugin either
-way.
+describes the paths. Kubectl runs the same exec plugin either way.
 
 ## ExecCredential output
 
@@ -252,16 +257,16 @@ see [Threat-model shift for local
 contexts](#threat-model-shift-for-local-contexts)). The token
 exists in kubectl's memory for the duration of the API call and is
 gone after.
-Read access to the bind-mounted directory reveals a recipe for
-asking the host to mint a token, not the token itself. The host can
-revoke the SA at any time.
+Read access to the scoped kubeconfig reveals a recipe for asking
+the host to mint a token, not the token itself. The host can revoke
+the SA at any time.
 
-Every Lima guest can also write to the bind-mounted directory. So
-the kubeconfig of each host-side `serve`, which host-side kubectl
-trusts, lies in a directory that workmux does not mount.
-[Concurrent-select hazard and per-`serve` paths](#concurrent-select-hazard-and-per-serve-paths)
-lists the files of both directories and what a guest can do with
-them.
+A guest reaches the host only through `workmux host-exec
+mcp-kubectx-host`, with an argv of its own choice, and that command
+runs only the `host` subcommands. The host side picks the role, the
+apiservers, and the kubeconfig of every SA, and the host mints a
+token only for an SA that a `serve` of the caller provisioned.
+[Host-side inputs](#host-side-inputs) describes the rules.
 
 This is plain kubectl exec-plugin plumbing, so anything that uses
 client-go (kubectl, helm, kustomize, argocd) works without
@@ -456,7 +461,9 @@ guest cluster definitions -- so do not assume a read-deny protects
 them. Dropping that deny is contained because the guest
 `~/.kube/config` holds no host admin creds; it is independent of the
 macOS host's `~/.kube/config`, which still never enters the sandbox.
-External access stays `view`-scoped through the UDS.
+External access stays bound to the role that the host config grants,
+`view` by default, as [Host-side inputs](#host-side-inputs)
+describes.
 
 Only the Lima terrarium VM has a container runtime, so a local
 cluster can only actually run there. On the Darwin host and in the
@@ -571,7 +578,8 @@ ends during the closure leaves neither file.
   host-side serves of one host share a `host-id`, and so do the
   guest-side serves of one Lima guest VM.
   [Manual sweep invocation](#manual-sweep-invocation) describes the
-  sweep of another `host-id`, such as the id of a deleted guest VM.
+  sweep of another `host-id` and the cleanup after a deleted guest
+  VM.
 - **Provision records.** The record of each such SA stays in the
   ledger directory on the host. The same sweep removes each record
   after it has deleted the SA and the binding.
@@ -625,18 +633,32 @@ provision records that `host select` writes on the host.
 Every provisioned SA and binding carries three labels:
 
 - `app.kubernetes.io/managed-by=mcp-kubectx`
-- `mcp-kubectx/host-id=<persistent>`: 16-hex id persisted at
-  `<XDG_STATE_HOME>/mcp-kubectx-run/<env>.id` (`host.id` or
-  `guest.id`), mode `0600`, on the machine that runs the `serve`.
-  Created on first `serve` startup. Bounds the sweep to resources
-  this host+env owns, so two operators against a shared cluster
-  never delete each other's resources. Every Lima guest can break
-  that bound, because it can run `host sweep` through
-  `workmux host-exec` with any `--host-id`.
+- `mcp-kubectx/host-id=<digest>`: the 16-hex digest of the host id.
+  The host id is a 16-hex id persisted at
+  `<XDG_STATE_HOME>/mcp-kubectx-run/<env>.key` (`host.key` or
+  `guest.key`), mode `0600`, on the machine that runs the `serve`.
+  `serve` creates it on its first startup. The label bounds the sweep
+  to resources this host+env owns, so two operators against a shared
+  cluster never delete each other's resources.
+
+  The `host` subcommands take the host id and derive the digest, and
+  no one can find a host id from its digest. So a Lima guest, which
+  can read the labels with its token, sweeps only the resources of
+  the `guest.key` of its own VM.
+
+  Builds of mcp-kubectx before the digest kept the host id in
+  `host.id` or `guest.id` and put the plain id on each label, where
+  every guest can read it. `serve` does not read those files. So each
+  env mints a fresh id in its `.key` file, and a guest that read an
+  old id from a label cannot act on the resources of the fresh id.
+  [Manual sweep invocation](#manual-sweep-invocation) describes how
+  to delete the resources of those builds.
+
   The id is per-env because the liveness discovery of each env
   vouches only for the serves of that env. One id for both envs lets
   a host-side sweep delete the live SA of a concurrent guest serve,
   and the other way around.
+
 - `mcp-kubectx/instance-id=<per-serve random>`: 16-hex id
   generated fresh for each `serve` process. Persisted into a
   per-slot sidecar file at `<socket-path>.id` so a future
@@ -644,13 +666,13 @@ Every provisioned SA and binding carries three labels:
   `instance-id`.
 
 Each `serve` resolves `<XDG_STATE_HOME>` in its own environment. So
-`host.id` lies on the host, and each Lima guest VM keeps the
-`guest.id` of its guest-side serves on its own disk. workmux mounts
+`host.key` lies on the host, and each Lima guest VM keeps the
+`guest.key` of its guest-side serves on its own disk. workmux mounts
 neither file into a guest. When you delete a guest VM, its
-`guest.id` goes with it, and no later `serve` sweeps the resources
+`guest.key` goes with it, and no later `serve` sweeps the resources
 that the serves of that VM left behind.
 [Manual sweep invocation](#manual-sweep-invocation) describes how to
-sweep them.
+delete them.
 
 Each `serve` launches a background `host sweep` at startup. It
 passes the sweep its own `host-id`, the live set, and the time at
@@ -673,7 +695,7 @@ host kubeconfig. The record pass reaches those clusters.
 The label pass runs these steps:
 
 1. It lists SAs, RoleBindings, and ClusterRoleBindings filtered by
-   the selector `managed-by=mcp-kubectx,host-id=<own>` on the
+   the selector `managed-by=mcp-kubectx,host-id=<digest>` on the
    apiserver. Cross-host resources never reach the classifier.
 2. For each result, it reads `mcp-kubectx/instance-id`. It keeps a
    resource without that label, because the label pass cannot tell
@@ -723,12 +745,10 @@ clock of the host. Both passes then use the start of `host sweep`
 instead.
 
 The record pass keeps each record that names another kubeconfig
-file, and it never loads that file. A Lima guest can add such a
-record, because it can run `host select` through `workmux host-exec`
-with a `--kubeconfig` of its choice. client-go runs the exec
-credential plugin of each kubeconfig that it loads. The startup sweep
-of a host-side `serve` runs outside the sandbox of `workmux
-host-exec`, and so does each plugin that it runs.
+file, and it never loads that file. The environment of each caller
+picks its host kubeconfig, as [Host-side inputs](#host-side-inputs)
+describes. So a host-side `serve` and a Lima guest can write records
+of different files.
 
 The record pass gives the API calls of one cluster at most 30
 seconds, and it works on the clusters in parallel. So a cluster that
@@ -754,17 +774,22 @@ after the live set.
 Each record is one JSON file on the host, mode `0600`, at this path:
 
 ```
-<XDG_STATE_HOME>/mcp-kubectx-run/ledger/<host-id>.<instance-id>.<key>.json
+<XDG_STATE_HOME>/mcp-kubectx-run/ledger/<digest>.<instance-id>.<key>.json
 ```
 
+`<digest>` is the digest of the host id, as in the `host-id` label.
 `<key>` is a hash of the kubeconfig path, the context, the
 namespace, and the SA name. The ledger directory lies beside the
-sockets, outside the state dir that a Lima guest can write through
-the bind mount. `host select`, `host release`, and `host sweep`
-always run on the host, so the records of a guest-side `serve` lie on
-the host too. Lima guests can still add records through `host
-select`, with any arguments, so the record pass trusts only the
-records of its own kubeconfig.
+sockets, which workmux does not mount into a Lima guest. `host
+select`, `host release`, and `host sweep` always run on the host, so
+the records of a guest-side `serve` lie on the host too.
+
+A record is also the proof that a `serve` owns its SA. The host
+kubeconfig can mint a token for, and delete, any SA of a cluster.
+So `host token` and `host release` act only on an SA whose record
+names the `--host-id` and `--instance-id` that the caller passes.
+A guest cannot mint a token for an SA of the cluster that no
+`serve` of its own provisioned.
 
 These events write and remove a record:
 
@@ -802,8 +827,8 @@ SA or the binding. An object of another owner with the same name is
 far less likely, because each SA name holds 8 random hex characters.
 The binding takes its name from the SA.
 
-`host select` writes a record only when it gets both `--sa-host-id`
-and `--sa-instance-id`, as it does from `serve`.
+`host select` requires both `--sa-host-id` and `--sa-instance-id`,
+which `serve` always passes.
 
 The sweep does not cover these cases:
 
@@ -814,9 +839,10 @@ The sweep does not cover these cases:
   [Manual sweep invocation](#manual-sweep-invocation) describes the
   recovery.
 - **A record of another kubeconfig.** Such records come from a
-  `serve` that runs with another host kubeconfig, such as another
-  `--kubeconfig`, or from a Lima guest. Each one waits for the
-  startup sweep of a `serve` that uses its kubeconfig.
+  caller whose environment resolves another host kubeconfig, such as
+  a host-side `serve` with `$KUBECONFIG_HOST` set, or a Lima guest.
+  Each one waits for the startup sweep of a `serve` that uses its
+  kubeconfig.
   [Manual sweep invocation](#manual-sweep-invocation) describes how
   to release it by hand.
 - **A record whose cluster never answers again.** The record pass
@@ -888,9 +914,8 @@ To sweep one cluster by label, name its context:
 
 ```
 mcp-kubectx host sweep \
-  --kubeconfig ~/.kube/config \
   --context my-ctx \
-  --host-id $(cat ~/.local/state/mcp-kubectx-run/host.id)
+  --host-id $(cat ~/.local/state/mcp-kubectx-run/host.key)
 ```
 
 With `--context`, the sweep runs only the label pass, on the cluster
@@ -902,74 +927,105 @@ To run both passes, as `serve` does at startup, omit `--context`:
 
 ```
 mcp-kubectx host sweep \
-  --kubeconfig ~/.kube/config \
-  --host-id $(cat ~/.local/state/mcp-kubectx-run/host.id)
+  --host-id $(cat ~/.local/state/mcp-kubectx-run/host.key)
 ```
 
-The record pass releases only the records of the kubeconfig that
-`--kubeconfig` names. Lima guests can write records that name any
-file, and the sweep runs the exec credential plugin of that file
-outside every sandbox. So read the file that a record names before
-you sweep with it. To release the records of a kubeconfig that you
-trust, run the same form with `--kubeconfig` set to the path that the
-records name. When you do not trust the file, delete the record file
-instead.
+`host sweep` takes no flag for the host kubeconfig. It reads
+`$KUBECONFIG_HOST`, then `$KUBECONFIG`, then `~/.kube/config`, as
+[Host-side inputs](#host-side-inputs) describes. The record pass
+releases only the records of that kubeconfig. To release the records
+of another kubeconfig, set `$KUBECONFIG_HOST` to the path that the
+records name. The sweep runs the exec credential plugin of that file,
+so read the file before you sweep with it:
 
-The `host sweep` commands of this section read `host.id` on the
+```
+KUBECONFIG_HOST=/path/from/the/records mcp-kubectx host sweep \
+  --host-id $(cat ~/.local/state/mcp-kubectx-run/host.key)
+```
+
+The `host sweep` commands of this section read `host.key` on the
 host, so they sweep the resources of host-side serves. Each Lima
-guest VM keeps the `guest.id` of its guest-side serves on its own
+guest VM keeps the `guest.key` of its guest-side serves on its own
 disk, and the host does not hold a copy. To sweep the resources of
 one guest VM, print its id inside the guest:
 
 ```
-cat ~/.local/state/mcp-kubectx-run/guest.id
+cat ~/.local/state/mcp-kubectx-run/guest.key
 ```
 
 Then run the `host sweep` commands of this section on the host, with
-`--host-id` set to that id.
+`--host-id` set to that id. `workmux host-exec` passes no kubeconfig
+variable, so the records of guest-side serves name `~/.kube/config`
+of the host. Set `$KUBECONFIG_HOST` to that path when your shell
+sets `$KUBECONFIG` to another file.
 
-When you delete a guest VM, its `guest.id` goes with it. To find the
-`host-id` of a deleted VM, list the ledger directory on the host:
+When you delete a guest VM, its `guest.key` goes with it. The labels
+and the ledger hold only the digest of each host id, and `host
+sweep` needs the host id itself. So no `host sweep` reaches the
+resources of a deleted VM, and you delete them with kubectl. To find
+the digest of a deleted VM, list the ledger directory on the host:
 
 ```
 ls ~/.local/state/mcp-kubectx-run/ledger
 ```
 
-The name of each record file starts with the `host-id` label of its
-SA. `host select` writes every record of this directory on the host,
-for the serves of the host and of its guest VMs. A ledger id that
-matches neither `host.id` nor the `guest.id` of an existing VM comes
-from one of these sources:
+The name of each record file starts with the digest in the
+`host-id` label of its SA. `host select` writes every record of this
+directory on the host, for the serves of the host and of its guest
+VMs. To print the digest of an id file, such as `host.key` or the
+`guest.key` of an existing VM, run this command where the file lies:
 
-- **A deleted guest VM.** The `guest.id` of the VM went with it.
-- **A former `host.id` of this host or `guest.id` of an existing
+```
+printf 'mcp-kubectx/host-id\0%s' "$(cat ~/.local/state/mcp-kubectx-run/host.key)" \
+  | shasum -a 256 | cut -c1-16
+```
+
+A ledger digest that matches neither the digest of `host.key` nor the
+digest of the `guest.key` of an existing VM comes from one of these
+sources:
+
+- **A deleted guest VM.** The `guest.key` of the VM went with it.
+- **A former `host.key` of this host or `guest.key` of an existing
   VM.** `serve` writes a new id file when the file is missing or does
   not hold a valid id. Every guest can delete or rewrite its own
-  `guest.id` on its own disk. Every guest can also overwrite
-  `host.id` with a kubeconfig when it runs `host select` through
-  `workmux host-exec` with that path as `--out-path`. You can delete
-  either file too.
+  `guest.key` on its own disk. You can delete either file too.
 - **The choice of a guest.** Every guest can run `host select` with
-  any arguments, so it can pass any id as `--sa-host-id`.
+  any id as `--sa-host-id`.
+- **A build of mcp-kubectx before the digest.** Such a build kept
+  the host id in `host.id` or `guest.id`. It wrote the plain id into
+  each label and each record name, so the name starts with the
+  content of that file. No `host sweep` reaches these resources,
+  because the sweep selects the digest of the id that you pass.
+  `serve` does not read or remove the old file. It lies in
+  `~/.local/state/mcp-kubectx-run`, or in `~/.local/state/mcp-kubectx`
+  for a build that kept it in the mounted state dir.
 
-The label pass deletes every resource with the `host-id` that you
-sweep, whoever created it. So before you sweep such an id, list the
-resources that carry it on the cluster that you sweep:
+The JSON of each record names the context, the namespace, and the
+SA. Before you delete the resources of such a digest, list them on
+each cluster that its records name:
 
 ```
-kubectl get sa,rolebinding -A -l mcp-kubectx/host-id=<id>
-kubectl get clusterrolebinding -l mcp-kubectx/host-id=<id>
+kubectl get sa,rolebinding -A -l mcp-kubectx/host-id=<digest>
+kubectl get clusterrolebinding -l mcp-kubectx/host-id=<digest>
 ```
 
-Sweep the id only when these resources belong to a VM that you
-deleted, or to a former `host.id` of this host or `guest.id` of an
-existing VM.
+Delete them only when they belong to a VM that you deleted, to a
+former `host.key` of this host or `guest.key` of an existing VM, or to
+a build before the digest. For a build before the digest, put the
+plain id where the commands name `<digest>`. Then delete the record
+files of the digest:
+
+```
+kubectl delete sa,rolebinding -A -l mcp-kubectx/host-id=<digest>
+kubectl delete clusterrolebinding -l mcp-kubectx/host-id=<digest>
+rm ~/.local/state/mcp-kubectx-run/ledger/<digest>.*.json
+```
 
 ## Recursion guard and the env chain
 
-The risk is that a host-side `mcp-kubectx host token` invoked by
-kubectl from inside a Lima guest could observe `WM_SANDBOX_GUEST=1`
-in its environment and try to wrap itself with `workmux host-exec`,
+The risk is that a host-side `mcp-kubectx-host token`, which a
+guest-side `serve` starts, could observe `WM_SANDBOX_GUEST=1` in its
+environment and try to wrap itself with `workmux host-exec`,
 recursing back across the boundary. Two independent defenses prevent
 this.
 
@@ -988,23 +1044,32 @@ runtime env-var check.
 var not in its allowlist (`PATH`, `HOME`, `USER`, `LOGNAME`,
 `TMPDIR`, `TERM`, `COLORTERM`, `LANG`, `LC_ALL`, `XDG_*`; see
 `sandbox/rpc.rs` in workmux). Neither `WM_SANDBOX_GUEST` nor
-`WM_RPC_TOKEN` is on that list, so the host-side `mcp-kubectx host
+`WM_RPC_TOKEN` is on that list, so the host-side `mcp-kubectx-host
 token` literally cannot observe itself as guest, and could not
 authenticate back to the RPC server even if it tried.
 
-**End-to-end env chain (guest variant).** In-VM Claude is launched
-under `workmux sandbox shell`, which sets `WM_RPC_HOST` /
-`WM_RPC_PORT` / `WM_RPC_TOKEN` in the shell env. kubectl inherits
-those vars. The exec plugin = `workmux host-exec mcp-kubectx host
-token ...` inherits them too and uses them to reach the host's RPC
-server. The RPC server forks `mcp-kubectx host token` on the host
-with sanitized env (no `WM_*`); the token subcommand needs nothing
-from the workmux env. It talks only to k8s.
+**End-to-end env chain (guest variant).** workmux starts the in-VM
+Claude with `WM_RPC_HOST`, `WM_RPC_PORT`, and `WM_RPC_TOKEN` in its
+environment, and the guest-side `serve` inherits them. kubectl runs
+the exec plugin `mcp-kubectx exec-plugin`, which asks that `serve`
+for a token over its guest-local socket. `serve` then runs `workmux
+host-exec mcp-kubectx-host token ...`, which reaches the RPC server
+of the host with the inherited variables. The RPC server forks
+`mcp-kubectx-host token` on the host with a sanitized env that holds
+no `WM_*` variable. The token subcommand needs nothing from the
+workmux env, and it talks only to Kubernetes.
 
-**PATH chain.** The wrapped `workmux` binary lives in
-`home.packages` (`home/claude.nix`), so it is on the in-guest PATH
-from the home-manager profile and the kubectl exec plugin can
-resolve `command: workmux` without an absolute path.
+**PATH chain.** `home.packages` in `home/claude.nix` holds the
+wrapped `workmux` binary and `mcp-kubectx`, so the home-manager
+profile puts both on the in-guest PATH. The guest-side `serve`
+resolves `workmux` there, and kubectl resolves the `command:
+mcp-kubectx` of the exec plugin there. workmux also puts a shim
+directory first on the PATH of the guest agent, with a shim that
+runs `workmux host-exec <name>` for each name in `host_commands`.
+That list names `mcp-kubectx-host`, so workmux creates no shim named
+`mcp-kubectx`. Each VM that ran with `mcp-kubectx` in that list
+keeps a stale shim of that name until you delete it, as
+[Existing VMs](#existing-vms) describes.
 
 The structural defense is pinned by
 `TestHostTokenSkipsWorkmuxWhenEnvSetToGuest`, which sets
@@ -1016,78 +1081,201 @@ visible at compile time.
 
 ## Deployment requirement: workmux host_commands allowlist
 
-`mcp-kubectx` cannot work from a guest unless the host's workmux
-config allowlists it. Add the binary name to the `sandbox` attrset
-in `home/claude.nix`:
+A guest-side `serve` reaches the host only when the workmux config of
+the host allows the command `mcp-kubectx-host`. `package.nix`
+installs `mcp-kubectx-host` as a link to `mcp-kubectx`, and
+`home/claude.nix` adds the name to the `sandbox` attrset:
 
 ```nix
 sandbox = lib.optionalAttrs cfg.lima.enable {
   # ...existing keys (enabled, backend, image, ...)...
-  host_commands = [ "mcp-kubectx" ];
+  host_commands = [ "mcp-kubectx-host" ];
   # ...
 };
 ```
 
 workmux merges the user list with its builtins via
 `effective_host_commands` and gates `Exec` RPCs against the result.
-A guest-side `workmux host-exec mcp-kubectx ...` invocation against
-a host that has not been configured this way is rejected by the RPC
-server.
+The RPC server of a host without this entry refuses each
+`workmux host-exec mcp-kubectx-host ...` call of a guest.
+
+workmux checks only the command name, so each guest can run
+`mcp-kubectx-host` on the host with any argv.
+[Host-side inputs](#host-side-inputs) describes what such an argv
+can reach.
+
+### Existing VMs
+
+After the host switches, you must update each workmux VM that ran
+with `mcp-kubectx` in `host_commands`. Until then, mcp-kubectx fails
+in the guest. The VM keeps these parts from the time that workmux
+created it:
+
+- **Guest binary:** the guest runs the `mcp-kubectx` of the golden
+  image that created the VM, until you switch the VM. That `serve`
+  runs `workmux host-exec mcp-kubectx host ...`, and the RPC server
+  of the host refuses the call with exit status 127. So `list` and
+  `select` fail in the guest.
+- **Shims:** workmux keeps each shim after its name leaves
+  `host_commands`, so the VM keeps a shim named `mcp-kubectx`.
+  kubectl in the guest runs that shim, and the host refuses the call
+  too.
+- **Mounts:** workmux reads `extra_mounts` only when it creates a VM,
+  so the VM keeps its writable mount of `~/.local/state/mcp-kubectx`
+  of the host. mcp-kubectx keeps none of its files in that directory.
+
+The shim directory of each VM lies on the host at
+`~/.local/state/workmux/lima/<vm>/shims/bin`. workmux mounts it into
+the guest and puts it first on the PATH of the guest agent. So the
+stale shim comes before the `mcp-kubectx` of the home-manager
+profile, and kubectl runs `workmux host-exec mcp-kubectx exec-plugin
+...` for each credential.
+
+You can recreate each VM or switch it. A recreated VM gets the
+current binary, mounts, and shims. But the recreation deletes the
+disk of each VM, which holds every file that the VM keeps outside its
+mounts.
+
+To recreate the VMs, wait until no session in a workmux VM has work
+in progress, and run these commands on the host:
+
+```sh
+task lima:image
+workmux sandbox prune
+```
+
+`task lima:image` builds the golden image from the current config.
+`workmux sandbox prune` deletes each workmux VM together with its
+state directory, which holds the stale shim. Then restart each
+workmux sandbox, and workmux creates its VM from the new image.
+
+To keep a VM, take these steps:
+
+1. In the VM, run `task switch`, so that the guest runs the current
+   `mcp-kubectx`.
+2. On the host, delete the stale shim of each VM:
+
+   ```sh
+   rm -f ~/.local/state/workmux/lima/*/shims/bin/mcp-kubectx
+   ```
+
+3. Restart each workmux sandbox. workmux reads `host_commands` when a
+   sandbox starts, so the RPC server of a running sandbox refuses
+   `mcp-kubectx-host` until the sandbox restarts. The restart also
+   starts the guest `serve` again, from the binary that the switch
+   installed.
+
+Each VM that you keep has its mount of `~/.local/state/mcp-kubectx`
+until workmux creates the VM again.
+
+## Host-side inputs
+
+The `host` subcommands take every limit and every path from the
+host, never from their argv. So a Lima guest that runs them through
+`workmux host-exec` gets only what the host config grants: the
+configured role, on an allowlisted apiserver, through the host
+kubeconfig.
+
+| Input                        | Source on the host                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| Role, binding, and namespace | The host config                                                                             |
+| Apiserver allowlist          | The host config                                                                             |
+| Token lifetime               | The host config                                                                             |
+| Host kubeconfig              | `$KUBECONFIG_HOST`, then `$KUBECONFIG` outside `$CLAUDE_KUBECTX_DIR`, then `~/.kube/config` |
+| Provision records            | `<XDG_STATE_HOME>/mcp-kubectx-run/ledger`                                                   |
+| Scoped kubeconfig            | No `host` subcommand writes one. `serve` writes its own on its own machine                  |
+
+The host config is the JSON file `mcp-kubectx/config.json` in
+`$XDG_CONFIG_HOME`, or in `~/.config` when `$XDG_CONFIG_HOME` does
+not hold an absolute path. `home/claude.nix` writes it from the
+`dotfiles.claude.kubeClusterRole` and `dotfiles.claude.kubeApiDomains`
+options:
+
+```json
+{
+  "role": "view",
+  "clusterScoped": true,
+  "allowedAPIServerHosts": ["k8s.example.com"]
+}
+```
+
+| Key                     | Meaning                                                                        | Default                                    |
+| ----------------------- | ------------------------------------------------------------------------------ | ------------------------------------------ |
+| `role`                  | Name of the Role or ClusterRole to bind                                        | Required                                   |
+| `roleKind`              | `Role` or `ClusterRole`                                                        | `ClusterRole`                              |
+| `clusterScoped`         | Bind with a ClusterRoleBinding, which needs a ClusterRole                      | `false`                                    |
+| `namespace`             | Namespace of each ServiceAccount                                               | The namespace of the context, or `default` |
+| `expiration`            | Token lifetime in seconds, at most 86400                                       | 3600                                       |
+| `allowedAPIServerHosts` | Hostnames that `host select` accepts as the `server` of a cluster, in any case | Empty, which accepts every apiserver       |
+
+`host select` and `host token` fail when the file is missing, when it
+does not parse, and when it holds a key outside this table. So a
+misspelled key never leaves the allowlist empty.
+
+`workmux host-exec` passes neither `$KUBECONFIG_HOST` nor
+`$KUBECONFIG`, so a `host` subcommand that a guest starts reads
+`~/.kube/config` of the host. The `host` subcommands refuse to run
+when they cannot resolve an absolute home directory, because
+`workmux host-exec` runs them in a worktree that the guest can
+write.
+
+The argv names only the context, the ServiceAccount, and its owner,
+which is the host id and the instance id of a `serve`. The
+`host-id` label and the provision records carry the digest of the
+host id, as [Orphan sweep](#orphan-sweep) describes. `host token`,
+`host release`, and `host sweep` act only on the resources of the
+host id that their caller passes. A guest can read each digest from
+the labels with its token, but it cannot find a host id from its
+digest. So a guest acts only on the resources of the `guest.key` of
+its own VM, and of each other id that it holds.
+
+A guest reaches the host only as `mcp-kubectx-host`, the name that
+the workmux `host_commands` of `home/claude.nix` allows. Under that
+name, the binary runs only the `host` subcommands, with no `host`
+word in front, and it refuses every other argv. So a guest cannot
+start these subcommands on the host:
+
+- **`serve`:** its `--output` and `--log-file` flags name a file of
+  the host that `serve` removes or appends to, such as `host.key` or
+  a provision record.
+- **`exec-plugin`:** it reads a token from the socket of a host-side
+  `serve`.
+
+workmux runs `mcp-kubectx-host` without the toolchain of the
+worktree. Upstream workmux wraps each host command in `nix develop`
+when the worktree holds a `flake.nix`, or in `devbox run` when it
+holds a `devbox.json`. The guest writes the worktree, so the wrapper
+runs code of the guest on the host, and that code can set
+`$KUBECONFIG_HOST` and `$XDG_CONFIG_HOME` for the `host`
+subcommands. The workmux overlay in `lib/default.nix` patches the
+wrapper out of every host command. `mcp-kubectx-host` lives in the
+Nix store, so it does not need the toolchain.
 
 ## Concurrent-select hazard and per-`serve` paths
 
-The scoped kubeconfig files live on the host filesystem. A
-host-side `serve` and a Lima-guest `serve` overwrite each other's
-kubeconfig when path resolution does not key on the running serve's
-identity. So `serve` owns the discriminator, which is its own pid
-and its env, `host` or `guest`. `host select` owns the directory,
-which lies under the host's `$XDG_STATE_HOME`. `serve` forwards
-`--pid <h.pid>` plus `--for-guest=BOOL` to `host select`, which
-builds the path of the host env or the path of the guest env:
+Each `serve` writes its scoped kubeconfig on its own machine. One
+machine can run several serves, one for each Claude Code session,
+and each of them writes a kubeconfig of its own. So the default path
+holds the pid of `serve`, and two serves that run at the same time
+on one machine get different default paths. The path also holds the
+env of `serve`, `host` or `guest`:
 
 ```
-<host's $XDG_STATE_HOME>/mcp-kubectx-run/kubeconfig.<pid>.host.yaml
-<host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.guest.yaml
+<XDG_STATE_HOME>/mcp-kubectx-run/kubeconfig.<pid>.<env>.yaml
 ```
 
-`<pid>` is the serve process id. Both paths fall back to
-`~/.local/state` when `$XDG_STATE_HOME` is unset on the host.
+`serve` resolves `<XDG_STATE_HOME>` in its own environment, with a
+fallback to `~/.local/state`. So the kubeconfig of a host-side
+`serve` lies on the host, and the kubeconfig of a guest-side `serve`
+lies on the disk of its guest VM. workmux mounts no part of
+`mcp-kubectx-run` into a guest. `--output PATH` replaces the default
+path, and `serve` resolves that path on its own machine too.
 
-The two directories differ in what a Lima guest can do with their
-files. workmux mounts `mcp-kubectx` writable into each guest, and it
-does not mount `mcp-kubectx-run`. So the kubeconfig of a guest-side
-`serve` lies under the mount, where the guest can read it. The
-kubeconfig of a host-side `serve` lies outside the mount. Every guest
-can still write to `mcp-kubectx-run` when it runs `host select`
-through `workmux host-exec` with an `--out-path` of its choice.
-
-The kubeconfig path of a guest-side `serve` lies under the host's
-`$XDG_STATE_HOME`, because `workmux host-exec` runs `host select` on
-the host. So `host select` resolves the path in the environment of
-the host. The guest sees the file at the same absolute path through
-a writable bind mount of `<host's $XDG_STATE_HOME>/mcp-kubectx`
-declared in workmux's `extra_mounts` (see `home/claude.nix`).
-Shutdown cleanup is a local `os.Remove(h.lastOutputPath)` from the
-serve process. On a guest serve, the unlink lands on the host
-through the same bind mount.
-
-Through that mount, the guest can create, change, and delete the
-files of the mcp-kubectx state dir of the host. It can also replace
-each of them with a symlink. The directory holds the scoped
-kubeconfig `kubeconfig.<pid>.guest.yaml` of each guest-side `serve`.
-`host select` writes the file on the host, and the guest-side `serve`
-reads it through the mount. So every guest can rewrite the
-kubeconfig of each guest-side `serve`.
-
-The writes of `mcp-kubectx` do not follow a symlink that a guest
-plants:
-
-- `host select` writes each kubeconfig to a new file under a random
-  name in the directory of the path. Then it renames that file to the
-  path. So a symlink at the path, or at any other name in the
-  directory, does not receive the kubeconfig.
-- `serve` opens its `--log-file` with `O_NOFOLLOW`. When the last
-  element of that path is a symlink, `serve` fails to start.
+`serve` writes each kubeconfig to a new file under a random name in
+the directory of the path, and then it renames that file to the
+path. So a symlink at the path does not receive the kubeconfig.
+`serve` opens its `--log-file` with `O_NOFOLLOW`. When the last
+element of that path is a symlink, `serve` fails to start.
 
 The files that host-side serves write or trust lie in
 `<host's $XDG_STATE_HOME>/mcp-kubectx-run`, beside the sockets and
@@ -1098,55 +1286,39 @@ the [provision records](#provision-records):
   hook-router sidecar symlink and runs the exec plugin that the file
   names. The file also names the apiserver that receives each token
   that the `serve` mints.
-- `host.id`: the `host-id` of host-side serves. Every host-side
-  `serve` reads it at startup for the `mcp-kubectx/host-id` label of
-  its resources and for the selector of its orphan sweep. The startup
-  sweep deletes each resource with that `host-id` whose `serve` is
-  missing from its live set.
+- `host.key`: the host id of host-side serves. Every host-side
+  `serve` reads it at startup for the owner of its resources and for
+  the selector of its orphan sweep. The startup sweep deletes each
+  resource of that host id whose `serve` is missing from its live
+  set.
 - `kubectx.log`: the log of host-side serves, at the path that
   `home/claude.nix` passes as `--log-file`.
 
 Every guest-side `serve` resolves its state dirs in the guest, under
-the home directory of the guest. So the `guest.id` of guest-side
-serves stays in `mcp-kubectx-run` on the disk of the guest VM.
-`serve` writes its log to the `--log-file` path as given, and
-`home/claude.nix` renders that path from the `xdg.stateHome` of the
-machine that it configures. So on a guest VM that `home/claude.nix`
-configures, the log of guest-side serves lies in `mcp-kubectx-run`
-on the disk of the guest VM too.
+the home directory of the guest. So the `guest.key` and the scoped
+kubeconfig of guest-side serves stay in `mcp-kubectx-run` on the disk
+of the guest VM. `serve` writes its log to the `--log-file` path as
+given, and `home/claude.nix` renders that path from the
+`xdg.stateHome` of the machine that it configures. So on a guest VM
+that `home/claude.nix` configures, the log of guest-side serves lies
+in `mcp-kubectx-run` on the disk of the guest VM too.
 
 The hook-router sidecar symlink published by [*handler.publishSidecar]
-points at the host-absolute path of the scoped kubeconfig. In a
-guest, the symlink resolves through the bind mount.
+points at the scoped kubeconfig. The MCP `select` response carries
+the path back to the caller so an interactive shell can
+`export KUBECONFIG=...` to it. Each `serve` removes its own
+kubeconfig file on shutdown alongside the `host release` of its
+current SA.
 
-The MCP `select` response carries the host-resolved path back to
-the caller so an interactive shell can `export KUBECONFIG=...` to
-it. Each `serve` removes its own kubeconfig file on shutdown
-alongside the `host release` of its current SA.
-
-The `--out-path` flag on `host select` is an escape hatch. When you
-start `serve` with `--output PATH`, it forwards the path verbatim as
-`--out-path`, and `host select` skips the default. In a Lima guest,
-an explicit `--output` must be host-resolvable and writable from the
-guest. Usually only a path under a bind mount meets both conditions.
-
-### Sockets live outside the bind-mounted state dir
+### Sockets on the local filesystem
 
 The per-`serve` UDS lives at
-`<state>/mcp-kubectx-run/serve.<slot>.<env>.sock`, _not_ under
-`<state>/mcp-kubectx/`, which workmux mounts writable into each Lima
-guest. The behavior of a UDS on a Lima bind mount of a macOS host is
-unverified, so each profile hosts its sockets on its local
-filesystem. [Socket slot pool](#socket-slot-pool) describes how
-`serve` picks `<slot>`.
-
-Both kinds of `serve` (host and guest) bind their socket on their
-own filesystem. A guest serve's socket is reachable only from
-inside the same guest. The kubectl that uses the socket runs inside
-that guest too. The kubeconfig of a guest-side `serve` lives under the bind mount,
-because `host select` writes it on the host and the guest reads it.
-The socket needs only guest-local create and connect, so it lives
-outside.
+`<state>/mcp-kubectx-run/serve.<slot>.<env>.sock` on the machine that
+runs `serve`. Both kinds of `serve` (host and guest) bind their
+socket on their own filesystem. A guest serve's socket is reachable
+only from inside the same guest. The kubectl that uses the socket
+runs inside that guest too. [Socket slot pool](#socket-slot-pool)
+describes how `serve` picks `<slot>`.
 
 ### Socket slot pool
 
@@ -1198,5 +1370,5 @@ without expanding the read deny.
   a killed serve the orphan sweep reclaims. The kubeconfig file
   itself is small and benign, and the next `select` for that
   pid+env discriminator overwrites it. Bulk cleanup is a manual
-  `rm <state>/mcp-kubectx/kubeconfig.*.yaml <state>/mcp-kubectx-run/kubeconfig.*.yaml`
-  when no serve is running.
+  `rm <state>/mcp-kubectx-run/kubeconfig.*.yaml` on each machine
+  when no serve runs there.

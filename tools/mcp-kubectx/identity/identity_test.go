@@ -46,7 +46,7 @@ func TestValid(t *testing.T) {
 }
 
 // TestLoadOrCreateHostFreshCreate pins that the first call into a
-// state directory with no host.id file mints a fresh id, persists it
+// state directory with no host.key file mints a fresh id, persists it
 // at [identity.HostPath] with mode 0600, and returns it as a
 // 16-character lowercase hex string.
 func TestLoadOrCreateHostFreshCreate(t *testing.T) { //nolint:paralleltest // uses t.Setenv
@@ -60,7 +60,7 @@ func TestLoadOrCreateHostFreshCreate(t *testing.T) { //nolint:paralleltest // us
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "host.id must be 0600")
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "host.key must be 0600")
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestLoadOrCreateHostIdempotent(t *testing.T) { //nolint:paralleltest // use
 
 // TestLoadOrCreateHostTrimsWhitespace pins that whitespace and
 // trailing newlines around a well-formed id are tolerated. An
-// operator that hand-edits the file with `echo >host.id` would
+// operator that hand-edits the file with `echo >host.key` would
 // otherwise see the trailing newline change the effective selector.
 func TestLoadOrCreateHostTrimsWhitespace(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
@@ -107,7 +107,7 @@ func TestLoadOrCreateHostTrimsWhitespace(t *testing.T) { //nolint:paralleltest /
 }
 
 // TestLoadOrCreateHostRegeneratesEmptyFile pins that a zero-byte
-// host.id (an aborted prior write that landed at the final path) is
+// host.key (an aborted prior write that landed at the final path) is
 // treated as missing and a fresh id is minted. Without this the
 // sweep would refuse to run forever because its missing-host-id
 // guard would trip on the empty id.
@@ -120,12 +120,12 @@ func TestLoadOrCreateHostRegeneratesEmptyFile(t *testing.T) { //nolint:parallelt
 
 	id, err := identity.LoadOrCreateHost(false)
 	require.NoError(t, err)
-	assert.Len(t, id, 16, "empty host.id must be regenerated to a 16-hex id")
+	assert.Len(t, id, 16, "empty host.key must be regenerated to a 16-hex id")
 }
 
 // TestLoadOrCreateHostRegeneratesInvalidFormat pins that persisted
 // content rejected by [identity.Valid] (a hand-edited or corrupt
-// host.id) is replaced with a fresh well-formed id. Returning it
+// host.key) is replaced with a fresh well-formed id. Returning it
 // verbatim would label every resource with a value the sweep
 // refuses, permanently disabling the sweep.
 func TestLoadOrCreateHostRegeneratesInvalidFormat(t *testing.T) { //nolint:paralleltest // uses t.Setenv
@@ -151,8 +151,8 @@ func TestLoadOrCreateHostRegeneratesInvalidFormat(t *testing.T) { //nolint:paral
 func TestLoadOrCreateHostPerEnv(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	assert.Equal(t, "host.id", filepath.Base(identity.HostPath(false)))
-	assert.Equal(t, "guest.id", filepath.Base(identity.HostPath(true)))
+	assert.Equal(t, "host.key", filepath.Base(identity.HostPath(false)))
+	assert.Equal(t, "guest.key", filepath.Base(identity.HostPath(true)))
 
 	hostID, err := identity.LoadOrCreateHost(false)
 	require.NoError(t, err)
@@ -164,12 +164,61 @@ func TestLoadOrCreateHostPerEnv(t *testing.T) { //nolint:paralleltest // uses t.
 		"host and guest envs must mint distinct ids so their sweeps stay disjoint")
 }
 
-// TestHostPathOutsideMountedDir pins that each id file lies in
-// [statedir.RunDir]. workmux mounts [statedir.Dir] of the host
-// writable into each Lima guest. An id file there lets a guest pick
-// the host-id of host-side serves, and so the selector of their
-// startup sweep.
-func TestHostPathOutsideMountedDir(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+// TestLoadOrCreateHostIgnoresPlainIDFile pins that each env mints a
+// fresh id beside the `host.id` or `guest.id` of a build before
+// [identity.Digest]. Those builds put the plain id on the label of
+// each resource, where every guest with a `view` token reads it. A
+// guest that holds such an id acts on the resources of each serve
+// that keeps it. The old file stays as it was, because the README
+// reads the plain id from it to delete the resources of those
+// builds.
+func TestLoadOrCreateHostIgnoresPlainIDFile(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	require.NoError(t, os.MkdirAll(statedir.RunDir(), 0o700))
+
+	tests := map[string]struct {
+		forGuest bool
+		oldFile  string
+		oldID    string
+	}{
+		"host env": {
+			forGuest: false,
+			oldFile:  "host.id",
+			oldID:    "0123456789abcdef",
+		},
+		"guest env": {
+			forGuest: true,
+			oldFile:  "guest.id",
+			oldID:    "fedcba9876543210",
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // uses t.Setenv of the parent
+		t.Run(name, func(t *testing.T) {
+			oldPath := filepath.Join(statedir.RunDir(), tc.oldFile)
+			require.NoError(t, os.WriteFile(oldPath, []byte(tc.oldID), 0o600))
+
+			id, err := identity.LoadOrCreateHost(tc.forGuest)
+			require.NoError(t, err)
+			assert.NotEqual(t, tc.oldID, id, "the id of %s must not become the host id", tc.oldFile)
+
+			data, err := os.ReadFile(identity.HostPath(tc.forGuest))
+			require.NoError(t, err)
+			assert.Equal(t, id, string(data), "the fresh id must persist at HostPath")
+
+			data, err = os.ReadFile(oldPath)
+			require.NoError(t, err)
+			assert.Equal(t, tc.oldID, string(data), "%s must keep the plain id", tc.oldFile)
+		})
+	}
+}
+
+// TestHostPathInRunDir pins that each id file lies in
+// [statedir.RunDir], which workmux does not mount into a Lima
+// guest. A guest that reads the host id of host-side serves can act
+// on their resources.
+func TestHostPathInRunDir(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	for _, forGuest := range []bool{false, true} {
@@ -177,22 +226,36 @@ func TestHostPathOutsideMountedDir(t *testing.T) { //nolint:paralleltest // uses
 	}
 }
 
-// TestLoadOrCreateHostIgnoresMountedDir pins that a host.id that a
-// Lima guest writes into [statedir.Dir] of the host through the bind
-// mount does not become the host id of host-side serves.
-func TestLoadOrCreateHostIgnoresMountedDir(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+// TestDigest pins the digest of a host id. The digest passes
+// [identity.Valid], so it fits a label value and the name of a
+// provision record. It differs from the host id, and it does not
+// change between calls, so a later `host sweep` finds the resources
+// of an earlier `host select`.
+func TestDigest(t *testing.T) {
+	t.Parallel()
 
-	const planted = "0123456789abcdef"
+	tests := map[string]struct {
+		hostID string
+		want   string
+	}{
+		"host id": {
+			hostID: "0123456789abcdef",
+			want:   "b72a26ab004b5654",
+		},
+		"other host id": {
+			hostID: "fedcba9876543210",
+			want:   "585ea48c63bde315",
+		},
+	}
 
-	require.NoError(t, os.MkdirAll(statedir.Dir(), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(statedir.Dir(), "host.id"), []byte(planted), 0o600))
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	id, err := identity.LoadOrCreateHost(false)
-	require.NoError(t, err)
-	assert.NotEqual(t, planted, id, "a host.id in the mounted state dir must not set the host id")
-
-	data, err := os.ReadFile(filepath.Join(statedir.RunDir(), "host.id"))
-	require.NoError(t, err)
-	assert.Equal(t, id, string(data), "the host id must persist in the run dir")
+			got := identity.Digest(tc.hostID)
+			assert.Equal(t, tc.want, got)
+			assert.True(t, identity.Valid(got), "digest %q must be a valid id", got)
+			assert.NotEqual(t, tc.hostID, got)
+		})
+	}
 }

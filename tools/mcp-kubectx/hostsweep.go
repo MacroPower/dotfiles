@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -41,11 +40,15 @@ const recordSlack = time.Minute
 
 // runHostSweep is the body of the `host sweep` subcommand. It
 // deletes the SAs and bindings that dead `serve` instances of one
-// host id left behind. It runs two passes.
+// host id left behind. It reaches the clusters through the host
+// kubeconfig at kubeconfigPath. It takes the host id from --host-id
+// and selects by its [identity.Digest], which the labels and the
+// provision records carry. So a caller sweeps only the resources of
+// a host id that it holds. It runs two passes.
 //
 // The label pass covers one cluster. It lists every SA,
 // RoleBinding, and ClusterRoleBinding labeled
-// `managed-by=mcp-kubectx,host-id=<own>`, classifies each against
+// `managed-by=mcp-kubectx,host-id=<digest>`, classifies each against
 // the set of live instance ids passed via --live-instance-id, and
 // deletes the orphans best-effort. The cluster is the one of
 // --context. When --context is empty, it is the one of
@@ -60,18 +63,16 @@ const recordSlack = time.Minute
 // the recorded SA and binding through the context of the record. It
 // removes the record after the cluster holds neither resource. A
 // record whose deletes fail stays, so the next sweep tries again. A
-// record of another kubeconfig waits for a sweep with --kubeconfig
-// set to that path. The record pass runs only when --context is
-// empty, so that an explicit --context limits the whole sweep to
-// that cluster.
+// record of another kubeconfig waits for a sweep that resolves that
+// path as its host kubeconfig. The record pass runs only when
+// --context is empty, so that an explicit --context limits the
+// whole sweep to that cluster.
 //
 // The record pass never loads the kubeconfig file that a record
-// names. A Lima guest can run `host select` with a --kubeconfig of
-// its choice through `workmux host-exec`. client-go runs the exec
-// credential plugin of each kubeconfig file that it loads. The
-// record pass of a host-side `serve` runs outside the sandbox of
-// `workmux host-exec`, so it loads only the kubeconfig that the
-// label pass loads too.
+// names. It loads only the kubeconfig that the label pass loads
+// too. The environment of each caller picks its host kubeconfig,
+// and a host-side `serve` and a `host` subcommand that a Lima guest
+// starts through `workmux host-exec` can resolve different files.
 //
 // The two passes run at the same time, and neither waits for the
 // other. The record pass works on the records that the ledger held
@@ -83,7 +84,6 @@ const recordSlack = time.Minute
 //   - [ErrMissingHostID] when --host-id is empty.
 //   - [ErrInvalidHostID] when --host-id is not exactly 16
 //     lowercase hex characters.
-//   - An error when it cannot make the kubeconfig path absolute.
 //   - An error that wraps [kubeconfig.ErrLoad] when the label pass
 //     cannot load the kubeconfig.
 //   - [sweep.ErrList] only when every list call of the label pass
@@ -132,12 +132,11 @@ const recordSlack = time.Minute
 // this host, such as the clock of a Lima guest. The sweep then uses
 // its own start instead, because the caller took the live set
 // before the sweep started.
-func runHostSweep(ctx context.Context, args []string) error {
+func runHostSweep(ctx context.Context, kubeconfigPath string, args []string) error {
 	started := time.Now()
 
 	fs := flag.NewFlagSet("host sweep", flag.ContinueOnError)
 
-	kubeconfigPath := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
 	contextName := fs.String(
 		"context", "",
 		"kubeconfig context of the one cluster to sweep by label "+
@@ -146,7 +145,7 @@ func runHostSweep(ctx context.Context, args []string) error {
 	)
 	hostID := fs.String(
 		"host-id", "",
-		"persistent host identifier used as the mcp-kubectx/host-id selector (required)",
+		"persistent host identifier; its digest is the mcp-kubectx/host-id selector (required)",
 	)
 
 	var liveIDs stringSliceFlag
@@ -193,8 +192,10 @@ func runHostSweep(ctx context.Context, args []string) error {
 	}
 
 	if !identity.Valid(*hostID) {
-		return fmt.Errorf("%w: %q", ErrInvalidHostID, *hostID)
+		return fmt.Errorf("%w: --host-id %q", ErrInvalidHostID, *hostID)
 	}
+
+	ownerDigest := identity.Digest(*hostID)
 
 	live := make(map[string]struct{}, len(liveIDs))
 	for _, id := range liveIDs {
@@ -203,13 +204,6 @@ func runHostSweep(ctx context.Context, args []string) error {
 		}
 
 		live[id] = struct{}{}
-	}
-
-	// `host select` records the absolute path, so the record pass
-	// compares each record with the absolute path.
-	sweptKubeconfig, err := filepath.Abs(resolveHostKubeconfigPath(*kubeconfigPath))
-	if err != nil {
-		return fmt.Errorf("resolve kubeconfig path: %w", err)
 	}
 
 	// The live set is a snapshot from the start of the calling
@@ -223,7 +217,7 @@ func runHostSweep(ctx context.Context, args []string) error {
 
 	var dead []ledger.Record
 	if *contextName == "" {
-		dead = deadRecords(ctx, records, sweptKubeconfig, *hostID, live, liveAsOf)
+		dead = deadRecords(ctx, records, kubeconfigPath, ownerDigest, live, liveAsOf)
 	}
 
 	// The passes run at the same time. A label pass that waits on
@@ -232,10 +226,10 @@ func runHostSweep(ctx context.Context, args []string) error {
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-		releaseRecorded(ctx, records, sweptKubeconfig, dead)
+		releaseRecorded(ctx, records, kubeconfigPath, dead)
 	})
 
-	sweepErr := sweepLabeled(ctx, sweptKubeconfig, *contextName, *hostID, live, liveAsOf)
+	sweepErr := sweepLabeled(ctx, kubeconfigPath, *contextName, ownerDigest, live, liveAsOf)
 
 	wg.Wait()
 
@@ -243,8 +237,9 @@ func runHostSweep(ctx context.Context, args []string) error {
 }
 
 // sweepLabeled is the label pass of [runHostSweep]. It lists the
-// labeled resources of hostID on the cluster of contextName and
-// deletes each one whose instance id is not in live.
+// resources that carry the host id digest ownerDigest on the
+// cluster of contextName, and it deletes each one whose instance id
+// is not in live.
 // [sweep.CollectOrphans] keeps the resources that the apiserver
 // created after liveAsOf, the time of live. An empty contextName
 // selects the current-context of the kubeconfig at kubeconfigPath.
@@ -254,7 +249,7 @@ func runHostSweep(ctx context.Context, args []string) error {
 // swallowed.
 func sweepLabeled(
 	ctx context.Context,
-	kubeconfigPath, contextName, hostID string,
+	kubeconfigPath, contextName, ownerDigest string,
 	live map[string]struct{},
 	liveAsOf time.Time,
 ) error {
@@ -285,7 +280,7 @@ func sweepLabeled(
 		return nil
 	}
 
-	orphans, listErr := sweep.CollectOrphans(ctx, client, sweep.Selector(hostID), live, liveAsOf)
+	orphans, listErr := sweep.CollectOrphans(ctx, client, sweep.Selector(ownerDigest), live, liveAsOf)
 	if listErr != nil {
 		return listErr //nolint:wrapcheck // CollectOrphans already wraps sweep.ErrList
 	}
@@ -295,8 +290,8 @@ func sweepLabeled(
 	return nil
 }
 
-// deadRecords returns the provision records of the host hostID
-// whose instance id is not in live, that `host select` wrote before
+// deadRecords returns the provision records of the host id digest
+// ownerDigest whose instance id is not in live, that `host select` wrote before
 // liveAsOf minus [recordSlack], and whose kubeconfig is
 // kubeconfigPath. Each of them names an SA that a dead `serve` left
 // behind, or that a dead `serve` released without removing the
@@ -308,7 +303,7 @@ func sweepLabeled(
 func deadRecords(
 	ctx context.Context,
 	records *ledger.Ledger,
-	kubeconfigPath, hostID string,
+	kubeconfigPath, ownerDigest string,
 	live map[string]struct{},
 	liveAsOf time.Time,
 ) []ledger.Record {
@@ -324,7 +319,7 @@ func deadRecords(
 	var dead []ledger.Record
 
 	for _, r := range all {
-		if r.HostID != hostID {
+		if r.HostID != ownerDigest {
 			continue
 		}
 
@@ -345,8 +340,8 @@ func deadRecords(
 			continue
 		}
 
-		// A guest can choose the kubeconfig of a record, so the
-		// record stays. [runHostSweep] says why.
+		// The sweep loads only its own kubeconfig, so the record
+		// stays. [runHostSweep] says why.
 		if r.Kubeconfig != kubeconfigPath {
 			slog.InfoContext(ctx, "host sweep skipped provision record of another kubeconfig",
 				slog.String("kubeconfig", r.Kubeconfig),
@@ -480,16 +475,8 @@ func forgetServiceAccount(
 	records *ledger.Ledger,
 	kubeconfigPath, contextName, namespace, saName string,
 ) {
-	// `host select` records the absolute path.
-	absKubeconfig, err := filepath.Abs(kubeconfigPath)
-	if err != nil {
-		slog.WarnContext(ctx, "resolve kubeconfig path for provision records", slog.Any("error", err))
-
-		return
-	}
-
 	released := ledger.Record{
-		Kubeconfig:     absKubeconfig,
+		Kubeconfig:     kubeconfigPath,
 		Context:        contextName,
 		Namespace:      namespace,
 		ServiceAccount: saName,
@@ -552,11 +539,10 @@ func (h *handler) runSweep(ctx context.Context, liveSet map[string]struct{}, liv
 		return
 	}
 
-	args := h.kubeconfigArgs()
-	args = append(args,
+	args := []string{
 		"--host-id", h.hostID,
 		"--live-as-of", liveAsOf.UTC().Format(time.RFC3339Nano),
-	)
+	}
 
 	for id := range liveSet {
 		args = append(args, "--live-instance-id", id)

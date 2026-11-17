@@ -40,6 +40,7 @@ type Fake struct {
 	CreatedClusterRoleBindings []string
 	DeletedClusterRoleBindings []string
 	TokenRequests              []string
+	TokenExpirations           []time.Duration
 	ListedSAs                  []string
 
 	ListSAResp  []kube.ResourceRef
@@ -126,17 +127,18 @@ func (m *Fake) DeleteClusterRoleBinding(_ context.Context, name string) error {
 	return m.DeleteClusterRoleBindingErr
 }
 
-// CreateTokenRequest records the namespaced SA name and returns the
-// configured token and expiry.
+// CreateTokenRequest records the namespaced SA name and the
+// requested lifetime, and returns the configured token and expiry.
 func (m *Fake) CreateTokenRequest(
 	_ context.Context,
 	namespace, saName string,
-	_ time.Duration,
+	expiration time.Duration,
 ) (string, time.Time, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.TokenRequests = append(m.TokenRequests, namespace+"/"+saName)
+	m.TokenExpirations = append(m.TokenExpirations, expiration)
 
 	if m.TokenRequestErr != nil {
 		return "", time.Time{}, m.TokenRequestErr

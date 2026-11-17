@@ -17,7 +17,6 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubetest"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statefile"
 )
 
@@ -26,11 +25,11 @@ func TestHostExecArgsHost(t *testing.T) {
 
 	h := &handler{envLookup: constLookup("")}
 
-	cmd, argv, err := h.hostExecArgs("list", []string{"--kubeconfig", "/k"})
+	cmd, argv, err := h.hostExecArgs("token", []string{"--sa", "claude-sa-1"})
 	require.NoError(t, err)
 
 	assert.NotEqual(t, "workmux", cmd, "host variant must not invoke workmux")
-	assert.Equal(t, []string{"host", "list", "--kubeconfig", "/k"}, argv)
+	assert.Equal(t, []string{"host", "token", "--sa", "claude-sa-1"}, argv)
 }
 
 func TestHostExecArgsGuest(t *testing.T) {
@@ -38,13 +37,13 @@ func TestHostExecArgsGuest(t *testing.T) {
 
 	h := &handler{envLookup: constLookup("1")}
 
-	cmd, argv, err := h.hostExecArgs("select", []string{"prod", "--out-path", "/k"})
+	cmd, argv, err := h.hostExecArgs("select", []string{"prod", "--sa-host-id", testHostID})
 	require.NoError(t, err)
 
 	assert.Equal(t, "workmux", cmd)
 	assert.Equal(t, []string{
-		"host-exec", "mcp-kubectx",
-		"host", "select", "prod", "--out-path", "/k",
+		"host-exec", "mcp-kubectx-host",
+		"select", "prod", "--sa-host-id", testHostID,
 	}, argv)
 }
 
@@ -357,13 +356,14 @@ func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralle
 	hostStdout = &buf
 	t.Cleanup(func() { hostStdout = prevStdout })
 
-	err := runHostToken(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
+	records := withHostLedger(t)
+	addOwnedRecord(t, records, "kube-system", "claude-sa-x", false)
+
+	err := runHostToken(t.Context(), testOwnedKubeconfig, testHostConfig(), append([]string{
 		"--context", "prod",
 		"--sa", "claude-sa-x",
 		"--namespace", "kube-system",
-		"--sa-expiration", "3600",
-	})
+	}, ownerFlags()...))
 	require.NoError(t, err)
 
 	fake.Lock()
@@ -374,31 +374,27 @@ func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralle
 	assert.Contains(t, buf.String(), `"token":"tok-abc"`)
 }
 
-// TestSelectArgsForGuestFlag pins that handler.selectCtx forwards
-// --for-guest=BOOL based on envLookup, --pid is always forwarded,
-// --out-path is omitted when h.outputPath is empty (host select
-// then defaults the kubeconfig path), and --socket-path is
-// forwarded verbatim from h.socketPath so the slot resolved at
-// serve startup by [socket.Acquire] flows through without
-// re-derivation. The fixture sets h.socketPath directly (mirroring
-// what runServe does after a successful acquire).
-func TestSelectArgsForGuestFlag(t *testing.T) {
+// TestSelectArgsSameForEveryEnv pins that handler.selectCtx passes
+// `host select` the same argv in the host env and in the guest env,
+// whatever the --output path and the socket path of serve. The argv
+// names only the context and the owner of the SA. `host select`
+// writes no kubeconfig, and serve writes its own on its own machine,
+// so no path crosses to the host.
+func TestSelectArgsSameForEveryEnv(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		guest string
-		want  string
-		sock  string
+		guest  string
+		output string
+		sock   string
 	}{
 		"host": {
-			guest: "",
-			want:  "--for-guest=false",
-			sock:  "/tmp/mcp-kubectx-run/serve.0.host.sock",
+			sock: "/tmp/mcp-kubectx-run/serve.0.host.sock",
 		},
 		"guest": {
-			guest: "1",
-			want:  "--for-guest=true",
-			sock:  "/tmp/mcp-kubectx-run/serve.2.guest.sock",
+			guest:  "1",
+			output: "/home/user/k.yaml",
+			sock:   "/tmp/mcp-kubectx-run/serve.2.guest.sock",
 		},
 	}
 
@@ -407,24 +403,19 @@ func TestSelectArgsForGuestFlag(t *testing.T) {
 			t.Parallel()
 
 			h := &handler{
-				kubeconfigPath: "/k",
-				pid:            4242,
-				socketPath:     tc.sock,
-				sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
-				envLookup:      constLookup(tc.guest),
+				pid:        4242,
+				outputPath: tc.output,
+				socketPath: tc.sock,
+				envLookup:  constLookup(tc.guest),
+				hostID:     testHostID,
+				instanceID: testInstanceID,
 			}
 
-			args := h.selectArgs("prod")
-
-			require.Contains(t, args, tc.want)
-			require.Contains(t, args, "--pid")
-			require.Contains(t, args, "4242")
-			require.NotContains(t, args, "--out-path",
-				"--out-path must be omitted when h.outputPath is empty")
-
-			require.Contains(t, args, "--socket-path")
-			require.Contains(t, args, tc.sock,
-				"--socket-path must forward h.socketPath verbatim")
+			assert.Equal(t, []string{
+				"prod",
+				"--sa-instance-id", testInstanceID,
+				"--sa-host-id", testHostID,
+			}, h.selectArgs("prod"))
 		})
 	}
 }
