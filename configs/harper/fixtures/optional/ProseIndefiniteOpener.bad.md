@@ -23,3 +23,9 @@ The worker reads https://example.com/queue. A task runs on one worker.
 A worker reads the queue with
 `queue --list` <!-- same finding -->
 and picks the oldest entry. A lease is a lock on that entry.
+
+The operator says “done.” A worker restarts each failed job.
+
+What is cached? “A token is.” The worker reads the file again.
+
+What is cached? ‘A token is.’ The worker reads the file again.

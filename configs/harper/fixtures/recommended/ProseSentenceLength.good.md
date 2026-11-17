@@ -113,3 +113,11 @@ The scheduler reads the queue and then starts one worker for each job that it fi
 <!-- note -->
 covers the rest of the steps that the worker runs after it starts the job.
 <!-- prettier-ignore-end -->
+
+He said “the proxy retries each failed request once before it returns the error to the client.” The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.
+
+The guide says ‘the proxy retries each failed request once before it returns the error to the client.’ The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.
+
+The proxy retries each failed request once before it returns the error to the client and then says “see https://example.com/guide.” The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.
+
+The proxy retries each failed request once before it returns the error to the client and then says ‘see https://example.com/guide.’ The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.

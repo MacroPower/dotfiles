@@ -22,9 +22,11 @@
 # BEGIN before it reads the first line. A rule that a check puts ahead
 # of the include therefore reads the same lines.
 #
-# A bare URL never ends in an ASCII mark that closes a sentence, a
-# clause, a quote, a bracket, or emphasis. The period after the URL in
-# `Read https://example.com.` therefore still ends the sentence.
+# A bare URL never ends in a mark that closes a sentence, a clause, a
+# quote, a bracket, or emphasis. A straight or curly closing quote
+# counts as such a mark. The period after the URL in `Read
+# https://example.com.` therefore still ends the sentence, and so does
+# the period in `See “https://example.com.”`.
 #
 # Before each call to prose(), lib/markdown.awk sets `bare_line` to 1
 # when the line holds only `>` markers, HTML comments, `pre` elements,
@@ -105,6 +107,32 @@ function blank(s, re,   out) {
   while (match(s, re)) {
     out = out substr(s, 1, RSTART - 1) spaces(RLENGTH)
     s = substr(s, RSTART + RLENGTH)
+  }
+  return out s
+}
+
+# Blanks each bare URL in s. A URL runs from `http://` or `https://` to
+# the next space, `<`, `>`, or `)`. The function leaves out the marks at
+# its end that close a sentence, a clause, a quote, a bracket, or
+# emphasis. Each such mark stays in the text, and a curly closing quote
+# counts as one. The URL keeps the marks inside its path
+# (`https://example.com/v1.2/guide`).
+#
+# The pattern of these marks names each curly closing quote by its
+# UTF-8 bytes, as ends_sentence() does. It matches the whole character
+# under the C locale and under a UTF-8 locale. A URL that ends in
+# another character, such as `é`, keeps every byte of it.
+function blank_urls(s,   out, n) {
+  out = ""
+  while (match(s, /https?:\/\/[^ \t<>)]*/)) {
+    out = out substr(s, 1, RSTART - 1)
+    s = substr(s, RSTART)
+    n = RLENGTH
+    if (match(substr(s, 1, n), /([.,:;?!*_~"'\]]|\342\200\235|\342\200\231)+$/)) {
+      n = RSTART - 1
+    }
+    out = out spaces(n)
+    s = substr(s, n + 1)
   }
   return out s
 }
@@ -196,13 +224,7 @@ function clean(s,   t) {
   s = blank(s, "<(code|kbd|samp|pre)[^>]*>([^<]|<[^/])*</(code|kbd|samp|pre)>")
   s = blank(s, "<[A-Za-z][A-Za-z0-9+.-]*:[^ \t<>]*>")
   s = blank(s, "\\]\\([^) \t]*([ \t]+\"[^\"]*\")?\\)")
-  # A bare URL never ends in an ASCII mark that closes a sentence, a
-  # clause, a quote, a bracket, or emphasis. Each such mark after the
-  # URL stays in the text. A curly closing quote still goes with the
-  # URL, and ProseTypography reports a curly opening quote in front of
-  # the URL. awk picks the longest match, so the URL keeps the marks
-  # inside its path (`https://example.com/v1.2/guide`).
-  t = blank(s, "https?://([^ \t<>)]*[^ \t<>).,:;?!*_~\"'\\]])?")
+  t = blank_urls(s)
   # Each `*` or `:` that the URL leaves at the start of the line, as on a
   # wrapped line that opens `https://example.com/* covers`, becomes a
   # space too. An emphasized URL leaves two `*` marks there
@@ -239,6 +261,33 @@ function column(off) {
     return off
   }
   return chars(substr($0, 1, off - 1)) + 1
+}
+
+# Reports whether token t ends a sentence. Such a token ends in `.`,
+# `?`, or `!`, after any closing quote, paren, bracket, or emphasis. A
+# closing quote is straight or curly (`"`, `'`, `”`, or `’`). `e.g.`,
+# `i.e.`, `vs.`, `cf.`, and a three-period ellipsis do not end a
+# sentence.
+#
+# Each check that reads a sentence one token at a time calls this
+# function, so those checks end a sentence at the same token.
+# ProseCallout splits a note into sentences with a pattern of its own.
+# That pattern ends a sentence at the same closing marks, curly quotes
+# included.
+#
+# The patterns write each curly closing quote as its UTF-8 bytes in
+# octal, `\342\200\235` for `”` and `\342\200\231` for `’`. They match
+# the character under a UTF-8 locale and its three bytes under the C
+# locale. Each quote is an alternative of its own, because a bracket
+# expression of the bytes of both quotes misses `’` under a UTF-8
+# locale. Under the C locale, such a bracket expression matches any one
+# of the bytes. The sentence-ends test of prose-lint runs the patterns
+# under both locales.
+function ends_sentence(t) {
+  if (t ~ /\.\.\.(["')*_\]]|\342\200\235|\342\200\231)*$/ || tolower(t) ~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
+    return 0
+  }
+  return t ~ /[.?!](["')*_\]]|\342\200\235|\342\200\231)*$/
 }
 
 FNR == 1 && $0 ~ /^---[ \t]*$/ {

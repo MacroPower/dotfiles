@@ -13,14 +13,16 @@
 #
 # Sentences run across the lines of a paragraph and end at a token that
 # ends in `.`, `?`, or `!`, after any closing quote, paren, bracket, or
-# emphasis. `e.g.`, `i.e.`, `vs.`, `cf.`, and a three-period ellipsis
-# do not end a sentence. Paragraphs end at a skipped line, which a
-# blank line or a fenced block leaves. They also end at a bare line,
-# which lib/markdown.awk marks in `bare_line`. A bare line holds only
-# `>` markers, HTML comments, and `pre` elements. A bare `>` between
-# two quoted paragraphs is one. A line that holds only a code span or a
-# URL reaches prose() as spaces, but it continues the sentence of the
-# line above it.
+# emphasis. A closing quote is straight or curly (`"`, `'`, `”`, or
+# `’`). `e.g.`, `i.e.`, `vs.`, `cf.`, and a three-period ellipsis do
+# not end a sentence. ends_sentence() in lib/markdown.awk holds this
+# test. Paragraphs end at a skipped line, which a blank line or a
+# fenced block leaves. They also end at a bare line, which
+# lib/markdown.awk marks in `bare_line`. A bare line holds only `>`
+# markers, HTML comments, and `pre` elements. A bare `>` between two
+# quoted paragraphs is one. A line that holds only a code span or a URL
+# reaches prose() as spaces, but it continues the sentence of the line
+# above it.
 #
 # List items, headings, table rows, horizontal rules, and lines that
 # open with an HTML tag each start a new paragraph. So does a line that
@@ -206,7 +208,7 @@ function prose(text,   rest, pos, t, col, line) {
     if (tok_n == 1) {
       sentence_file = FILENAME
     }
-    if (t ~ /[.?!]["')*_\]]*$/ && t !~ /\.\.\.["')*_\]]*$/ && tolower(t) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
+    if (ends_sentence(t)) {
       end_sentence()
     }
   }

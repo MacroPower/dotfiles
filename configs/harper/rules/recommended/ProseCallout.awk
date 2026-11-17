@@ -29,7 +29,11 @@
 # For the first misuse, the check reads the sentences of each note,
 # info, or important callout. It reports a sentence that opens with a
 # command verb (`Run`, `Ensure`, `Do not`) or holds `you must`, `you
-# should`, `must not`, `should not`, `make sure`, or `be sure`.
+# should`, `must not`, `should not`, `make sure`, or `be sure`. A
+# sentence ends at a `.`, `?`, or `!` before a space, after any closing
+# quote, paren, bracket, or emphasis. A closing quote is straight or
+# curly (`"`, `'`, `”`, or `’`), and the pattern names each curly quote
+# by its UTF-8 bytes, as ends_sentence() in lib/markdown.awk does.
 #
 # For the second misuse, the check reports a callout when no prose line
 # sits between it and the callout before it. A line that
@@ -117,7 +121,7 @@ function start_callout(k, line) {
 # Reports the first instruction in a note.
 function end_callout(   n, sents, i, s, w, parts) {
   if (kind ~ /^(note|info|important)$/ && body ~ /[A-Za-z]/) {
-    n = split(body, sents, /[.!?]["')*_\]]*[ \t]+/)
+    n = split(body, sents, /[.!?](["')*_\]]|\342\200\235|\342\200\231)*[ \t]+/)
     for (i = 1; i <= n; i++) {
       s = sents[i]
       sub(/^[ \t*_]+/, "", s)

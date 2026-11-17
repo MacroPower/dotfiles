@@ -28,10 +28,12 @@
 # paragraph of prose that holds two pipes outside a code span.
 #
 # Sentences end at a `.`, `?`, or `!` before whitespace or the line end,
-# after any closing quote, paren, bracket, or emphasis. `e.g.`, `i.e.`,
-# `vs.`, and `cf.` do not end a sentence, and neither does a
-# three-period ellipsis (`an implicit "About..." in front`). Words after
-# the last sentence end count as one more sentence.
+# after any closing quote, paren, bracket, or emphasis. A closing quote
+# is straight or curly (`"`, `'`, `”`, or `’`). `e.g.`, `i.e.`, `vs.`,
+# and `cf.` do not end a sentence, and neither does a three-period
+# ellipsis (`an implicit "About..." in front`). ends_sentence() in
+# lib/markdown.awk holds this test. Words after the last sentence end
+# count as one more sentence.
 #
 # lib/markdown.awk blanks code spans, link destinations, and bare URLs
 # to spaces. The period after a span, a link, or a URL then stands apart
@@ -116,7 +118,7 @@ function prose(text,   rest, pos, tok, col) {
       }
       open = 1
     }
-    if (open && tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
+    if (open && ends_sentence(tok)) {
       sentences++
       open = 0
     }

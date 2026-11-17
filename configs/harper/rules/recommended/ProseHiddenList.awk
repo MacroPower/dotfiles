@@ -98,11 +98,6 @@ function flush(   parts) {
   reset()
 }
 
-# Returns 1 when tok ends a sentence.
-function ends_sentence(tok) {
-  return tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/
-}
-
 # Ends the current sentence and compares its opening to the last one.
 # A sentence of one word has no opening to compare.
 function end_sentence() {

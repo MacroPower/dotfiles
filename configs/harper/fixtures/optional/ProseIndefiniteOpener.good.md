@@ -26,3 +26,7 @@ A user ran `make`. It builds each target.
 > The worker reads the queue. A task is a unit of work.
 >
 > A lease is a lock on one task.
+
+“A lease,” the glossary says, “means a lock on one task.”
+
+‘A lease,’ the glossary says, ‘means a lock on one task.’

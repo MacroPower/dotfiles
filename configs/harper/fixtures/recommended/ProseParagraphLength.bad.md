@@ -22,3 +22,5 @@ The scheduler reads the queue. It picks the oldest job. The guide at
 The scheduler reads the queue. It picks the oldest job. It checks the lease with
 `lease --check` <!-- same finding -->
 before it starts the worker. The worker runs the job. The worker writes the result. It logs the run. The scheduler marks the job done. <!-- same finding -->
+
+The proxy says “retry.” The worker waits. The queue drains. The node says ‘ready.’ The pod starts. The cache warms. The job ends.

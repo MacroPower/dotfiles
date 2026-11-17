@@ -46,14 +46,15 @@
 #
 # Measurement
 #
-# The rule hit 1,878 lines in the measure.py corpus, and 19 of 20
+# The rule hit 1,871 lines in the measure.py corpus, and 19 of 20
 # sampled hits read better as two sentences. The other hit was an error
 # of lib/sentences.awk at a Hugo shortcode. The first step named a split
-# point on 138 lines, and 15 of 20 sampled points were the right place
-# to split. Its misfires were serial lists with long items, a `so` that
-# states a purpose, and errors of lib/sentences.awk at Hugo shortcodes
-# and curly quotes. The second step named a clause on 154 lines, and 19
-# of 20 sampled clauses read well as a sentence of their own.
+# point on 137 lines, and 15 of 20 sampled points were the right place
+# to split. Two misfires were serial lists with long items. In the other
+# three, the `and` joined a second condition or a second result to an
+# `if` in the middle of the sentence. The split cut that part off from
+# the `if`. The second step named a clause on 154 lines, and 19 of 20
+# sampled clauses read well as a sentence of their own.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseSentenceLength: <message>

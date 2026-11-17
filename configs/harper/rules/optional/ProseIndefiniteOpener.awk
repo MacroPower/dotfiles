@@ -31,7 +31,8 @@
 # `can`, and the other helping verbs in `helpers` count too. The scan
 # stops at a comma and at a word in `stops` that ties the subject to
 # more words, such as `of`, `with`, or `and`, so `A list of tasks`
-# passes.
+# passes. A comma stops the scan before a straight or a curly closing
+# quote too (`“A lease,” the guide says`).
 #
 # The check holds each finding of the first form until the paragraph
 # ends, and drops it when the text after it names the noun with `the`.
@@ -118,11 +119,6 @@ function flush(   i) {
   para = ""
 }
 
-# Returns 1 when tok ends a sentence.
-function ends_sentence(tok) {
-  return tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/
-}
-
 function verb(tok, word) {
   if (word ~ helpers) {
     return 1
@@ -198,7 +194,12 @@ function prose(text,   rest, pos, tok, col, word, base) {
         held_noun[held] = noun
         held_at[held] = base + pos
         scan = 0
-        if (word == "is" && tok !~ /[,;:.]["')*_\]]*$/) {
+        # A mark after `is`, such as the period in `is.”`, ends its
+        # clause, so the word after it does not complete a definition.
+        # A closing quote after the mark is straight or curly. The
+        # pattern names each curly quote by its UTF-8 bytes, as
+        # ends_sentence() in lib/markdown.awk does.
+        if (word == "is" && tok !~ /[,;:.](["')*_\]]|\342\200\235|\342\200\231)*$/) {
           pending_def = 1
         }
       } else if (scan >= 2 && word ~ stops || scan >= 4) {
@@ -208,7 +209,7 @@ function prose(text,   rest, pos, tok, col, word, base) {
         sub(/'.*$/, "", noun)
         scan++
       }
-      if (scan && tok ~ /[,;:()]["')*_\]]*$/) {
+      if (scan && tok ~ /[,;:()](["')*_\]]|\342\200\235|\342\200\231)*$/) {
         scan = 0
       }
     }

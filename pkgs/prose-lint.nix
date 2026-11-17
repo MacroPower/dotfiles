@@ -113,6 +113,25 @@ let
   awkChecks = lib.concatStringsSep "\n" (
     map (c: "${c.internal}=${prose-weirpack}/${c.path}") prose-weirpack.passthru.awkChecks
   );
+
+  # Sets `utf8` to a UTF-8 locale that gawk reads, for each test that
+  # lints under the C locale and under a UTF-8 locale. glibc names its
+  # UTF-8 locale C.UTF-8, and macOS has en_US.UTF-8. gawk reads a locale
+  # that the system lacks as the C locale, where one accented letter
+  # counts as two bytes.
+  findUtf8Locale = ''
+    utf8=
+    for locale in C.UTF-8 en_US.UTF-8; do
+      if LC_ALL=$locale awk 'BEGIN { exit length("é") != 1 }'; then
+        utf8=$locale
+        break
+      fi
+    done
+    if [ -z "$utf8" ]; then
+      echo "gawk found no UTF-8 locale" >&2
+      exit 1
+    fi
+  '';
 in
 (writeShellApplication {
   name = "prose-lint";
@@ -1194,20 +1213,7 @@ in
           columns.py:2:14 ProseTypography
           EOF
 
-          # glibc names its UTF-8 locale C.UTF-8, and macOS has
-          # en_US.UTF-8. gawk reads a locale that the system lacks as
-          # the C locale, where one accented letter counts as two bytes.
-          utf8=
-          for locale in C.UTF-8 en_US.UTF-8; do
-            if LC_ALL=$locale awk 'BEGIN { exit length("é") != 1 }'; then
-              utf8=$locale
-              break
-            fi
-          done
-          if [ -z "$utf8" ]; then
-            echo "gawk found no UTF-8 locale" >&2
-            exit 1
-          fi
+          ${findUtf8Locale}
 
           # Prints `file:line:col Rule` for each finding of the awk
           # checks that the files exercise, by line within each file.
@@ -1230,6 +1236,63 @@ in
             positions "$locale" >got || exit 1
             if ! diff want got; then
               echo "the $locale locale reports columns that do not count characters" >&2
+              exit 1
+            fi
+          done
+          touch "$out"
+        '';
+
+        # Lints sentences that end at a curly closing quote. The test
+        # lints them under the C locale and under a UTF-8 locale, and it
+        # expects the same ProseSentenceLength finding from both.
+        # ends_sentence() in lib/markdown.awk names each curly quote by
+        # its UTF-8 bytes. In the weirpack build, check.py runs the
+        # fixtures under one locale only. The sandbox starts Python
+        # under the C locale, and Python sets `LC_CTYPE` to C.UTF-8 for
+        # the awk checks that it starts. The prose hook runs under the
+        # locale of the user, which can be either one. The command in
+        # configs/harper/CLAUDE.md builds this test too.
+        tests.sentence-ends = runCommand "prose-lint-sentence-ends" { nativeBuildInputs = [ gawk ]; } ''
+          # The first paragraph holds a sentence of 17 words and a
+          # sentence of 18 words, and the second holds two sentences of
+          # 18 words. In the first paragraph, the first sentence ends at
+          # a period and a curly double quote. In the second, it ends at
+          # a period and a curly single quote. The third and fourth
+          # paragraphs each hold one sentence of 35 words. Three periods
+          # and a curly closing quote sit in the middle of each
+          # sentence, and they do not end it. The quote is double in the
+          # third paragraph and single in the fourth. The last two
+          # paragraphs each hold a sentence of 19 words and a sentence
+          # of 18 words. Their first sentence ends at a bare URL, a
+          # period, and a curly closing quote, double in one paragraph
+          # and single in the other. Only the third and fourth
+          # paragraphs draw a finding. printf writes each curly quote
+          # from its octal bytes.
+          printf 'He said \342\200\234the proxy retries each failed request once before it returns the error to the client.\342\200\235 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >ends.md
+          printf 'The guide says \342\200\230the proxy retries each failed request once before it returns the error to the client.\342\200\231 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >>ends.md
+          printf 'The importer prints \342\200\234reading rows...\342\200\235 for each batch that it reads from the source table, and then it writes the rows in batches of one hundred to the destination table for the operators on call.\n\n' >>ends.md
+          printf 'The importer prints \342\200\230reading rows...\342\200\231 for each batch that it reads from the source table, and then it writes the rows in batches of one hundred to the destination table for the operators on call.\n\n' >>ends.md
+          printf 'The proxy retries each failed request once before it returns the error to the client and then says \342\200\234see https://example.com/guide.\342\200\235 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n\n' >>ends.md
+          printf 'The proxy retries each failed request once before it returns the error to the client and then says \342\200\230see https://example.com/guide.\342\200\231 The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.\n' >>ends.md
+
+          cat >want <<'EOF'
+          ends.md:5:1 ProseSentenceLength
+          ends.md:7:1 ProseSentenceLength
+          EOF
+
+          ${findUtf8Locale}
+
+          for locale in C "$utf8"; do
+            rc=0
+            found=$(LC_ALL=$locale ${lib.getExe finalAttrs.finalPackage} ends.md) || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "ends.md: prose-lint exited $rc under the $locale locale" >&2
+              exit 1
+            fi
+            printf '%s\n' "$found" |
+              sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::(ProseSentenceLength): .*,\1 \2,p' >got
+            if ! diff want got; then
+              echo "the $locale locale ends a sentence at another token" >&2
               exit 1
             fi
           done

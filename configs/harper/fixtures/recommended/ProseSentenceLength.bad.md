@@ -100,3 +100,7 @@ covers the rest of the steps that the worker runs after it starts the job. <!-- 
 The importer reads every row of the source table and converts each value to the target type, and the command
 `importer --dry-run` <!-- same finding -->
 prints each row that it would write to the destination table without writing any of them. <!-- same finding -->
+
+The importer prints “reading rows...” for each batch that it reads from the source table, and then it writes the rows in batches of one hundred to the destination table for the operators on call.
+
+The importer prints ‘reading rows...’ for each batch that it reads from the source table, and then it writes the rows in batches of one hundred to the destination table for the operators on call.
