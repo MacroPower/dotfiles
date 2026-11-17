@@ -50,6 +50,14 @@ The check said “not now,” then ran without a lock.
 
 The check said ‘not now,’ then ran without a lock.
 
+The guide answers not, unlike the old guide, which answers yes.
+
+The guide answers "not," unlike the old guide, which answers yes.
+
+The guide answers “not,” unlike the old guide, which answers yes.
+
+The guide answers ‘not,’ unlike the old guide, which answers yes.
+
 <!-- prettier-ignore-start -->
 Why does the hook not run unless the caller holds the lock?
 -

@@ -32,7 +32,10 @@
 # - `not` before a word with a negative prefix from a list (`not
 #   unlike`, `not unsafe`). Here the positive form also makes the claim
 #   stronger (`not unsafe` becomes `safe`), so the writer must settle
-#   which claim they meant.
+#   which claim they meant. The branch skips a `not` that ends in a
+#   comma, a colon, a semicolon, or a period, because the mark closes
+#   the clause of `not`. A straight or a curly closing quote can follow
+#   the mark (`answers “not,” unlike the old guide`).
 #
 # False Positives
 #
@@ -94,6 +97,14 @@ function negation(i,   w) {
   return w ~ neg || w ~ /n't$/
 }
 
+# Reports whether token i ends in a comma, a colon, a semicolon, or a
+# period, which closes a clause. A straight or a curly closing quote can
+# follow the mark. The pattern names each curly quote by its UTF-8 bytes,
+# as ends_sentence() in lib/markdown.awk does.
+function closes_clause(i) {
+  return tok[i] ~ /[,;:.](["')*_\]]|\342\200\235|\342\200\231)*$/
+}
+
 function report(i) {
   printf "%s:%d:%d: Style::ProseDoubleNegative: %s\n", sentence_file, tok_line[i], tok_col[i], msg
 }
@@ -132,12 +143,9 @@ function sentence(n,   i, j, w, d, t, opener, depth_at) {
       }
     } else if (w == "without" || w == "except") {
       for (j = i - 1; j >= 1 && j >= i - 6; j--) {
-        # A comma, colon, semicolon, or period after word j closes a
-        # clause, and a negative word before it belongs to that clause.
-        # A closing quote after the mark is straight or curly. The
-        # pattern names each curly quote by its UTF-8 bytes, as
-        # ends_sentence() in lib/markdown.awk does.
-        if (tok[j] ~ /[,;:.](["')*_\]]|\342\200\235|\342\200\231)*$/ || tok[j] ~ /\)$/) {
+        # A negative word before the end of a clause belongs to that
+        # clause, so the scan stops at a word j that closes one.
+        if (closes_clause(j) || tok[j] ~ /\)$/) {
           break
         }
         if (negation(j)) {
@@ -148,7 +156,7 @@ function sentence(n,   i, j, w, d, t, opener, depth_at) {
           break
         }
       }
-    } else if (w == "not" && word(i + 1) ~ un && tok[i] !~ /[,;:.]$/) {
+    } else if (w == "not" && word(i + 1) ~ un && !closes_clause(i)) {
       report(i)
       return
     }
