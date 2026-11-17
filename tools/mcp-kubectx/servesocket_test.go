@@ -45,9 +45,9 @@ func TestServeSocketReturnsTokenJSON(t *testing.T) {
 		Expiration: 3600,
 	})
 
-	l, cleanup, err := socket.Listen(t.Context(), path, "")
+	l, err := socket.Listen(t.Context(), path, "")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -70,9 +70,9 @@ func TestServeSocketBeforeSelect(t *testing.T) {
 
 	h := newServeSocketHandler(t, nil, nil)
 
-	l, cleanup, err := socket.Listen(t.Context(), path, "")
+	l, err := socket.Listen(t.Context(), path, "")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -103,9 +103,9 @@ func TestServeSocketConcurrent(t *testing.T) {
 		Expiration: 3600,
 	})
 
-	l, cleanup, err := socket.Listen(t.Context(), path, "")
+	l, err := socket.Listen(t.Context(), path, "")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -178,9 +178,9 @@ func TestServeSocketRotationDuringRequest(t *testing.T) {
 
 	h.currentSA.Store(saA)
 
-	l, cleanup, err := socket.Listen(t.Context(), path, "")
+	l, err := socket.Listen(t.Context(), path, "")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -245,7 +245,7 @@ func TestServeSocketHandlerWaitsForCleanup(t *testing.T) {
 		Expiration: 3600,
 	})
 
-	l, _, err := socket.Listen(t.Context(), path, "")
+	l, err := socket.Listen(t.Context(), path, "")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(t.Context())

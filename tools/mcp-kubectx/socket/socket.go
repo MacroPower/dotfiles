@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -88,8 +89,8 @@ func SidecarPath(socketPath string) string {
 }
 
 // Acquire walks slots 0..maxSlots-1 and binds the first free one.
-// The returned listener and cleanup are owned by the caller; the
-// socket inode is unlinked when cleanup runs.
+// The caller owns the returned listener. Closing it unlinks the
+// sidecar and the socket inode of the slot, as [Listen] describes.
 //
 // instanceID is written atomically into a per-slot sidecar file
 // alongside the socket inode (see [SidecarPath]) so a future serve's
@@ -109,30 +110,29 @@ func Acquire(
 	forGuest bool,
 	maxSlots int,
 	instanceID string,
-) (string, net.Listener, func(), error) {
+) (string, net.Listener, error) {
 	for slot := range maxSlots {
 		path := PathForSlot(slot, forGuest)
 
-		listener, cleanup, err := Listen(ctx, path, instanceID)
+		listener, err := Listen(ctx, path, instanceID)
 		if err == nil {
-			return path, listener, cleanup, nil
+			return path, listener, nil
 		}
 
 		if errors.Is(err, ErrInUse) || errors.Is(err, syscall.EADDRINUSE) {
 			continue
 		}
 
-		return "", nil, nil, err
+		return "", nil, err
 	}
 
-	return "", nil, nil, fmt.Errorf("%w: %d slots in %s",
+	return "", nil, fmt.Errorf("%w: %d slots in %s",
 		ErrAllSlotsBusy, maxSlots, StateDir())
 }
 
-// Listen binds a Unix domain socket at path, returning the listener
-// and a cleanup closure that closes it and unlinks the file. The
-// parent dir is created with mode 0700 and the socket file is left
-// at mode 0600 (single-user trust boundary).
+// Listen binds a Unix domain socket at path and returns its
+// listener. Listen creates the parent dir with mode 0700 and sets
+// the socket file to mode 0600, the single-user trust boundary.
 //
 // Existing-path handling intentionally does not silently steal a
 // peer's live socket. If the path exists, Listen dial-tests it: a
@@ -145,16 +145,20 @@ func Acquire(
 // sidecar at [SidecarPath] after the socket inode is chmodded. The
 // sidecar is the means by which a future serve's [DiscoverLive]
 // attributes a live slot back to its bound serve, so the write must
-// happen before this function returns to the caller. On any failure
-// between the bind and a successful return, the socket inode AND the
-// sidecar (and the sidecar tmp file, if present) are unlinked
-// best-effort.
+// happen before this function returns to the caller.
+//
+// The first Close of the returned listener unlinks the sidecar
+// while the listener still holds the slot. It then unlinks the
+// socket inode, which frees the slot. So Close never unlinks the
+// files of a later serve that binds the slot, and a second Close
+// unlinks nothing. When a step after the bind fails, Listen closes
+// the listener the same way.
 func Listen(
 	ctx context.Context,
 	path, instanceID string,
-) (net.Listener, func(), error) {
+) (net.Listener, error) {
 	if len(path) > maxSunPathLen {
-		return nil, nil, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"%w: path %q exceeds the %d-byte unix socket path limit; set XDG_STATE_HOME to a shorter path",
 			ErrBind, path, maxSunPathLen,
 		)
@@ -162,50 +166,76 @@ func Listen(
 
 	err := os.MkdirAll(filepath.Dir(path), 0o700)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: create directory: %w", ErrBind, err)
+		return nil, fmt.Errorf("%w: create directory: %w", ErrBind, err)
 	}
 
 	err = clearStale(ctx, path)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var lc net.ListenConfig
 
 	l, err := lc.Listen(ctx, "unix", path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", ErrBind, err)
+		return nil, fmt.Errorf("%w: %w", ErrBind, err)
 	}
+
+	sl := &slotListener{Listener: l, sidecar: SidecarPath(path)}
 
 	// Pin the socket inode mode to 0600 explicitly. Avoids touching
 	// the process-wide umask (which is not goroutine-local and would
 	// race with concurrent fs work in any future refactor).
 	chmodErr := os.Chmod(path, 0o600)
 	if chmodErr != nil {
-		_ = l.Close()                    //nolint:errcheck // best-effort cleanup; chmodErr is what we surface
-		_ = os.Remove(path)              //nolint:errcheck // best-effort cleanup; chmodErr is what we surface
-		_ = os.Remove(SidecarPath(path)) //nolint:errcheck // best-effort cleanup of any prior sidecar
+		_ = sl.Close() //nolint:errcheck // best-effort cleanup, the caller gets chmodErr
 
-		return nil, nil, fmt.Errorf("%w: chmod: %w", ErrBind, chmodErr)
+		return nil, fmt.Errorf("%w: chmod: %w", ErrBind, chmodErr)
 	}
 
 	if instanceID != "" {
 		sidecarErr := writeSidecar(path, instanceID)
 		if sidecarErr != nil {
-			_ = l.Close()       //nolint:errcheck // best-effort cleanup; sidecarErr is what we surface
-			_ = os.Remove(path) //nolint:errcheck // best-effort cleanup; sidecarErr is what we surface
+			_ = sl.Close() //nolint:errcheck // best-effort cleanup, the caller gets sidecarErr
 
-			return nil, nil, fmt.Errorf("%w: sidecar: %w", ErrBind, sidecarErr)
+			return nil, fmt.Errorf("%w: sidecar: %w", ErrBind, sidecarErr)
 		}
 	}
 
-	cleanup := func() {
-		_ = l.Close()                    //nolint:errcheck // best-effort cleanup
-		_ = os.Remove(path)              //nolint:errcheck // best-effort cleanup
-		_ = os.Remove(SidecarPath(path)) //nolint:errcheck // best-effort cleanup
-	}
+	return sl, nil
+}
 
-	return l, cleanup, nil
+// slotListener is the listener of one bound slot. The embedded
+// listener comes from [net.ListenConfig.Listen], so its Close
+// unlinks the socket inode before it closes the file descriptor.
+// No other serve can bind the slot until that unlink, because the
+// dial probe of [clearStale] reaches the open listener.
+type slotListener struct {
+	net.Listener
+
+	sidecar     string
+	sidecarOnce sync.Once
+}
+
+// Close unlinks the sidecar of the slot and then closes the
+// embedded listener, which unlinks the socket inode. The listener
+// still holds the slot during the unlink of the sidecar, so the
+// unlink removes only the sidecar of this listener. Repeated and
+// concurrent calls unlink each file one time in total, and the
+// sidecar always goes first.
+func (l *slotListener) Close() error {
+	l.sidecarOnce.Do(func() {
+		err := os.Remove(l.sidecar)
+		if err != nil && !os.IsNotExist(err) {
+			slog.Warn("remove serve socket sidecar",
+				slog.String("path", l.sidecar),
+				slog.Any("error", err),
+			)
+		}
+	})
+
+	//nolint:wrapcheck // net listener errors are self-describing
+	return l.Listener.Close()
 }
 
 // writeSidecar atomically records the bound serve's instance id in

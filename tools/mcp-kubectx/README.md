@@ -499,45 +499,52 @@ The closure runs in this order:
 1. `socketShutdown` closes the UDS listener and waits on a
    `sync.WaitGroup` for in-flight per-connection handlers to
    return. This is required so no handler is mid-token-mint when
-   the next steps unlink files.
-2. Unlink the socket file at `h.socketPath`.
-3. Unlink the per-slot sidecar file at `<socket-path>.id`, which
-   holds the `instance-id` of this `serve`.
-4. Unlink the scoped kubeconfig at `h.lastOutputPath`.
-5. Unlink the hook-router sidecar symlink. The link lies in a
+   the next steps unlink files. The listener close unlinks the
+   per-slot sidecar file at `<socket-path>.id`, which holds the
+   `instance-id` of this `serve`, and then the socket file at
+   `h.socketPath`.
+2. Unlink the scoped kubeconfig at `h.lastOutputPath`.
+3. Unlink the hook-router sidecar symlink. The link lies in a
    directory of the machine that runs `serve`, so it never crosses
    the Lima boundary.
-6. `drainSweep` waits for the background `host sweep` goroutine to
+4. `drainSweep` waits for the background `host sweep` goroutine to
    return, for at most 30 seconds. The timeout keeps a hung
    `host sweep` subprocess from blocking shutdown. When the wait
    times out, `serve` logs a warning and runs the next step. A
    SIGINT or a SIGTERM, before the closure or during it, cancels the
    sweep. When neither signal arrives, the wait lasts until the
    sweep ends or until the timeout passes.
-7. Drain registered SA release closures with a 30-second
+5. Drain registered SA release closures with a 30-second
    `context.Background` timeout.
 
-The unlinks of steps 2, 3, 4, and 5 are local and take
-microseconds. Step 6 and step 7 can take seconds, and neither reads
-the files that the unlinks remove. So the unlinks run first.
+The listener close unlinks the sidecar file while the listener
+still holds the slot. The unlink of the socket file then frees the
+slot. A new `serve` might bind the slot and write its own sidecar
+file while step 1 waits for a token mint. The closure never unlinks
+either file after the listener close, so it leaves the files of
+that new `serve` in place.
+
+The unlinks are local and take microseconds. Step 4 and step 5 can
+take seconds, and neither reads the files that the unlinks remove.
+So the unlinks run first.
 
 Claude Code sends its SIGKILL about 500 ms after the SIGINT that
 starts the closure. A closure that runs longer, for example while a
-`host release` of step 7 runs, then ends partway, and its later
+`host release` of step 5 runs, then ends partway, and its later
 steps never run. So under the signal sequence of Claude Code, the
-closure never reaches the 30-second limit of step 6 or step 7. A
-SIGKILL during step 6 or step 7 leaves behind only the SAs that
+closure never reaches the 30-second limit of step 4 or step 5. A
+SIGKILL during step 4 or step 5 leaves behind only the SAs that
 `serve` had not released, with their bindings and provision records.
 The SIGKILL reaches only `serve`, so a `host release` subprocess
 that has started keeps running after `serve` ends.
 
 When `serve` ends before the closure starts, it leaves the items in
 this list behind. When `serve` ends while the closure runs, it leaves
-only the items of the steps that have not run. The socket inode is
-the exception, because closing the listener unlinks the inode. A
-SIGINT or a SIGTERM closes the listener at once, and step 1 closes
-it when it is still open. So a `serve` that ends during the closure
-leaves no socket inode.
+only the items of the steps that have not run. The socket inode and
+the per-slot sidecar file are the exception, because closing the
+listener unlinks both. A SIGINT or a SIGTERM closes the listener at
+once, and step 1 closes it when it is still open. So a `serve` that
+ends during the closure leaves neither file.
 
 - **SAs and bindings.** Each SA that the `serve` had not released
   stays on its cluster with its binding. The orphan sweep at the
@@ -589,7 +596,8 @@ parent process replaces or removes it.
 The `TestSelect*`, `TestSessionDir*`, `TestDrainSweep*`, and
 `TestServeSocket*` test families pin the behaviors that this section
 describes. The `TestClearStale*` tests of the `socket` package pin
-the removal of a leftover sidecar file.
+the removal of a leftover sidecar file. The `TestListenClose*` tests
+of that package pin the unlinks of a listener close and their order.
 
 ## Orphan sweep
 

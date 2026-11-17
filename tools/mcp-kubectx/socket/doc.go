@@ -30,8 +30,13 @@
 // [Acquire] writes the caller's instance id into a per-slot sidecar
 // file co-located with the socket inode, and [DiscoverLive] joins
 // "dial succeeds" with "sidecar readable and non-empty" across the
-// pool to build the live-instance set the sweep preserves. Both
-// halves of the pair are unlinked together on cleanup and on
-// stale-slot recovery so a SIGKILLed serve's sidecar can never
-// vouch for a dead slot.
+// pool to build the live-instance set the sweep preserves.
+// Stale-slot recovery unlinks both halves of the pair, so a
+// SIGKILLed serve's sidecar can never vouch for a dead slot.
+//
+// Closing the listener that [Acquire] returns unlinks the sidecar
+// and then the socket inode. The listener holds the slot until the
+// socket inode is gone, so the close unlinks only the files of its
+// own serve. A later serve that takes the freed slot keeps its
+// files when the old listener closes a second time.
 package socket

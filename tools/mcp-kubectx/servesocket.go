@@ -88,10 +88,12 @@ func (h *handler) handleSocketConn(ctx context.Context, conn net.Conn) {
 }
 
 // socketShutdown closes the listener and blocks until every
-// in-flight connection handler returns. It is called from
-// [*handler.sessionDir]'s cleanup so that no handler is mid-token
-// mint when the next steps unlink the kubeconfig and the socket
-// file.
+// in-flight connection handler returns. Closing the listener
+// unlinks the per-slot sidecar and the socket inode, as
+// [socket.Listen] describes. The cleanup closure of
+// [*handler.sessionDir] calls socketShutdown first, so that no
+// handler is mid-token mint when the later steps unlink the
+// kubeconfig.
 func (h *handler) socketShutdown() {
 	h.mu.Lock()
 	l := h.socketListener

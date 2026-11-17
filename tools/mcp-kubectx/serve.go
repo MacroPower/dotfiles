@@ -17,7 +17,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/socket"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statefile"
 )
 
@@ -149,29 +148,38 @@ func sidecarSymlinkPath() string {
 //  1. [*handler.socketShutdown] closes the UDS listener and waits
 //     for in-flight connection handlers via h.socketWG. Required
 //     so no handler is mid-`runHost` when later steps unlink files.
-//  2. Unlink the socket file at h.socketPath.
-//  3. Unlink the per-slot sidecar at [socket.SidecarPath].
-//  4. Unlink the scoped kubeconfig at h.lastOutputPath. For a
+//     The listener close unlinks the per-slot sidecar at
+//     [socket.SidecarPath] and then the socket inode at
+//     h.socketPath, as [socket.Listen] describes.
+//  2. Unlink the scoped kubeconfig at h.lastOutputPath. For a
 //     guest serve this path lives under the writable bind mount
 //     of `~/.local/state/mcp-kubectx` declared in workmux's
 //     extra_mounts. So the removal succeeds without any host-side
 //     shell-out.
-//  5. Unlink the hook-router sidecar symlink. It lives in a
+//  3. Unlink the hook-router sidecar symlink. It lives in a
 //     directory of the machine that runs this serve, which never
 //     crosses the Lima boundary.
-//  6. Drain the background sweep goroutine via h.sweepWG with a
+//  4. Drain the background sweep goroutine via h.sweepWG with a
 //     30-second timeout. The timeout keeps a hung `host sweep`
 //     subprocess from blocking shutdown. The 30-second timeout
 //     inside runResourceCleanup bounds only the release calls of
-//     step 7.
-//  7. Drain registered K8s resource cleanups with a 30-second
+//     step 5.
+//  5. Drain registered K8s resource cleanups with a 30-second
 //     [context.Background] timeout.
+//
+// The listener close unlinks the sidecar while the listener still
+// holds the slot, and its unlink of the socket inode then frees the
+// slot. Step 1 then waits for the handlers. So a new serve might
+// bind the slot and write its own sidecar during a token mint. The
+// closure never unlinks the socket inode or the sidecar after the
+// listener close frees the slot. An unlink after step 1 removes the
+// files of that new serve.
 //
 // The unlinks run before both drains because they are local and
 // take microseconds, and neither drain reads the files. Claude Code
 // sends SIGKILL about 500 ms after the SIGINT that starts this
 // closure, and a `host release` that talks to the cluster can take
-// longer. A SIGKILL during step 6 or step 7 then leaves only the
+// longer. A SIGKILL during step 4 or step 5 then leaves only the
 // unreleased SAs behind. The orphan sweep of a later serve in the
 // same env deletes them.
 func (h *handler) sessionDir() func() {
@@ -201,12 +209,9 @@ func (h *handler) sessionDir() func() {
 		h.socketShutdown()
 
 		h.mu.Lock()
-		socketPath := h.socketPath
 		outPath := h.lastOutputPath
 		h.mu.Unlock()
 
-		bestEffortRemove("serve socket", socketPath)
-		bestEffortRemove("serve sidecar", socket.SidecarPath(socketPath))
 		bestEffortRemove("kubeconfig", outPath)
 		// Sidecar is symlink-only: parent dir is intentionally
 		// left in place because a peer serve under the same

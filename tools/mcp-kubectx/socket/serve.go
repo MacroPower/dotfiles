@@ -33,7 +33,7 @@ func Start(ctx context.Context, l net.Listener, wg *sync.WaitGroup, handle ConnH
 // closes the listener, which surfaces as [net.ErrClosed] in Accept).
 // Each accepted connection is handled in its own goroutine tracked
 // by wg so the shutdown path can drain in-flight handlers before the
-// higher-level cleanup unlinks the socket file and the kubeconfig.
+// higher-level cleanup unlinks the kubeconfig.
 // Callers that drain wg concurrently must enter through [Start] so
 // the loop holds its own wg token before the first Accept.
 func Serve(ctx context.Context, l net.Listener, wg *sync.WaitGroup, handle ConnHandler) {

@@ -99,7 +99,7 @@ func TestListenRejectsOverlongPath(t *testing.T) {
 
 	long := filepath.Join(shortTempDir(t), strings.Repeat("x", maxSunPathLen), "serve.sock")
 
-	_, _, err := Listen(t.Context(), long, "")
+	_, err := Listen(t.Context(), long, "")
 	require.ErrorIs(t, err, ErrBind)
 	assert.Contains(t, err.Error(), "unix socket path limit",
 		"the guard must name the cause, not surface a bare EINVAL")
@@ -118,9 +118,9 @@ func TestAcquirePicksFirstFreeSlot(t *testing.T) { //nolint:paralleltest // uses
 		bindLive(t, PathForSlot(slot, false))
 	}
 
-	gotPath, listener, cleanup, err := Acquire(t.Context(), false, 8, "")
+	gotPath, listener, err := Acquire(t.Context(), false, 8, "")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = listener.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	assert.Equal(t, PathForSlot(k, false), gotPath)
 	assert.NotNil(t, listener)
@@ -138,9 +138,9 @@ func TestAcquireSkipsStaleSlot(t *testing.T) { //nolint:paralleltest // uses t.S
 	require.NoError(t, os.MkdirAll(filepath.Dir(staleSlot), 0o700))
 	require.NoError(t, os.WriteFile(staleSlot, []byte("stale"), 0o600))
 
-	gotPath, _, cleanup, err := Acquire(t.Context(), false, 8, "")
+	gotPath, l, err := Acquire(t.Context(), false, 8, "")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	assert.Equal(t, staleSlot, gotPath, "stale leftover at slot 0 must be reclaimed")
 
@@ -162,9 +162,9 @@ func TestAcquireDoesNotStealLivePeer(t *testing.T) { //nolint:paralleltest // us
 	livePath := PathForSlot(0, false)
 	bindLive(t, livePath)
 
-	gotPath, _, cleanup, err := Acquire(t.Context(), false, 8, "")
+	gotPath, l, err := Acquire(t.Context(), false, 8, "")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	assert.Equal(t, PathForSlot(1, false), gotPath,
 		"live peer at slot 0 must push acquire to slot 1")
@@ -192,7 +192,7 @@ func TestAcquireExhaustion(t *testing.T) { //nolint:paralleltest // uses t.Seten
 		bindLive(t, PathForSlot(slot, false))
 	}
 
-	_, _, _, err := Acquire(t.Context(), false, maxSlots, "")
+	_, _, err := Acquire(t.Context(), false, maxSlots, "")
 	require.ErrorIs(t, err, ErrAllSlotsBusy)
 	assert.Contains(t, err.Error(), "4 slots")
 	assert.Contains(t, err.Error(), filepath.Join(stateHome, "mcp-kubectx-run"))
@@ -208,10 +208,10 @@ func TestListenUnlinksStale(t *testing.T) {
 	// previous serve that exited without unlinking.
 	require.NoError(t, os.WriteFile(path, []byte("stale"), 0o600))
 
-	l, cleanup, err := Listen(t.Context(), path, "")
+	l, err := Listen(t.Context(), path, "")
 	require.NoError(t, err)
 
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -227,9 +227,8 @@ func TestListenPermissions(t *testing.T) {
 	dir := shortTempDir(t)
 	path := filepath.Join(dir, "sub", "perm.sock")
 
-	l, cleanup, err := Listen(t.Context(), path, "")
+	l, err := Listen(t.Context(), path, "")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
 	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	info, err := os.Stat(path)
@@ -241,19 +240,19 @@ func TestListenPermissions(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o700), parent.Mode().Perm(), "parent dir must be 0700")
 }
 
-func TestListenCleanupRemoves(t *testing.T) {
+func TestListenCloseRemoves(t *testing.T) {
 	t.Parallel()
 
 	dir := shortTempDir(t)
-	path := filepath.Join(dir, "cleanup.sock")
+	path := filepath.Join(dir, "close.sock")
 
-	_, cleanup, err := Listen(t.Context(), path, "")
+	l, err := Listen(t.Context(), path, "")
 	require.NoError(t, err)
 
-	cleanup()
+	require.NoError(t, l.Close())
 
 	_, err = os.Stat(path)
-	assert.True(t, os.IsNotExist(err), "cleanup must remove the socket file")
+	assert.True(t, os.IsNotExist(err), "close must remove the socket file")
 }
 
 // TestListenOnExistingLivePath asserts that Listen returns ErrInUse
@@ -269,7 +268,7 @@ func TestListenOnExistingLivePath(t *testing.T) {
 
 	bindLive(t, path)
 
-	_, _, err := Listen(t.Context(), path, "")
+	_, err := Listen(t.Context(), path, "")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInUse)
 }
@@ -283,10 +282,10 @@ func TestListenWritesSidecar(t *testing.T) {
 	dir := shortTempDir(t)
 	path := filepath.Join(dir, "sidecar.sock")
 
-	_, cleanup, err := Listen(t.Context(), path, "inst-test")
+	l, err := Listen(t.Context(), path, "inst-test")
 	require.NoError(t, err)
 
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	data, err := os.ReadFile(SidecarPath(path))
 	require.NoError(t, err)
@@ -309,33 +308,117 @@ func TestListenOmitsSidecarOnEmptyInstanceID(t *testing.T) {
 	dir := shortTempDir(t)
 	path := filepath.Join(dir, "no-sidecar.sock")
 
-	_, cleanup, err := Listen(t.Context(), path, "")
+	l, err := Listen(t.Context(), path, "")
 	require.NoError(t, err)
 
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	_, err = os.Stat(SidecarPath(path))
 	assert.True(t, os.IsNotExist(err), "no sidecar should exist when instanceID is empty")
 }
 
-// TestListenCleanupRemovesSidecar pins that the returned cleanup
-// closure unlinks both the socket inode and the sidecar when called.
-func TestListenCleanupRemovesSidecar(t *testing.T) {
+// TestListenCloseRemovesSidecar pins that closing the returned
+// listener unlinks both the socket inode and the sidecar.
+func TestListenCloseRemovesSidecar(t *testing.T) {
 	t.Parallel()
 
 	dir := shortTempDir(t)
-	path := filepath.Join(dir, "cleanup-sidecar.sock")
+	path := filepath.Join(dir, "close-sidecar.sock")
 
-	_, cleanup, err := Listen(t.Context(), path, "inst-cleanup")
+	l, err := Listen(t.Context(), path, "inst-close")
 	require.NoError(t, err)
 
 	_, err = os.Stat(SidecarPath(path))
 	require.NoError(t, err)
 
-	cleanup()
+	require.NoError(t, l.Close())
+
+	_, err = os.Stat(path)
+	assert.True(t, os.IsNotExist(err), "close must remove the socket file")
 
 	_, err = os.Stat(SidecarPath(path))
-	assert.True(t, os.IsNotExist(err), "cleanup must remove the sidecar file")
+	assert.True(t, os.IsNotExist(err), "close must remove the sidecar file")
+}
+
+// TestListenCloseKeepsLaterOwner pins that a repeated Close leaves
+// the socket and the sidecar of a later listener on the same path.
+// The accept loop and the shutdown of serve both close the
+// listener, and a new serve can bind the slot between the two
+// calls.
+func TestListenCloseKeepsLaterOwner(t *testing.T) {
+	t.Parallel()
+
+	dir := shortTempDir(t)
+	path := filepath.Join(dir, "reuse.sock")
+
+	old, err := Listen(t.Context(), path, "old-inst")
+	require.NoError(t, err)
+
+	require.NoError(t, old.Close())
+
+	next, err := Listen(t.Context(), path, "new-inst")
+	require.NoError(t, err, "the closed listener must free the slot")
+
+	t.Cleanup(func() { _ = next.Close() }) //nolint:errcheck // best-effort test cleanup
+
+	require.Error(t, old.Close(), "a repeated close must report the closed listener")
+
+	assert.True(t, dialProbe(t.Context(), path), "the socket of the later listener must accept dials")
+	assert.Equal(t, "new-inst", readSidecar(path), "the sidecar of the later listener must remain")
+}
+
+// closeRecorder wraps the embedded listener of a [slotListener]. Its
+// Close records which slot files exist at the moment that the
+// embedded listener starts to close and unlinks the socket inode.
+type closeRecorder struct {
+	net.Listener
+
+	socket, sidecar         string
+	socketLeft, sidecarLeft bool
+}
+
+func (r *closeRecorder) Close() error {
+	_, err := os.Lstat(r.socket)
+	r.socketLeft = err == nil
+
+	_, err = os.Lstat(r.sidecar)
+	r.sidecarLeft = err == nil
+
+	//nolint:wrapcheck // the test passes the error through unchanged
+	return r.Listener.Close()
+}
+
+// TestListenCloseUnlinksSidecarFirst pins that Close unlinks the
+// sidecar while the listener still holds the slot. A Close that
+// unlinks the socket inode first frees the slot before it unlinks
+// the sidecar. A new serve might bind the slot and write its own
+// sidecar in that gap. The unlink then removes the sidecar of the
+// new serve.
+func TestListenCloseUnlinksSidecarFirst(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(shortTempDir(t), "order.sock")
+
+	l, err := Listen(t.Context(), path, "order-inst")
+	require.NoError(t, err)
+
+	sl, ok := l.(*slotListener)
+	require.True(t, ok, "Listen must return a *slotListener")
+
+	rec := &closeRecorder{
+		Listener: sl.Listener,
+		socket:   path,
+		sidecar:  SidecarPath(path),
+	}
+	sl.Listener = rec
+
+	require.NoError(t, l.Close())
+
+	assert.True(t, rec.socketLeft, "the socket inode must hold the slot during the unlink of the sidecar")
+	assert.False(t, rec.sidecarLeft, "the sidecar must be gone before the socket inode is unlinked")
+
+	_, err = os.Lstat(path)
+	assert.True(t, os.IsNotExist(err), "close must remove the socket file")
 }
 
 // TestClearStaleRemovesOrphanedSidecar pins that a sidecar without a
@@ -432,9 +515,9 @@ func TestDiscoverLiveIncludesOwnSlot(t *testing.T) { //nolint:paralleltest // us
 	stateHome := shortTempDir(t)
 	t.Setenv("XDG_STATE_HOME", stateHome)
 
-	_, _, cleanup, err := Acquire(t.Context(), false, 8, "own-id")
+	_, l, err := Acquire(t.Context(), false, 8, "own-id")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	got := DiscoverLive(t.Context(), 8, false)
 	_, ok := got["own-id"]
@@ -450,9 +533,9 @@ func TestAcquireWritesSidecar(t *testing.T) { //nolint:paralleltest // uses t.Se
 	stateHome := shortTempDir(t)
 	t.Setenv("XDG_STATE_HOME", stateHome)
 
-	path, _, cleanup, err := Acquire(t.Context(), false, 8, "acquire-inst")
+	path, l, err := Acquire(t.Context(), false, 8, "acquire-inst")
 	require.NoError(t, err)
-	t.Cleanup(cleanup)
+	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	data, err := os.ReadFile(SidecarPath(path))
 	require.NoError(t, err)

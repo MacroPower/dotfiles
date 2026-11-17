@@ -1368,12 +1368,13 @@ func TestSelectGuestContextRecreatesReapedLocal(t *testing.T) { //nolint:paralle
 	assert.Equal(t, "admin@local", cfg.CurrentContext)
 }
 
-// TestSessionDirCleanupOrdering pins that socketShutdown drains
-// in-flight handlers (waiting for them to exit) before the cleanup
-// closure proceeds to unlink files. Drives this with a runHost
-// that holds a handler in-flight via a shared channel; the test
-// verifies the unlink does not happen until the handler is
-// released.
+// TestSessionDirCleanupOrdering pins that the cleanup closure waits
+// in socketShutdown for an in-flight handler before it unlinks the
+// kubeconfig. A runHost that blocks on a channel holds the handler
+// in flight. The test checks that the kubeconfig stays while the
+// handler is in flight, and that the closure returns only after the
+// test releases the handler. The listener close unlinks the socket
+// and the sidecar, and the test checks both unlinks at the end.
 func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	// Resolve the socket dir before neutralizeWrapperEnv points
 	// TMPDIR at a t.TempDir(), which would nest shortTempDir under
@@ -1409,10 +1410,10 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 		Expiration: 3600,
 	})
 
-	listener, listenCleanup, err := socket.Listen(t.Context(), socketPath, "ordering-inst")
+	listener, err := socket.Listen(t.Context(), socketPath, "ordering-inst")
 	require.NoError(t, err)
 
-	t.Cleanup(listenCleanup)
+	t.Cleanup(func() { _ = listener.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	_, err = os.Stat(socket.SidecarPath(socketPath))
 	require.NoError(t, err, "sidecar must exist after socket.Listen with a non-empty instance id")
@@ -1462,6 +1463,9 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 	case <-time.After(100 * time.Millisecond):
 	}
 
+	_, err = os.Stat(kubeconfigPath)
+	require.NoError(t, err, "the cleanup must keep the kubeconfig while a handler is in flight")
+
 	close(release)
 
 	select {
@@ -1473,13 +1477,119 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 	<-connDone
 
 	_, err = os.Stat(socketPath)
-	assert.True(t, os.IsNotExist(err), "socket file must be unlinked by cleanup")
+	assert.True(t, os.IsNotExist(err), "the listener close must unlink the socket file")
 
 	_, err = os.Stat(socket.SidecarPath(socketPath))
-	assert.True(t, os.IsNotExist(err), "sidecar file must be unlinked by cleanup")
+	assert.True(t, os.IsNotExist(err), "the listener close must unlink the sidecar file")
 
 	_, err = os.Stat(kubeconfigPath)
 	assert.True(t, os.IsNotExist(err), "kubeconfig file must be unlinked by cleanup")
+}
+
+// TestSessionDirKeepsLaterSlotOwner pins that the cleanup closure
+// leaves the socket and the sidecar of a later serve that took the
+// same slot. A SIGINT closes the listener of the old serve, so the
+// slot is free while socketShutdown waits for an in-flight token
+// mint. A new serve can bind the slot in that window.
+func TestSessionDirKeepsLaterSlotOwner(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	// Resolve the socket dir before neutralizeWrapperEnv points
+	// TMPDIR at a t.TempDir(). See TestSessionDirCleanupOrdering.
+	socketDir := shortTempDir(t)
+
+	neutralizeWrapperEnv(t)
+
+	socketPath := filepath.Join(socketDir, "slot.sock")
+
+	release := make(chan struct{})
+	entered := make(chan struct{})
+
+	h := &handler{
+		pid:        7778,
+		envLookup:  constLookup(""),
+		socketPath: socketPath,
+	}
+	h.runHost = func(_ context.Context, _ string, _ []string) ([]byte, error) {
+		close(entered)
+		<-release
+
+		return []byte("ok"), nil
+	}
+	h.currentSA.Store(&currentSA{
+		Kubeconfig: "/admin/kube",
+		Context:    "prod",
+		SAName:     "sa",
+		Namespace:  "ns",
+		Expiration: 3600,
+	})
+
+	listener, err := socket.Listen(t.Context(), socketPath, "old-inst")
+	require.NoError(t, err)
+
+	h.mu.Lock()
+	h.socketListener = listener
+	h.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	socket.Start(ctx, listener, &h.socketWG, h.handleSocketConn)
+
+	connDone := make(chan struct{})
+
+	go func() {
+		defer close(connDone)
+
+		_ = dialAndRead(t, socketPath)
+	}()
+
+	<-entered
+
+	// The SIGINT cancels the context of serve, so socket.Serve
+	// closes the listener before the cleanup closure starts.
+	cancel()
+
+	cleanupDone := make(chan struct{})
+
+	go func() {
+		defer close(cleanupDone)
+
+		h.sessionDir()()
+	}()
+
+	require.Eventually(t, func() bool {
+		_, statErr := os.Lstat(socketPath)
+		return os.IsNotExist(statErr)
+	}, 2*time.Second, 10*time.Millisecond, "the listener close must free the slot")
+
+	next, err := socket.Listen(t.Context(), socketPath, "new-inst")
+	require.NoError(t, err, "a new serve must take the freed slot")
+
+	t.Cleanup(func() { _ = next.Close() }) //nolint:errcheck // best-effort test cleanup
+
+	select {
+	case <-cleanupDone:
+		t.Fatal("sessionDir cleanup returned before the in-flight socket handler completed")
+	default:
+	}
+
+	close(release)
+
+	select {
+	case <-cleanupDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sessionDir cleanup did not complete after handler released")
+	}
+
+	<-connDone
+
+	conn, err := net.DialTimeout("unix", socketPath, 2*time.Second) //nolint:noctx // synchronous test fixture
+	require.NoError(t, err, "the socket of the new serve must still accept dials")
+
+	_ = conn.Close() //nolint:errcheck // best-effort test cleanup
+
+	data, err := os.ReadFile(socket.SidecarPath(socketPath))
+	require.NoError(t, err, "the sidecar of the new serve must remain")
+	assert.Equal(t, "new-inst", string(data))
 }
 
 // TestSessionDirUnlinksBeforeDrains pins that the cleanup closure
@@ -1502,10 +1612,10 @@ func TestSessionDirUnlinksBeforeDrains(t *testing.T) { //nolint:paralleltest // 
 	require.NoError(t, os.WriteFile(kubeconfigPath, []byte("placeholder"), 0o600))
 	require.NoError(t, os.Symlink(kubeconfigPath, symlinkPath))
 
-	listener, listenCleanup, err := socket.Listen(t.Context(), socketPath, "drains-inst")
+	listener, err := socket.Listen(t.Context(), socketPath, "drains-inst")
 	require.NoError(t, err)
 
-	t.Cleanup(listenCleanup)
+	t.Cleanup(func() { _ = listener.Close() }) //nolint:errcheck // best-effort test cleanup
 
 	paths := map[string]string{
 		"socket":              socketPath,

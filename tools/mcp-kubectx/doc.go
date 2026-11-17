@@ -308,27 +308,32 @@
 //
 //  1. [*handler.socketShutdown] closes the UDS listener and waits
 //     for each connection handler to return, so each token mint
-//     ends before a later step unlinks a file.
-//  2. The closure unlinks the socket inode at h.socketPath.
-//  3. The closure unlinks the per-slot sidecar file at
-//     [socket.SidecarPath].
-//  4. The closure unlinks the scoped kubeconfig file with a local
+//     ends before a later step unlinks a file. The listener close
+//     unlinks the per-slot sidecar file at [socket.SidecarPath] and
+//     then the socket inode at h.socketPath.
+//  2. The closure unlinks the scoped kubeconfig file with a local
 //     [os.Remove] of h.lastOutputPath.
-//  5. The closure unlinks the hook-router sidecar symlink at
+//  3. The closure unlinks the hook-router sidecar symlink at
 //     [sidecarSymlinkPath].
-//  6. [*handler.drainSweep] waits for the background `host sweep`
+//  4. [*handler.drainSweep] waits for the background `host sweep`
 //     goroutine to return, for at most 30 seconds. The limit keeps
 //     a hung `host sweep` subprocess from blocking the shutdown.
 //     A SIGINT or a SIGTERM, before the closure or during it,
 //     cancels the sweep. When neither signal arrives, the wait
 //     lasts until the sweep ends or until the limit passes.
-//  7. The closure runs every registered release closure with a
+//  5. The closure runs every registered release closure with a
 //     30-second [context.Background] timeout.
 //
-// The unlinks of steps 2, 3, 4, and 5 are local and take
-// microseconds. Step 6 and step 7 can take seconds, and neither
-// reads the files that the unlinks remove. So the unlinks run
-// first.
+// The listener close unlinks the sidecar file while the listener
+// still holds the slot. The unlink of the socket inode then frees
+// the slot. A new serve might bind the slot and write its own
+// sidecar file while step 1 waits for a token mint. The closure
+// never unlinks either file after the listener close, so it leaves
+// the files of that new serve in place.
+//
+// The unlinks are local and take microseconds. Step 4 and step 5
+// can take seconds, and neither reads the files that the unlinks
+// remove. So the unlinks run first.
 //
 // On a Lima-guest serve the unlink of the kubeconfig file lands on
 // the host through the writable bind mount of <stateHomeDir> declared
@@ -337,10 +342,10 @@
 //
 // Claude Code sends its SIGKILL about 500 ms after the SIGINT that
 // starts the closure. A closure that runs longer, for example while
-// a `host release` of step 7 runs, then ends partway, and its later
+// a `host release` of step 5 runs, then ends partway, and its later
 // steps never run. So under the signal sequence of Claude Code, the
-// closure never reaches the 30-second limit of step 6 or step 7.
-// A SIGKILL during step 6 or step 7 leaves behind only the SAs that
+// closure never reaches the 30-second limit of step 4 or step 5.
+// A SIGKILL during step 4 or step 5 leaves behind only the SAs that
 // serve had not released, with their bindings and provision
 // records. The SIGKILL reaches only serve, so a `host release`
 // subprocess that has started keeps running after serve ends.
@@ -348,11 +353,11 @@
 // When serve ends before the closure starts, it leaves the items in
 // this list behind. When serve ends while the closure runs, it
 // leaves only the items of the steps that have not run. The socket
-// inode is the exception, because closing the listener unlinks the
-// inode. [socket.Serve] closes the listener as soon as SIGINT or
-// SIGTERM cancels the context of serve, and step 1 closes it when
-// it is still open. So a serve that ends during the closure leaves
-// no socket inode.
+// inode and the per-slot sidecar file are the exception, because
+// closing the listener unlinks both. [socket.Serve] closes the
+// listener as soon as SIGINT or SIGTERM cancels the context of
+// serve, and step 1 closes it when it is still open. So a serve
+// that ends during the closure leaves neither file.
 //
 //   - Each SA that the serve had not released, and the binding of
 //     that SA. The startup sweep of a later serve in the same env,

@@ -175,14 +175,13 @@ func runServe(ctx context.Context, args []string) error {
 	h.runHost = h.defaultRunHost
 
 	// socket.Acquire walks slot 0..socketSlots-1 and binds the
-	// first free one. Its cleanup is dropped: sessionDir's cleanup
-	// already calls socketShutdown (close listener) + bestEffortRemove
-	// of socketPath, so calling both would just be redundant. The
-	// instanceID is written into the per-slot sidecar inside
-	// socket.Listen before this returns; that write must happen
+	// first free one. Closing the listener unlinks the per-slot
+	// sidecar and the socket inode, and the socketShutdown step of
+	// sessionDir closes it. socket.Listen writes the instanceID into
+	// the sidecar before Acquire returns. That write must happen
 	// before socket.DiscoverLive runs below so the serve's own id
 	// appears in the live set.
-	sockPath, listener, _, err := socket.Acquire(ctx, guest, h.socketSlots, h.instanceID)
+	sockPath, listener, err := socket.Acquire(ctx, guest, h.socketSlots, h.instanceID)
 	if err != nil {
 		return fmt.Errorf("bind serve socket: %w", err)
 	}
