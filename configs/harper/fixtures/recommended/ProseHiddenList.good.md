@@ -23,3 +23,7 @@ Run `make`. Run `make test`. Run `make lint`.
 The wizard asks "Continue?" next, and it waits for an answer. Then it writes the config file.
 
 The wizard asks "Run `make`?" next, and it waits for an answer. Then it writes the config file.
+
+"Ready?" the wizard asks before the build. "Ready?" a prompt says after the tests. "Ready?" one dialog shows at the end.
+
+"A lease?" the guide asks before the build. "A lease?" the guide asks after the tests. "A lease?" the guide asks at the end.

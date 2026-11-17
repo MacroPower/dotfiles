@@ -20,3 +20,7 @@ names. The loader reads `b.nix`. The loader reads `c.nix`. <!-- same finding -->
 The proxy says “retry now.” The proxy says ‘wait now.’ The proxy says “stop now.”
 
 The loader reads "`a.nix`." The loader reads "`b.nix`." The loader reads "`c.nix`."
+
+"Save changes?" appears when you close the editor. "Save changes?" shows when you quit the app. "Save changes?" pops up when the session ends.
+
+“Ready?” the wizard asks before the build. “Ready?” the prompt asks after the tests. “Ready?” the dialog asks at the end.

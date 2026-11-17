@@ -31,3 +31,7 @@ What is cached? “A token is.” The worker reads the file again.
 What is cached? ‘A token is.’ The worker reads the file again.
 
 A user typed "`stop`." A user then left.
+
+"A lease is held?" the guide asks.
+
+A lease is a lock. "A lease?" the guide asks.

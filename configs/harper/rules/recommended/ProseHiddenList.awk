@@ -25,6 +25,23 @@
 # spans, so `The --force flag skips` and `The --dry-run flag prints`
 # both open with `The flag`.
 #
+# A sentence can open with a quotation that ends in `.`, `?`, or `!`,
+# when a lowercase word after the closing quote continues it (`"Save
+# changes?" appears`). Three sentences in a row that open with the same
+# quotation repeat one item, such as a dialog title, as three sentences
+# that open with `The node controller` do. They hide a list of the cases
+# where the item appears. The check keys them on their first two words,
+# as it keys any other sentence.
+#
+# When the opening quotation holds two or more words, the first two
+# words of the sentence sit inside it (`save changes`). Three such
+# sentences then draw a finding whatever words follow the quote. After a
+# quotation of one word, the two words cross the closing quote
+# (`"Ready?" the` keys on `ready the`). Three sentences that open with
+# the same quotation of one word therefore pass when the word after the
+# quote differs (`"Ready?" the wizard`, `"Ready?" a prompt`, `"Ready?"
+# one dialog`).
+#
 # A sentence of one word has no opening to compare, and a blanked code
 # span does not count as a word. Three sentences that each hold one verb
 # and a code span therefore pass, though they hide a list of commands
@@ -50,7 +67,16 @@
 #
 # Openings with `a` or `an` (`A pod`) pass, because
 # ProseIndefiniteOpener reports those sentences and asks for a plural
-# subject instead of a list.
+# subject instead of a list. Sentences that open with a quotation whose
+# first word is `a` or `an` pass too (`"A lease?" the guide asks`). When
+# the quotation ends in `.`, `?`, or `!`, ProseIndefiniteOpener stops
+# its subject scan at the closing quote. It also does not count such a
+# sentence as the first of a run of sentences that open with `a` or
+# `an`. It reports the sentence only when a present-tense verb sits
+# inside the quotation (`"A lease is held?" the guide asks`), or when
+# the sentence comes second in such a run (`A lease is a lock. "A
+# lease?" the guide asks.`). Three sentences in a row that open with `"A
+# lease?"` therefore draw a finding from neither rule.
 #
 # Measurement
 #
