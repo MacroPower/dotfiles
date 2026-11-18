@@ -1250,6 +1250,97 @@ in
           touch "$out"
         '';
 
+        # Lints paragraphs that ProseOpeningPronoun reports and that its
+        # fixtures cannot hold, and expects the findings that want lists:
+        #
+        # - A line of `>` and four or more columns of spaces or tabs is a
+        #   blank line of the blockquote. That line ends the open
+        #   paragraph. editorconfig trims the whitespace from a fixture.
+        # - A paragraph that holds a line with a deep indent, a blank
+        #   line, and a link reference definition precede a line indented
+        #   four columns. That line is more text of the paragraph that the
+        #   definition opens, and not code.
+        # - In a list item after a heading, a paragraph ends in a line of
+        #   `- - -`, and fenced and indented code follow it. A line one
+        #   column past the text of the item ends the code and opens a
+        #   paragraph.
+        # - A delimiter row turns the line with a deep indent above it
+        #   into the header row of a table. The paragraph then ends above
+        #   that line. The `same finding` comment that a bad fixture needs
+        #   at the end of each row breaks the table.
+        #
+        # check.py expects a finding on each line of a bad fixture.
+        # Definitions, fence markers, and the rows of a table do not hold
+        # one. The command in configs/harper/CLAUDE.md builds this test
+        # too.
+        tests.opening-pronoun = runCommand "prose-lint-opening-pronoun" { } ''
+          printf '%s\n' \
+            'The pod holds the cache.' \
+            "" \
+            '> It may help' \
+            '>     ' \
+            '> to restart the pod.' \
+            "" \
+            '> It may help' \
+            "$(printf '>\t\t')" \
+            '> to restart the pod.' \
+            "" \
+            'It may help to restart the pod' \
+            '    - first' \
+            "" \
+            '[guide]: https://example.com' \
+            '    It runs on the node.' \
+            "" \
+            '1. The pod holds the cache.' \
+            "" \
+            '   ## Setup' \
+            "" \
+            '   It may help to restart the pod' \
+            '       - - -' \
+            "" \
+            '   ~~~' \
+            '   make build' \
+            '   ~~~' \
+            '        make test' \
+            '    It runs on the node.' \
+            "" \
+            'It may help' \
+            '    | a | to |' \
+            '| --- | --- |' \
+            "" \
+            'It may help' \
+            '    | a | to |' \
+            '--- | :--:' \
+            "" \
+            'It may help' \
+            '    - first to restart' \
+            ':--' >pronoun.md
+
+          cat >want <<'EOF'
+          pronoun.md:3:3
+          pronoun.md:7:3
+          pronoun.md:15:5
+          pronoun.md:28:5
+          pronoun.md:30:1
+          pronoun.md:34:1
+          pronoun.md:38:1
+          EOF
+
+          rc=0
+          found=$(${lib.getExe finalAttrs.finalPackage} pronoun.md) || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "pronoun.md: prose-lint exited $rc" >&2
+            exit 1
+          fi
+          printf '%s\n' "$found" |
+            sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::ProseOpeningPronoun: .*,\1,p' >got
+          if ! diff want got; then
+            echo "pronoun.md draws other ProseOpeningPronoun findings than want lists" >&2
+            exit 1
+          fi
+          touch "$out"
+        '';
+
         # Writes one line with a word in capitals at each path of a
         # scratch repository and lints it. ProseCapsEmphasis must skip
         # each prompt file for an agent and report each other file. The

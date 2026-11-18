@@ -425,6 +425,24 @@ on a set of files.
   lines. Some of the lines also need trailing whitespace, which
   editorconfig trims.
 
+- `opening-pronoun` lints paragraphs that ProseOpeningPronoun reports
+  and that its fixtures cannot hold. The test expects the findings that
+  it lists:
+  - A quoted paragraph above a line of `>` and four or more columns of
+    whitespace, which ends the paragraph. editorconfig trims that
+    whitespace from a fixture.
+  - A line indented four columns right under a link reference
+    definition, which GFM reads as more text of the paragraph that the
+    definition opens.
+  - A paragraph one column past the text of a list item, under a fence
+    and indented code below a line of `- - -`.
+  - A line with a deep indent above a delimiter row, which GFM reads as
+    the header row of a table. The `same finding` comment that a bad
+    fixture needs at the end of each row breaks the table.
+
+  Every bad fixture needs a finding on each line. Definitions, fence
+  markers, and the rows of a table do not hold one.
+
 - `prompt-files` lints one line with a word in capitals at the path of
   a prompt file for an agent and at other paths. It expects the
   ProseCapsEmphasis finding only at the other paths, which include a
