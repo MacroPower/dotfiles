@@ -254,3 +254,23 @@ and lazily, e.g. at noon.
   >
   >      It runs again, e.g. at noon.
 <!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+<div> The job runs, e.g. nightly.
+***
+    It reruns, e.g. hourly.
+</div> <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The job runs, e.g. nightly,
+    ***
+    and again, e.g. hourly.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The job runs, e.g. nightly.
+  ## Steps, e.g. build
+  ***
+    It reruns, e.g. hourly.
+<!-- prettier-ignore-end -->

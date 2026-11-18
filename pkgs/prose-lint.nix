@@ -1102,8 +1102,9 @@ in
         '';
 
         # Lints lines after a thematic break written with spaces
-        # (`* * *`, `- - -`), after empty list items, and after a fence
-        # marker under quoted code. CommonMark reads each line of the file
+        # (`* * *`, `- - -`) and after empty list items. It also lints
+        # lines after a fence in a list item and after a fence marker
+        # under quoted code. CommonMark reads each line of the file
         # that holds `e.g.` as prose, except the last. The test expects a
         # ProseLatinAbbreviation finding on each of those lines:
         #
@@ -1113,6 +1114,9 @@ in
         #   the item, after a blank line too (`  * * *` under `- `). A line
         #   two columns past the text of the item after the break is
         #   paragraph text of the item.
+        # - A fence indented into a list item keeps the list open. A line
+        #   two columns past the text of the item after the fence and a
+        #   blank line is paragraph text of the item.
         # - An empty list item (`-   `) puts its text one column past
         #   the marker, so a `>` there sits past the text.
         # - An empty item after a line of text (`* `) continues the
@@ -1137,11 +1141,11 @@ in
         # a blockquote of the item, and the want list leaves it out.
         #
         # The fixtures of ProseLatinAbbreviation cannot hold these lines.
-        # check.py needs a finding on each line of a bad fixture, and a
-        # thematic break, an empty item, or a fence marker does not hold
-        # any text. Some of the lines also need trailing whitespace, which
-        # editorconfig trims. The command in configs/harper/CLAUDE.md
-        # builds this test too.
+        # check.py needs a finding on each line of a bad fixture other
+        # than a line of thematic-break marks, and an empty item or a
+        # fence marker does not hold any text. Some of the lines also need
+        # trailing whitespace, which editorconfig trims. The command in
+        # configs/harper/CLAUDE.md builds this test too.
         tests.quote-text = runCommand "prose-lint-quote-text" { } ''
           printf '%s\n' \
             '* * *' \
@@ -1204,6 +1208,13 @@ in
             "" \
             '    It reruns, e.g. hourly.' \
             "" \
+            '- The job runs.' \
+            '  ```' \
+            '  make build' \
+            '  ```' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
             ' 1. ' \
             "$(printf '\t')" \
             '    The job runs, e.g. nightly,' \
@@ -1232,7 +1243,8 @@ in
           quote.md:47:12
           quote.md:53:17
           quote.md:59:16
-          quote.md:63:19
+          quote.md:66:16
+          quote.md:70:19
           EOF
 
           rc=0

@@ -259,11 +259,16 @@ class ExpectedLinesTest(unittest.TestCase):
             "  <!-- prettier-ignore -->  ",
             "The scheduler reads the queue. <!-- prettier-ignore -->",
             "<!-- a note -->",
+            "***",
+            "> > - - -",
+            "    ___",
+            "*** <!-- a note -->",
+            "**",
         ]
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ProseAndOr.bad.md"
             path.write_text("\n".join(lines) + "\n")
-            self.assertEqual(check.expected_lines(path), {3, 8, 9})
+            self.assertEqual(check.expected_lines(path), {3, 8, 9, 13, 14})
 
 
 if __name__ == "__main__":

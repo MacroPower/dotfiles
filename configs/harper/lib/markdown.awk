@@ -10,11 +10,11 @@
 # destinations, and bare URLs to spaces, so columns stay put. It skips
 # YAML front matter, fenced code at any indentation or inside a
 # blockquote, HTML comments, and link reference definitions
-# (`[guide]: https://example.com`). It also skips indented code (an
-# indented line after a blank line outside a list, so a nested list
-# item still counts). It skips a MyST directive's opening fence and the
-# `:name: value` option lines under it, because ProseEmoji's shortcode
-# pattern matches an option such as `:class: tip`.
+# (`[guide]: https://example.com`). It also skips indented code, an
+# indented line outside a list after a blank line or a thematic break.
+# A nested list item therefore still counts. It skips a MyST directive's
+# opening fence and the `:name: value` option lines under it, because
+# ProseEmoji's shortcode pattern matches an option such as `:class: tip`.
 #
 # In a blockquote, indented code is a line indented four or more
 # columns past the space after its last `>`, such as
@@ -654,6 +654,11 @@ in_comment {
     while (substr(line, fence_len + 1, 1) == fence_char) {
       fence_len++
     }
+    # A fence without an indent ends the list, as the `in_list` block
+    # below explains.
+    if (raw !~ /^[ \t]/) {
+      in_list = 0
+    }
     prev_blank = 0
     next
   }
@@ -677,24 +682,38 @@ in_comment {
     in_comment = 1
     next
   }
-  # A list runs from its first item to the next line that follows a
-  # blank line without an indent. A heading or a table row also ends it.
-  # A heading opens with one to six `#` marks. CommonMark reads a line
+  # A list runs from its first item to the next line without an indent
+  # that follows a blank line. A heading or a table row also ends it. A
+  # heading opens with one to six `#` marks. CommonMark reads a line
   # with seven or more marks as text, so that line continues the list
-  # item or the code span above it. A thematic break is not an item,
-  # even with spaces between its marks (`* * *`, `- - -`). After a blank
-  # line, such a break without an indent therefore ends the list, as
-  # `***` does. lib/markdown.awk then skips indented code that a blank
-  # line separates from the break. Indented code right under the break
-  # reaches prose(), as it does under `***`.
+  # item or the code span above it.
+  #
+  # A thematic break or a fence without an indent also ends the list,
+  # with or without a blank line above it (`- An item.` above `***`).
+  # CommonMark lets a line left of the text of a list item continue the
+  # item only when the line holds more text of its paragraph. A break or
+  # a fence opens a block instead. The fence branch above ends the list
+  # at a fence. A thematic break is not an item, even with spaces
+  # between its marks (`* * *`, `- - -`).
   if (raw ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/ && !quote_break) {
     in_list = 1
-  } else if (prev_blank && raw !~ /^[ \t]/) {
+  } else if ((prev_blank || quote_break) && raw !~ /^[ \t]/) {
     in_list = 0
   } else if (raw ~ /^ {0,3}(#{1,6}([ \t]|$)|\|)/) {
     in_list = 0
   }
-  prev_blank = 0
+  # A thematic break closes the open paragraph, as a blank line does. So
+  # `prev_blank` holds 1 after a `quote_block` break, and the next line
+  # takes the tests of a line after a blank line. Outside a list, an
+  # indented line right under the break is indented code (`***` above
+  # `    make build`). In an HTML block, a line of rule marks is text of
+  # the block, so it does not count. In a list item, a line under the
+  # break that reaches four columns past the margin can still be
+  # paragraph text of the item. So a break that `item_depth` places in
+  # an item does not count either. A break without an indent has
+  # already ended every item in the `item_depth` loop above, so it
+  # still counts.
+  prev_blank = quote_break && quote_block && !html_open && !item_depth
   # A list item, heading, table row, or HTML line starts a new block,
   # so a code span open on the line before ends there.
   if (raw ~ /^[ \t]*(([-*+]|[0-9]+[.)])[ \t]|#{1,6}([ \t]|$)|[|<])/) {

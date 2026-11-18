@@ -310,3 +310,45 @@ The pod holds the cache.
 
     echo "Use a flag, e.g. the port"
 <!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- An item.
+***
+
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- An item.
+---
+
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- An item.
+***
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- An item.
+```
+x
+```
+
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+
+***
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> The pod holds the cache.
+> ***
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->

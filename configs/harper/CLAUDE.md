@@ -416,14 +416,18 @@ on a set of files.
   line separates from a list item and that reaches the text of the
   item (`  * * *` under `- `). CommonMark keeps the break in the item,
   so a line two columns past the text of the item is paragraph text.
+  A fence indented into a list item keeps the list open too. After the
+  fence and a blank line, a line two columns past the text of the item
+  is paragraph text of the item.
 
   The test expects a ProseLatinAbbreviation finding on each line that
   holds `e.g.`, except the last line. CommonMark reads that line as
   indented code in a blockquote of an empty item, which a line of
-  whitespace keeps open. Thematic breaks, empty items, and fence markers
-  do not hold text for a finding, so the fixtures cannot hold these
-  lines. Some of the lines also need trailing whitespace, which
-  editorconfig trims.
+  whitespace keeps open. check.py lets a line of a bad fixture that
+  holds only the marks of a thematic break pass without a finding. Empty
+  items and fence markers do not hold text for a finding, so the
+  fixtures cannot hold these lines. Some of the lines also need trailing
+  whitespace, which editorconfig trims.
 
 - `opening-pronoun` lints paragraphs that ProseOpeningPronoun reports
   and that its fixtures cannot hold. The test expects the findings that

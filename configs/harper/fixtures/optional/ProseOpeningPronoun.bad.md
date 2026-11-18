@@ -443,3 +443,42 @@ The pod holds the cache. <!-- same finding -->
   > It may help
 >       - first to restart the pod. <!-- same finding -->
 <!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> - The outer item. <!-- same finding -->
+>   - The inner item. <!-- same finding -->
+>
+>     The pod holds the cache. <!-- same finding -->
+>     ***
+>     It runs on the node.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- Item one. <!-- same finding -->
+
+  The pod holds <!-- same finding -->
+the cache. <!-- same finding -->
+    ***
+  It runs on the node.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache. <!-- same finding -->
+
+      ***
+  It runs on the node.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache. <!-- same finding -->
+
+      ***
+    It runs on the node.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+>     make build <!-- same finding -->
+    ***
+    make test <!-- same finding -->
+It runs on the node.
+<!-- prettier-ignore-end -->

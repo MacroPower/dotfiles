@@ -16,7 +16,9 @@ line that ends in an HTML comment that holds `same finding` does not
 need a lint of its own, because a finding on a nearby line covers it,
 such as the heading after it that skips a level. A line that holds only
 a prettier-ignore comment does not need one either, so a fixture can
-keep prettier from adding a blank line between two blocks. A fixture
+keep prettier from adding a blank line between two blocks. Nor does a
+line that holds only `>` marks and the marks of a thematic break
+(`***`, `- - -`), because it holds no text for a lint. A fixture
 can also keep the indent of a heading, which prettier strips, by
 putting the heading between prettier-ignore-start and
 prettier-ignore-end lines. A lone prettier-ignore line before the
@@ -345,6 +347,7 @@ def check_locale(rule: Rule, fixtures: Path, lib: Path) -> list[str]:
 
 SAME_FINDING = "<!-- same finding -->"
 PRETTIER_IGNORE = re.compile(r"<!--\s*prettier-ignore(-start|-end)?\s*-->")
+RULE_MARKS = re.compile(r"[ \t>]*((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})")
 
 
 def expected_lines(target: Path) -> set[int]:
@@ -355,6 +358,7 @@ def expected_lines(target: Path) -> set[int]:
         if line.replace(">", "").strip()
         and not line.rstrip().endswith(SAME_FINDING)
         and not PRETTIER_IGNORE.fullmatch(line.strip())
+        and not RULE_MARKS.fullmatch(line)
     }
 
 
