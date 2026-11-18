@@ -1353,6 +1353,54 @@ in
           touch "$out"
         '';
 
+        # Lints quoted paragraphs that lib/sentences.awk splits and that
+        # the fixtures of ProseSentenceLength cannot hold. Each of the
+        # three blockquotes opens with a line of 26 words and ends with a
+        # line of 20 words. Only the last line ends in a period. In the
+        # first two, a line of `>` and four or more columns of spaces
+        # or tabs sits between the two lines. That line is a blank line
+        # of the blockquote, so it ends the paragraph, and neither line
+        # draws a finding. editorconfig trims the whitespace from a
+        # fixture. In the third blockquote, a list marker four columns
+        # past the space after the `>` continues the sentence to 48
+        # words, so the test expects one ProseSentenceLength finding
+        # there. The command in configs/harper/CLAUDE.md builds this test
+        # too.
+        tests.sentence-paragraphs = runCommand "prose-lint-sentence-paragraphs" { } ''
+          first='The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod'
+          second='it retries the placement on the next node in the queue when the first node lacks room for the pod.'
+          printf '%s\n' \
+            "> $first" \
+            '>     ' \
+            "> $second" \
+            "" \
+            "> $first" \
+            "$(printf '>\t\t')" \
+            "> $second" \
+            "" \
+            "> $first" \
+            '>     - and then' \
+            "> $second" >paragraphs.md
+
+          cat >want <<'EOF'
+          paragraphs.md:9:3
+          EOF
+
+          rc=0
+          found=$(${lib.getExe finalAttrs.finalPackage} paragraphs.md) || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "paragraphs.md: prose-lint exited $rc" >&2
+            exit 1
+          fi
+          printf '%s\n' "$found" |
+            sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::ProseSentenceLength: .*,\1,p' >got
+          if ! diff want got; then
+            echo "paragraphs.md draws other ProseSentenceLength findings than want lists" >&2
+            exit 1
+          fi
+          touch "$out"
+        '';
+
         # Writes one line with a word in capitals at each path of a
         # scratch repository and lints it. ProseCapsEmphasis must skip
         # each prompt file for an agent and report each other file. The

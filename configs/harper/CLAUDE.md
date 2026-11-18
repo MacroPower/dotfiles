@@ -447,6 +447,13 @@ on a set of files.
   Every bad fixture needs a finding on each line. Definitions, fence
   markers, and the rows of a table do not hold one.
 
+- `sentence-paragraphs` lints quoted paragraphs that lib/sentences.awk
+  splits and that the fixtures of ProseSentenceLength cannot hold. A
+  line of `>` and four or more columns of whitespace ends the paragraph
+  and the sentence. editorconfig trims that whitespace from a fixture.
+  A list marker four columns past the space after the `>` continues the
+  sentence, and the test expects the ProseSentenceLength finding of
+  that sentence only.
 - `prompt-files` lints one line with a word in capitals at the path of
   a prompt file for an agent and at other paths. It expects the
   ProseCapsEmphasis finding only at the other paths, which include a

@@ -123,3 +123,243 @@ The proxy retries each failed request once before it returns the error to the cl
 The proxy retries each failed request once before it returns the error to the client and then says ‘see https://example.com/guide.’ The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.
 
 The wizard asks "Should the installer overwrite the existing configuration file in the home directory of the current user?" Then it writes the new file and restarts the service for the operators on call.
+
+<!-- prettier-ignore-start -->
+The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+   - and then
+it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+     - and then
+  it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+1. The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+      - and then
+   it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+>    - and then
+> it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+  - and then
+> it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+
+  > The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+     - and then
+  > it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+
+  > The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+>       - and then
+  > it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    | and then | it retries on the next node |
+| --- | --- |
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    # and then.
+it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+>The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+>    - and then
+>it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+<span>The</span> node holds the pod.
+<span>The</span> queue holds the job.
+The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    - and then it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+| The node holds the pod.
+The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    - and then it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+>	> - The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+>	>     - and then
+>	>   it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+## The node
+    # The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- - The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+      - and then
+    it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+1. - The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+       - and then
+     it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> - - The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+>       - and then
+>     it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- 100. The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+     - and then
+       it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+  1.   The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+     - and then
+       it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- # The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+      - and then
+    it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- ***
+      # The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+-
+      # The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+-      The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+      - and then
+    it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+>- The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+>      - and then
+>  it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> - The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+   >     - and then
+   >   it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> - The pod holds the cache.
+>
+>   > The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+  >     - and then
+  >       it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> - The pod holds the cache.
+>   1.   The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+   >      - and then
+   >        it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> - The pod holds the cache.
+> <span>The</span> node holds the pod.
+   > The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+   >     - and then
+   >   it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+  The node | holds
+  --- | --- | ---
+The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    - and then
+  it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+[^1]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    - and then
+    it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- [^2]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+      - and then
+      it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> [^3]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+>     - and then
+>     it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+[^4]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    - and then
+    it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache.
+  [^5]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+      - and then
+      it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+> The pod holds the cache.
+> [^6]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+>     - and then
+>     it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+1.  The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    - and then
+    it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+-   The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+    -   and then
+    it retries the placement on the next node in the queue when the first node lacks room for the pod.
+<!-- prettier-ignore-end -->

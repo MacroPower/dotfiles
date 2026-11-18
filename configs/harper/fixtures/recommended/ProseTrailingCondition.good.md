@@ -156,6 +156,16 @@ Restart the agent if [[needed]].
 
 Restart the agent if [[needed now]].
 
+<!-- prettier-ignore-start -->
+Restart the agent if [[needed
+    - x]].
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+Restart the agent if [[needed
+    <div>x]].
+<!-- prettier-ignore-end -->
+
 Restart the agent if [[needed]] `a|b`.
 
 Retry the request if [[possible]] values change.

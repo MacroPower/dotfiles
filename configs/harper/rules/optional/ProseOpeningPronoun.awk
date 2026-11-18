@@ -113,10 +113,10 @@
 # The underline must open with as many `>` markers as the paragraph. In
 # a list item, it must also reach the column where the text of the
 # paragraph starts. underline() in lib/sentences.awk applies the same
-# tests. Like underline(), the check reads a line of `=` or `-` indented
-# four or more spaces past the text of the paragraph as an underline.
-# The check therefore drops that paragraph, although GFM reads the line
-# as more text of the paragraph.
+# tests. The check also reads a line of `=` or `-` indented four or more
+# spaces past the text of the paragraph as an underline. It therefore
+# drops that paragraph, although GFM and lib/sentences.awk read the
+# line as more text of the paragraph.
 #
 # A horizontal rule repeats one mark, `-`, `*`, or `_`, three or more
 # times, with or without spaces between the marks (`***`, `- - -`). A

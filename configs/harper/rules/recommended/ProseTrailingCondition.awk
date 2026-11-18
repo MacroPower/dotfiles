@@ -291,20 +291,26 @@
 # Harper reads a line that opens with an inline HTML tag or an email
 # address in angle brackets as more text of the paragraph. It does the
 # same at a `<` that does not open a tag or a link, and at an ordered
-# list marker other than `1.` or `1)`. It also does so when four or more
-# columns indent the line, whatever list marker, HTML tag, or code fence
-# opens it. lib/markdown.awk opens a code fence at any indent, so the
-# paragraph ends there too. Harper ends the paragraph at a heading or a
-# block quote, but it hides the `[[` there too.
+# list marker other than `1.` or `1)`. It also does so at a code fence
+# that four or more columns indent. lib/markdown.awk opens a code fence
+# at any indent, so the paragraph ends there too. Harper ends the
+# paragraph at a heading or a block quote, but it hides the `[[` there
+# too.
 #
 # So an `if` before such a wikilink draws both findings (`if [[needed`
-# and `<span>x]]`, `<a@b.co> x]]`, `< 5 x]]`, `2. x]]`, `    - x]]`,
-# `    <div>x]]`, `# x]]`, or `> x]]` on the next line). Harper shows
-# the `[[` as text when another list marker, a code fence, or a block
-# HTML tag such as `<div>` ends the paragraph. Harper ends the paragraph
-# at such a line only when fewer than four columns indent it. So only
-# this rule reports the `if` before a wikilink whose `]]` sits on such a
-# line (`- x]]`, `1. x]]`, or `<div>x]]` on the next line).
+# and `<span>x]]`, `<a@b.co> x]]`, `< 5 x]]`, `2. x]]`, `# x]]`, or
+# `> x]]` on the next line). Harper shows the `[[` as text when another
+# list marker, a code fence, or a block HTML tag such as `<div>` ends
+# the paragraph. Harper ends the paragraph at such a line only when
+# fewer than four columns indent it. So only this rule reports the `if`
+# before a wikilink whose `]]` sits on such a line (`- x]]`, `1. x]]`,
+# or `<div>x]]` on the next line).
+#
+# lib/sentences.awk reads any other line that four or more columns
+# indent as more text of the paragraph, as Harper does, whatever list
+# marker or HTML tag opens it. The wikilink then closes on that line,
+# and the check leaves the `if` to ProseVagueCriterion, as it does for
+# `if [[needed]]` (`    - x]]` or `    <div>x]]` on the next line).
 #
 # Harper pairs a `]]` with the nearest `[[` before it. So the check
 # reads the word after the `|` only when no other `[[` sits before the
