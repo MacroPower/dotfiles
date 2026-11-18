@@ -35,6 +35,8 @@ A paragraph ends the list.
 
     indented code 🚀
 
+>     indented code in a quote 🚀
+
 ```text
 🚀 inside a fence
 ```

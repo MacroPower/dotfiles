@@ -1044,7 +1044,10 @@ in
         # `-` marks, and ProseSentenceLength must still report it. A line
         # of `-` marks under markdown text underlines a heading, whose
         # sentences the check drops. The same line in a comment frames
-        # the comment.
+        # the comment. The last comment of boxed.sh indents its text four
+        # columns past a `>`. In markdown that text is indented code, but
+        # lib/markdown.awk reads it as prose in a comment, so
+        # ProseLatinAbbreviation must report it.
         tests.crlf = runCommand "prose-lint-crlf" { } ''
           mkdir lf crlf
           cp ${../configs/harper/fixtures/crlf}/* lf/
@@ -1055,6 +1058,7 @@ in
 
           cat >want <<'END'
           boxed.sh:4:3 ProseSentenceLength
+          boxed.sh:10:27 ProseLatinAbbreviation
           deploy.yaml:1:17 ProseAndOr
           license.go:5:31 ProseAndOr
           license.py:7:17 ProseAndOr
@@ -1094,6 +1098,137 @@ in
               exit 1
             fi
           done
+          touch "$out"
+        '';
+
+        # Lints lines after a thematic break written with spaces
+        # (`* * *`, `- - -`), after empty list items, and after a fence
+        # marker under quoted code. CommonMark reads each line of the file
+        # that holds `e.g.` as prose, except the last. The test expects a
+        # ProseLatinAbbreviation finding on each of those lines:
+        #
+        # - A thematic break does not open a list item, so a `>` past its
+        #   text is paragraph text.
+        # - An empty list item (`-   `) puts its text one column past
+        #   the marker, so a `>` there sits past the text.
+        # - An empty item after a line of text (`* `) continues the
+        #   paragraph.
+        # - An empty item in a blockquote (`> -`, `- > -`) opens a list
+        #   there. A line two columns past the text of the item stays in
+        #   the item, after a heading too.
+        # - A blank line closes an empty item (`-`), so a `>` under the
+        #   paragraph after it is paragraph text.
+        # - A lazy line ends the list item that holds a blockquote, so
+        #   lib/markdown.awk cannot place the `>` of the next line of that
+        #   blockquote. An empty item after such a `>` (`    > -`) still
+        #   opens a list in the blockquote.
+        # - A line without `>` ends a blockquote that holds indented code.
+        #   After code that opens with a fence marker (`>     ```sh`), a
+        #   fence marker indented four columns is indented code too, so it
+        #   does not open a fence. A bare `>` line or a line of such code
+        #   between the two keeps that guard.
+        #
+        # A line of whitespace that reaches the text of an empty item
+        # keeps the item open. The last line is therefore indented code in
+        # a blockquote of the item, and the want list leaves it out.
+        #
+        # The fixtures of ProseLatinAbbreviation cannot hold these lines.
+        # check.py needs a finding on each line of a bad fixture, and a
+        # thematic break, an empty item, or a fence marker does not hold
+        # any text. Some of the lines also need trailing whitespace, which
+        # editorconfig trims. The command in configs/harper/CLAUDE.md
+        # builds this test too.
+        tests.quote-text = runCommand "prose-lint-quote-text" { } ''
+          printf '%s\n' \
+            '* * *' \
+            '  The rule above, e.g. here,' \
+            '     >     goes on, e.g. hourly.' \
+            "" \
+            '- - -' \
+            '  The rule above, e.g. here,' \
+            '    >     goes on, e.g. hourly.' \
+            "" \
+            '-   ' \
+            '    The job runs, e.g. nightly,' \
+            '       >     and again, e.g. hourly.' \
+            "" \
+            'The job runs, e.g. nightly,' \
+            '* ' \
+            '    >     and again, e.g. hourly.' \
+            "" \
+            '> -' \
+            '>   # The job runs, e.g. nightly.' \
+            '>     It reruns, e.g. hourly.' \
+            "" \
+            '- > -' \
+            '  >   # The job runs, e.g. nightly.' \
+            '  >     It reruns, e.g. hourly.' \
+            "" \
+            '-' \
+            "" \
+            '  The job runs, e.g. nightly,' \
+            '    >     and again, e.g. hourly.' \
+            "" \
+            '- > > The job runs, e.g. nightly,' \
+            'and lazily, e.g. at noon.' \
+            '    > -' \
+            '  >   # It reruns, e.g. hourly.' \
+            '  >     It runs again, e.g. at noon.' \
+            "" \
+            '>     ```sh' \
+            '>     make build' \
+            '    ```' \
+            "" \
+            'The job runs, e.g. nightly.' \
+            "" \
+            '>     ```sh' \
+            '>' \
+            '    make build' \
+            '    ```' \
+            "" \
+            'It reruns, e.g. hourly.' \
+            "" \
+            ' 1. ' \
+            "$(printf '\t')" \
+            '    The job runs, e.g. nightly,' \
+            '      >     Run the job, e.g. hourly.' >quote.md
+
+          cat >want <<'EOF'
+          quote.md:2:19
+          quote.md:3:21
+          quote.md:6:19
+          quote.md:7:20
+          quote.md:10:19
+          quote.md:11:25
+          quote.md:13:15
+          quote.md:15:22
+          quote.md:18:21
+          quote.md:19:18
+          quote.md:22:23
+          quote.md:23:20
+          quote.md:27:17
+          quote.md:28:22
+          quote.md:30:21
+          quote.md:31:13
+          quote.md:33:20
+          quote.md:34:24
+          quote.md:40:15
+          quote.md:47:12
+          quote.md:51:19
+          EOF
+
+          rc=0
+          found=$(${lib.getExe finalAttrs.finalPackage} quote.md) || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "quote.md: prose-lint exited $rc" >&2
+            exit 1
+          fi
+          printf '%s\n' "$found" |
+            sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::ProseLatinAbbreviation: .*,\1,p' >got
+          if ! diff want got; then
+            echo "quote.md draws other ProseLatinAbbreviation findings than want lists" >&2
+            exit 1
+          fi
           touch "$out"
         '';
 

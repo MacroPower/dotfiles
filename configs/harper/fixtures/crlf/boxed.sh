@@ -6,3 +6,5 @@
 # in batches of one hundred to the destination table.
 # ----------------------------------------------------------------------
 cp a b
+
+# >     Rerun the import, e.g. hourly.

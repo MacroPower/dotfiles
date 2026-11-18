@@ -16,6 +16,22 @@
 # `:name: value` option lines under it, because ProseEmoji's shortcode
 # pattern matches an option such as `:class: tip`.
 #
+# In a blockquote, indented code is a line indented four or more
+# columns past the space after its last `>`, such as
+# `>     make build`. lib/markdown.awk skips that line too. A line that
+# continues a paragraph or a list of the blockquote stays prose,
+# because CommonMark reads it as more text of that block.
+# Some indented code in a blockquote still reaches prose().
+# lib/markdown.awk reads a setext underline of `=` marks, or of two `-`
+# marks, as more text of the open paragraph. Code after one therefore
+# stays prose. lib/markdown.awk also does not track the text column of a
+# list item in a blockquote, so code in such an item stays prose. It
+# opens a list at each list marker in a blockquote, even where
+# CommonMark reads the marker as more text of the open paragraph
+# (`> text` / `> 2. more`, `> text` / `> *`) or as a setext underline
+# (`> text` / `> -`). Code after such a line stays prose until the list
+# ends.
+#
 # lib/markdown.awk drops the `\r` from each line that ends in `\r\n`. A
 # file with CRLF line endings therefore draws the same findings as its
 # copy with LF endings. lib/markdown.awk sets RS in BEGIN, and gawk runs
@@ -58,8 +74,9 @@
 # side of a line of code stay apart. It blanks the comment marker (`#`,
 # `//`, `///`, `//!`, or `--`) to spaces, so the columns stay put, and
 # drops the ` x` that the shadow adds after a line that ends in `-`,
-# `#`, `/`, `*`, or `!`. It also turns off the indented-code rule,
-# because comment text is often indented under its marker.
+# `#`, `/`, `*`, or `!`. It also reads indented code as prose, in a
+# blockquote too, because comment text is often indented under its
+# marker.
 
 BEGIN {
   RS = "\r?\n"
@@ -72,6 +89,12 @@ BEGIN {
   in_comment = 0
   myst_options = 0
   span_open = 0
+  quote_para = 0
+  quote_closed = 0
+  quote_code = 0
+  item_depth = 0
+  item_empty = 0
+  html_open = 0
   raw_mode = ENVIRON["RAW"] != ""
   shadow_mode = ENVIRON["SHADOW"] != ""
   # A UTF-8 locale reads é as one character, and the C locale reads it
@@ -336,6 +359,72 @@ function opens_quote(t) {
   return t ~ /^[(\[*_]*(["']|\342\200\234|\342\200\230)/
 }
 
+# Returns s with each tab expanded to spaces up to the next tab stop.
+# A tab stop sits every four columns.
+function expand_tabs(s,   e, i, c) {
+  e = ""
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1)
+    e = e (c == "\t" ? spaces(4 - length(e) % 4) : c)
+  }
+  return e
+}
+
+# Returns the column of the text of the list item that opens s, with
+# tabs expanded. s opens with whitespace and a list marker. One to four
+# columns of whitespace follow the marker. After five or more, the text
+# is indented code, and its column sits one column past the marker. An
+# item with no text on its first line (`-` or `-   `) also puts its
+# column one column past the marker.
+function item_column(s,   m, w) {
+  match(s, /^[ \t]*([-*+]|[0-9]{1,9}[.)])/)
+  m = length(expand_tabs(substr(s, 1, RLENGTH)))
+  if (!match(s, /^[ \t]*([-*+]|[0-9]{1,9}[.)])[ \t]+/)) {
+    return m + 1
+  }
+  w = length(expand_tabs(substr(s, 1, RLENGTH))) - m
+  return m + ((w > 4 || RLENGTH == length(s)) ? 1 : w)
+}
+
+# Counts the blockquote markers that open the line. A marker is a `>`
+# after at most three spaces. A list item indents its blockquote.
+# Inside a list, the first marker can therefore also sit zero to three
+# columns past the text of an open list item. `item_cols[1]` to
+# `item_cols[item_depth]` hold the text columns of the open list items
+# outside any blockquote, from the outermost item in. One space after
+# each marker belongs to the marker, and so does one column of a tab
+# there. The function sets `quote_level` to the number of markers and
+# `quote_first` to the column of the first marker, or to -1. It sets
+# `quote_indent` to the number of columns of whitespace before the
+# text after the markers, with tabs expanded, or to -1 when no text
+# follows them. The function skips a `>` after a list marker
+# (`- > text`), because the line opens with the list marker. The
+# list-item branch of the main rule counts that `>`.
+function read_quote(   p, e, first, i) {
+  match($0, /^[ \t>]*/)
+  p = substr($0, 1, RLENGTH)
+  e = expand_tabs(p)
+  first = "^( {0,3}"
+  for (i = 1; i <= item_depth; i++) {
+    first = first "| {" item_cols[i] "," item_cols[i] + 3 "}"
+  }
+  first = first ")>"
+  quote_level = 0
+  quote_first = -1
+  while (match(e, quote_level == 0 ? first : "^ {0,3}>")) {
+    if (quote_level == 0) {
+      quote_first = RLENGTH - 1
+    }
+    quote_level++
+    e = substr(e, RLENGTH + 1)
+    if (substr(e, 1, 1) == " ") {
+      e = substr(e, 2)
+    }
+  }
+  match(e, /^ */)
+  quote_indent = (RLENGTH == length(e) && length(p) == length($0)) ? -1 : RLENGTH
+}
+
 FNR == 1 && $0 ~ /^---[ \t]*$/ {
   front_matter = 1
   next
@@ -376,6 +465,19 @@ in_comment {
   prev_blank = 1
   span_open = 0
   myst_options = 0
+  # A blank line ends every blockquote and the HTML block that
+  # `html_open` marks.
+  quote_para = 0
+  delete quote_lists
+  html_open = 0
+  # As in CommonMark, a blank line right after the first line of a list
+  # item closes the item when that first line holds only the list
+  # marker. A blank line that holds whitespace up to the text column of
+  # the item keeps the item open.
+  if (item_empty && length(expand_tabs($0)) < item_cols[item_depth]) {
+    item_depth--
+    item_empty = 0
+  }
   next
 }
 
@@ -390,7 +492,160 @@ in_comment {
   # lib/runs.awk reads `raw` to find a horizontal rule, because clean()
   # can leave a list item with only marks.
   raw = blank($0, "^([ \t]*>)+")
-  if (raw ~ /^[ \t]*(```|~~~)/) {
+  # `quote_para` holds the number of `>` markers of the open paragraph,
+  # or 0 when no blockquote holds one. `quote_lists[n]` holds 1 when the
+  # blockquote with n markers holds an open list. `quote_closed` holds 1
+  # after a bare `>` line or a line of indented code, because neither
+  # leaves a paragraph open. A line indented four or more columns past
+  # its markers is indented code, unless it continues the open
+  # paragraph or an open list of its blockquote.
+  read_quote()
+  # A line whose first marker or text sits left of the text of a list
+  # item ends the item.
+  last_item_col = item_depth ? item_cols[item_depth] : -1
+  while (item_depth && (quote_first >= 0 ? quote_first : quote_indent) < item_cols[item_depth]) {
+    item_depth--
+  }
+  # `item_empty` holds 1 after the first line of an item with no text,
+  # until the next line.
+  item_empty = 0
+  if (!shadow_mode && quote_level > quote_para && !(quote_level in quote_lists) && quote_indent >= 4) {
+    quote_para = 0
+    quote_closed = 1
+    quote_code = quote_code || raw ~ /^[ \t]*(```|~~~)/
+    prev_blank = 0
+    span_open = 0
+    myst_options = 0
+    next
+  }
+  # A list item or a block counts only within three columns of the
+  # markers, because a list marker or a `#` further right can be text of
+  # the open paragraph. Outside any blockquote, `item_nested` holds 1 for
+  # a line within three columns of the text of the innermost open list
+  # item. A list item or a block there opens inside that item, so it
+  # counts too.
+  item_nested = quote_level == 0 && item_depth && quote_indent < item_cols[item_depth] + 4
+  # `quote_break` holds 1 for a thematic break, a line of three or more
+  # `*`, `-`, or `_` marks of one kind with optional spaces or tabs
+  # between them (`* * *`). CommonMark reads such a line as a break and
+  # not as a list item. `quote_block` holds 1 for an ATX heading of one
+  # to six `#`, a fence, an HTML comment, or a thematic break. Each of
+  # these opens a block.
+  quote_break = raw ~ /^[ \t]*((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})$/
+  quote_block = (quote_indent < 4 || item_nested) && (quote_break || raw ~ /^[ \t]*(#{1,6}([ \t]|$)|```|~~~|<!--)/)
+  # `quote_lazy` holds 1 for a line of text with fewer markers than the
+  # open paragraph that is not a `quote_block` line. CommonMark reads
+  # such a line as more text of that paragraph, so each blockquote of
+  # the paragraph stays open. A list item there opens a block, and the
+  # list-item branch below ends each deeper blockquote for it.
+  quote_lazy = quote_level < quote_para && quote_indent >= 0 && !quote_block
+  # A list in a blockquote ends at a line with fewer markers that is
+  # not lazy. It also ends at a line of the blockquote without an
+  # indent, when that line follows a `quote_closed` line or is a
+  # `quote_block` line.
+  for (quote_n in quote_lists) {
+    if ((quote_level < quote_n + 0 && !quote_lazy) || (quote_level == quote_n + 0 && quote_indent == 0 && (quote_closed || quote_block))) {
+      delete quote_lists[quote_n]
+    }
+  }
+  # A line that opens with `<` can start an HTML block, such as
+  # `<div>`. Such a block runs to the next blank line, and a list marker
+  # inside it is text. `html_open` therefore holds 1 from each line
+  # outside any blockquote that opens with `<` to the next blank line,
+  # and no list item opens in that span. A lone HTML comment ends on its
+  # own line, so it does not set `html_open`. Inline HTML and an HTML
+  # block that ends before a blank line set it too, so a list item after
+  # one goes untracked.
+  if (quote_level == 0 && raw ~ /^[ \t]*</ && raw !~ /^[ \t]*<!--/) {
+    html_open = 1
+  }
+  # A bare `>` line or a `quote_block` line ends the paragraph. A lazy
+  # line continues it. CommonMark caps an ordered list marker at nine
+  # digits, so `1234567890. x` is text. CommonMark also does not let an
+  # empty list item interrupt a paragraph, and an ordered list must
+  # start at 1 to interrupt one. `item_opens` holds 1 for a bullet or a
+  # `1.` with text after it, which can interrupt a paragraph. Outside a
+  # blockquote, a line such as `2026. It runs` or a lone `*` after a
+  # line of text therefore continues the paragraph and pushes no item.
+  # In a blockquote, every list marker opens a list. Such a line opens
+  # the next item when the open paragraph sits in an item of a list of
+  # that blockquote. It opens a new blockquote when its first `>` sits
+  # left of the text of the item that holds the paragraph.
+  # lib/markdown.awk tracks neither case, and a list that it opens by
+  # mistake keeps the lines of the blockquote prose.
+  item_opens = raw ~ /^[ \t]*([-*+]|0*1[.)])[ \t]+[^ \t]/
+  if (quote_indent < 0 || quote_block) {
+    quote_para = 0
+  } else if ((quote_indent < 4 || item_nested) && raw ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])([ \t]|$)/) {
+    # The item ends each blockquote deeper than its markers.
+    quote_para = quote_level
+    for (quote_n in quote_lists) {
+      if (quote_n + 0 > quote_level) {
+        delete quote_lists[quote_n]
+      }
+    }
+    quote_lists[quote_level] = 1
+    # Outside a blockquote, an item opens when `item_opens` holds 1,
+    # after a blank line, or left of the text of the last item. No item
+    # opens inside an HTML block.
+    if (quote_level == 0 && !html_open && (item_opens || prev_blank || quote_indent < last_item_col)) {
+      item_cols[++item_depth] = item_column($0)
+      item_empty = raw ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])[ \t]*$/
+    }
+    # Each `>` after the list marker opens a blockquote in the item
+    # (`- > text`, `- - > text`), and the paragraph sits inside the last
+    # one. A list marker after a `>` opens a list in that blockquote
+    # (`- > - sub`), and the lines of its item continue that list. The
+    # loop reads the line with tabs expanded, as read_quote() does. A tab
+    # between two `>` marks (`1. > <tab>> text`) then counts as the
+    # spaces up to its tab stop.
+    quote_item = blank(expand_tabs($0), "^([ \t]*>)+")
+    sub(/^[ \t]*([-*+]|[0-9]{1,9}[.)])([ \t]+|$)/, "", quote_item)
+    while (match(quote_item, /^ {0,3}(>[ \t]?|([-*+]|[0-9]{1,9}[.)])([ \t]+|$))/)) {
+      if (index(substr(quote_item, 1, RLENGTH), ">")) {
+        quote_para++
+      } else {
+        quote_lists[quote_para] = 1
+      }
+      quote_item = substr(quote_item, RLENGTH + 1)
+    }
+  } else if (quote_level > quote_para) {
+    quote_para = quote_level
+  }
+  # read_quote() places a `>` only within three columns of the margin
+  # or of the text of an open list item. A `>` further right can still
+  # open a blockquote, such as in an item that lib/markdown.awk did not
+  # track, and its paragraph can stay open. Each later line with that
+  # many markers or fewer therefore stays prose until the paragraph
+  # ends. A list marker after those markers opens a list in that
+  # blockquote, so the lines of its item stay prose too.
+  if (quote_level == 0 && match($0, /^([ \t]*>)+/)) {
+    quote_item = substr($0, 1, RLENGTH)
+    quote_rest = substr($0, RLENGTH + 1)
+    quote_n = gsub(/>/, "", quote_item)
+    if (quote_n > quote_para) {
+      quote_para = quote_n
+    }
+    if (quote_rest ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])([ \t]|$)/) {
+      quote_lists[quote_n] = 1
+    }
+  }
+  quote_closed = quote_indent < 0
+  # A skipped line of indented code in a blockquote sets `quote_code`
+  # when it opens with a fence marker (`>     ~~~sh`). CommonMark ends
+  # the blockquote at the next line without `>`, because code does not
+  # take a lazy line. Each such line four or more columns past the
+  # margin and past the text of each open list item is then indented
+  # code too (`    ~~~`). `quote_code` stays 1 across those lines, and
+  # across the blank lines and bare `>` lines among them. A fence marker
+  # on one of those lines does not open a fence. Without the guard,
+  # that marker opens a fence, and the lines after it stay skipped until
+  # the next fence marker. The guard needs a fence marker in the skipped
+  # code. After other code, the line can open a real fence in a list
+  # item that lib/markdown.awk does not track, such as an item after a
+  # line of inline HTML.
+  quote_code = quote_code && (quote_indent < 0 || (quote_level == 0 && quote_indent >= 4 && !item_nested))
+  if (raw ~ /^[ \t]*(```|~~~)/ && !quote_code) {
     line = raw
     sub(/^[ \t]*/, "", line)
     span_open = 0

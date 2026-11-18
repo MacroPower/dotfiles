@@ -402,9 +402,23 @@ on a set of files.
   with CRLF line endings. The files hold a YAML block scalar, an HCL
   heredoc, and license headers, whose lines the comment shadow skips.
   They also hold a shell comment between two lines of `-` marks, and
-  ProseSentenceLength must report the long sentence in it. The test
-  expects the findings that it lists from both copies of each file, and
-  the same shadow from both.
+  ProseSentenceLength must report the long sentence in it. A shell
+  comment that indents its text four columns past a `>` draws a
+  ProseLatinAbbreviation finding, because lib/markdown.awk reads
+  indented code in a comment as prose. The test expects the findings
+  that it lists from both copies of each file, and the same shadow from
+  both.
+- `quote-text` lints lines after a thematic break written with spaces
+  (`* * *`) and after empty list items, in a blockquote too (`> -`).
+  It also lints lines after a fence marker four columns in after quoted
+  code that opens with one (`>     ```sh`), which CommonMark reads as
+  indented code. The test expects a ProseLatinAbbreviation finding on
+  each line that holds `e.g.`, except the last line. CommonMark reads
+  that line as indented code in a blockquote of an empty item, which a
+  line of whitespace keeps open. Thematic breaks, empty items, and fence
+  markers do not hold text for a finding, so the fixtures cannot hold
+  these lines. Some of the lines also need trailing whitespace, which
+  editorconfig trims.
 - `prompt-files` lints one line with a word in capitals at the path of
   a prompt file for an agent and at other paths. It expects the
   ProseCapsEmphasis finding only at the other paths, which include a

@@ -142,14 +142,15 @@
 # space that follows the marker.
 #
 # The check reads an indented line after a rule as code only outside a
-# list and a blockquote. After an indented rule in a list, or after a
-# rule in a blockquote, GFM can read the line as code. The check can
-# still report it there (`> ***`, `>     This is some code.`). The
-# check also counts an indented rule left of the text of a list item as
-# part of the list. GFM ends the list at that rule and reads an
-# indented line under it as code. The check can report that line (`  The
-# pod holds the cache.` in a list item, ` ***`, `    This is some
-# code.`).
+# list and a blockquote. After an indented rule in a list, GFM can read
+# the line as code, and the check can still report it there.
+# lib/markdown.awk skips indented code in a blockquote, so the check
+# does not see such a line after a rule there (`> ***`, `>     This is
+# some code.`). The check also counts an indented rule left of the
+# text of a list item as part of the list. GFM ends the list at that
+# rule and reads an indented line under it as code. The check can report
+# that line (`  The pod holds the cache.` in a list item, ` ***`,
+# `    This is some code.`).
 #
 # The check reads markdown only. Go doc comments open later paragraphs
 # with `It` by convention, and there the first paragraph names the
@@ -363,14 +364,15 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
   }
   # No paragraph is open after a rule, so an indented line there opens
   # indented code, with or without blank lines between the two.
-  # lib/markdown.awk skips indented code only after a blank line and
-  # outside a list, and it reads `- - -` and `* * *` as list items. This
-  # test therefore skips the code after a rule. The test skips no line
-  # after a rule in a list, where code must sit four columns past the
-  # text of the item. It skips no line in a blockquote either, because
-  # `$0` opens with the `>` markers. The code ends at the first line
-  # that is not indented, and that line opens a paragraph. A code line
-  # that looks like a list item (`    - foo`) does not open a list.
+  # Outside a blockquote, lib/markdown.awk skips indented code only
+  # after a blank line and outside a list, and it reads `- - -` and
+  # `* * *` as list items. This test therefore skips the code after a
+  # rule. The test skips no line after a rule in a list, where code must
+  # sit four columns past the text of the item. It skips no line in a
+  # blockquote either, because `$0` opens with the `>` markers. The code
+  # ends at the first line that is not indented, and that line opens a
+  # paragraph. A code line that looks like a list item (`    - foo`)
+  # does not open a list.
   if (after_rule && !rule_list && $0 ~ /^(    |\t)/) {
     gap = 1
     rule_above = 1
