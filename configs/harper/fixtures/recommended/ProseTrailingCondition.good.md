@@ -210,6 +210,72 @@ Restart the **agent if [^1]** needed.
 
 Restart the agent if [^1] [needed](https://example.com).
 
+Restart the agent if ~x~ needed.
+
+Restart the agent if ~x y~ needed.
+
+Restart the agent if **~x~** needed.
+
+Restart the agent if **~x~ needed**.
+
+Restart the **agent if ~x~** needed.
+
+Restart the agent if ~.x~ needed.
+
+Retry the request if ~x~ possible.
+
+Restart the agent if ~x~ ~y~ needed.
+
+Restart the agent if ~x~[^1] needed.
+
+Restart the agent if [^1]~x~ needed.
+
+Restart the agent if [^1] ~x~ needed.
+
+Restart the agent if ~x[^1]y~ needed.
+
+Restart the agent if ~x~ [needed](https://example.com).
+
+Restart the agent if ~x y~[^1] needed.
+
+Restart the agent if ~x < y~ needed.
+
+Restart the agent if ~$5~ needed.
+
+<!-- prettier-ignore -->
+Restart the agent if ~x  y~ needed.
+
+<!-- prettier-ignore -->
+Restart the agent if ~x~  needed.
+
+<!-- prettier-ignore -->
+Restart the agent if   needed.
+
+<!-- prettier-ignore -->
+Restart the agent if [^1]   needed.
+
+<!-- prettier-ignore -->
+Restart the agent
+if ~x
+          y~ needed.
+
+Restart the agent if
+~x~ needed.
+
+Restart the agent if ~x~
+needed.
+
+Restart the agent if ~x
+y~ needed.
+
+Restart the agent if
+~x~ ~y~
+needed.
+
+Restart the agent if
+[^1] ~x~
+needed.
+
 [ref]: https://example.com
 [needed]: https://example.com
 

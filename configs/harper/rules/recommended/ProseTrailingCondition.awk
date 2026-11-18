@@ -138,24 +138,92 @@
 # The Recommended ProseVagueCriterion reports `if needed`,
 # `if necessary`, `if applicable`, `if appropriate`, and `if possible`,
 # so the check skips them. ProseVagueCriterion matches such a phrase
-# only when nothing but emphasis, a footnote reference, or the markup of
-# a markdown link sits between its two words. The check skips the phrase
-# in that case, so it still skips `if **needed**`, `if[^1] needed`,
-# `if [^1] needed`, and `if [needed](https://example.com)`. A footnote
-# reference needs a label, and Harper reads `[^]` as text, so
-# `if [^] needed` fires. The check reads a reference whose label holds
-# a space as two words (`[^a` and `b]`), so an `if` before it draws a
-# finding from both rules (`if [^a b] needed`).
+# only when nothing but emphasis, a footnote reference, a span in single
+# tildes, or the markup of a markdown link sits between its two words.
+# The check skips the phrase in that case, so it still skips
+# `if **needed**`, `if[^1] needed`, `if [^1] needed`, `if ~x~ needed`,
+# and `if [needed](https://example.com)`. A footnote reference needs a
+# label, and Harper reads `[^]` as text, so `if [^] needed` fires. The
+# check reads a reference whose label holds a space as two words (`[^a`
+# and `b]`), so an `if` before it draws a finding from both rules
+# (`if [^a b] needed`).
+#
+# Harper reads a span in single tildes as subscript, and it drops the
+# span along with the words in it. So `if ~needed~ now` fires, because
+# Harper reads `if now`.
+#
+# Harper keeps each line break between the two words, one inside a span
+# included. It reads two line breaks with no space between them as a
+# paragraph break, and ProseVagueCriterion does not match across one.
+# The check therefore reports the `if` when Harper reads such a
+# paragraph break between the two words (`if`, `~x~`, and `needed` on
+# three lines). The line break inside the span counts too, so the check
+# also reports `if ~x`, `y~`, and `needed` on three lines.
+#
+# tilde_span_end() finds the span. It does not find some spans that
+# Harper drops, so an `if` before such a span draws a finding from both
+# rules. Such a span holds a `~` inside a word (`if ~a~b~ needed`) or a
+# second span (`if ~a ~b~ c~ needed`). It can also hold a `*`, `_`, or
+# bracket that does not form emphasis or a link (`if ~x*~ needed`,
+# `if ~a_b~ needed`, `if ~[x]~ needed`). Other such spans hold a `\`
+# (`if ~x\y~ needed`), a `^` (`if ~x^y~ needed`), a `<` before a letter,
+# `/`, `!`, or `?` outside an HTML tag (`if ~x <y~ needed`,
+# `if ~x <? y~ needed`), two `$` marks outside a formula
+# (`if ~$5 and $6~ needed`), three spaces in a row, or a bare URL.
+# tilde_span_end() also misses a span whose first or last token holds
+# only a `~` mark and footnote references (`if ~x [^1]~ needed`,
+# `if ~[^1] x~ needed`).
+#
+# An `if` before a link whose text opens with a span in single tildes
+# also draws a finding from both rules
+# (`if [~x~ needed](https://example.com)`). The check reads `[~x~` as
+# the word after the `if`, and Harper drops the span inside the link
+# text. An `if` before a span that a `[` follows directly draws a
+# finding from both rules as well
+# (`if ~x~[needed](https://example.com)`). tilde_span_end() accepts only
+# `*` and `_` after the closing `~`, but Harper closes the span before
+# the `[` and drops it. lib/sentences.awk ends a sentence inside a span
+# that holds a `.`, `?`, or `!` before a space or a line break. So an
+# `if` before such a span draws a finding from both rules too
+# (`if ~x! y~ needed`).
+#
+# lib/markdown.awk blanks a code span, a bare URL, an autolink, an HTML
+# comment, and an HTML `code`, `kbd`, `samp`, or `pre` element to
+# spaces. ProseVagueCriterion does not match across any of them. The
+# check reports the `if` when it passes over a span in single tildes and
+# gap() finds such text between the `if` and the vague word
+# (``if ~x~ `y` needed``, ``if `y` ~x~ needed``). gap() also reads three
+# spaces in a row as blanked text, so three spaces there draw a finding
+# from both rules (`if ~x~   needed`, `if   ~x~ needed`).
+#
+# gap() reads the columns between two tokens on one line and the lines
+# between two tokens. So it does not find blanked text at the start or
+# the end of a line. It also does not find two spaces at the end of a
+# line, which Harper reads as a paragraph break. So neither rule reports
+# an `if` before a span that holds such text at the start or the end of
+# a line, or that holds such spaces (``if ~x `a` `` and `y~ needed` on
+# the next line). Neither rule reports an `if` either when such text or
+# such spaces sit at the edge of a line between the `if` and the vague
+# word (``Restart the agent if ~x~ `y` `` and `needed.` on the next
+# line, or ``Restart the agent if `y` `` and `~x~ needed.`).
+#
+# The check looks for blanked text only when it passes over a span in
+# single tildes. So it reads the words on each side of the code span in
+# ``if `y` needed`` and ``if `y` [^1] needed`` as side by side, and
+# neither rule reports that `if`. Three spaces therefore leave only the
+# ProseVagueCriterion finding when no such span sits between the two
+# words (`if [^1]   needed`, `if   needed`).
 #
 # The check also skips the phrase after some marks that Harper reads as
 # text, so neither rule reports the `if`. A lone `*` or `_` counts as
-# emphasis when no later mark closes it (`if* needed`). The check drops
-# a footnote reference before it tests the marks, so it skips
-# `if**[^1]** needed` and `if [^1]** needed`, as it skips
-# `if**** needed`. lib/markdown.awk blanks a bare URL, so the check
-# reads `if [needed](https://example.com/a b)` as a link to `b`. The
-# check also reads a title that no mark closes as a title that runs to
-# the end of the sentence (`if [needed](see "Setup) now.`).
+# emphasis when no later mark closes it (`if* needed`,
+# `if ~x~** needed`). The check drops a footnote reference before it
+# tests the marks, so it skips `if**[^1]** needed` and
+# `if [^1]** needed`, as it skips `if**** needed`. lib/markdown.awk
+# blanks a bare URL, so the check reads
+# `if [needed](https://example.com/a b)` as a link to `b`. The check
+# also reads a title that no mark closes as a title that runs to the end
+# of the sentence (`if [needed](see "Setup) now.`).
 #
 # The check does not read link definitions, so it skips the phrase in a
 # reference link with no definition, which Harper reads as text
@@ -245,28 +313,141 @@ function footnote_only(i,   t) {
   return gsub(footnote, "", t) > 0 && t ~ ("^" emphasis "$")
 }
 
+# Returns what sits between token p - 1 and token p: `n` for a line
+# break, `s` for spaces, and `b` for text that lib/markdown.awk blanked.
+# lib/markdown.awk blanks a code span, a bare URL, an autolink, an HTML
+# comment, and an HTML `code`, `kbd`, `samp`, or `pre` element to
+# spaces. Harper keeps each of them as a token that is not a word, so
+# ProseVagueCriterion does not match across one. Inside a span in single
+# tildes, Harper drops a bare URL along with the span, and keeps the
+# others.
+#
+# The shortest blanked text takes three columns, so the function returns
+# `b` for three or more columns between two tokens on one line. Three
+# spaces in a row therefore also read as `b`. The function also returns
+# `b` when a line sits between the lines of the two tokens. A blank line
+# ends the paragraph, so such a line holds only blanked text (`if`,
+# `` `y` ``, and `~x~ needed` on three lines).
+function gap(p) {
+  if (tok_line[p] != tok_line[p - 1]) {
+    return tok_line[p] - tok_line[p - 1] > 1 ? "b" : "n"
+  }
+  return tok_col[p] - tok_col[p - 1] - chars(tok[p - 1]) > 2 ? "b" : "s"
+}
+
+# Returns the index of the token that closes a span in single tildes
+# that opens token j, or 0 when token j does not open such a span.
+# Harper reads a span in single tildes as subscript (`~x~`, `~x y~`),
+# and it drops the span along with the words in it. So the tokens of the
+# span do not hold a word.
+#
+# The span opens at a `~` that starts token j, after any emphasis marks,
+# and it closes at the next `~`. That `~` must end its token, before any
+# emphasis marks (`**~x~**`). Harper reads a `~` before a space as text,
+# so `~ x~` does not open a span. It also reads a `~` after a space or
+# before a letter as text, so `~x ~` and `~x~needed` do not close one. A
+# `~~` opens and closes a strikethrough, which keeps its words, so a `~`
+# next to another `~` does not open a span either. The function drops
+# each footnote reference before it tests the marks, because Harper
+# skips a footnote reference (`~x~[^1]`, `~x y~[^1]`).
+#
+# Harper keeps the words of emphasis or a link inside the span, so the
+# function returns 0 when a `*`, `_`, `[`, or `]` sits between the two
+# `~` marks (`~**x**~`). It also returns 0 when a `\` sits there,
+# because the `\` can escape the second `~` (`~x\~`). A `^` can keep
+# the second `~` from closing the span (`~x^~`, `~x^ y~`). So the
+# function also returns 0 when a `^` sits between the two `~` marks.
+#
+# Harper keeps a code span, an HTML tag, or a formula in `$` marks
+# inside the span, and ProseVagueCriterion does not match across it
+# (``~a `b` c~``, `~x <br> y~`, `~x $y$ z~`). So the function returns 0
+# when a `<` before a letter, a `/`, a `!`, or a `?` sits between the
+# two `~` marks, and when two `$` marks sit there. It also returns 0
+# when gap() finds text that lib/markdown.awk blanked between two tokens
+# of the span (``~x`a`y~``).
+function tilde_span_end(n, j,   k, t, p, text) {
+  t = tok[j]
+  gsub(footnote, "", t)
+  if (t !~ /^[*_]*~[^~]/) {
+    return 0
+  }
+  sub(/^[*_]*~/, "", t)
+  text = ""
+  for (k = j; k <= n; k++) {
+    if (k > j) {
+      if (gap(k) == "b") {
+        return 0
+      }
+      t = tok[k]
+      gsub(footnote, "", t)
+      text = text " "
+    }
+    p = index(t, "~")
+    if (p) {
+      text = text substr(t, 1, p - 1)
+      return p > 1 && text !~ /[][*_\\^]/ && text !~ /<[A-Za-z\/!?]/ && text !~ /\$[^$]*\$/ && substr(t, p + 1) ~ /^[*_]*$/ ? k : 0
+    }
+    text = text t
+  }
+  return 0
+}
+
 # Returns the index of the token that holds the first word after token
 # i. The function passes over each token that footnote_only() accepts
-# (`if [^1] needed`, `if **[^1]** [^2] needed`). It does not pass over
-# token n, the last token of the sentence.
-function next_word(n, i,   j) {
+# (`if [^1] needed`, `if **[^1]** [^2] needed`). It also passes over the
+# tokens of each span that tilde_span_end() finds (`if ~x~ needed`,
+# `if ~x y~ [^1] needed`). It does not pass over token n, the last token
+# of the sentence.
+#
+# Harper drops the spaces inside a span along with its words, but it
+# keeps each line break, one inside a span included. It reads two line
+# breaks with no space between them as a paragraph break, and
+# ProseVagueCriterion does not match across one. So the function
+# returns 0 when two line breaks meet between token i and the word
+# (`if`, `~x~`, and `needed` on three lines). `gaps` holds an `n` for
+# each line break that Harper keeps inside a span, and it holds what
+# gap() returns for each gap outside a span.
+#
+# The function also returns 0 when it passes over a span in single
+# tildes and gap() finds blanked text before the word
+# (``if ~x~ `y` needed``, ``if `y` ~x~ needed``). It does not look for
+# blanked text when it passes over only footnote references or over no
+# token (``if `y` [^1] needed``, ``if `y` needed``).
+function next_word(n, i,   j, k, p, gaps, spanned) {
   j = i + 1
-  while (j < n && footnote_only(j)) {
-    j++
+  gaps = gap(j)
+  while (j < n) {
+    k = tilde_span_end(n, j)
+    if (k && k < n) {
+      for (p = j + 1; p <= k; p++) {
+        if (tok_line[p] != tok_line[p - 1]) {
+          gaps = gaps "n"
+        }
+      }
+      j = k + 1
+      spanned = 1
+    } else if (footnote_only(j)) {
+      j++
+    } else {
+      break
+    }
+    gaps = gaps gap(j)
   }
-  return j
+  return gaps ~ /nn/ || (spanned && gaps ~ /b/) ? 0 : j
 }
 
 # Reports whether Harper reads the last word of token i and the first
 # word of token j side by side. next_word() finds token j, so each token
-# between the two holds only footnote references and emphasis. Only
-# emphasis, a footnote reference, and the markup of a markdown link can
-# sit between the two words. Emphasis is a run of `*`, `_`, and `~~`
-# marks, which can close token i (`**restart if** needed`) or open
-# token j (`if **needed**`). Harper reads a lone `~` as text, so
-# `if ~needed~` does not pass. Every other mark between the words
-# counts as text, such as a quote, a paren, a bracket, or a comma
-# (`if "needed"`, `if (needed)`, `if, needed`).
+# between the two holds only footnote references, emphasis, and spans in
+# single tildes. Only emphasis, a footnote reference, a span in single
+# tildes, and the markup of a markdown link can sit between the two
+# words. Emphasis is a run of `*`, `_`, and `~~` marks, which can close
+# token i (`**restart if** needed`) or open token j (`if **needed**`).
+# A lone `~` does not count as emphasis. Harper drops a span in single
+# tildes along with the words in it, so `if ~needed~.` does not pass.
+# Every other mark between the words counts as text, such as a quote, a
+# paren, a bracket, or a comma (`if "needed"`, `if (needed)`,
+# `if, needed`).
 #
 # Harper skips a footnote reference, such as `[^1]`, so one can close
 # token i next to the emphasis marks (`if[^1] needed`,
@@ -397,7 +578,10 @@ function sentence(n,   i, j, k, m, at, depth, w, t, limited, quoted, resume, res
       # ProseVagueCriterion matches its words only when Harper reads them
       # side by side. An attribution between the words stops the match.
       # Token j holds the word after the `if`, past each token that holds
-      # only footnote references and emphasis (`if [^1] needed`). The
+      # only footnote references and emphasis (`if [^1] needed`) and past
+      # each span in single tildes (`if ~x~ needed`). j is 0 when Harper
+      # reads a paragraph break before that word, or when next_word()
+      # passes over a span and finds blanked text before that word. The
       # check therefore skips the words only when the tokens that it reads
       # next run from the token right after the `if` to token j. The test
       # reads token j up to its first `]`, and side_by_side() then tests
@@ -406,7 +590,7 @@ function sentence(n,   i, j, k, m, at, depth, w, t, limited, quoted, resume, res
       # compares that element. The test of `m` keeps the check from
       # comparing such an element.
       j = next_word(n, i)
-      if (word(at[k + 1]) ~ /^(any|so)$/ || (k + j - i <= m && at[k + j - i] == j && word_before_bracket(j) ~ vague && side_by_side(n, i, j)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
+      if (word(at[k + 1]) ~ /^(any|so)$/ || (j && k + j - i <= m && at[k + j - i] == j && word_before_bracket(j) ~ vague && side_by_side(n, i, j)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
         continue
       }
       if ((word(at[k + 1]) ~ /^(it|they)$/ && word(at[k + 2]) ~ /^exists?$/ && tok[at[k + 2]] ~ /[.:,]([")*_\]']|\342\200\235|\342\200\231)*$/) || (word(at[k + 1]) == "there" && word(at[k + 2]) == "is" && word(at[k + 3]) == "one")) {

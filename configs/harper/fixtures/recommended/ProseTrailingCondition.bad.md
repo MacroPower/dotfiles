@@ -155,3 +155,86 @@ Restart the agent if [^1], needed.
 Restart the agent if [^1] (needed).
 
 Restart the agent if **[^1]**, needed.
+
+Restart the agent if ~needed~ now.
+
+Restart the agent if ~x~, needed.
+
+Restart the agent if ~x~needed.
+
+Restart the agent if ~x ~ needed.
+
+Restart the agent if ~x needed.
+
+Restart the agent if ~x~~ needed.
+
+Restart the agent if ~**x**~ needed.
+
+Restart the agent if ~_x_~ needed.
+
+Restart the agent if ~[[x]]~ needed.
+
+Restart the agent if ~x\~ needed.
+
+Restart the agent if ~ x~ needed.
+
+Restart the agent if ~a `b` c~ needed.
+
+Restart the agent if ~x`a`y~ needed.
+
+Restart the agent if ~é`a`y~ needed.
+
+Restart the agent if ~x <br> y~ needed.
+
+Restart the agent if ~x </b> y~ needed.
+
+Restart the agent if ~x <!x> y~ needed.
+
+Restart the agent if ~x <?x?> y~ needed.
+
+Restart the agent if ~x $y$ z~ needed.
+
+Restart the agent if ~a$b$c~ needed.
+
+Restart the agent if ~$$x$$~ needed.
+
+Restart the agent if ~x $$$$ z~ needed.
+
+Restart the agent if ~$x
+y$~ needed. <!-- same finding -->
+
+Restart the agent if ~x^~ needed.
+
+Restart the agent if ~x^ y~ needed.
+
+Restart the agent if
+~x~ <!-- same finding -->
+needed. <!-- same finding -->
+
+Restart the agent if
+~x <!-- same finding -->
+y~ needed. <!-- same finding -->
+
+Restart the agent if ~x
+y~ <!-- same finding -->
+needed. <!-- same finding -->
+
+Restart the agent if
+~x y~ <!-- same finding -->
+needed. <!-- same finding -->
+
+Restart the agent if
+[^1] <!-- same finding -->
+needed. <!-- same finding -->
+
+Restart the agent if ~x~ `y` needed.
+
+Restart the agent if `y` ~x~ needed.
+
+Restart the agent if ~x~ https://example.com needed.
+
+Restart the agent if ~x~ <!-- c --> needed.
+
+Restart the agent if ~x~
+`y` <!-- same finding -->
+needed. <!-- same finding -->
