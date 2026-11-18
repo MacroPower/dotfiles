@@ -140,13 +140,14 @@
 # so the check skips them. ProseVagueCriterion matches such a phrase
 # only when nothing but emphasis, a footnote reference, a span in single
 # tildes, or the markup of a markdown link sits between its two words.
-# The check skips the phrase in that case, so it still skips
+# The target before the `|` of a wikilink counts as such markup too. The
+# check skips the phrase in that case, so it still skips
 # `if **needed**`, `if[^1] needed`, `if [^1] needed`, `if ~x~ needed`,
-# and `if [needed](https://example.com)`. A footnote reference needs a
-# label, and Harper reads `[^]` as text, so `if [^] needed` fires. The
-# check reads a reference whose label holds a space as two words (`[^a`
-# and `b]`), so an `if` before it draws a finding from both rules
-# (`if [^a b] needed`).
+# `if [needed](https://example.com)`, and `if [[page|needed]]`. A
+# footnote reference needs a label, and Harper reads `[^]` as text, so
+# `if [^] needed` fires. The check reads a reference whose label holds a
+# space as two words (`[^a` and `b]`), so an `if` before it draws a
+# finding from both rules (`if [^a b] needed`).
 #
 # Harper reads a span in single tildes as subscript, and it drops the
 # span along with the words in it. So `if ~needed~ now` fires, because
@@ -223,7 +224,9 @@
 # blanks a bare URL, so the check reads
 # `if [needed](https://example.com/a b)` as a link to `b`. The check
 # also reads a title that no mark closes as a title that runs to the end
-# of the sentence (`if [needed](see "Setup) now.`).
+# of the sentence (`if [needed](see "Setup) now.`). It reads a `[` that
+# no `]` closes as the text of a link whose `](url)` lib/markdown.awk
+# blanked (`if [needed now.`, `if [needed|label now.`).
 #
 # The check does not read link definitions, so it skips the phrase in a
 # reference link with no definition, which Harper reads as text
@@ -237,6 +240,62 @@
 # with a bracket. So neither rule reports an `if` before such a link
 # (`if [[needed] now](https://example.com)`) or before the broken
 # `if [[needed] now.`.
+#
+# Harper shows only the text after the first `|` of a wikilink, so the
+# check reads the word right after that `|` as the word after the `if`.
+# It skips `if [[page|needed]]`, `if [[Some page|**needed**]]`, and
+# `if [[page|needed|label]]`, and it reports `if [[needed now|label]]`.
+# The check skips the `if` only when nothing but emphasis sits between
+# the `|` and the vague word. But Harper also matches across a space, a
+# line break, a footnote reference, or a span in single tildes there. So
+# an `if` before such a wikilink draws a finding from both rules
+# (`if [[page| needed]]`, `if [[page|~x~ needed]]`).
+#
+# Harper reads some marks at the edges of a wikilink with a `|` as text,
+# but the check reads them as emphasis. So neither rule reports the
+# `if`. The check reads the marks after the `|` as emphasis when no mark
+# inside the wikilink closes them (`if [[page|**needed]]**`). It also
+# reads the marks before the `[[` as emphasis when a mark inside the
+# wikilink closes them or when no mark closes them
+# (`if **[[page|needed**]]`, `if **[[page|needed]]`).
+#
+# lib/markdown.awk blanks the `](url)` of a link inside the shown text,
+# so the check also reads `[[page|needed](https://example.com)]]` as a
+# wikilink. Harper reads a markdown link inside brackets there, so
+# neither rule reports the `if` before it.
+#
+# The check also needs a target before the `|` and a `]]` after it.
+# Harper hides the `[[|` of a wikilink with no target when the `]]` sits
+# on the same line, so `if [[|needed]]` draws a finding from both rules.
+# lib/markdown.awk blanks the second `]` of a wikilink before a `(url)`,
+# so `if [[page|needed]](https://example.com)` draws both findings too.
+# So does an `if` before a wikilink that holds a `.`, `?`, or `!` before
+# a space, because lib/sentences.awk ends the sentence there
+# (`if [[Dr. Who|needed]]`). lib/sentences.awk also reads a line that
+# opens with `|` as a table row and ends the paragraph before it. So an
+# `if` before a wikilink whose `|` opens a line draws both findings
+# (`if [[page` and `|needed]]` on the next line).
+#
+# Harper pairs a `]]` with the nearest `[[` before it. So the check
+# reads the word after the `|` only when no other `[[` sits before the
+# first `]]`, and it reports `if [[page|needed] [[x]]`. Harper still
+# shows only the vague word of some wikilinks with another `[[`, so an
+# `if` before them draws a finding from both rules
+# (`if [[[[page|needed]]]]`, `if [[page|needed [[x]] y]]`).
+#
+# Harper finds the first `|` of a wikilink inside a code span too, and
+# lib/markdown.awk blanks the code span. So the check reports the `if`
+# when gap() finds blanked text in the target
+# (``if [[page `a|b`|needed]]``). An `if` before a wikilink whose target
+# holds other blanked text then draws a finding from both rules. Such
+# text can be a code span with no `|`, a bare URL, or an HTML comment
+# (``if [[`a`|needed]]``, `if [[page https://example.com|needed]]`).
+# gap() also reads three spaces in a row as blanked text, so an `if`
+# before a target that holds them draws both findings too
+# (`if [[page   x|needed]]`). gap() does not find a code span at the end
+# of a line. So neither rule reports an `if` before a target that holds
+# such a span with a `|` in it (``if [[page `a|b` `` and `x|needed]]` on
+# the next line).
 #
 # An attribution between the two words stops ProseVagueCriterion, so an
 # `if` at the end of the first part of a split quotation fires
@@ -291,14 +350,17 @@ function word(i,   w) {
   return w
 }
 
-# Returns token i up to its first `]`, in lowercase and without the
-# punctuation around it. A `]` closes the text of a link, so the vague
-# test in sentence() reads the text of a reference link apart from its
-# label. `[needed][ref].` then reads as `needed`, and word() reads the
-# same token as `needed][ref`.
-function word_before_bracket(i,   w) {
-  w = tok[i]
-  sub(/\].*$/, "", w)
+# Returns the text t up to its first `]` or `|`, in lowercase and without
+# the punctuation around it. A `]` closes the text of a link, so the
+# vague test in sentence() reads the text of a reference link apart from
+# its label. `[needed][ref].` then reads as `needed`, and word() reads
+# the same token as `needed][ref`. The test passes the text that shown()
+# returns, so the `needed]].` of `[[page|needed]].` reads as `needed`
+# too. Harper reads a `|` as a mark between two words, so
+# `[[page|needed|label]]` and `needed|label` read as `needed`.
+function word_before_bracket(t,   w) {
+  w = t
+  sub(/[]|].*$/, "", w)
   w = tolower(w)
   gsub(/^[^a-z]+|[^a-z]+$/, "", w)
   return w
@@ -436,12 +498,69 @@ function next_word(n, i,   j, k, p, gaps, spanned) {
   return gaps ~ /nn/ || (spanned && gaps ~ /b/) ? 0 : j
 }
 
+# Returns the index of the token that holds the `|` of a wikilink that
+# opens token j, or 0 when token j does not open a wikilink with a `|`.
+# Harper shows only the text after the first `|` of a wikilink
+# (`[[page|needed]]`), so it drops the words of the target before the
+# `|`. The wikilink opens at a `[[` that starts token j, after any
+# emphasis marks, and it closes at the first later `]]`. Its target can
+# hold spaces and line breaks (`[[Some page|needed]]`), but it cannot be
+# empty, so the function returns 0 for `[[|needed]]`.
+#
+# Harper pairs a `]]` with the nearest `[[` before it. So the function
+# returns 0 when a `[[` sits between the `[[` of token j and the first
+# `]]` (`[[page|needed] [[x]]`). A `[` right after the `[[` of token j
+# forms such a `[[` too (`[[[page|needed]]]`). A target that holds only
+# a footnote reference does not, so Harper shows only `needed` of
+# `[[[^1]|needed]]`. Harper keeps the `[` when more text follows the
+# footnote reference in the target (`[[[^1] |needed]]`,
+# `[[[^1]x|needed]]`).
+#
+# lib/markdown.awk blanks a code span, and Harper finds the first `|`
+# inside a code span in the target too (``[[page `a|b`|needed]]``).
+# Harper then shows the rest of the code span before the vague word. So
+# the function also returns 0 when gap() finds blanked text between two
+# tokens of the target.
+function wiki_pipe(n, j,   p, t, rest, bar, open) {
+  t = tok[j]
+  if (!sub("^" emphasis "\\[\\[", "", t)) {
+    return 0
+  }
+  rest = t
+  for (p = j + 1; p <= n; p++) {
+    rest = rest " " tok[p]
+  }
+  bar = index(rest, "|")
+  open = index(rest, "[[")
+  if ((rest ~ /^\[/ && rest !~ ("^" footnote "\\|")) || (open && open < index(rest, "]]")) || bar < 2 || index(rest, "]]") < bar) {
+    return 0
+  }
+  p = j
+  while (!index(tok[p], "|")) {
+    p++
+    if (gap(p) == "b") {
+      return 0
+    }
+  }
+  return p
+}
+
+# Returns the text that holds the first word that Harper shows from
+# token j on. For a wikilink that wiki_pipe() finds, that text is the
+# part of a token after the `|` (`needed]]` in `[[page|needed]]`).
+# Otherwise it is token j.
+function shown(n, j,   q) {
+  q = wiki_pipe(n, j)
+  return q ? substr(tok[q], index(tok[q], "|") + 1) : tok[j]
+}
+
 # Reports whether Harper reads the last word of token i and the first
-# word of token j side by side. next_word() finds token j, so each token
-# between the two holds only footnote references, emphasis, and spans in
-# single tildes. Only emphasis, a footnote reference, a span in single
-# tildes, and the markup of a markdown link can sit between the two
-# words. Emphasis is a run of `*`, `_`, and `~~` marks, which can close
+# word that it shows from token j on side by side. next_word() finds
+# token j, so each token between the two holds only footnote references,
+# emphasis, and spans in single tildes. Only emphasis, a footnote
+# reference, a span in single tildes, and the markup of a markdown link
+# can sit between the two words. The target of a wikilink can sit there
+# too. Emphasis is a run of `*`, `_`, and `~~` marks, which can close
 # token i (`**restart if** needed`) or open token j (`if **needed**`).
 # A lone `~` does not count as emphasis. Harper drops a span in single
 # tildes along with the words in it, so `if ~needed~.` does not pass.
@@ -483,15 +602,23 @@ function next_word(n, i,   j, k, p, gaps, spanned) {
 # can fall inside a title. So it also accepts a title that no mark
 # closes before that end (`if [needed](#anchor 'Read this. Then go.')`).
 #
-# Harper reads a `[[` as a wikilink when `]]` closes it and no `[` or
-# `]` sits between (`if [[needed]]`, `if [[needed now]]`). Harper shows
-# only the text after a `|`, so the check passes a wikilink only when no
-# `|` sits inside it, and `if [[needed now|label]]` fires. Harper also
-# reads emphasis inside a wikilink as text, so `if [[**needed**]]`
-# fires. The first `[` of a `[[` also opens a link when no `]` closes it
-# (`if [[needed]](https://example.com)`). lib/markdown.awk blanks the
-# second `]` of such a wikilink with the `(url)` after it. Every other
-# `[[` fires (`if [[needed] now]`).
+# Harper reads a `[[` as a wikilink when `]]` closes it. It shows only
+# the text after the first `|` of a wikilink, which wiki_pipe() finds.
+# So for such a wikilink, the function tests the marks before the first
+# word of that text in place of the marks that open token j. Emphasis
+# there counts as emphasis (`if [[page|**needed**]]`), and every other
+# mark counts as text (`if [[page|"needed"]]`).
+#
+# A wikilink with no `|` shows its whole text, and Harper reads emphasis
+# inside it as text. So the function passes such a wikilink only when
+# no `[` or `]` sits inside it (`if [[needed]]`, `if [[needed now]]`),
+# and `if [[**needed**]]` fires. The first `[` of a `[[` also opens a
+# link when no `]` closes it (`if [[needed]](https://example.com)`).
+# lib/markdown.awk blanks the second `]` of such a wikilink with the
+# `(url)` after it. wiki_pipe() does not find the `|` of such a
+# wikilink, so the function fails every other `[[` whose text holds a
+# `|` before its first `]` (`if [[needed|label]](https://example.com)`).
+# Every other `[[` fires (`if [[needed] now]`).
 function side_by_side(n, i, j,   dest, title, open_title, tail, head, wiki, rest, d, p, c) {
   # The `(` of an inline link and its destination, a title that a mark
   # closes, and a title that runs to the end of the sentence.
@@ -501,11 +628,14 @@ function side_by_side(n, i, j,   dest, title, open_title, tail, head, wiki, rest
   tail = tok[i]
   sub(/^.*[A-Za-z]/, "", tail)
   gsub(footnote, "", tail)
-  head = tok[j]
-  sub(/[A-Za-z].*$/, "", head)
   if (tail !~ ("^" emphasis "$")) {
     return 0
   }
+  if (wiki_pipe(n, j)) {
+    return shown(n, j) ~ ("^" emphasis "[A-Za-z]")
+  }
+  head = tok[j]
+  sub(/[A-Za-z].*$/, "", head)
   if (head ~ ("^" emphasis "$")) {
     return 1
   }
@@ -516,6 +646,9 @@ function side_by_side(n, i, j,   dest, title, open_title, tail, head, wiki, rest
   rest = substr(tok[j], index(tok[j], "[") + 1)
   for (p = j + 1; p <= n; p++) {
     rest = rest " " tok[p]
+  }
+  if (wiki && rest ~ /^\[[^]]*\|/) {
+    return 0
   }
   if (wiki && rest ~ /^\[[^][|]*\]\]/) {
     return 1
@@ -576,21 +709,29 @@ function sentence(n,   i, j, k, m, at, depth, w, t, limited, quoted, resume, res
     }
     if (w == "if" && depth == 0 && t ~ /^[a-z]/) {
       # ProseVagueCriterion matches its words only when Harper reads them
-      # side by side. An attribution between the words stops the match.
-      # Token j holds the word after the `if`, past each token that holds
-      # only footnote references and emphasis (`if [^1] needed`) and past
-      # each span in single tildes (`if ~x~ needed`). j is 0 when Harper
-      # reads a paragraph break before that word, or when next_word()
-      # passes over a span and finds blanked text before that word. The
-      # check therefore skips the words only when the tokens that it reads
-      # next run from the token right after the `if` to token j. The test
-      # reads token j up to its first `]`, and side_by_side() then tests
-      # the marks between the two words. gawk 5.3 aborts when the check
-      # passes word() an element of `at` that does not exist and then
-      # compares that element. The test of `m` keeps the check from
-      # comparing such an element.
+      # side by side. Token j holds the word after the `if`, past each token
+      # that holds only footnote references and emphasis (`if [^1] needed`)
+      # and past each span in single tildes (`if ~x~ needed`). j is 0 when
+      # Harper reads a paragraph break before that word, or when next_word()
+      # passes over a span and finds blanked text before that word. Token j
+      # can also open a wikilink that wiki_pipe() finds, and the word then
+      # sits in a later token (`if [[Some page|needed]]`).
+      #
+      # An attribution between the words stops the match. So the check
+      # skips the words only when the tokens that it reads next run from the
+      # token right after the `if` to token j. Harper hides the target of a
+      # wikilink along with any attribution or closing quote inside it
+      # (`"Restart the agent if [[Some" page|needed]].`). So the check tests
+      # that run of tokens only up to token j, the token that opens the
+      # wikilink.
+      #
+      # The test reads the text that shown() returns up to its first `]` or
+      # `|`, and side_by_side() then tests the marks between the two words.
+      # gawk 5.3 aborts when the check passes word() an element of `at` that
+      # does not exist and then compares that element. The test of `m` keeps
+      # the check from comparing such an element.
       j = next_word(n, i)
-      if (word(at[k + 1]) ~ /^(any|so)$/ || (j && k + j - i <= m && at[k + j - i] == j && word_before_bracket(j) ~ vague && side_by_side(n, i, j)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
+      if (word(at[k + 1]) ~ /^(any|so)$/ || (j && k + j - i <= m && at[k + j - i] == j && word_before_bracket(shown(n, j)) ~ vague && side_by_side(n, i, j)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
         continue
       }
       if ((word(at[k + 1]) ~ /^(it|they)$/ && word(at[k + 2]) ~ /^exists?$/ && tok[at[k + 2]] ~ /[.:,]([")*_\]']|\342\200\235|\342\200\231)*$/) || (word(at[k + 1]) == "there" && word(at[k + 2]) == "is" && word(at[k + 3]) == "one")) {

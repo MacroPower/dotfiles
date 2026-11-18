@@ -166,6 +166,31 @@ Restart the agent if [[needed]](https://example.com).
 
 Restart the agent if [[needed now]](https://example.com).
 
+Restart the agent if [[page|needed]].
+
+Restart the agent if [[Some page|needed]].
+
+Restart the agent if [[Some
+page|needed]].
+
+Restart the agent if [[page|needed now]].
+
+Restart the agent if [[page|**needed**]].
+
+Restart the agent if **[[page|needed]]**.
+
+Retry the request if [[page|possible]] values change.
+
+Restart the agent if [[[^1]|needed]].
+
+Restart the agent if [[page|needed|label]].
+
+Restart the agent if needed|label.
+
+"Restart the agent if [[Some" page|needed]].
+
+"Restart the agent if [[a," the guide says, "b|needed]]."
+
 <!-- prettier-ignore -->
 Restart the agent if [needed](#anchor 'A Title').
 

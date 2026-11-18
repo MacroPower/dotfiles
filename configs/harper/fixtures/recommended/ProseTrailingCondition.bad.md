@@ -128,6 +128,37 @@ Restart the agent if [[needed now|label]].
 
 Restart the agent if [[**needed**]].
 
+Restart the agent if [[needed|label]].
+
+Restart the agent if [[needed|label]](https://example.com).
+
+Restart the agent if [[page|label|needed]].
+
+Restart the agent if [[page|"needed"]].
+
+Restart the agent if [[page|needed].
+
+Restart the agent if [[page]] and [[other|needed]].
+
+Restart the agent if [[[page|needed]]].
+
+Restart the agent if [[[page]|needed]].
+
+Restart the agent if [[[^1]x|needed]].
+
+Restart the agent if [[[^1] |needed]].
+
+Restart the agent if [[page [[x|needed]].
+
+Restart the agent if [[page|needed] and [[x]].
+
+Restart the agent if [[page|needed] [[x|y]].
+
+Restart the agent if [[page `a|b`|needed]].
+
+Restart the agent if [[|needed
+now]]. <!-- same finding -->
+
 Restart the agent if [needed]("on" or "off").
 
 Restart the agent if [needed](see 'quoted' text).

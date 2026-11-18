@@ -37,6 +37,8 @@
 # but emphasis, a footnote reference, a span in single tildes, or the
 # markup of a markdown link sits between its two words (`if **needed**`,
 # `if[^1] needed`, `if ~x~ needed`, `if [needed](https://example.com)`).
+# Harper shows only the text after the `|` of a wikilink, so the target
+# before the `|` counts as such markup too (`if [[page|needed]]`).
 # ProseTrailingCondition skips the phrase in that case, and it reports
 # the `if` in `if "needed"`, `if (needed)`, `if [needed]`, and
 # `if, needed`. Harper drops a span in single tildes along with the
