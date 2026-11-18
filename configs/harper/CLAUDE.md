@@ -412,13 +412,19 @@ on a set of files.
   (`* * *`) and after empty list items, in a blockquote too (`> -`).
   It also lints lines after a fence marker four columns in after quoted
   code that opens with one (`>     ```sh`), which CommonMark reads as
-  indented code. The test expects a ProseLatinAbbreviation finding on
-  each line that holds `e.g.`, except the last line. CommonMark reads
-  that line as indented code in a blockquote of an empty item, which a
-  line of whitespace keeps open. Thematic breaks, empty items, and fence
-  markers do not hold text for a finding, so the fixtures cannot hold
-  these lines. Some of the lines also need trailing whitespace, which
+  indented code. Other lines sit under a thematic break that a blank
+  line separates from a list item and that reaches the text of the
+  item (`  * * *` under `- `). CommonMark keeps the break in the item,
+  so a line two columns past the text of the item is paragraph text.
+
+  The test expects a ProseLatinAbbreviation finding on each line that
+  holds `e.g.`, except the last line. CommonMark reads that line as
+  indented code in a blockquote of an empty item, which a line of
+  whitespace keeps open. Thematic breaks, empty items, and fence markers
+  do not hold text for a finding, so the fixtures cannot hold these
+  lines. Some of the lines also need trailing whitespace, which
   editorconfig trims.
+
 - `prompt-files` lints one line with a word in capitals at the path of
   a prompt file for an agent and at other paths. It expects the
   ProseCapsEmphasis finding only at the other paths, which include a

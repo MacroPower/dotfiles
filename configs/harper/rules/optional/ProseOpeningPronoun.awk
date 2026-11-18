@@ -72,13 +72,12 @@
 # indented line after it. The first line that is not indented opens a
 # paragraph.
 #
-# lib/markdown.awk reads `- - -` and `* * *` as list items. It also
-# counts a rule right under a paragraph of a list item as part of the
-# list. It keeps the list open after each of these rules. A rule with
-# no indent cannot sit in a list item. The check therefore counts a
-# rule as part of a list only when a list is open above the rule and
-# the rule is indented. A rule outside a list closes the list for the
-# lines after it, until a list item opens one.
+# lib/markdown.awk counts a rule right under a paragraph of a list
+# item as part of the list. It keeps the list open after that rule. A
+# rule with no indent cannot sit in a list item. The check therefore
+# counts a rule as part of a list only when a list is open above the
+# rule and the rule is indented. A rule outside a list closes the list
+# for the lines after it, until a list item opens one.
 #
 # Code under `- - -` or `  - - -` outside a list therefore passes, and
 # so does code under a `***` that ends a list. Code under a later
@@ -314,9 +313,9 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
   # `list_seen` follows `in_list`, but a rule outside a list, and the
   # code under such a rule, close the list for the lines after them.
   # lib/markdown.awk keeps `in_list` on there. Only a list item opens
-  # the list again, and `- - -` and `* * *` count as rules, although
-  # lib/markdown.awk sets `in_list` on each. A paragraph sits in a list
-  # only when `list_seen` holds.
+  # the list again. `- - -` and `* * *` count as rules and not as list
+  # items, so neither opens it. A paragraph sits in a list only when
+  # `list_seen` holds.
   list_seen = in_list && (list_before || (text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ && line !~ hrule))
   if (FILENAME != last_file) {
     paras = 0
@@ -350,14 +349,13 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
     in_para = 0
     gap = 1
     rule_above = 1
-    # lib/markdown.awk sets `in_list` for `- - -` and `* * *`, because
-    # it reads each as a list item. It also keeps `in_list` for a rule
-    # right under a paragraph of a list item. A rule with no indent
-    # cannot sit in a list item. `rule_list` therefore marks a rule in a
-    # list only when a list is open above the rule and the rule is
-    # indented. `line` has its `>` markers blanked to spaces, so a rule
-    # in a quoted list counts as indented. A rule outside a list closes
-    # the list for the lines after it.
+    # lib/markdown.awk keeps `in_list` for a rule right under a
+    # paragraph of a list item. A rule with no indent cannot sit in a
+    # list item. `rule_list` therefore marks a rule in a list only when
+    # a list is open above the rule and the rule is indented. `line` has
+    # its `>` markers blanked to spaces, so a rule in a quoted list
+    # counts as indented. A rule outside a list closes the list for the
+    # lines after it.
     rule_list = list_before && line ~ /^[ \t]/
     list_seen = rule_list
     return
@@ -365,14 +363,14 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
   # No paragraph is open after a rule, so an indented line there opens
   # indented code, with or without blank lines between the two.
   # Outside a blockquote, lib/markdown.awk skips indented code only
-  # after a blank line and outside a list, and it reads `- - -` and
-  # `* * *` as list items. This test therefore skips the code after a
-  # rule. The test skips no line after a rule in a list, where code must
-  # sit four columns past the text of the item. It skips no line in a
-  # blockquote either, because `$0` opens with the `>` markers. The code
-  # ends at the first line that is not indented, and that line opens a
-  # paragraph. A code line that looks like a list item (`    - foo`)
-  # does not open a list.
+  # after a blank line and outside a list. It keeps the list open after
+  # a rule right under a paragraph of a list item. This test therefore
+  # skips the code after a rule. The test skips no line after a rule in
+  # a list, where code must sit four columns past the text of the item.
+  # It skips no line in a blockquote either, because `$0` opens with the
+  # `>` markers. The code ends at the first line that is not indented,
+  # and that line opens a paragraph. A code line that looks like a list
+  # item (`    - foo`) does not open a list.
   if (after_rule && !rule_list && $0 ~ /^(    |\t)/) {
     gap = 1
     rule_above = 1

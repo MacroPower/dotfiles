@@ -681,8 +681,13 @@ in_comment {
   # blank line without an indent. A heading or a table row also ends it.
   # A heading opens with one to six `#` marks. CommonMark reads a line
   # with seven or more marks as text, so that line continues the list
-  # item or the code span above it.
-  if (raw ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/) {
+  # item or the code span above it. A thematic break is not an item,
+  # even with spaces between its marks (`* * *`, `- - -`). After a blank
+  # line, such a break without an indent therefore ends the list, as
+  # `***` does. lib/markdown.awk then skips indented code that a blank
+  # line separates from the break. Indented code right under the break
+  # reaches prose(), as it does under `***`.
+  if (raw ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/ && !quote_break) {
     in_list = 1
   } else if (prev_blank && raw !~ /^[ \t]/) {
     in_list = 0

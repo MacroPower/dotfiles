@@ -1109,6 +1109,10 @@ in
         #
         # - A thematic break does not open a list item, so a `>` past its
         #   text is paragraph text.
+        # - A thematic break that reaches the text of a list item sits in
+        #   the item, after a blank line too (`  * * *` under `- `). A line
+        #   two columns past the text of the item after the break is
+        #   paragraph text of the item.
         # - An empty list item (`-   `) puts its text one column past
         #   the marker, so a `>` there sits past the text.
         # - An empty item after a line of text (`* `) continues the
@@ -1188,6 +1192,18 @@ in
             "" \
             'It reruns, e.g. hourly.' \
             "" \
+            '1. The job runs.' \
+            "" \
+            '   - - -' \
+            "" \
+            '     It reruns, e.g. hourly.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  * * *' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
             ' 1. ' \
             "$(printf '\t')" \
             '    The job runs, e.g. nightly,' \
@@ -1214,7 +1230,9 @@ in
           quote.md:34:24
           quote.md:40:15
           quote.md:47:12
-          quote.md:51:19
+          quote.md:53:17
+          quote.md:59:16
+          quote.md:63:19
           EOF
 
           rc=0

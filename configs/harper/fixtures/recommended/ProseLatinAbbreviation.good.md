@@ -276,3 +276,37 @@ Run the job, e.g. hourly.
     Run the job, e.g. hourly.
     ```
 <!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+
+* * *
+
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+
+- - -
+
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- An item.
+
+* * *
+
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache.
+
+* * *
+
+   An indented paragraph follows the rule.
+
+    echo "Use a flag, e.g. the port"
+<!-- prettier-ignore-end -->
