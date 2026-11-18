@@ -156,6 +156,19 @@ Restart the agent if [[page|needed] [[x|y]].
 
 Restart the agent if [[page `a|b`|needed]].
 
+Restart the agent if [[needed `a|b`]].
+
+Restart the agent if [[needed `a|b`]](https://example.com).
+
+Restart the agent if [[needed
+|label]]. <!-- same finding -->
+
+Restart the agent if [[needed now.
+
+Restart the agent if [[needed [x] now.
+
+Restart the agent if [[needed](https://example.com) now.
+
 Restart the agent if [[|needed
 now]]. <!-- same finding -->
 

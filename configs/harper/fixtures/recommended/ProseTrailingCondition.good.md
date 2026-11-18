@@ -156,6 +156,8 @@ Restart the agent if [[needed]].
 
 Restart the agent if [[needed now]].
 
+Restart the agent if [[needed]] `a|b`.
+
 Retry the request if [[possible]] values change.
 
 Restart the agent if **[[needed]]**.
@@ -163,6 +165,8 @@ Restart the agent if **[[needed]]**.
 Restart the agent if [[needed]][ref].
 
 Restart the agent if [[needed]](https://example.com).
+
+Restart the agent if [[needed]](https://example.com) and see [the guide](https://example.com/guide).
 
 Restart the agent if [[needed now]](https://example.com).
 

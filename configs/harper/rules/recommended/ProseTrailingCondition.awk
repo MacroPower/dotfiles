@@ -239,7 +239,9 @@
 # (`if [[needed]](https://example.com)`) from a link whose text opens
 # with a bracket. So neither rule reports an `if` before such a link
 # (`if [[needed] now](https://example.com)`) or before the broken
-# `if [[needed] now.`.
+# `if [[needed] now.`. The check reports the `if` only when gap() finds
+# blanked text before the first `]`, which can hold the `|` of a
+# wikilink (``if [[needed `x`] now.``).
 #
 # Harper shows only the text after the first `|` of a wikilink, so the
 # check reads the word right after that `|` as the word after the `if`.
@@ -276,6 +278,34 @@
 # `if` before a wikilink whose `|` opens a line draws both findings
 # (`if [[page` and `|needed]]` on the next line).
 #
+# The sentence can also end inside a wikilink whose target opens with a
+# vague word. The check then reads a `[[` that no `]` closes, and it
+# reports the `if`, because Harper shows the text after the `|`
+# (`if [[needed` and `|label]]` on the next line,
+# `if [[needed. Now|label]]`). Harper shows the vague word of such a
+# wikilink with no `|`, so an `if` before one draws a finding from both
+# rules (`if [[needed. Now]]`, `if [[needed by v1. Then go]]`).
+#
+# lib/sentences.awk also ends the paragraph at other lines where Harper
+# still hides the `[[` of a wikilink whose `]]` sits on that line.
+# Harper reads a line that opens with an inline HTML tag or an email
+# address in angle brackets as more text of the paragraph. It does the
+# same at a `<` that does not open a tag or a link, and at an ordered
+# list marker other than `1.` or `1)`. It also does so when four or more
+# columns indent the line, whatever list marker, HTML tag, or code fence
+# opens it. lib/markdown.awk opens a code fence at any indent, so the
+# paragraph ends there too. Harper ends the paragraph at a heading or a
+# block quote, but it hides the `[[` there too.
+#
+# So an `if` before such a wikilink draws both findings (`if [[needed`
+# and `<span>x]]`, `<a@b.co> x]]`, `< 5 x]]`, `2. x]]`, `    - x]]`,
+# `    <div>x]]`, `# x]]`, or `> x]]` on the next line). Harper shows
+# the `[[` as text when another list marker, a code fence, or a block
+# HTML tag such as `<div>` ends the paragraph. Harper ends the paragraph
+# at such a line only when fewer than four columns indent it. So only
+# this rule reports the `if` before a wikilink whose `]]` sits on such a
+# line (`- x]]`, `1. x]]`, or `<div>x]]` on the next line).
+#
 # Harper pairs a `]]` with the nearest `[[` before it. So the check
 # reads the word after the `|` only when no other `[[` sits before the
 # first `]]`, and it reports `if [[page|needed] [[x]]`. Harper still
@@ -286,16 +316,28 @@
 # Harper finds the first `|` of a wikilink inside a code span too, and
 # lib/markdown.awk blanks the code span. So the check reports the `if`
 # when gap() finds blanked text in the target
-# (``if [[page `a|b`|needed]]``). An `if` before a wikilink whose target
-# holds other blanked text then draws a finding from both rules. Such
-# text can be a code span with no `|`, a bare URL, or an HTML comment
-# (``if [[`a`|needed]]``, `if [[page https://example.com|needed]]`).
-# gap() also reads three spaces in a row as blanked text, so an `if`
-# before a target that holds them draws both findings too
-# (`if [[page   x|needed]]`). gap() does not find a code span at the end
-# of a line. So neither rule reports an `if` before a target that holds
-# such a span with a `|` in it (``if [[page `a|b` `` and `x|needed]]` on
-# the next line).
+# (``if [[page `a|b`|needed]]``). A wikilink where the check does not
+# see a `|` can hold one in blanked text too, and Harper then shows the
+# text after it (``if [[needed `a|b`]]``,
+# ``if [[needed `a|b`]](https://example.com)``). So the check also
+# reports the `if` when gap() finds blanked text in such a wikilink
+# before its first `]`. An `if` before a wikilink that holds other
+# blanked text in either place then draws a finding from both rules.
+# Such text can be a code span with no `|`, a bare URL, or an HTML
+# comment (``if [[`a`|needed]]``,
+# `if [[page https://example.com|needed]]`, ``if [[needed `a`]]``,
+# ``if [[needed `a`]](https://example.com)``). In a wikilink before a
+# `(url)`, a `[` before the first `]` hides the text from the check, so
+# neither rule reports ``if [[needed [x] `a|b`]](https://example.com)``.
+#
+# gap() also reads three spaces in a row as blanked text. So an `if`
+# before a wikilink that holds them in either place draws both findings
+# too (`if [[page   x|needed]]`, `if [[needed   now]]`). gap() does not
+# find a code span at the start or the end of a line. So neither rule
+# reports an `if` before a wikilink that holds such a span with a `|` in
+# it (``if [[page `a|b` `` and `x|needed]]` on the next line). The span
+# can also follow the vague word (``if [[needed `a|b` `` and `]]` on the
+# next line).
 #
 # An attribution between the two words stops ProseVagueCriterion, so an
 # `if` at the end of the first part of a split quotation fires
@@ -612,14 +654,38 @@ function shown(n, j,   q) {
 # A wikilink with no `|` shows its whole text, and Harper reads emphasis
 # inside it as text. So the function passes such a wikilink only when
 # no `[` or `]` sits inside it (`if [[needed]]`, `if [[needed now]]`),
-# and `if [[**needed**]]` fires. The first `[` of a `[[` also opens a
-# link when no `]` closes it (`if [[needed]](https://example.com)`).
-# lib/markdown.awk blanks the second `]` of such a wikilink with the
-# `(url)` after it. wiki_pipe() does not find the `|` of such a
-# wikilink, so the function fails every other `[[` whose text holds a
-# `|` before its first `]` (`if [[needed|label]](https://example.com)`).
-# Every other `[[` fires (`if [[needed] now]`).
-function side_by_side(n, i, j,   dest, title, open_title, tail, head, wiki, rest, d, p, c) {
+# and `if [[**needed**]]` fires. Harper also finds the first `|` of a
+# wikilink inside a code span, which lib/markdown.awk blanks. So the
+# function fails such a wikilink when gap() finds blanked text between
+# two of its tokens (``if [[needed `a|b`]]``).
+#
+# The first `[` of a `[[` also opens a link when a `]` closes the
+# second `[` and no `]` closes the first
+# (`if [[needed]](https://example.com)`). lib/markdown.awk blanks the
+# second `]` of such a wikilink with the `(url)` after it. wiki_pipe()
+# does not find the `|` of such a wikilink, so the function fails every
+# other `[[` whose text holds a `|` before its first `]`
+# (`if [[needed|label]](https://example.com)`). It also fails a `[[`
+# when its first `]` closes the second `[` and gap() finds blanked text
+# before that `]`, because a code span there can hold the `|`
+# (``if [[needed `a|b`]](https://example.com)``). A `[` before the first
+# `]` hides the blanked text from the function, so it passes
+# ``if [[needed [x] `a|b`]](https://example.com)``.
+#
+# When no `]` closes the second `[` either, each `](url)` that
+# lib/markdown.awk blanked closes a `[` after the first one. Harper then
+# reads the first `[` as text (`if [[needed now.`,
+# `if [[needed](https://example.com) now.`). The sentence can also end
+# inside a wikilink. lib/sentences.awk ends the paragraph at a line that
+# opens with `|`, and Harper shows the text after that `|`
+# (`if [[needed` and `|label]]` on the next line). So the function fails
+# such a `[[`, as it fails every other `[[` (`if [[needed] now]`).
+#
+# lib/markdown.awk also blanks the `](url)` of a later link and leaves
+# the `[` of that link open. So a `]` that closes the second `[` of the
+# `[[` counts even when a later `[` stays open, and the function passes
+# `if [[needed]](https://example.com) and [the guide](#setup)`.
+function side_by_side(n, i, j,   dest, title, open_title, tail, head, wiki, rest, d, p, c, closed) {
   # The `(` of an inline link and its destination, a title that a mark
   # closes, and a title that runs to the end of the sentence.
   dest = "^\\([ \t]*(<[^<>]*>|([^ \t<()]|\\([^ \t()]*\\))([^ \t()]|\\([^ \t()]*\\))*)?"
@@ -650,8 +716,15 @@ function side_by_side(n, i, j,   dest, title, open_title, tail, head, wiki, rest
   if (wiki && rest ~ /^\[[^]]*\|/) {
     return 0
   }
-  if (wiki && rest ~ /^\[[^][|]*\]\]/) {
-    return 1
+  if (wiki && rest ~ /^\[[^][|]*\]/) {
+    for (p = j + 1; !index(tok[p - 1], "]"); p++) {
+      if (gap(p) == "b") {
+        return 0
+      }
+    }
+    if (rest ~ /^\[[^][|]*\]\]/) {
+      return 1
+    }
   }
   d = 1
   for (p = 1; p <= length(rest); p++) {
@@ -661,9 +734,11 @@ function side_by_side(n, i, j,   dest, title, open_title, tail, head, wiki, rest
     } else if (c == "]" && --d == 0) {
       c = substr(rest, p + 1)
       return !wiki && ((c ~ /^\[/ && c !~ /^\[\^/) || c ~ (dest "(" title ")?[ \t]*\\)") || c ~ (dest open_title))
+    } else if (c == "]" && d == 1) {
+      closed = 1
     }
   }
-  return 1
+  return !wiki || closed
 }
 
 function sentence(n,   i, j, k, m, at, depth, w, t, limited, quoted, resume, resume_end) {
