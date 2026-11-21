@@ -1262,6 +1262,343 @@ in
           touch "$out"
         '';
 
+        # Lints list items that hold a heading or a table, and lines left
+        # of the text of the item that GFM keeps in the list. Each item
+        # ends in a paragraph four columns in. lib/markdown.awk skips that
+        # paragraph as code when it ends the list too early. GFM reads
+        # each line of the file that holds `e.g.` as prose, except the
+        # last two, and the test expects a ProseLatinAbbreviation finding
+        # on each:
+        #
+        # - A link reference definition is text of a paragraph, so a line
+        #   under it continues that paragraph.
+        # - An empty line inside fenced code or an HTML comment of the
+        #   item keeps the list open.
+        # - An empty list item left of the text of the item opens a new
+        #   list, after a heading or an HTML block of the item. A line at
+        #   the text of the new item sits in that item.
+        # - A blank line, a `>` line, a line of indented code, and a
+        #   heading each end a table. The paragraph after that line takes
+        #   a line under it.
+        # - A line of `=` marks left of the text of the item is more text
+        #   of the paragraph. So is a line of `=` marks under a paragraph
+        #   in a blockquote.
+        # - A line of `-` marks without a `|` under a paragraph is a
+        #   setext underline and not a delimiter row. The paragraph after
+        #   it takes a line under it.
+        # - A delimiter row left of the text of the item is more text of
+        #   the paragraph, and a table does not open there. So is a
+        #   delimiter row four columns past the text of the item, and a
+        #   delimiter row without the `>` of a quoted paragraph.
+        # - A delimiter row with fewer cells than the row above it is
+        #   more text of the paragraph, and a table does not open there.
+        #   A line under that row four columns past the text of the item
+        #   is more text of the paragraph too. lib/markdown.awk reads the
+        #   row as a table. But it skips indented code in an item only
+        #   after a blank line or after more code, so that line stays
+        #   prose.
+        #
+        # GFM ends the list in each of the last two items, and it reads
+        # the paragraph four columns in as code. The test expects no
+        # finding on that paragraph:
+        #
+        # - An empty list item with trailing whitespace (`-  `) left of
+        #   the text of the item opens a new item. The blank line under
+        #   it ends the list, because no item stays open.
+        # - A line of fenced code left of the text of the item ends the
+        #   list, because fenced code does not take a lazy line.
+        #
+        # The fixtures of ProseLatinAbbreviation cannot hold these lines.
+        # check.py needs a finding on each line of a bad fixture other
+        # than a line of thematic-break marks. Definitions, empty items,
+        # delimiter rows, lines of `=` or `-` marks, HTML comments, and
+        # code do not hold text for a finding. The `same finding` comment
+        # that a bad fixture needs at the end of such a line changes how
+        # GFM reads it. editorconfig trims the trailing whitespace of the
+        # empty item from a good fixture. GFM reads the closing marker of
+        # the fence in the last item as the opener of a fence that runs to
+        # the end of the file. That item therefore ends the file. The
+        # command in configs/harper/CLAUDE.md builds this test too.
+        tests.item-blocks = runCommand "prose-lint-item-blocks" { } ''
+          printf '%s\n' \
+            '- The job runs, e.g. nightly.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  [ref]: https://example.com' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '1. The job runs.' \
+            "" \
+            '   ## Steps' \
+            '-' \
+            '  It runs, e.g. nightly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  | a | b |' \
+            '  | - | - |' \
+            '  > It runs, e.g. nightly,' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  | a | b |' \
+            '  | - | - |' \
+            '      make build' \
+            '  It runs, e.g. nightly,' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  | a | b |' \
+            '  | - | - |' \
+            '  ## Steps' \
+            '  It runs, e.g. nightly,' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  It runs, e.g. nightly,' \
+            '===' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  > It runs, e.g. nightly,' \
+            '  ===' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  It runs, e.g. nightly | daily' \
+            '--|--' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  > It runs, e.g. nightly | daily' \
+            '  --|--' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  <div>' \
+            '1.' \
+            '   It runs, e.g. nightly,' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  | a | b |' \
+            '  | - |' \
+            '      It runs, e.g. nightly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  ```sh' \
+            '  make build' \
+            "" \
+            '  make test' \
+            '  ```' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  <!--' \
+            '  A note.' \
+            "" \
+            '  -->' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  | a | b |' \
+            '  | - | - |' \
+            "" \
+            '  It runs, e.g. nightly,' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  It runs, e.g. nightly | daily' \
+            '      --|--' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  It runs, e.g. nightly.' \
+            '  --' \
+            '  It reruns, e.g. daily,' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  It runs, e.g. nightly.' \
+            '-  ' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '  ```sh' \
+            '  cat <<END' \
+            'port = 80' \
+            'END' \
+            '  ```' \
+            "" \
+            '    It reruns, e.g. hourly.' >items.md
+
+          cat >want <<'EOF'
+          items.md:1:17
+          items.md:6:13
+          items.md:8:16
+          items.md:16:12
+          items.md:18:16
+          items.md:26:14
+          items.md:27:13
+          items.md:29:16
+          items.md:38:12
+          items.md:39:13
+          items.md:41:16
+          items.md:50:12
+          items.md:51:13
+          items.md:53:16
+          items.md:61:12
+          items.md:63:13
+          items.md:65:16
+          items.md:73:14
+          items.md:75:13
+          items.md:77:16
+          items.md:85:12
+          items.md:87:13
+          items.md:89:16
+          items.md:97:14
+          items.md:99:13
+          items.md:101:16
+          items.md:111:13
+          items.md:112:13
+          items.md:114:16
+          items.md:124:16
+          items.md:126:16
+          items.md:140:16
+          items.md:153:16
+          items.md:162:12
+          items.md:163:13
+          items.md:165:16
+          items.md:173:12
+          items.md:175:13
+          items.md:177:16
+          items.md:185:12
+          items.md:187:14
+          items.md:188:13
+          items.md:190:16
+          items.md:198:12
+          EOF
+
+          rc=0
+          found=$(${lib.getExe finalAttrs.finalPackage} items.md) || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "items.md: prose-lint exited $rc" >&2
+            exit 1
+          fi
+          printf '%s\n' "$found" |
+            sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::ProseLatinAbbreviation: .*,\1,p' >got
+          if ! diff want got; then
+            echo "items.md draws other ProseLatinAbbreviation findings than want lists" >&2
+            exit 1
+          fi
+          touch "$out"
+        '';
+
         # Lints paragraphs that ProseOpeningPronoun reports and that its
         # fixtures cannot hold, and expects the findings that want lists:
         #
@@ -1296,14 +1633,13 @@ in
         #   the list item of the paragraph. The tag is `<br>` or an
         #   `<img>` tag with an attribute. It opens an HTML block there,
         #   and the block ends the paragraph. One such list item holds a
-        #   table row, at which lib/markdown.awk closes the list. Another
-        #   sits right under a line of inline HTML, where lib/markdown.awk
-        #   does not open an item. A `same finding` comment after the tag
-        #   makes the line more text of the paragraph.
-        # - In a list item after a heading, at which lib/markdown.awk
-        #   closes the list, a line of `---` left of the text of a later
-        #   paragraph is a rule that ends the item. It is not an
-        #   underline, and it does not hold a finding.
+        #   table row above the paragraph. Another sits right under a line
+        #   of inline HTML, where lib/markdown.awk does not open an item. A
+        #   `same finding` comment after the tag makes the line more text
+        #   of the paragraph.
+        # - In a list item after a heading, a line of `---` left of the
+        #   text of a later paragraph is a rule that ends the item. It is
+        #   not an underline, and it does not hold a finding.
         # - lib/markdown.awk does not count some list items that GFM
         #   keeps open. It drops one item, right under a paragraph, at a
         #   line of its text at the margin. It does not open an item that

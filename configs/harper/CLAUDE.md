@@ -429,6 +429,55 @@ on a set of files.
   fixtures cannot hold these lines. Some of the lines also need trailing
   whitespace, which editorconfig trims.
 
+- `item-blocks` lints list items that hold a heading or a table, and
+  lines left of the text of the item that GFM keeps in the list. Each
+  item ends in a paragraph four columns in, which lib/markdown.awk skips
+  as code when it ends the list too early. The test expects a
+  ProseLatinAbbreviation finding on each line that holds `e.g.`, except
+  the last two. The file holds these lines:
+  - A line under a link reference definition, which continues the
+    paragraph that the definition opens.
+  - An empty line inside fenced code or an HTML comment of the item,
+    which keeps the list open.
+  - A line at the text of an empty list item that opens a new list left
+    of the text of the item, after a heading or an HTML block of the
+    item.
+  - A blank line, a `>` line, a line of indented code, or a heading
+    under a table. Each of these lines ends the table, and the paragraph
+    after it takes a line under it.
+  - A line of `=` marks left of the text of the item, and a line of `=`
+    marks under a quoted paragraph. GFM reads each line as more text of
+    the paragraph.
+  - A line of `-` marks without a `|` under a paragraph. GFM reads the
+    line as a setext underline and not as a delimiter row, so the
+    paragraph after it takes a line under it.
+  - A delimiter row left of the text of the item or four columns past
+    it, and one without the `>` of a quoted paragraph. GFM reads each
+    row as more text of the paragraph and opens no table there.
+  - A line under a delimiter row with fewer cells than the row above
+    it. The line sits four columns past the text of the item. GFM opens
+    no table there, so it reads the line as more text of the paragraph.
+    lib/markdown.awk reads the row as a table. But it skips indented
+    code in an item only after a blank line or after more code, so the
+    line stays prose.
+
+  GFM ends the list in each of the last two items, so it reads their
+  paragraphs four columns in as code. The test expects no finding on
+  those two lines:
+  - An empty list item with trailing whitespace (`-  `) left of the text
+    of the item. The blank line under it ends the list.
+  - A line of fenced code left of the text of the item. Fenced code does
+    not take a lazy line, so that line ends the list.
+
+  Definitions, empty items, delimiter rows, lines of `=` or `-` marks,
+  HTML comments, and code do not hold text for a finding. The
+  `same finding` comment that a bad fixture needs at the end of such a
+  line changes how GFM reads it. editorconfig trims the trailing
+  whitespace of the empty item from a good fixture. GFM reads the
+  closing marker of the fence in the last item as the opener of a new
+  fence. That fence runs to the end of the file, so the last item ends
+  the file.
+
 - `opening-pronoun` lints paragraphs that ProseOpeningPronoun reports
   and that its fixtures cannot hold. The test expects the findings that
   it lists:
@@ -457,15 +506,13 @@ on a set of files.
   - A line that holds only one tag, such as `<br>` or an `<img>` tag
     with an attribute, outside the blockquote or the list item of the
     paragraph. GFM opens an HTML block there, and the block ends the
-    paragraph. One such list item holds a table row, at which
-    lib/markdown.awk closes the list. Another sits right under a line of
-    inline HTML, where lib/markdown.awk does not open an item. A
-    `same finding` comment after the tag makes the line more text of the
-    paragraph.
+    paragraph. One such list item holds a table row above the paragraph.
+    Another sits right under a line of inline HTML, where
+    lib/markdown.awk does not open an item. A `same finding` comment
+    after the tag makes the line more text of the paragraph.
   - A line of `---` left of the text of a paragraph in a list item after
-    a heading, at which lib/markdown.awk closes the list. GFM reads the
-    line as a rule that ends the item and not as an underline, and the
-    line does not hold a finding.
+    a heading. GFM reads the line as a rule that ends the item and not
+    as an underline, and the line does not hold a finding.
   - A paragraph at the text of a list item that lib/markdown.awk does
     not count, with a line of `---` or `<br>` at the margin under it.
     lib/markdown.awk drops one item, right under a paragraph, at a line

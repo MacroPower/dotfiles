@@ -274,3 +274,76 @@ The job runs, e.g. nightly,
   ***
     It reruns, e.g. hourly.
 <!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The job runs, e.g. nightly.
+
+  ## Steps, e.g. build
+
+    It reruns, e.g. hourly.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+1. The job runs, e.g. nightly.
+
+   | Step, e.g. build | Time, e.g. noon |
+   | --- | --- | <!-- same finding -->
+
+     It reruns, e.g. hourly.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The job runs, e.g. nightly.
+
+  ## Steps, e.g. build
+
+  The job runs, e.g. nightly,
+and lazily, e.g. hourly.
+
+    It reruns, e.g. hourly.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The job runs, e.g. nightly.
+
+  | Step, e.g. build | Time, e.g. noon |
+  | --- | --- | <!-- same finding -->
+  ## Steps, e.g. build
+  The job runs, e.g. nightly,
+and lazily, e.g. hourly.
+
+    It reruns, e.g. hourly.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The job runs, e.g. nightly.
+
+  | Step, e.g. build |
+and lazily, e.g. hourly.
+
+    It reruns, e.g. hourly.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The job runs, e.g. nightly.
+
+  ## Steps, e.g. build
+
+  The job runs, e.g. nightly,
+         ***
+and lazily, e.g. hourly.
+
+    It reruns, e.g. hourly.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The job runs, e.g. nightly.
+
+  ## Steps, e.g. build
+
+  :::{note} <!-- same finding -->
+  :class: tip <!-- same finding -->
+and lazily, e.g. hourly.
+
+    It reruns, e.g. hourly.
+<!-- prettier-ignore-end -->

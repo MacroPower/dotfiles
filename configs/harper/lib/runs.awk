@@ -155,7 +155,11 @@ function prose(text,   n, rule) {
   rule = raw ~ /^[ \t]*((-[ \t]*){3,}|(\*[ \t]*){3,}|(_[ \t]*){3,})$/
 
   # A list item, and the lines that continue it, extend a pending list.
-  if (in_list && !rule) {
+  # lib/markdown.awk sets `block_line` for a heading or a table row zero
+  # to three columns in. It keeps the list open at such a line in a list
+  # item. That line still ends the pending list, and it then ends the run
+  # or opens a pending table, as it does outside a list.
+  if (in_list && !rule && !block_line) {
     if (pend_kind != "list") {
       settle()
       pend("list")
