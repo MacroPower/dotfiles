@@ -28,12 +28,17 @@
   # that only other hosts import, such as home/claude.nix. Declare that
   # option in home/options.nix instead of importing the other module
   # here.
-  homeModule = {
-    dotfiles = {
-      git = {
-        userName = "Jacob Colvin";
-        userEmail = "jacobcolvin1@gmail.com";
+  homeModule =
+    { config, ... }:
+    {
+      dotfiles = {
+        # The repositories of this host, such as the dotfiles clone that
+        # nh switches from, live under ~/repos.
+        reposDir = "${config.dotfiles.homeDirectory}/repos";
+        git = {
+          userName = "Jacob Colvin";
+          userEmail = "jacobcolvin1@gmail.com";
+        };
       };
     };
-  };
 }

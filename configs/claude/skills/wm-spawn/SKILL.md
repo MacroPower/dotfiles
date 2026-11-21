@@ -1,7 +1,7 @@
 ---
 name: spawn
 description: >-
-  Dispatch worktree agents to any repo under ~/Documents/repos from a single
+  Dispatch worktree agents to any repo under @reposDir@ from a single
   session. Two modes: targeted dispatch and fire-and-forget fan-out across
   many repos. Maintains an untracked catalog CLAUDE.md.
 disable-model-invocation: true
@@ -10,8 +10,8 @@ disable-model-invocation: true
 # wm-spawn
 
 You are a thin dispatcher. You spawn worktree agents in sibling repos under
-`~/Documents/repos` and exit. You **never** implement, monitor, capture output,
-send follow-ups, or merge. Use when Claude is running in `~/Documents/repos/`
+`@reposDir@` and exit. You **never** implement, monitor, capture output,
+send follow-ups, or merge. Use when Claude is running in `@reposDir@`
 itself and needs to fan work out to sibling projects without changing
 directories.
 
@@ -37,7 +37,7 @@ Pick one per invocation. The key question is **who picks the targets**:
    filesystem state consistent before any worktree agent starts reading its
    prompt. Issue the prompt-file `Write` calls as parallel tool calls in a
    single turn, then issue the §6 `Bash` dispatches the same way.
-3. **Use the catalog at `~/Documents/repos/CLAUDE.md`** as the source of
+3. **Use the catalog at `@reposDir@/CLAUDE.md`** as the source of
    truth for what repos exist. Refresh it (see §2) before any target
    selection.
 4. **Target-repo source is read-only and the rules differ by mode.**
@@ -57,7 +57,7 @@ Pick one per invocation. The key question is **who picks the targets**:
 Resolve both paths through symlinks before comparing:
 
 ```bash
-REPOS_ROOT="$HOME/Documents/repos"
+REPOS_ROOT="@reposDir@"
 if [ "$(pwd -P)" != "$(cd "$REPOS_ROOT" && pwd -P)" ]; then
   echo "wm-spawn must be invoked from $REPOS_ROOT. cd there and rerun." >&2
   exit 1
@@ -104,7 +104,7 @@ done
 ### Format
 
 ```markdown
-# Repos under ~/Documents/repos
+# Repos under @reposDir@
 
 <!-- Maintained by /wm-spawn. Per-repo descriptions are safe to edit; keep each
      entry on a single line so the parser recognizes it on the next refresh. -->
@@ -184,8 +184,8 @@ returns 1-2, switch to mode 1 (fan-out machinery is overkill).
 ### M.2 Per-target prompt template
 
 `mktemp` one `.md` per eligible repo. Keep each prompt short, plain, and
-unassuming. The agent doesn't need a pep talk. Use absolute `~`-rooted
-paths for any cross-repo reference.
+unassuming. The agent does not need a pep talk. Use absolute paths for any
+cross-repo reference.
 
 ```
 Apply this change to this repo: <one-line summary>.
@@ -195,7 +195,7 @@ What to change:
 No rationale, no history.>
 
 Reference (read-only):
-~/Documents/repos/<reference-repo>/<path/to/example>
+@reposDir@/<reference-repo>/<path/to/example>
 
 The same change is being applied in parallel to:
 - <other-repo-1>
@@ -204,7 +204,7 @@ The same change is being applied in parallel to:
 - ... (+ K others)
 
 Scope: edit only files inside your own worktree. Every path under
-~/Documents/repos/ that is not your own repo is read-only: reading for
+@reposDir@ that is not your own repo is read-only: reading for
 reference is fine, writing or running modifying commands there is not.
 ```
 

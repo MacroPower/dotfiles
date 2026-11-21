@@ -405,7 +405,7 @@ in
       ];
     };
   homeModule =
-    { lib, ... }:
+    { lib, config, ... }:
     {
       imports = [
         ../../home/development.nix
@@ -415,6 +415,11 @@ in
         ../../home/yt-dlp.nix
       ];
       dotfiles = {
+        # workmux mounts the repos directory of the macOS host into this
+        # VM at its macOS path. Keep this path equal to dotfiles.reposDir
+        # of each macOS host that runs the VM. lib/mkDarwin.nix fails the
+        # evaluation of a macOS host whose path differs.
+        reposDir = "/Users/${config.dotfiles.username}/Documents/repos";
         sops.enable = false;
         git = {
           userName = "Jacob Colvin";

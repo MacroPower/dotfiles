@@ -66,6 +66,34 @@ inputs.nix-darwin.lib.darwinSystem {
       nixpkgs.overlays = sharedOverlays "aarch64-darwin";
       home-manager = mkHomeManagerBlock { inherit username homeModule; };
     }
+    # workmux mounts the repos directory of the macOS host into the
+    # terrarium VM at its macOS path. The macOS hosts share one terrarium
+    # image. So the VM names that mount only when its dotfiles.reposDir
+    # equals the path of each macOS host that runs it.
+    (
+      { config, ... }:
+      let
+        home = config.home-manager.users.${username};
+        terrarium = self.nixosConfigurations.terrarium-aarch64.config;
+        guestReposDir =
+          terrarium.home-manager.users.${terrarium.dotfiles.system.username}.dotfiles.reposDir;
+      in
+      {
+        assertions = [
+          {
+            # A homeModule that leaves out home/claude.nix has no
+            # dotfiles.claude option, and that host runs no VM.
+            assertion = !(home.dotfiles.claude.lima.enable or false) || home.dotfiles.reposDir == guestReposDir;
+            message = ''
+              dotfiles.reposDir is ${home.dotfiles.reposDir} on ${hostname}
+              and ${guestReposDir} on the terrarium VM. The macOS hosts
+              share one terrarium image. So each macOS host that enables
+              dotfiles.claude.lima must set the path that
+              hosts/nixos/terrarium.nix sets.'';
+          }
+        ];
+      }
+    )
     # Darwin-specific home-manager defaults
     {
       home-manager.users.${username} =

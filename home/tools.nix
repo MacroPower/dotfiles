@@ -13,7 +13,7 @@ let
     };
   };
   sandboxDirenvConfig = lib.optionalAttrs (config.dotfiles.hostname == "terrarium") {
-    whitelist.prefix = [ "/Users/${config.dotfiles.username}/Documents/repos" ];
+    whitelist.prefix = [ config.dotfiles.reposDir ];
   };
 
   # A self-hosted atuin sync server runs on each macOS host, bound to
@@ -318,7 +318,7 @@ in
 
     nh = {
       enable = true;
-      flake = "${config.home.homeDirectory}/repos/dotfiles";
+      flake = "${config.dotfiles.reposDir}/dotfiles";
     };
 
     tealdeer = {

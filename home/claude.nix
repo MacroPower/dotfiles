@@ -746,8 +746,9 @@ let
         }
         {
           # Output dir for the web-archive skill (btrix, yt-dlp).
-          # Mount it like ~/Documents/repos so captures from inside
-          # the sandbox persist to the host filesystem.
+          # Mount it at its host path, as workmux mounts projects_dir,
+          # so captures from inside the sandbox persist to the host
+          # filesystem.
           host_path = cfg.archivesDir;
           guest_path = cfg.archivesDir;
           writable = true;
@@ -763,7 +764,9 @@ let
       ];
       lima = {
         isolation = "shared";
-        projects_dir = "${config.home.homeDirectory}/Documents/repos";
+        # workmux mounts this directory into the guest at the same
+        # path, so the guest's host file sets dotfiles.reposDir to it.
+        projects_dir = config.dotfiles.reposDir;
         skip_default_provision = true;
         # Shared isolation trades Git metadata isolation for writable repo
         # mounts; workmux requires acknowledging that for unattended starts.
@@ -1696,7 +1699,7 @@ let
     "~/Library/Fonts"
     "~/Library/Frameworks"
 
-    "~/Documents/repos"
+    config.dotfiles.reposDir
     "~/Documents/screenshots"
     "~/go"
 
@@ -2712,7 +2715,7 @@ in
             };
             source = mkOption {
               type = types.either types.path types.lines;
-              description = "Skill directory path, or raw SKILL.md contents.";
+              description = "Skill directory path, path of a single SKILL.md file, or raw SKILL.md contents.";
             };
           };
         }
@@ -3273,7 +3276,13 @@ in
       wm-merge.source = ../configs/claude/skills/wm-merge;
       wm-rebase.source = ../configs/claude/skills/wm-rebase;
       wm-coordinator.source = ../configs/claude/skills/wm-coordinator;
-      wm-spawn.source = ../configs/claude/skills/wm-spawn;
+      # The skill names the repos directory of this host in place of
+      # each @reposDir@ in its SKILL.md. replaceVars fails the build
+      # when the file does not hold that placeholder, or when it holds
+      # another placeholder that this call does not replace.
+      wm-spawn.source = pkgs.replaceVars ../configs/claude/skills/wm-spawn/SKILL.md {
+        inherit (config.dotfiles) reposDir;
+      };
       wm-workmux.source = ../configs/claude/skills/wm-workmux;
       git-surgeon.source = ../configs/claude/skills/git-surgeon;
       presenterm.source = ../configs/claude/skills/presenterm;
@@ -3377,18 +3386,13 @@ in
             "--allow-dir"
             cloneRoot
             # git_fetch, git_pull, and git_push work on the checkouts
-            # that live here. git_clone checks its dest against the
-            # same list, so it also accepts a dest in this tree. The
-            # instruction of this bundle still sends each clone to
-            # cloneRoot.
+            # in the repos directory of this host. A Lima guest sets
+            # that directory to the macOS path that its mount uses.
+            # git_clone checks its dest against the same list, so it
+            # also accepts a dest in this tree. The instruction of this
+            # bundle still sends each clone to cloneRoot.
             "--allow-dir"
-            "${config.home.homeDirectory}/Documents/repos"
-            # Linux VMs (lima/terrarium) mount the macOS repos tree
-            # at its original /Users path; allow that spelling too.
-            # On darwin this duplicates the entry above, which is
-            # harmless.
-            "--allow-dir"
-            "/Users/${config.home.username}/Documents/repos"
+            config.dotfiles.reposDir
           ];
         };
         # Every git command runs without a prompt except the ones that

@@ -115,22 +115,29 @@
         };
       };
     };
-  homeModule = {
-    imports = [
-      ../../home/development.nix
-      ../../home/kubernetes.nix
-      ../../home/claude.nix
-      ../../home/zed-remote.nix
-    ];
-    dotfiles = {
-      git = {
-        userName = "Jacob Colvin";
-        userEmail = "jacobcolvin1@gmail.com";
-      };
-      claude = {
-        dangerouslySkipPermissions = true;
-        agents.go-doc-improver.source = ../../configs/claude/agents/go-doc-improver.md;
+  homeModule =
+    { config, ... }:
+    {
+      imports = [
+        ../../home/development.nix
+        ../../home/kubernetes.nix
+        ../../home/claude.nix
+        ../../home/zed-remote.nix
+      ];
+      dotfiles = {
+        # unmount-host-mounts in hostModule removes the OrbStack mounts
+        # of the macOS host, so the repositories of this host live in
+        # the VM. They live under ~/repos, which holds the dotfiles clone
+        # that nh switches from.
+        reposDir = "${config.dotfiles.homeDirectory}/repos";
+        git = {
+          userName = "Jacob Colvin";
+          userEmail = "jacobcolvin1@gmail.com";
+        };
+        claude = {
+          dangerouslySkipPermissions = true;
+          agents.go-doc-improver.source = ../../configs/claude/agents/go-doc-improver.md;
+        };
       };
     };
-  };
 }

@@ -16,7 +16,11 @@
   environment.enableAllTerminfo = true;
 
   programs.nh = {
-    flake = "/home/${config.dotfiles.system.username}/repos/dotfiles";
+    # The dotfiles clone in the repos directory of the primary user, the
+    # same path that home/tools.nix gives that user's nh.
+    flake = "${
+      config.home-manager.users.${config.dotfiles.system.username}.dotfiles.reposDir
+    }/dotfiles";
     clean.dates = "03:15";
   };
 

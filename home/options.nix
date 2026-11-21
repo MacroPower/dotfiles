@@ -141,6 +141,26 @@ in
       description = "OpenType font features to enable across editors and terminals.";
     };
 
+    reposDir = mkOption {
+      type = types.nonEmptyStr;
+      default = "${config.dotfiles.homeDirectory}/Documents/repos";
+      description = ''
+        Absolute path of the directory that holds the repositories of
+        this host. A host sets it in its file under hosts/. The nh flake
+        path is the dotfiles clone in this directory, and the direnv
+        config of the terrarium VM trusts every project in it. On a host
+        that imports home/claude.nix, the Claude Code sandbox and the
+        git MCP server allow the directory, workmux mounts it into the
+        Lima sandbox, and the wm-spawn skill dispatches agents to the
+        repositories in it. A Lima guest sees the directory of the macOS
+        host at its macOS path, so the guest sets that path. The macOS
+        hosts share one terrarium image. So each macOS host that enables
+        dotfiles.claude.lima must set the path that
+        hosts/nixos/terrarium.nix sets, and lib/mkDarwin.nix fails the
+        evaluation of a macOS host whose path differs.
+      '';
+    };
+
     obsidian.vaultsDir = mkOption {
       type = types.nonEmptyStr;
       default = "/Users/${config.dotfiles.username}/Library/Mobile Documents/iCloud~md~obsidian/Documents";
