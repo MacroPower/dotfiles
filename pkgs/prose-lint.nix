@@ -1276,10 +1276,46 @@ in
         #   `- - -`, and fenced and indented code follow it. A line one
         #   column past the text of the item ends the code and opens a
         #   paragraph.
-        # - A delimiter row turns the line with a deep indent above it
-        #   into the header row of a table. The paragraph then ends above
-        #   that line. The `same finding` comment that a bad fixture needs
+        # - A delimiter row turns the line above it into the header row
+        #   of a table. That line has a deep indent, opens with `|` or
+        #   inline HTML, or holds plain text with or without a `|`. The
+        #   paragraph then ends above that line. A line of `---` under the
+        #   table is a rule and not an underline of the paragraph, also
+        #   when the first sentence ends on the first line of the
+        #   paragraph. The `same finding` comment that a bad fixture needs
         #   at the end of each row breaks the table.
+        # - One paragraph sits left of the text of a list item and so
+        #   outside the list, and its delimiter row sits at the margin.
+        #   Another sits in a list item, and a tab indents its delimiter
+        #   row past the text of the item. Two more sit past the text of a
+        #   list item, and their delimiter rows sit at the text of the
+        #   item. One of those items starts with `2.` right under a
+        #   heading. In a blockquote, a delimiter row can sit left of the
+        #   text of the paragraph.
+        # - A line that holds only one tag sits outside the blockquote or
+        #   the list item of the paragraph. The tag is `<br>` or an
+        #   `<img>` tag with an attribute. It opens an HTML block there,
+        #   and the block ends the paragraph. One such list item holds a
+        #   table row, at which lib/markdown.awk closes the list. Another
+        #   sits right under a line of inline HTML, where lib/markdown.awk
+        #   does not open an item. A `same finding` comment after the tag
+        #   makes the line more text of the paragraph.
+        # - In a list item after a heading, at which lib/markdown.awk
+        #   closes the list, a line of `---` left of the text of a later
+        #   paragraph is a rule that ends the item. It is not an
+        #   underline, and it does not hold a finding.
+        # - lib/markdown.awk does not count some list items that GFM
+        #   keeps open. It drops one item, right under a paragraph, at a
+        #   line of its text at the margin. It does not open an item that
+        #   starts with `2.` right under a heading, a blockquote, or a
+        #   fence, nor an item with a nested item right under a line of
+        #   inline HTML. It also drops an item at a link reference
+        #   definition at the margin right under the item. GFM reads that
+        #   definition as more text of the item. In each such item, a
+        #   later paragraph sits at the text of the item. A line of `---`
+        #   or `<br>` at the margin under that paragraph ends the item.
+        #   So the line is neither an underline nor more text of the
+        #   paragraph.
         #
         # check.py expects a finding on each line of a bad fixture.
         # Definitions, fence markers, and the rows of a table do not hold
@@ -1326,7 +1362,149 @@ in
             "" \
             'It may help' \
             '    - first to restart' \
-            ':--' >pronoun.md
+            ':--' \
+            "" \
+            'It may help' \
+            '| to restart | the pod |' \
+            '| --- | --- |' \
+            "" \
+            'It may help' \
+            '<span>a</span> | to' \
+            '--- | ---' \
+            "" \
+            'It may help.' \
+            '| a | b |' \
+            '| --- | --- |' \
+            '---' \
+            "" \
+            'It may help' \
+            'a | to' \
+            '--- | ---' \
+            "" \
+            'It may help.' \
+            'Flag' \
+            '| --- |' \
+            '---' \
+            "" \
+            'It may help' \
+            'to restart' \
+            ':--' \
+            "" \
+            '> It may help' \
+            '<br>' \
+            '> to restart the pod.' \
+            "" \
+            '- The pod holds the cache.' \
+            "" \
+            '  It may help' \
+            '<br>' \
+            '  to restart the pod.' \
+            "" \
+            '- The pod holds the cache.' \
+            '  | a |' \
+            "" \
+            '  It may help' \
+            '<br>' \
+            '  to restart the pod.' \
+            "" \
+            '> It may help' \
+            '<img src="x.png">' \
+            '> to restart the pod.' \
+            "" \
+            '1. The pod holds the cache.' \
+            "" \
+            '  It may help' \
+            '  | a | to |' \
+            '| - | - |' \
+            "" \
+            '1. The pod holds the cache.' \
+            "" \
+            '   ## Setup' \
+            "" \
+            '   The pod runs.' \
+            "" \
+            '   It may help' \
+            '  ---' \
+            "" \
+            '<span>x</span>' \
+            '- The pod holds the cache.' \
+            "" \
+            '  It may help' \
+            '<br>' \
+            '  to restart the pod.' \
+            "" \
+            'The pod runs.' \
+            '- The pod holds the cache and' \
+            'serves the reads.' \
+            "" \
+            '  It may help.' \
+            '---' \
+            "" \
+            '## Setup' \
+            '2. The pod holds the cache.' \
+            "" \
+            '   It may help' \
+            '<br>' \
+            '   to restart the pod.' \
+            "" \
+            '<span>x</span>' \
+            '- The pod holds the cache.' \
+            "" \
+            '  - The sub item.' \
+            "" \
+            '  It may help.' \
+            '---' \
+            "" \
+            '> The pod runs.' \
+            '2. The pod holds the cache.' \
+            "" \
+            '   It may help.' \
+            '---' \
+            "" \
+            'The pod runs.' \
+            '~~~' \
+            'make' \
+            '~~~' \
+            '2. The pod holds the cache.' \
+            "" \
+            '   It may help.' \
+            '---' \
+            "" \
+            '- The pod holds the cache.' \
+            "" \
+            '  It may help' \
+            '  | a | to restart |' \
+            "$(printf '\t| - | - |')" \
+            "" \
+            '- The pod holds the cache.' \
+            '[a]: x' \
+            "" \
+            '  It may help.' \
+            '---' \
+            "" \
+            '- The pod holds the cache.' \
+            '[a]: x' \
+            "" \
+            '  It may help' \
+            '<br>' \
+            '  to restart the pod.' \
+            "" \
+            '- The pod holds the cache.' \
+            "" \
+            '   It may help' \
+            '   a | to restart' \
+            '  | --- | --- |' \
+            "" \
+            '## Setup' \
+            '2. The pod holds the cache.' \
+            "" \
+            '    It may help' \
+            '    a | to restart' \
+            '   | --- | --- |' \
+            "" \
+            '>   It may help' \
+            '> | a | to |' \
+            '> | - | - |' >pronoun.md
 
           cat >want <<'EOF'
           pronoun.md:3:3
@@ -1336,6 +1514,30 @@ in
           pronoun.md:30:1
           pronoun.md:34:1
           pronoun.md:38:1
+          pronoun.md:42:1
+          pronoun.md:46:1
+          pronoun.md:50:1
+          pronoun.md:55:1
+          pronoun.md:59:1
+          pronoun.md:64:1
+          pronoun.md:68:3
+          pronoun.md:74:3
+          pronoun.md:81:3
+          pronoun.md:85:3
+          pronoun.md:91:3
+          pronoun.md:101:4
+          pronoun.md:107:3
+          pronoun.md:115:3
+          pronoun.md:121:4
+          pronoun.md:130:3
+          pronoun.md:136:4
+          pronoun.md:145:4
+          pronoun.md:150:3
+          pronoun.md:157:3
+          pronoun.md:163:3
+          pronoun.md:169:4
+          pronoun.md:176:5
+          pronoun.md:180:5
           EOF
 
           rc=0

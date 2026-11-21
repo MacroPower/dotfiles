@@ -440,9 +440,42 @@ on a set of files.
     definition opens.
   - A paragraph one column past the text of a list item, under a fence
     and indented code below a line of `- - -`.
-  - A line with a deep indent above a delimiter row, which GFM reads as
-    the header row of a table. The `same finding` comment that a bad
-    fixture needs at the end of each row breaks the table.
+  - A line above a delimiter row, which GFM reads as the header row of
+    a table. The line has a deep indent, opens with `|` or inline HTML,
+    or holds plain text with or without a `|`. A line of `---` under the
+    table is a rule and not an underline of the paragraph, also when the
+    first sentence ends on the first line of the paragraph. The
+    `same finding` comment that a bad fixture needs at the end of each
+    row breaks the table.
+  - A paragraph left of the text of a list item, which puts it outside
+    the list, above a delimiter row at the margin. Another paragraph
+    sits in a list item, and a tab indents its delimiter row past the
+    text of the item. Two more sit past the text of a list item, and their
+    delimiter rows sit at the text of the item. One of those items
+    starts with `2.` right under a heading. In a blockquote, a delimiter
+    row can sit left of the text of the paragraph.
+  - A line that holds only one tag, such as `<br>` or an `<img>` tag
+    with an attribute, outside the blockquote or the list item of the
+    paragraph. GFM opens an HTML block there, and the block ends the
+    paragraph. One such list item holds a table row, at which
+    lib/markdown.awk closes the list. Another sits right under a line of
+    inline HTML, where lib/markdown.awk does not open an item. A
+    `same finding` comment after the tag makes the line more text of the
+    paragraph.
+  - A line of `---` left of the text of a paragraph in a list item after
+    a heading, at which lib/markdown.awk closes the list. GFM reads the
+    line as a rule that ends the item and not as an underline, and the
+    line does not hold a finding.
+  - A paragraph at the text of a list item that lib/markdown.awk does
+    not count, with a line of `---` or `<br>` at the margin under it.
+    lib/markdown.awk drops one item, right under a paragraph, at a line
+    of its text at the margin. It does not open an item that starts with
+    `2.` right under a heading, a blockquote, or a fence, nor an item
+    with a nested item right under a line of inline HTML. It also drops
+    an item at a link reference definition at the margin right under
+    the item. GFM reads that definition as more text of the item. GFM
+    ends each item at the line under the paragraph, and the line does
+    not hold a finding.
 
   Every bad fixture needs a finding on each line. Definitions, fence
   markers, and the rows of a table do not hold one.

@@ -260,7 +260,77 @@ The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
 It may help
-| to restart | the pod | <!-- same finding -->
+<pre class="x">x</pre> to restart the pod. <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+It may help
+<?php to restart the pod ?> <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+It may help
+<!-- note --> to restart the pod. <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+It may help
+<!DOCTYPE html> to restart the pod. <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+It may help
+<![CDATA[ to restart the pod ]]> <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+It may help
+</TD> to restart the pod. <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+It may help
+<hr/> to restart the pod. <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache. <!-- same finding -->
+
+  > It may help
+> <span>x</span> to restart the pod. <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache. <!-- same finding -->
+
+  > It may help
+> | a | to restart | <!-- same finding -->
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+- The pod holds the cache. <!-- same finding -->
+  | a | <!-- same finding -->
+
+  > It may help
+> <span>x</span> to restart the pod. <!-- same finding -->
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
