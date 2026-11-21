@@ -54,13 +54,18 @@ earlier run names, and the status command prints
 each of them. The batch of the new run goes on from those runs, so its
 report covers their landed tasks and their notes.md. Init does not move
 the tasks while a landing of the earlier run runs. With --force, init
-starts an empty run and leaves the tasks in the earlier run.
+starts an empty run and leaves the tasks in the earlier run. Init also
+leaves in the earlier run each pending task that the earlier run has not
+started and that the queue filters of the new run leave out, unless a
+moved task waits for it. The paragraphs on the queue filters cover those
+tasks.
 
 A noted task is still open in aven. So the untriaged command of a new
-run lists each noted task that the new run does not hold, and a triage
-starts that task again. The new run holds each noted task that init
-moves, so a pending task that waits for it keeps waiting, and the status
-command still prints that pending task as stuck.
+run lists each noted task that the new run does not hold and that its
+queue filters let in, and a triage starts that task again. The new run
+holds each noted task that init moves, so a pending task that waits for
+it keeps waiting, and the status command still prints that pending task
+as stuck.
 
 The next and args commands write a copy of close-task.js into the
 directory of each task that they start, and so does a landing that runs
@@ -164,12 +169,20 @@ names a kept worktree.
   init --run DIR [--target TARGET] [--limit N] [--rounds N]
        [--model ROLE=MODEL]... [--check CMD] [--health CMD]
        [--step-timeout SECONDS] [--shared GLOB]... [--disk-floor-gb N]
-       [--disk-floor-percent PATH=N]... [--disk-path PATH]... [--force]
+       [--disk-floor-percent PATH=N]... [--disk-path PATH]...
+       [--status STATUS]... [--skip-status STATUS]...
+       [--priority PRIORITY]... [--min-priority PRIORITY]
+       [--skip-priority PRIORITY]... [--label LABEL]...
+       [--skip-label LABEL]... [--force]
   config [--limit N] [--rounds N] [--model ROLE=MODEL]... [--check CMD]
        [--health CMD] [--step-timeout SECONDS] [--shared GLOB]...
        [--unshared GLOB]... [--disk-floor-gb N]
        [--disk-floor-percent PATH=N]... [--disk-path PATH]...
-       [--no-disk-path PATH]...
+       [--no-disk-path PATH]... [--status STATUS]...
+       [--skip-status STATUS]... [--any-status] [--priority PRIORITY]...
+       [--min-priority PRIORITY] [--skip-priority PRIORITY]...
+       [--any-priority] [--label LABEL]... [--skip-label LABEL]...
+       [--any-label]
                          change the config of the run, then print it
   triage FILE            add or update tasks from a JSON list
   untriaged [FILTER]...  print the open aven tasks that the run does not hold
@@ -292,15 +305,95 @@ write into the after list of a row only the order that aven does not
 record.
 
 The untriaged command prints one triage row per open aven task that the
-run does not hold, as a JSON list. The list leaves out every epic. Each
-row holds the ref, the title, and the priority of its task. Add the files
-of the task to the row before you load it with triage.
+run does not hold and that the queue filters of the run let in, as a
+JSON list. The list leaves out every epic. Each row holds the ref, the
+title, and the priority of its task. Add the files of the task to the
+row before you load it with triage.
+
+The queue filters of a run narrow its queue by status, by priority, and
+by label. Init sets them with its filter flags, and the run config keeps
+them, so every later command and session of the run applies them. The
+status command prints them as the flags that set them. Each filter flag
+takes one value. Each flag except --min-priority adds a value when it
+repeats, and a repeated --min-priority keeps its last value:
+
+- --status, --priority, and --label let into the queue only the tasks
+  that carry the value of one of their flags.
+- --skip-status, --skip-priority, and --skip-label leave out each task
+  that carries the value of one of their flags.
+- --min-priority lets in only the tasks of its priority or higher. From
+  low to high, the priorities are none, low, medium, high, and urgent.
+
+A task joins the queue when it passes every filter. The status flags
+take only the status of an open task, because the queue holds only open
+tasks. Init and config refuse a label that aven does not know, because
+a misspelled --skip-label skips no task. They also refuse the filters of
+a dimension that let no task in, such as --status todo --skip-status
+todo. The filter flags of one dimension in a config command replace
+every filter of that dimension, and each other dimension keeps its
+filters. The --any-status, --any-priority, and --any-label flags of
+config remove the filters of their dimension.
+
+aven list takes one value of --status, --priority, and --label, and it
+has no filter that leaves a value out. So the untriaged command applies
+the queue filters itself, and it refuses a --status, --priority, or
+--label FILTER. The triage command applies the filters to each task that
+the run does not hold yet, such as a task that the run filed during the
+run. It asks aven for the status, the priority, and the labels of each
+such task, and it refuses the whole list when the filters leave out one
+of those tasks. The run keeps each task that it holds, so a later change
+of the filters removes no task from the run.
+
+The next command waits only for the tasks that the run holds. So the
+triage command also refuses a task when one of its open aven blockers
+sits outside the run and the queue filters keep that blocker from the
+run. The filters keep such a blocker from the run when they leave out
+the blocker, or a task on the chain of its own open aven blockers. The
+chain ends at each task that the run holds. The triage command refuses
+such a blocker too, so it never joins the run, and the task otherwise
+starts before its blocker lands.
+
+The refusal covers each task that joins the run and each pending task
+that the run holds. When the triage command refuses a task of the list
+that joins the run, it also refuses each task of the list that waits for
+that task. The
+untriaged command still lists a refused task that joins. A pending task
+that the run holds stays pending after the refusal, so set it to noted,
+or let its blocker in with config.
+
+When init replaces a run that has unfinished tasks, it applies the
+queue filters of the new run to each pending task that the earlier run
+has not started. It asks aven for the status, the priority, the labels,
+and the open blockers of each such task. It leaves such a task in the
+earlier run when the filters leave out the task. It also leaves the
+task when one of its open blockers sits outside the earlier run and the
+filters keep that blocker from the new run, as the triage command judges
+such a blocker. Init prints each task that it leaves with the reasons.
+The task stays open in aven, and a later untriaged command lists it when
+the filters let it in.
+
+Init moves every other unfinished task and each noted task of the
+earlier run, whatever the filters. Each started task holds work or a
+result of the batch, such as a pending task that the earlier run
+started and set back to pending. The start of a task also sets its aven
+status to active, so the status filters cannot judge a started task.
+
+Init also moves each pending task that the filters leave out when a
+moved task waits for it, so that the task lands first. Every task waits
+for the tasks of its after list. Each pending task that init asks aven
+about also waits for its open aven blockers, and init adds them to its
+after list, as the triage command does. Init prints each task that it
+moves for the order with the reasons too. When those reasons name a
+blocker that the task waits for, next starts the task before that
+blocker lands, so set the task to noted, or let the blocker in with
+config.
 
 Each FILTER of untriaged is an argument of aven list, such as
---project app or --label bug. Without --project, aven list keeps to the
-project that aven infers from the main checkout, and it covers every
-project when aven infers none. With --limit N, untriaged prints at most
-N rows, and the tasks that the run holds do not count toward N.
+--project app or --has-metadata review. Without --project, aven list
+keeps to the project that aven infers from the main checkout, and it
+covers every project when aven infers none. With --limit N, untriaged
+prints at most N rows, and the tasks that the run holds or that the
+queue filters leave out do not count toward N.
 
 The land command takes only an inflight task or an approved task. It
 sets the task to approved before the landing starts, and a failed
@@ -506,6 +599,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import signal
 import statistics
@@ -530,6 +624,16 @@ LANDABLE = ("inflight", "approved")
 PRIORITY = {"urgent": 0, "high": 1, "medium": 2, "low": 3, "none": 4}
 # The aven statuses of an open task.
 AVEN_OPEN = ("inbox", "backlog", "todo", "active")
+# The dimensions of the queue filters of a run, each with the values that
+# its flags take. The queue holds only open tasks, so the status flags take
+# only an open status. The priorities run from low to high. The label
+# flags take each label that aven knows, so the label dimension lists no
+# values.
+FILTERS = {
+    "status": AVEN_OPEN,
+    "priority": tuple(reversed(PRIORITY)),
+    "label": (),
+}
 # Files that match a shared glob hold no lock, so two running tasks may
 # both edit them. The scheduler matches each glob against "/" plus the
 # path relative to the repository. The run config starts with these
@@ -862,10 +966,16 @@ def moving(tasks):
     function returns no ref for such a run.
 
     A noted task is still open in aven. So the untriaged command of the
-    new run lists each noted task that the new run does not hold, and a
-    triage starts that task again. A pending task that waits for a noted
-    task that the new run does not hold also starts, because next waits
-    only for the tasks that the run holds.
+    new run lists each noted task that the new run does not hold and that
+    its queue filters let in, and a triage starts that task again. A
+    pending task that waits for a noted task that the new run does not
+    hold also starts, because next waits only for the tasks that the run
+    holds.
+
+    The refs include each pending task that the queue filters of the new
+    run leave out. Init asks aven about each such task that the earlier
+    run has not started, and take_over() leaves the tasks of staying() in
+    the earlier run.
     """
     unfinished = [r for r, t in tasks.items() if t["state"] in UNFINISHED]
     if not unfinished:
@@ -1296,6 +1406,125 @@ def role_models(held, flags):
     return held
 
 
+def dimension_reasons(dim, f, carried):
+    """Why the filters of one dimension of the queue leave out a task.
+
+    The filters f hold the values of the flags of the dimension: "only"
+    for --DIM, "skip" for --skip-DIM, and "min" for --min-priority. The
+    carried list holds what the task carries in the dimension: its
+    status, its priority, or each of its labels. The result is empty when
+    the filters let the task in.
+    """
+    found = []
+    if f.get("only") and not set(carried) & set(f["only"]):
+        if dim == "label":
+            found.append(f"it carries no label {' or '.join(f['only'])}")
+        else:
+            found.append(
+                f"its {dim} {' '.join(carried)} is not {' or '.join(f['only'])}"
+            )
+    if skipped := [v for v in f.get("skip", []) if v in carried]:
+        found.append(f"the run skips the {dim} {' and '.join(skipped)}")
+    rank = FILTERS["priority"].index
+    if (least := f.get("min")) and not any(
+        v in FILTERS["priority"] and rank(v) >= rank(least) for v in carried
+    ):
+        found.append(f"its priority {' '.join(carried)} is lower than {least}")
+    return found
+
+
+def left_out(filters, task):
+    """Why the queue filters of a run leave out an aven task.
+
+    The task holds the fields that aven list --json and aven show --json
+    print. The result holds one reason per filter that the task fails,
+    and it is empty when the task passes every filter.
+    """
+    carried = {
+        "status": [task["status"]],
+        "priority": [task["priority"]],
+        "label": task.get("labels") or [],
+    }
+    return [
+        reason
+        for dim in FILTERS
+        for reason in dimension_reasons(dim, filters.get(dim, {}), carried[dim])
+    ]
+
+
+def filters_text(filters):
+    """The queue filters of a run, as the flags of init that set them.
+
+    The text is empty for a run without a filter.
+    """
+    flags = []
+    for dim in FILTERS:
+        f = filters.get(dim, {})
+        flags += [f"--{dim} {shlex.quote(v)}" for v in f.get("only", [])]
+        if "min" in f:
+            flags.append(f"--min-{dim} {f['min']}")
+        flags += [f"--skip-{dim} {shlex.quote(v)}" for v in f.get("skip", [])]
+    return " ".join(flags)
+
+
+def queue_filters(held, a):
+    """The queue filters of a run after the filter flags of init or config.
+
+    The flags of a dimension replace every filter of that dimension, and
+    the --any flag of config removes them. Each other dimension keeps its
+    filters. The command ends when the flags of a dimension let no task
+    into the queue, such as --status todo --skip-status todo, because the
+    run then closes no task.
+    """
+    filters = dict(held)
+    for dim, values in FILTERS.items():
+        named = {
+            "only": list(dict.fromkeys(getattr(a, dim))),
+            "skip": list(dict.fromkeys(getattr(a, f"skip_{dim}"))),
+            "min": getattr(a, f"min_{dim}", None),
+        }
+        named = {k: v for k, v in named.items() if v}
+        if getattr(a, f"any_{dim}", False):
+            if named:
+                die(
+                    f"--any-{dim} removes the {dim} filters of the run, and"
+                    f" {filters_text({dim: named})} sets them. Pass one or the other"
+                )
+            filters.pop(dim, None)
+            continue
+        if not named:
+            continue
+        # A task carries one status and one priority, and any set of
+        # labels. A task with no label, or with one label of --label,
+        # passes the label filters whenever any task does.
+        tries = [[v] for v in values] or [[v] for v in named.get("only", [])] or [[]]
+        if all(dimension_reasons(dim, named, carried) for carried in tries):
+            die(
+                f"the {dim} filters {filters_text({dim: named})} let no task into"
+                " the queue"
+            )
+        filters[dim] = named
+    return filters
+
+
+def check_labels(repo, a):
+    """End the command when a label flag names a label that aven does not know.
+
+    The queue filters apply each label themselves, so a misspelled
+    --skip-label skips no task, and a misspelled --label lets no task in.
+    The command asks aven for its labels only when a flag names a label.
+    """
+    named = list(dict.fromkeys(a.label + a.skip_label))
+    if not named:
+        return
+    known = json.loads(out("aven", "label", "list", "--json", cwd=repo))
+    if unknown := [name for name in named if name not in known]:
+        die(
+            f"aven knows no label {' '.join(unknown)}. The labels of aven are"
+            f" {' '.join(known) or 'none'}. Name a label that aven knows"
+        )
+
+
 def stored(run, ref):
     """The summary and the notes that the agents of a task stored.
 
@@ -1419,7 +1648,45 @@ def free_dir(want, force):
     return run
 
 
-def take_over(repo, old, run, new):
+def staying(tasks, run, rejected, fresh):
+    """The pending tasks that stay in a run that a new run replaces.
+
+    The rejected refs name the pending tasks that the queue filters of
+    the new run leave out, as refusals() returns them. Such a task stays
+    in the run when it is still pending and the run has not started it,
+    as owns() says. A started task holds the work of the batch, so it
+    moves whatever the filters. A task also moves when a task that moves
+    waits for it, so that it lands before that task. The next command
+    waits only for the tasks that the run holds.
+
+    Every task waits for the tasks of its after list and of its list in
+    fresh. The fresh lists hold, by ref, the open aven blockers that init
+    read for the pending tasks that the run has not started. The after
+    list of a task lacks each blocker that aven recorded after the
+    triage of the task.
+
+    Return the refs that stay and the refs that move only because a task
+    that moves waits for them.
+    """
+    unfinished, noted = moving(tasks)
+    stay = {
+        ref
+        for ref in rejected
+        if ref in unfinished and tasks[ref]["state"] == "pending" and not owns(run, ref)
+    }
+    waited = set()
+    while needed := stay & {
+        a
+        for r in unfinished + noted
+        if r not in stay
+        for a in tasks[r]["after"] + fresh.get(r, [])
+    }:
+        stay -= needed
+        waited |= needed
+    return stay, waited
+
+
+def take_over(repo, old, run, new, rejected, fresh):
     """Write the state of a new run that takes the unfinished tasks of an earlier run.
 
     The function moves the entry of each task that moving() names from
@@ -1428,11 +1695,28 @@ def take_over(repo, old, run, new):
     each task to the new run directory. The directory records that a run
     created the branch and the worktree of the task, as owns() says. So
     the new run resumes that work, and the earlier run keeps its landed
-    and closed tasks. The new state names the earlier run first under
-    replaces, and then each run that the state of the earlier run names
-    there. The batch of the new run goes on from each of those runs. Then
-    the function names the new run in the git config of the repository,
-    and it saves the state of the earlier run last.
+    and closed tasks.
+
+    The rejected refs name the pending tasks that the queue filters of
+    the new run leave out. Each task of staying() stays in the earlier
+    run. Such a task has no task directory there, because the earlier run
+    has not started it. The function reads that run under the lock,
+    so a task of those refs that started since init asked aven about it
+    moves. A later run that takes a task that stays counts its branch
+    and its worktree as the work of an earlier run. The function writes
+    the record of left_branches() for the tasks that stay into the new
+    state.
+
+    The fresh lists hold the open aven blockers of tasks by ref, as
+    staying() says. The function adds the list of each task that moves to
+    the after list of the task, as the triage command does. So next
+    starts a blocker that moves before the task that waits for it.
+
+    The new state names the earlier run first under replaces, and then
+    each run that the state of the earlier run names there. The batch of
+    the new run goes on from each of those runs. Then the function names
+    the new run in the git config of the repository, and it saves the
+    state of the earlier run last.
 
     The function holds the landing lock of the earlier run, and it ends
     the command when a landing of that run holds the lock. A landing
@@ -1441,6 +1725,9 @@ def take_over(repo, old, run, new):
     function moves each directory back, names the earlier run in the git
     config again, and ends the command. When git cannot set the key back,
     the error names the git config command that does.
+
+    Return the two sets of staying() and the refs that the record of
+    left_branches() adds.
     """
     moved, named = [], False
     try:
@@ -1455,13 +1742,19 @@ def take_over(repo, old, run, new):
                     " stops"
                 )
             with edited(old) as st:
+                stay, waited = staying(st["tasks"], old, rejected, fresh)
+                new["left"], added = left_branches(repo, st, stay)
                 unfinished, noted = moving(st["tasks"])
                 for ref in unfinished + noted:
+                    if ref in stay:
+                        continue
                     d = old / "tasks" / ref
                     if d.is_dir():
                         d.rename(run / "tasks" / ref)
                         moved.append(ref)
-                    new["tasks"][ref] = st["tasks"].pop(ref)
+                    task = new["tasks"][ref] = st["tasks"].pop(ref)
+                    after = task["after"] + fresh.get(ref, [])
+                    task["after"] = list(dict.fromkeys(after))
                 new["replaces"] = [str(old), *st.get("replaces", [])]
                 (run / "state.json").write_text(json.dumps(new))
                 # An error here ends the block before edited() saves the
@@ -1487,6 +1780,7 @@ def take_over(repo, old, run, new):
             " cause and run init again, or pass --force to start an empty run"
             " without those tasks"
         )
+    return stay, waited, added
 
 
 def ignore_worktrees(repo):
@@ -1582,6 +1876,8 @@ def cmd_init(a):
             " to replace it, such as with another target. The config command"
             " keeps the target of the run"
         )
+    filters = queue_filters({}, a)
+    check_labels(repo, a)
     # A landing counts each task worktree as a change of the main checkout
     # unless git ignores the worktrees. So git ignores them before init
     # reads the changes of the main checkout.
@@ -1654,7 +1950,40 @@ def cmd_init(a):
             f" {why}. Name the target {was} to move those tasks to the new run,"
             " or pass --force to start an empty run without them"
         )
-    left, added = ({}, []) if old_st is None else left_branches(repo, old_st, takes)
+    # The queue filters of the new run decide which pending tasks of the
+    # earlier run join it, as staying() says. The start of a task sets its
+    # aven status to active. So init asks aven only about the pending tasks
+    # that the earlier run has not started. Init also judges the open aven
+    # blockers of each such task that the earlier run does not hold, as
+    # the triage command does for a task that joins. The after list of a
+    # task lacks each blocker that aven recorded after the triage of the
+    # task. So take_over() orders the moved tasks by every open aven
+    # blocker that init reads. Init asks before it takes the landing lock
+    # of that run, and a failed aven command ends init before it changes
+    # anything.
+    rejected, fresh = {}, {}
+    if takes and filters:
+        held = old_st["tasks"]
+        pending = [
+            r
+            for r in moving(held)[0]
+            if held[r]["state"] == "pending" and not owns(Path(old), r)
+        ]
+        fresh = {r: dependencies(repo, r) for r in pending}
+        outside = {r: [d for d in fresh[r] if d not in held] for r in pending}
+        # A chain of blockers ends at each task of the earlier run that
+        # init does not judge. Such a task moves whatever the filters, or
+        # it landed or closed. The chain goes on through each pending task
+        # that init judges, because such a task can stay in the earlier
+        # run.
+        others = set(held) - set(pending)
+        rejected = refusals(repo, filters, outside, set(pending), others)
+    # When init takes the tasks, take_over() records the branches of the
+    # tasks that stay under the lock.
+    left, added = ({}, [])
+    if old_st is not None and not takes:
+        left, added = left_branches(repo, old_st, old_st["tasks"])
+    stay, waited = set(), set()
     run = free_dir(Path(a.run).resolve(), a.force)
     percents = floor_percents({}, a.disk_floor_percent)
     cfg = {
@@ -1668,6 +1997,7 @@ def cmd_init(a):
         "check": a.check,
         "health": a.health,
         "stepTimeout": a.step_timeout,
+        "filters": filters,
         "shared": list(dict.fromkeys(DEFAULT_SHARED + (a.shared or []))),
         "diskFloorGb": a.disk_floor_gb,
         "diskFloorPercent": percents,
@@ -1697,7 +2027,7 @@ def cmd_init(a):
         d.mkdir(parents=True)
     try:
         if takes:
-            take_over(repo, Path(old), run, new)
+            stay, waited, added = take_over(repo, Path(old), run, new, rejected, fresh)
         else:
             (run / "state.json").write_text(json.dumps(new))
             sh("git", "config", "--local", KEY, str(run), cwd=repo)
@@ -1713,7 +2043,7 @@ def cmd_init(a):
             tasks = counted(len(added), "task")
             print(f"left {tasks} with the branch of a pull request in that run:")
             for ref in added:
-                entry = left[ref]
+                entry = new["left"][ref]
                 opened = f" pr={entry['pr']}" if "pr" in entry else ""
                 print(f"{ref} {entry['branch']}{opened}")
     elif old:
@@ -1726,6 +2056,19 @@ def cmd_init(a):
     if noted := [r for r, t in moved if t["state"] == "noted"]:
         print(f"moved {counted(len(noted), 'noted task')} of that run to the new run:")
         print(" ".join(noted))
+    if waited:
+        tasks = counted(len(waited), "pending task")
+        why = "a moved task waits for it"
+        if len(waited) > 1:
+            why = "moved tasks wait for them"
+        print(f"moved {tasks} that the queue filters leave out, because {why}:")
+        for line in reason_lines({r: w for r, w in rejected.items() if r in waited}):
+            print(line)
+    if stay:
+        tasks = counted(len(stay), "pending task")
+        print(f"left {tasks} that the queue filters leave out in that run:")
+        for line in reason_lines({r: w for r, w in rejected.items() if r in stay}):
+            print(line)
     if unchecked:
         print(unchecked)
     print(f"run={run} repo={repo} target={a.target} base={base} limit={a.limit}")
@@ -1734,8 +2077,12 @@ def cmd_init(a):
 def cmd_config(a):
     repo = main_checkout()
     run = run_dir(repo)
+    check_labels(repo, a)
     with state(run) as st:
         cfg = st["config"]
+        # A run can continue from a state file that has no filters key.
+        # That run has no queue filter.
+        cfg["filters"] = queue_filters(cfg.get("filters", {}), a)
         if absent := [g for g in a.unshared if g not in cfg["shared"]]:
             die(
                 f"no shared glob {' '.join(absent)}. The shared globs are"
@@ -1782,12 +2129,143 @@ def dependencies(repo, ref):
     return [d["ref"] for d in listed["depends_on"] if d["unresolved"]]
 
 
+def reason_lines(found):
+    """One line per task of refusals(), with its ref and its reasons."""
+    return [f"{ref}: {', and '.join(why)}" for ref, why in found.items()]
+
+
+def refusals(repo, filters, outside, judged, skip):
+    """Why the queue filters keep each task of outside from a run, by ref.
+
+    The outside lists hold, by ref, the open aven blockers of each task
+    that the function checks, without the blockers that the run holds.
+    The next command waits only for the tasks that the run holds. So a
+    task starts before such a blocker lands, and the function refuses
+    the task when the filters keep the blocker from the run. The filters
+    keep a blocker from the run when they leave out the blocker, or a
+    task on the chain of its own open aven blockers. The triage command
+    refuses such a blocker, so it never joins the run.
+
+    The chain ends at each ref of skip, such as a task that the run
+    holds. At a task of outside, the chain goes on through the list of
+    the task in outside. The filters also judge the status, the
+    priority, and the labels of each task of the judged refs. The
+    function asks aven for those fields of each judged task and of each
+    task on a chain. It also asks aven for the open blockers of each
+    task on a chain that is not a task of outside and that the filters
+    let in. A failed aven command ends the command.
+
+    The result holds the reasons of left_out() for each judged task, and
+    one reason per blocker that the filters keep from the run, with the
+    chain to the task that they leave out. The result keeps the order of
+    outside, and it leaves out each task that the function does not
+    refuse.
+    """
+    shown, waits_on = {}, {}
+
+    def fails(ref):
+        if ref not in shown:
+            task = json.loads(out("aven", "show", ref, "--json", cwd=repo))
+            shown[ref] = left_out(filters, task)
+        return shown[ref]
+
+    def chain(ref, seen):
+        # The refs from ref to a task that the filters leave out, or None
+        # when the filters let in each task that ref waits for. The seen
+        # refs end the chain, so a cycle of blockers ends it too.
+        seen.add(ref)
+        if ref in outside:
+            if ref in judged and fails(ref):
+                return [ref]
+            after = outside[ref]
+        else:
+            if fails(ref):
+                return [ref]
+            if ref not in waits_on:
+                deps = dependencies(repo, ref)
+                waits_on[ref] = [d for d in deps if d not in skip]
+            after = waits_on[ref]
+        for d in after:
+            if d not in seen and (found := chain(d, seen)):
+                return [ref, *found]
+        return None
+
+    # The command asks aven about the judged tasks first.
+    for ref in outside:
+        if ref in judged:
+            fails(ref)
+    failed = {}
+    for ref, blockers in outside.items():
+        waits = [
+            f"it waits for {', which waits for '.join(found)}, which the queue"
+            " filters leave out"
+            for d in blockers
+            if (found := chain(d, {ref}))
+        ]
+        if why := (fails(ref) if ref in judged else []) + waits:
+            failed[ref] = why
+    return failed
+
+
+def joining_refusal(repo, st, rows, deps):
+    """Why the triage command refuses the tasks of rows.
+
+    The queue filters of the run apply to each task that joins the run,
+    such as a task that the run filed during the run. The deps hold the
+    open aven blockers of each row, as dependencies() returns them. The
+    function also refuses a task that joins when one of its blockers
+    sits outside the run and the filters keep that blocker from the run,
+    as refusals() says. It refuses a pending task that the run holds for
+    such a blocker too, because next starts that task.
+
+    A blocker that the run does not hold can have a row of its own. The
+    function then judges that blocker as the task of its row, and it
+    refuses each task that waits for a refused blocker, because that
+    blocker does not join the run. The run keeps each task that it
+    holds, so the function does not judge the status, the priority, or
+    the labels of those tasks again. The result is empty when the
+    function refuses no task.
+    """
+    # A run can continue from a state file that has no filters key.
+    filters = st["config"].get("filters", {})
+    if not filters:
+        return ""
+    held = st["tasks"]
+    listed = list(dict.fromkeys(row["ref"] for row in rows))
+    outside = {
+        ref: [d for d in deps[ref] if d not in held]
+        for ref in listed
+        if ref not in held or held[ref]["state"] == "pending"
+    }
+    joining = {r for r in listed if r not in held}
+    failed = refusals(repo, filters, outside, joining, set(held))
+    if not failed:
+        return ""
+    text = (
+        f"the triage refuses {counted(len(failed), 'task')} of the list because of"
+        f" the queue filters of the run, {filters_text(filters)}, so it loads no"
+        " task:\n"
+        + "\n".join(reason_lines(failed))
+        + "\nRemove the rows of those tasks, or change the filters with config"
+    )
+    if pending := [r for r in failed if r in held]:
+        each = "it" if len(pending) == 1 else "each of them"
+        text += (
+            f". The run holds {' '.join(pending)}, and next starts {each} before"
+            f" its blocker lands. So also set {each} to noted with set REF noted"
+            " --note TEXT, unless config lets the blocker in"
+        )
+    return text
+
+
 def cmd_triage(a):
     repo = main_checkout()
-    run = run_dir(repo)
+    run, saved = current(repo)
     rows = json.loads(Path(a.file).read_text())
     # A failed aven command ends the triage before it changes the state.
     deps = {row["ref"]: dependencies(repo, row["ref"]) for row in rows}
+    if why := joining_refusal(repo, saved, rows, deps):
+        die(why)
     with state(run) as st:
         added = updated = 0
         for row in rows:
@@ -1847,16 +2325,29 @@ def cmd_untriaged(a):
     # the run holds and the epics. So the command applies the limit itself
     # after it drops them.
     filters, limit = take_limit(a.filters)
-    # The command passes --open whenever aven accepts it, so aven lists
-    # only the open tasks. aven refuses --open beside --status, --all,
-    # --deleted, or --upcoming, and it refuses a second --open. With one
-    # of those flags, the command itself drops each closed or deleted
-    # task.
     flags = {f.split("=", 1)[0] for f in filters}
-    refused = {"--open", "--status", "--all", "--deleted", "--upcoming"}
+    # aven list takes one value of --status, --priority, and --label, and
+    # it has no filter that leaves a value out. So the run config holds
+    # the filters of those dimensions, and the command applies them
+    # itself.
+    if named := sorted(flags & {f"--{dim}" for dim in FILTERS}):
+        die(
+            f"untriaged takes no {' or '.join(named)} filter, because the queue"
+            " filters of the run apply to each status, priority, and label."
+            f" Set them with config, such as config {named[0]} VALUE, and run"
+            " untriaged without them"
+        )
+    # The command passes --open whenever aven accepts it, so aven lists
+    # only the open tasks. aven refuses --open beside --all, --deleted, or
+    # --upcoming, and it refuses a second --open. With one of those flags,
+    # the command itself drops each closed or deleted task.
+    refused = {"--open", "--all", "--deleted", "--upcoming"}
     opened = [] if flags & refused else ["--open"]
     listed = json.loads(out("aven", "list", "--json", *opened, *filters, cwd=repo))
-    held = json.loads((run / "state.json").read_text())["tasks"]
+    st = json.loads((run / "state.json").read_text())
+    held = st["tasks"]
+    # A run can continue from a state file that has no filters key.
+    queue = st["config"].get("filters", {})
     rows = [
         {"ref": t["ref"], "title": t["title"], "priority": t["priority"]}
         for t in listed
@@ -1864,6 +2355,7 @@ def cmd_untriaged(a):
         and not t["deleted"]
         and not t["is_epic"]
         and t["ref"] not in held
+        and not left_out(queue, t)
     ]
     print(json.dumps(rows[:limit], indent=1))
 
@@ -1886,18 +2378,20 @@ def owns(run, ref):
     return (run / "tasks" / ref).is_dir()
 
 
-def left_branches(repo, st, takes):
+def left_branches(repo, st, refs):
     """The pull request branches that a new run counts as leftover work.
 
-    The new run replaces the run of the state st. When the new run does
-    not take the tasks of that run, such as with init --force, each task
-    of that run stays there. The branch of a task that a landing proposed
-    as a pull request has another name than task_branch(), so
-    leftovers() cannot find that branch by its name. The new run records
-    the branch of each such task whose state is neither landed nor
-    closed, with the address of its pull request when the task records
-    one. It also keeps each branch that the state st records the same
-    way. The record holds only the branches that exist.
+    The new run replaces the run of the state st, and the refs name the
+    tasks that stay in that run. When the new run does not take the
+    tasks of that run, such as with init --force, each task of that run
+    stays there. When it takes them, the tasks of staying() stay there.
+    The branch of a task that a landing proposed as a pull request has
+    another name than task_branch(), so leftovers() cannot find that
+    branch by its name. The new run records the branch of each such task
+    that stays and whose state is neither landed nor closed, with the
+    address of its pull request when the task records one. It also keeps
+    each branch that the state st records the same way. The record holds
+    only the branches that exist.
 
     Return the record, by ref, and the refs that the record adds for the
     tasks of the state st.
@@ -1908,11 +2402,8 @@ def left_branches(repo, st, takes):
         if branch_exists(repo, entry["branch"])
     }
     added = []
-    # The new run takes the unfinished tasks and the noted tasks, so each
-    # task that stays has the state landed or closed.
-    if takes:
-        return left, added
-    for ref, t in sorted(st["tasks"].items()):
+    for ref in sorted(refs):
+        t = st["tasks"][ref]
         name = t.get("branch")
         if name and t["state"] not in SETTLED and branch_exists(repo, name):
             left[ref] = {key: t[key] for key in ("branch", "pr") if key in t}
@@ -2521,6 +3012,8 @@ def cmd_status(a):
         print(f"earlier run: {text}")
     print(f"target: {target_text(cfg)}")
     print(" ".join(f"{s}={n}" for s, n in counts.items()), f"limit={cfg['limit']}")
+    # A run can continue from a state file that has no filters key.
+    print(f"filters: {filters_text(cfg.get('filters', {})) or 'none'}")
     print(f"shared: {' '.join(cfg['shared'])}")
     # A run can continue from a state file that has no models key.
     held = cfg.get("models", {})
@@ -3880,6 +4373,60 @@ def role_model(text):
     return role, model
 
 
+def label(text):
+    """The value of a label flag of the queue filters."""
+    if not text.strip():
+        raise argparse.ArgumentTypeError("give a label that aven knows")
+    return text
+
+
+def add_filter_flags(s, changes):
+    """Add the queue filter flags to the parser of init or of config.
+
+    Each filter flag takes one value. Each flag except --min-priority adds
+    a value when it repeats, and a repeated --min-priority keeps its last
+    value. With changes, the parser of config also gets the --any flag of
+    each dimension, which removes the filters of that dimension.
+    """
+    for dim, values in FILTERS.items():
+        name = dim.upper()
+        kind = {"choices": values} if values else {"type": label}
+        among = f". {name} is one of {', '.join(values)}" if values else ""
+        if dim == "priority":
+            among += ", from low to high"
+        s.add_argument(
+            f"--{dim}",
+            action="append",
+            default=[],
+            metavar=name,
+            help=f"the queue holds only the tasks that carry the {dim} of one of"
+            f" the --{dim} flags{among}",
+            **kind,
+        )
+        if dim == "priority":
+            s.add_argument(
+                "--min-priority",
+                choices=values,
+                metavar=name,
+                help="the queue holds only the tasks of PRIORITY or higher",
+            )
+        s.add_argument(
+            f"--skip-{dim}",
+            action="append",
+            default=[],
+            metavar=name,
+            help=f"the queue leaves out each task that carries {name}",
+            **kind,
+        )
+        if changes:
+            s.add_argument(
+                f"--any-{dim}",
+                action="store_true",
+                help=f"remove the {dim} filters of the run. The other {dim} flags"
+                f" of config replace every {dim} filter of the run",
+            )
+
+
 MODEL_HELP = (
     "the agents of ROLE in close-task.js run on MODEL. ROLE is one of"
     f" {', '.join(ROLES)}, or {DEFAULT_ROLE} for each role that has no model"
@@ -3977,6 +4524,7 @@ def main():
         metavar="PATH",
         help=DISK_PATH_HELP,
     )
+    add_filter_flags(s, changes=False)
     s.add_argument(
         "--force",
         action="store_true",
@@ -4050,6 +4598,7 @@ def main():
             " sits on it"
         ),
     )
+    add_filter_flags(s, changes=True)
     s.set_defaults(fn=cmd_config)
 
     s = sub.add_parser("triage")
@@ -4061,13 +4610,18 @@ def main():
     s = sub.add_parser(
         "untriaged",
         usage="%(prog)s [-h] [FILTER]...",
-        description="Print the open aven tasks that the run does not hold."
-        " Each FILTER is an argument of aven list, such as --project app or"
-        " --label bug. Without --project, aven list keeps to the project"
-        " that aven infers from the main checkout, and it covers every"
-        " project when aven infers none. With --limit N, the command prints"
-        " at most N rows, and the tasks that the run holds do not count"
-        " toward N.",
+        description="Print the open aven tasks that the run does not hold and"
+        " that the queue filters of the run let in. The run config holds the"
+        " queue filters, which the filter flags of init and config set, such as"
+        " --status todo --status inbox, --min-priority medium, or --skip-label"
+        " self-improve. Each FILTER is an argument of aven list, such as"
+        " --project app or --has-metadata review. The command refuses a"
+        " --status, --priority, or --label FILTER, because the queue filters"
+        " cover each of those dimensions. Without --project, aven list keeps"
+        " to the project that aven infers from the main checkout, and it"
+        " covers every project when aven infers none. With --limit N, the"
+        " command prints at most N rows, and the tasks that the run holds or"
+        " that the filters leave out do not count toward N.",
     )
     s.set_defaults(fn=cmd_untriaged)
 

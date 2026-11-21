@@ -3,7 +3,7 @@ name: aven-ultraclose
 description: >-
   Close every open aven task in the current project with parallel worktree
   agents and adversarial review.
-argument-hint: "[concurrency] [aven list filters] [models] [target]"
+argument-hint: "[concurrency] [filters] [models] [target]"
 disable-model-invocation: true
 ---
 
@@ -27,8 +27,10 @@ lower the limit, as the Setup section says. The arguments can also name a
 model for the agents of a role, such as `opus-5-5 for the reviewers`, and
 the Models section says how to set it. They can name where the tasks land,
 such as `on release/v1` or `as pull requests`, and the Target section says
-how to set it. Any other argument is an `aven list` filter that narrows
-the queue, such as `--label bug`.
+how to set it. They can narrow the queue by status, by priority, and by
+label, such as `only bugs` or `medium priority and up`, and the Filters
+section says how to set the filters. Any other argument is an `aven list`
+filter that narrows the queue, such as `--has-metadata review`.
 
 ## Tools
 
@@ -92,17 +94,20 @@ to a store file in the middle of a run.
 
 ## Scope
 
-The queue is every open task that is not an epic, including each task that
-anyone files during the run. Triage the new tasks each time `next` prints an
-empty list, whether you run `next` or a landing runs it. After a triage that
-adds tasks, run `ultraclose.py next`, so that the new tasks take the free
-slots.
+The queue is every open task that is not an epic and that passes the
+filters of the run, as the Filters section says. The queue includes each
+such task that anyone files during the run. Triage the new tasks each time
+`next` prints an empty list, whether you run `next` or a landing runs it.
+After a triage that adds tasks, run `ultraclose.py next`, so that the new
+tasks take the free slots.
 
 `ultraclose.py untriaged --project <key>` prints each task of the queue
-that the run does not hold. Add each `aven list` filter that the arguments
-hold. The command prints a JSON list with the ref, the title, and the
-priority of each task. The list is empty when the run holds the whole
-queue.
+that the run does not hold. It applies the filters of the run itself. Add
+each other `aven list` filter that the arguments hold, such as
+`--has-metadata review`. The run config does not keep those other filters,
+so pass them to each `untriaged` command. The command prints a JSON list
+with the ref, the title, and the priority of each task. The list is empty
+when the run holds the whole queue.
 
 `<key>` is the key of the aven project of the repository. Always pass
 `--project`. Without it, `aven list` keeps to the project that aven infers
@@ -130,6 +135,109 @@ The run ends when `ultraclose.py status` counts no pending, inflight,
 approved, or proposed task. `status` then prints an `ended` line. Its
 `setup` line then names `init` for the setup of a later batch, so do not
 start a new run at the end of a run.
+
+## Filters
+
+The filters of a run narrow its queue by status, by priority, and by
+label. `init` sets them, and the run config keeps them, so every later
+command and every later session of the run applies them.
+`ultraclose.py status` prints them in its `filters` line as the flags that
+set them, or as `none`.
+
+Each filter flag takes one value. Repeat a flag for each value, except
+`--min-priority`, which keeps its last value. This table lists each filter
+flag with the tasks that the queue holds under it:
+
+| Flag | The queue holds |
+| --- | --- |
+| `--status <status>` | Only the tasks with the status of one of these flags |
+| `--skip-status <status>` | No task with this status |
+| `--priority <priority>` | Only the tasks with the priority of one of these flags |
+| `--min-priority <priority>` | Only the tasks of this priority or higher |
+| `--skip-priority <priority>` | No task with this priority |
+| `--label <label>` | Only the tasks that carry the label of one of these flags |
+| `--skip-label <label>` | No task that carries this label |
+
+Each task joins the queue only when it passes every filter. The statuses
+are `inbox`, `backlog`, `todo`, and `active`, because the queue holds only
+open tasks. From low to high, the priorities are `none`, `low`, `medium`,
+`high`, and `urgent`. `init` and `config` refuse a label that aven does
+not know. They also refuse the filters of a dimension that let no task
+in, such as `--status todo --skip-status todo`.
+
+Pass one flag for each value that the arguments name, as in these
+examples:
+
+| Arguments | Flags |
+| --- | --- |
+| `only todo and inbox` | `--status todo --status inbox` |
+| `not the backlog` | `--skip-status backlog` |
+| `medium priority and up` | `--min-priority medium` |
+| `the bug and docs tasks` | `--label bug --label docs` |
+| `everything except self-improve` | `--skip-label self-improve` |
+
+`aven list` takes one value of each of these filters, and it has no filter
+that leaves a value out. So `untriaged` applies the filters of the run
+itself, and it refuses a `--status`, `--priority`, or `--label` filter.
+
+To change the filters, pass the filter flags to `ultraclose.py config`. The
+flags of one dimension replace every filter of that dimension, and each
+other dimension keeps its filters. `--any-status`, `--any-priority`, and
+`--any-label` remove the filters of their dimension. For example, after
+`init --label bug --min-priority medium`, the command
+`config --skip-label self-improve` leaves the filters
+`--min-priority medium --skip-label self-improve`.
+
+The filters decide which tasks join the run. They apply to each task that
+the run files too, such as a defect that a result reports. Such a task
+joins the run only when it passes the filters. Otherwise it stays open in
+aven for a later run. `untriaged` leaves it out, and `triage` refuses a
+list that holds it, with the reason. The run keeps each task that it
+holds, such as a task that joined before a change of the filters.
+
+`triage` also refuses a task when one of its open aven blockers sits
+outside the run and the filters keep that blocker from the run. `next`
+waits only for the tasks that the run holds, so such a task starts before
+its blocker lands. The filters keep a blocker from the run when they leave
+out the blocker or a task on the chain of its own open aven blockers.
+`triage` refuses such a blocker too, so it never joins the run. The chain
+ends at each task that the run holds.
+
+The refusal names the chain in a `waits for` reason, as in this line:
+
+```text
+APP-0001: it waits for APP-0002, which waits for APP-0003, which the queue filters leave out
+```
+
+The refusal covers each task that joins the run and each pending task that
+the run holds. It also covers each task of the list that waits for a
+refused task that joins the run. Act on each task that the refusal names:
+
+- For a task that joins the run, leave its row out of each triage and
+  record the task in `notes.md`. `untriaged` still lists the task.
+- For a pending task that the run holds, leave its row out of the triage
+  and set the task to noted with
+  `ultraclose.py set <ref> noted --note '<the reason that triage printed>'`.
+  The refusal leaves the task pending, so `next` starts it otherwise.
+
+To let the blocker in instead, widen the filters with `config`, and load
+the list again.
+
+When `init` replaces an earlier run that stopped before its end, the
+filters of the new run apply to each pending task that the earlier run has
+not started. `init` leaves such a task in that run when the filters leave
+out the task. It also leaves the task when one of its open aven blockers
+sits outside that run and the filters keep that blocker from the new run,
+as `triage` judges such a blocker. The task stays open in aven for a later
+run.
+
+`init` moves each other pending task. It moves each started task and each
+noted task whatever the filters, because each of them holds work or a
+result of the batch. It also moves a left-out pending task when a moved
+task waits for it, so that the task lands first. Every moved task waits
+for the tasks of its `after` list. `init` adds to that list each open aven
+blocker that it reads for a pending task, as `triage` does. The Setup
+section says what `init` prints.
 
 ## Target
 
@@ -203,10 +311,10 @@ task.
 
    New runs do not take the config, the `rules.md`, or the `notes.md` of
    an earlier run. Set each flag of `init`, such as the target, the limit,
-   the models, and the shared globs, from the arguments and from this
-   setup. Write `rules.md` from this setup too. The values of an earlier
-   run fit the arguments and the tasks of that run, and the version of the
-   skill that created it.
+   the models, the filters, and the shared globs, from the arguments and
+   from this setup. Write `rules.md` from this setup too. The values of an
+   earlier run fit the arguments and the tasks of that run, and the
+   version of the skill that created it.
 2. Choose the target of the run, as the Target section says. In step 4,
    `init` checks that the run can land on that target. Its error names
    the cause when it fails. Act on that cause:
@@ -272,6 +380,22 @@ task.
    `ultraclose.py merged` records the merge, as the Pull requests section
    says.
 
+   When the arguments name filters, `init` leaves in the earlier run each
+   pending task that the earlier run has not started and that those
+   filters leave out, as the Filters section says. It prints those tasks
+   after a `left` line, one line per task with the ref and the reasons.
+   `untriaged` lists such a task again after a change of the filters lets
+   it in. `init` prints each task that it moves only because a moved task
+   waits for it after a `moved` line that names the filters, in the same
+   form. Record each task of both lines in `notes.md` for the report, as
+   the Notes section says.
+
+   A task of the `moved` line can wait for a blocker that the filters
+   keep from the run, and its `waits for` reason names that blocker. `next`
+   starts such a task before its blocker lands. Before you run `next`,
+   set the task to noted, as the Filters section says for a pending task
+   that the run holds, or widen the filters with `config`.
+
    The new run holds each noted task, so `untriaged` does not list it.
    `status` still lists each pending task that waits for a noted task as
    stuck, and the Loop section says to note it.
@@ -305,6 +429,9 @@ task.
 
    Pass `--model <role>=<model>` for each model that the arguments name,
    as the Models section says.
+
+   Pass a filter flag for each status, priority, and label that the
+   arguments name, as the Filters section says.
 
    Pass `--check '<command>'` with the full check of the project, unless
    the commit hook already runs that check. Always pass the full check for
@@ -438,6 +565,13 @@ task.
    task. `triage` reads the dependencies each time it loads a task. After
    the aven dependencies of a pending task change, load the task again.
 
+   `triage` refuses a task when an open dependency of the task sits
+   outside the run and the filters of the run keep that dependency from
+   the run. The filters keep such a dependency from the run when they
+   leave out the dependency or a task on the chain of its own
+   dependencies. A refused task that the run holds stays pending, so set
+   it to noted, as the Filters section says.
+
    Set `last` on a task that changes the commit hooks, the check, or the
    pins between the repository's own modules. Every `last` task runs alone
    after the other tasks, so that the other landings keep the hooks and
@@ -452,20 +586,23 @@ task.
 ## Config
 
 `init` writes the config of a run, and the run keeps that config until you
-change it. `ultraclose.py status` prints the target, the limit, the shared
-globs, the models, the check, the health command, and the step timeout. It
-also prints the free space and the floor of each watched file system.
+change it. `ultraclose.py status` prints the target, the limit, the
+filters, the shared globs, the models, the check, the health command, and
+the step timeout. It also prints the free space and the floor of each
+watched file system.
 
 `ultraclose.py config` changes the config and prints the result. It takes
 the `--limit`, `--rounds`, `--model`, `--check`, `--health`,
 `--step-timeout`, `--shared`, `--disk-floor-gb`, `--disk-floor-percent`,
-and `--disk-path` flags of `init`. Its `--unshared <glob>` flag removes a
-shared glob, and its `--no-disk-path <path>` flag removes a disk path and
-the percent floor of that path. `--disk-floor-percent <dir>=0` removes the
-percent floor of `<dir>` and keeps `<dir>` as a disk path. `--model <role>=`
-removes the model of `<role>`, as the Models section says. `config` prints
-the warning of `triage` for each glob that its `--shared` flag adds and
-that matches no file of any task.
+and `--disk-path` flags of `init`, and each filter flag of `init`. Its
+`--unshared <glob>` flag removes a shared glob, and its
+`--no-disk-path <path>` flag removes a disk path and the percent floor of
+that path. `--disk-floor-percent <dir>=0` removes the percent floor of
+`<dir>` and keeps `<dir>` as a disk path. `--model <role>=` removes the
+model of `<role>`, as the Models section says. The filter flags of one
+dimension replace the filters of that dimension, as the Filters section
+says. `config` prints the warning of `triage` for each glob that its
+`--shared` flag adds and that matches no file of any task.
 
 `config` has no flag for the target, because each task of the run starts
 from the base branch of that target.
@@ -488,6 +625,10 @@ prints those tasks, as the Scope section says. Fit the run in these ways:
 - If the arguments name a model, set it with `ultraclose.py config`, as the
   Models section says. The run keeps each model that the arguments do not
   change.
+- If the arguments name a status, a priority, or a label, set the filters
+  of that dimension with `ultraclose.py config`, as the Filters section
+  says. The run keeps the filters of each dimension that the arguments do
+  not name.
 - When you change the limit, or when those tasks run a heavier test or
   build than the tasks of the run, compare the memory again, as the Setup
   section says for `rules.md`. Then fit the rule in `rules.md` that limits
@@ -775,12 +916,13 @@ file:
    entry.
 2. Link each new task to the task that reported the defect, with
    `aven related add <new-ref> <ref>`.
-3. Record each new task in `notes.md`.
+3. Record each new task in `notes.md`. When the filters of the run leave
+   the task out, record that too.
 
 Do not wait for the user to ask for these tasks, and do not reproduce a
-defect before you file it. Each new task joins the queue as the Scope
-section says, and its implementer confirms the fault before it changes
-anything.
+defect before you file it. Each new task joins the queue when it passes
+the filters of the run, as the Filters section says. Its implementer
+confirms the fault before it changes anything.
 
 The implementer starts the list of a result. Each fixer adds the defects
 that it finds, and withdraws each entry that the change fixes or that is
@@ -1246,7 +1388,14 @@ context. Record:
 - Each limit that you lowered to fit the memory, with the reason.
 - Each landing without a full final review.
 - Each task that you file for a follow-up or a defect, with the task that
-  reported it.
+  reported it. Say whether the filters of the run leave it out.
+- Each pending task that `init` left in an earlier run because of the
+  filters, with the reasons that `init` printed.
+- Each task that `init` moved only because a moved task waits for it,
+  with the reasons that `init` printed.
+- Each task that you left out of a triage or set to noted because the
+  filters keep its blocker from the run, with the reason that `triage`
+  printed.
 - Each artifact that a task made stale, such as a recorded demo or a
   generated file.
 - Each behavior change that the user should know about.
@@ -1263,7 +1412,15 @@ End with a report that lists:
 - The noted tasks, each with its reason and its branch. Also give the
   pull request of each noted task that `state.json` records one for.
 - The tasks that the run filed for follow-ups and for defects, each with
-  the task that reported it.
+  the task that reported it. Mark each task that the filters of the run
+  left out, because it waits for a later run.
+- The pending tasks that `init` left in an earlier run because of the
+  filters, each with its reasons. Each of them waits for a later run.
+- The tasks that `init` moved although the filters leave them out,
+  because a moved task waits for each of them.
+- The tasks that you left out of a triage or set to noted because the
+  filters keep their blockers from the run, each with its reason. Each of
+  them waits for a later run.
 - The tasks that landed without a full final review.
 - Each limit that you lowered to fit the memory, with the reason.
 - The stale artifacts.

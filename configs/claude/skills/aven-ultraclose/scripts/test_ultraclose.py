@@ -18,6 +18,7 @@ import itertools
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -162,6 +163,14 @@ def refused(*args, cwd, env, script=SCRIPT, timeout=None):
 # an answer. It fails for a ref that starts with NOPE, as aven fails for a
 # ref that it does not know. The list command ignores its filters. It
 # prints the recorded tasks and saves its arguments, one per line. The
+# show command prints the recorded task of its ref, or an open task
+# without a label when the test recorded none. It fails for a ref that
+# starts with NOPE. It adds the ref of each task that it prints to the
+# file show.args, one per line. Before it prints the task of a ref, it
+# runs the shell script REF.show.sh when the test wrote one. The script
+# stands in for a change that another session makes while a command asks
+# aven about a task. The label list command prints the
+# recorded labels, or no label when the test recorded none. The
 # edit command fails while the AVEN_ANSWERS directory holds the file
 # edit.fails. The edit command of one task also fails while that
 # directory holds the file REF.edit.fails, where REF is the ref of the
@@ -191,6 +200,31 @@ case "$1 $2" in
 "list "*)
     printf '%s\\n' "$@" >"$AVEN_ANSWERS/list.args"
     cat "$AVEN_ANSWERS/list.json"
+    ;;
+"show "*)
+    case $2 in
+    NOPE-*)
+        echo "Error: error unknown-ref input=$2" >&2
+        exit 1
+        ;;
+    esac
+    echo "$2" >>"$AVEN_ANSWERS/show.args"
+    if [ -e "$AVEN_ANSWERS/$2.show.sh" ]; then
+        sh "$AVEN_ANSWERS/$2.show.sh"
+    fi
+    answer="$AVEN_ANSWERS/$2.show.json"
+    if [ -e "$answer" ]; then
+        cat "$answer"
+    else
+        printf '{"ref": "%s", "status": "todo", "priority": "none", "labels": []}' "$2"
+    fi
+    ;;
+"label list")
+    if [ -e "$AVEN_ANSWERS/labels.json" ]; then
+        cat "$AVEN_ANSWERS/labels.json"
+    else
+        echo '[]'
+    fi
     ;;
 "edit "*)
     if [ -e "$AVEN_ANSWERS/edit.fails" ] || [ -e "$AVEN_ANSWERS/$2.edit.fails" ]; then
@@ -298,11 +332,33 @@ def aven_listed_tasks(env, *tasks):
         "title": "t",
         "status": "todo",
         "priority": "none",
+        "labels": [],
         "deleted": False,
         "is_epic": False,
     }
     rows = [{**plain, **task} for task in tasks]
     Path(env["AVEN_ANSWERS"], "list.json").write_text(json.dumps(rows))
+
+
+def aven_shown_task(env, ref, **fields):
+    """Record the task that the show command of the aven stub prints for a ref.
+
+    The fields default to those of an open task without a label, under
+    the names that `aven show --json` prints.
+    """
+    task = {"ref": ref, "status": "todo", "priority": "none", "labels": [], **fields}
+    Path(env["AVEN_ANSWERS"], f"{ref}.show.json").write_text(json.dumps(task))
+
+
+def aven_shown(env):
+    """The ref of each task that the show command of the aven stub printed."""
+    record = Path(env["AVEN_ANSWERS"], "show.args")
+    return record.read_text().splitlines() if record.exists() else []
+
+
+def aven_labels(env, *labels):
+    """Record the labels that the label list command of the aven stub prints."""
+    Path(env["AVEN_ANSWERS"], "labels.json").write_text(json.dumps(labels))
 
 
 def new_repo(tmp):
@@ -412,9 +468,11 @@ def configured_run(repo, env, run, script=SCRIPT):
     """Start a run that sets each config value that a batch inherits.
 
     The run sets a limit, a model, a check, a health command, a step
-    timeout, and a shared glob. Its directory holds a rules.md and a
-    notes.md.
+    timeout, a shared glob, and a queue filter. The filter skips a label
+    that the tasks of the aven stub do not carry. Its directory holds a
+    rules.md and a notes.md.
     """
+    aven_labels(env, SKIPPED)
     ultraclose(
         "init",
         "--run",
@@ -431,6 +489,8 @@ def configured_run(repo, env, run, script=SCRIPT):
         "90",
         "--shared",
         GLOB,
+        "--skip-label",
+        SKIPPED,
         cwd=repo,
         env=env,
         script=script,
@@ -442,7 +502,7 @@ def configured_run(repo, env, run, script=SCRIPT):
 def assert_fresh(test, run):
     """Assert that a run holds the default config and none of the RUN_FILES."""
     config = state_of(run)["config"]
-    keys = ("limit", "models", "check", "health", "stepTimeout", "shared")
+    keys = ("limit", "models", "check", "health", "stepTimeout", "shared", "filters")
     test.assertEqual(
         {k: config[k] for k in keys},
         {
@@ -452,6 +512,7 @@ def assert_fresh(test, run):
             "health": "",
             "stepTimeout": STEP_TIMEOUT,
             "shared": DEFAULT_SHARED,
+            "filters": {},
         },
     )
     test.assertEqual([n for n in RUN_FILES if (run / n).exists()], [])
@@ -548,6 +609,8 @@ NEW = "claude-new-5-0"
 # The shared glob of a configured run, and a file that the glob covers.
 GLOB = "*/tools/mcp/*"
 COVERED = "tools/mcp/render.go"
+# The label that the queue filter of a configured run skips.
+SKIPPED = "wontfix"
 # The sentence that names the glob of a file at the root of the repository.
 # The help of each --shared flag prints it, and so does each warning about
 # a shared glob that matches no file.
@@ -3224,9 +3287,9 @@ class UntriagedTest(unittest.TestCase):
             # The command adds --open beside each filter that aven accepts
             # with it.
             "no filter": ([], ["--open"]),
-            "a project and a label": (
-                ["--project", "app", "--label", "bug"],
-                ["--open", "--project", "app", "--label", "bug"],
+            "a project and a metadata key": (
+                ["--project", "app", "--has-metadata", "review"],
+                ["--open", "--project", "app", "--has-metadata", "review"],
             ),
             "a filter with an equals sign": (
                 ["--metadata", "review=pending"],
@@ -3238,12 +3301,14 @@ class UntriagedTest(unittest.TestCase):
                 ["--open", "--has-metadata", "review"],
             ),
             # aven list refuses --open beside each of these filters.
-            "a status": (
-                ["--project", "app", "--status", "todo"],
-                ["--project", "app", "--status", "todo"],
+            "deleted tasks too": (
+                ["--project", "app", "--all"],
+                ["--project", "app", "--all"],
             ),
-            "a status with its value attached": (["--status=todo"], ["--status=todo"]),
-            "deleted tasks too": (["--all"], ["--all"]),
+            "deleted tasks too with an attached project": (
+                ["--project=app", "--all"],
+                ["--project=app", "--all"],
+            ),
             "only deleted tasks": (["--deleted"], ["--deleted"]),
             "tasks that start later": (["--upcoming"], ["--upcoming"]),
             "open tasks": (["--project", "app", "--open"], ["--project", "app", "--open"]),
@@ -3256,9 +3321,9 @@ class UntriagedTest(unittest.TestCase):
                 ["--limit=3", "--project", "app"],
                 ["--open", "--project", "app"],
             ),
-            "a limit and a status": (
-                ["--status", "todo", "--limit", "3"],
-                ["--status", "todo"],
+            "a limit and deleted tasks too": (
+                ["--all", "--limit", "3"],
+                ["--all"],
             ),
         }
         for name, (filters, want) in cases.items():
@@ -3347,6 +3412,1278 @@ class UntriagedTest(unittest.TestCase):
             text = " ".join(text.split())
             self.assertIn("untriaged [-h] [FILTER]...", text)
             self.assertIn("Each FILTER is an argument of aven list", text)
+            self.assertIn("that the queue filters of the run let in", text)
+            self.assertIn(
+                "The command refuses a --status, --priority, or --label FILTER", text
+            )
+
+
+# The labels that aven knows in the tests of the queue filters.
+LABELS = ("bug", "docs", "self-improve", "good first")
+
+
+def filtered_run(tmp, *flags):
+    """Start a run with the given queue filter flags of init.
+
+    aven knows the LABELS. Return the repository, the environment, and
+    the run directory.
+    """
+    repo, env = new_repo(tmp)
+    aven_labels(env, *LABELS)
+    run = Path(tmp, "run")
+    ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+    return repo, env, run
+
+
+def filters_line(repo, env):
+    """What status prints after "filters: "."""
+    [line] = status_values(repo, env, "filters")
+    return line
+
+
+class QueueFilterTest(unittest.TestCase):
+    """The queue filters of a run decide which aven tasks join the run."""
+
+    def test_init_records_filters(self):
+        # name: (the init flags, the filters of the run config, what the
+        # filters line of status prints)
+        cases = {
+            "no filter": ([], {}, "none"),
+            "several statuses": (
+                ["--status", "todo", "--status", "inbox"],
+                {"status": {"only": ["todo", "inbox"]}},
+                "--status todo --status inbox",
+            ),
+            "a skipped status": (
+                ["--skip-status", "backlog"],
+                {"status": {"skip": ["backlog"]}},
+                "--skip-status backlog",
+            ),
+            "several priorities and a skipped priority": (
+                [
+                    "--priority",
+                    "high",
+                    "--priority",
+                    "urgent",
+                    "--skip-priority",
+                    "high",
+                ],
+                {"priority": {"only": ["high", "urgent"], "skip": ["high"]}},
+                "--priority high --priority urgent --skip-priority high",
+            ),
+            "a lowest priority": (
+                ["--min-priority", "medium"],
+                {"priority": {"min": "medium"}},
+                "--min-priority medium",
+            ),
+            "the last lowest priority applies": (
+                ["--min-priority", "low", "--min-priority", "high"],
+                {"priority": {"min": "high"}},
+                "--min-priority high",
+            ),
+            "several labels": (
+                ["--label", "bug", "--label", "docs"],
+                {"label": {"only": ["bug", "docs"]}},
+                "--label bug --label docs",
+            ),
+            "a skipped label": (
+                ["--skip-label", "self-improve"],
+                {"label": {"skip": ["self-improve"]}},
+                "--skip-label self-improve",
+            ),
+            # A task that carries docs and not bug passes.
+            "a label that another label flag skips": (
+                ["--label", "bug", "--label", "docs", "--skip-label", "bug"],
+                {"label": {"only": ["bug", "docs"], "skip": ["bug"]}},
+                "--label bug --label docs --skip-label bug",
+            ),
+            "a repeated value": (
+                ["--label", "bug", "--label", "bug"],
+                {"label": {"only": ["bug"]}},
+                "--label bug",
+            ),
+            "a label with a space": (
+                ["--label", "good first"],
+                {"label": {"only": ["good first"]}},
+                "--label 'good first'",
+            ),
+            # The line names the dimensions in the order status, priority,
+            # and label, whatever the order of the flags.
+            "every dimension": (
+                [
+                    "--skip-label",
+                    "self-improve",
+                    "--min-priority",
+                    "low",
+                    "--status",
+                    "todo",
+                ],
+                {
+                    "status": {"only": ["todo"]},
+                    "priority": {"min": "low"},
+                    "label": {"skip": ["self-improve"]},
+                },
+                "--status todo --min-priority low --skip-label self-improve",
+            ),
+        }
+        for name, (flags, want, line) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run = filtered_run(tmp, *flags)
+                self.assertEqual(state_of(run)["config"]["filters"], want)
+                self.assertEqual(filters_line(repo, env), line)
+
+    def test_config_replaces_filters_of_each_named_dimension(self):
+        init = [
+            "--status",
+            "todo",
+            "--min-priority",
+            "low",
+            "--label",
+            "bug",
+            "--skip-label",
+            "docs",
+        ]
+        held = {
+            "status": {"only": ["todo"]},
+            "priority": {"min": "low"},
+            "label": {"only": ["bug"], "skip": ["docs"]},
+        }
+        # name: (the config flags, the filters after the command)
+        cases = {
+            "no filter flag": ([], held),
+            "a status flag": (
+                ["--status", "inbox", "--status", "active"],
+                {**held, "status": {"only": ["inbox", "active"]}},
+            ),
+            "a skipped label replaces every label filter": (
+                ["--skip-label", "self-improve"],
+                {**held, "label": {"skip": ["self-improve"]}},
+            ),
+            "--any-status": (
+                ["--any-status"],
+                {k: held[k] for k in ("priority", "label")},
+            ),
+            "--any-priority": (
+                ["--any-priority"],
+                {k: held[k] for k in ("status", "label")},
+            ),
+            "--any-label": (
+                ["--any-label"],
+                {k: held[k] for k in ("status", "priority")},
+            ),
+            "two dimensions": (
+                ["--priority", "high", "--any-label"],
+                {"status": held["status"], "priority": {"only": ["high"]}},
+            ),
+            "every --any flag": (["--any-status", "--any-priority", "--any-label"], {}),
+        }
+        for name, (flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run = filtered_run(tmp, *init)
+                printed = json.loads(ultraclose("config", *flags, cwd=repo, env=env))
+                self.assertEqual(state_of(run)["config"]["filters"], want)
+                self.assertEqual(printed["filters"], want)
+
+    def test_refuses_filters_that_close_no_task(self):
+        # name: (the flags, what the refusal says)
+        cases = {
+            "a closed status": (["--status", "done"], "invalid choice: 'done'"),
+            "a skipped closed status": (
+                ["--skip-status", "canceled"],
+                "invalid choice: 'canceled'",
+            ),
+            "an unknown priority": (["--priority", "critical"], "invalid choice"),
+            "an unknown lowest priority": (
+                ["--min-priority", "critical"],
+                "invalid choice",
+            ),
+            "an empty label": (["--label", ""], "give a label that aven knows"),
+            "an unknown label": (
+                ["--label", "bug", "--label", "bgu"],
+                "aven knows no label bgu. The labels of aven are bug docs",
+            ),
+            "an unknown skipped label": (
+                ["--skip-label", "slef-improve"],
+                "aven knows no label slef-improve.",
+            ),
+            "a status that the run skips": (
+                ["--status", "todo", "--skip-status", "todo"],
+                "the status filters --status todo --skip-status todo let no task",
+            ),
+            "every status skipped": (
+                [f"--skip-status={s}" for s in ("inbox", "backlog", "todo", "active")],
+                "let no task into the queue",
+            ),
+            "a priority lower than the lowest priority": (
+                ["--priority", "low", "--min-priority", "high"],
+                "the priority filters --priority low --min-priority high let no task",
+            ),
+            "every priority skipped": (
+                [
+                    f"--skip-priority={p}"
+                    for p in ("none", "low", "medium", "high", "urgent")
+                ],
+                "let no task into the queue",
+            ),
+            "a label that the run skips": (
+                ["--label", "bug", "--skip-label", "bug"],
+                "the label filters --label bug --skip-label bug let no task",
+            ),
+        }
+        for name, (flags, text) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                aven_labels(env, "bug", "docs")
+                run = Path(tmp, "run")
+                message = refused("init", "--run", str(run), *flags, cwd=repo, env=env)
+                self.assertIn(text, " ".join(message.split()))
+                self.assertFalse(run.exists())
+                ultraclose("init", "--run", str(run), cwd=repo, env=env)
+                before = state_of(run)
+                message = refused("config", *flags, cwd=repo, env=env)
+                self.assertIn(text, " ".join(message.split()))
+                self.assertEqual(state_of(run), before)
+
+    def test_config_refuses_any_flag_beside_its_dimension(self):
+        cases = {
+            "--any-status": (["--any-status", "--status", "todo"], "status"),
+            "--any-priority": (["--min-priority", "low", "--any-priority"], "priority"),
+            "--any-label": (["--any-label", "--skip-label", "bug"], "label"),
+        }
+        for name, (flags, dim) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run = filtered_run(tmp, "--label", "docs")
+                before = state_of(run)
+                message = refused("config", *flags, cwd=repo, env=env)
+                self.assertIn(f"--any-{dim} removes the {dim} filters", message)
+                self.assertEqual(state_of(run), before)
+
+    def test_asks_aven_for_labels_only_for_label_flags(self):
+        # aven knows no label, so a label flag fails, and every other
+        # flag passes without the labels of aven.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose("init", "--run", str(run), "--status", "todo", cwd=repo, env=env)
+            ultraclose("config", "--any-label", "--limit", "3", cwd=repo, env=env)
+            message = refused("config", "--label", "bug", cwd=repo, env=env)
+            self.assertIn(
+                "aven knows no label bug. The labels of aven are none", message
+            )
+
+    def test_untriaged_applies_filters(self):
+        listed = [
+            {"ref": "APP-0001", "status": "inbox", "priority": "none"},
+            {
+                "ref": "APP-0002",
+                "status": "backlog",
+                "priority": "low",
+                "labels": ["docs"],
+            },
+            {
+                "ref": "APP-0003",
+                "status": "todo",
+                "priority": "medium",
+                "labels": ["bug"],
+            },
+            {
+                "ref": "APP-0004",
+                "status": "active",
+                "priority": "high",
+                "labels": ["bug", "self-improve"],
+            },
+            {
+                "ref": "APP-0005",
+                "status": "todo",
+                "priority": "urgent",
+                "labels": ["self-improve"],
+            },
+        ]
+        every = [1, 2, 3, 4, 5]
+        # name: (the filter flags, the numbers of the refs that untriaged
+        # prints)
+        cases = {
+            "no filter": ([], every),
+            "several statuses": (["--status", "todo", "--status", "inbox"], [1, 3, 5]),
+            "a skipped status": (["--skip-status", "backlog"], [1, 3, 4, 5]),
+            "several priorities": (
+                ["--priority", "low", "--priority", "urgent"],
+                [2, 5],
+            ),
+            "a lowest priority": (["--min-priority", "medium"], [3, 4, 5]),
+            "the lowest priority none": (["--min-priority", "none"], every),
+            "a skipped priority": (["--skip-priority", "none"], [2, 3, 4, 5]),
+            "several labels": (["--label", "bug", "--label", "docs"], [2, 3, 4]),
+            "a skipped label": (["--skip-label", "self-improve"], [1, 2, 3]),
+            "a label and a skipped label": (
+                ["--label", "bug", "--skip-label", "self-improve"],
+                [3],
+            ),
+            "every dimension": (
+                [
+                    "--status",
+                    "todo",
+                    "--status",
+                    "active",
+                    "--min-priority",
+                    "medium",
+                    "--skip-label",
+                    "self-improve",
+                ],
+                [3],
+            ),
+        }
+        for name, (flags, want) in cases.items():
+            # The filters of init and the filters of config apply alike.
+            # The run config keeps them, so the untriaged command of
+            # another session applies them too.
+            for command in ("init", "config"):
+                with (
+                    self.subTest(name, command=command),
+                    tempfile.TemporaryDirectory() as tmp,
+                ):
+                    repo, env, _ = filtered_run(
+                        tmp, *(flags if command == "init" else [])
+                    )
+                    if command == "config":
+                        ultraclose("config", *flags, cwd=repo, env=env)
+                    aven_listed_tasks(env, *listed)
+                    later = in_session(env, "later")
+                    rows = json.loads(
+                        ultraclose("untriaged", "--project", "app", cwd=repo, env=later)
+                    )
+                    self.assertEqual(
+                        [row["ref"] for row in rows], [f"APP-000{n}" for n in want]
+                    )
+                    # aven list gets no filter of the run.
+                    args = Path(env["AVEN_ANSWERS"], "list.args").read_text()
+                    self.assertEqual(
+                        args.splitlines(),
+                        ["list", "--json", "--open", "--project", "app"],
+                    )
+
+    def test_limit_counts_rows_that_filters_let_in(self):
+        listed = [
+            {"ref": "APP-0001", "labels": ["self-improve"]},
+            {"ref": "APP-0002"},
+            {"ref": "APP-0003", "labels": ["self-improve"]},
+            {"ref": "APP-0004"},
+            {"ref": "APP-0005"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, _ = filtered_run(tmp, "--skip-label", "self-improve")
+            aven_listed_tasks(env, *listed)
+            rows = json.loads(
+                ultraclose("untriaged", "--limit", "2", cwd=repo, env=env)
+            )
+            self.assertEqual([row["ref"] for row in rows], ["APP-0002", "APP-0004"])
+
+    def test_untriaged_refuses_filters_of_queue_dimensions(self):
+        # name: (the filters of the command, the flag that the refusal
+        # names)
+        cases = {
+            "a status": (["--project", "app", "--status", "todo"], "--status"),
+            "a status with its value attached": (["--status=todo"], "--status"),
+            "a priority": (["--priority", "high"], "--priority"),
+            "a label": (["--label", "bug"], "--label"),
+            "a label with its value attached": (
+                ["--project", "app", "--label=bug"],
+                "--label",
+            ),
+            "a label and a priority": (
+                ["--label", "bug", "--priority", "high"],
+                "--label or --priority",
+            ),
+        }
+        for name, (filters, flag) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, _ = filtered_run(tmp)
+                aven_listed_tasks(env)
+                message = refused("untriaged", *filters, cwd=repo, env=env)
+                self.assertIn(f"untriaged takes no {flag} filter", message)
+                self.assertIn("Set them with config", message)
+                self.assertFalse(Path(env["AVEN_ANSWERS"], "list.args").exists())
+
+    def test_triage_applies_filters_to_each_task_that_joins(self):
+        flags = ["--min-priority", "medium", "--skip-label", "self-improve"]
+        passes = {"priority": "high", "labels": ["bug"]}
+        # name: (the aven task of each row, the reasons that the refusal
+        # gives, or None when the triage loads every row)
+        cases = {
+            "a task that passes": ({"APP-0001": passes}, None),
+            "a task of a lower priority": (
+                {"APP-0001": {"priority": "none"}},
+                ["APP-0001: its priority none is lower than medium"],
+            ),
+            "a task with a skipped label": (
+                {"APP-0001": {"priority": "high", "labels": ["self-improve"]}},
+                ["APP-0001: the run skips the label self-improve"],
+            ),
+            "a task that fails two filters": (
+                {"APP-0001": {"priority": "low", "labels": ["bug", "self-improve"]}},
+                [
+                    (
+                        "APP-0001: its priority low is lower than medium, and the"
+                        " run skips the label self-improve"
+                    )
+                ],
+            ),
+            "a list with a task that fails": (
+                {"APP-0001": passes, "APP-0002": {"priority": "low"}},
+                ["APP-0002: its priority low is lower than medium"],
+            ),
+        }
+        for name, (tasks, reasons) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run = filtered_run(tmp, *flags)
+                for ref, fields in tasks.items():
+                    aven_shown_task(env, ref, **fields)
+                rows = [{"ref": ref} for ref in tasks]
+                if reasons is None:
+                    triage(tmp, repo, env, *rows)
+                    self.assertEqual(sorted(state_of(run)["tasks"]), sorted(tasks))
+                    continue
+                file = Path(tmp, "rows.json")
+                file.write_text(
+                    json.dumps([{"title": "t", "files": [], **r} for r in rows])
+                )
+                before = state_of(run)
+                message = refused("triage", str(file), cwd=repo, env=env)
+                self.assertIn(
+                    "the triage refuses 1 task of the list because of the queue"
+                    " filters of the run, --min-priority medium --skip-label"
+                    " self-improve, so it loads no task:\n"
+                    + "\n".join(reasons)
+                    + "\nRemove the rows of those tasks, or change the filters with"
+                    " config\n",
+                    message,
+                )
+                self.assertEqual(state_of(run), before)
+
+    def test_triage_names_each_value_that_a_task_lacks(self):
+        # name: (the filters of init, the fields of the aven task, the
+        # text of the filters and the reasons in the refusal)
+        cases = {
+            "one value of each filter": (
+                ["--status", "todo", "--priority", "high", "--label", "bug"],
+                {"status": "inbox", "priority": "low"},
+                "--status todo --priority high --label bug, so it loads no"
+                " task:\nAPP-0001: its status inbox is not todo, and its priority"
+                " low is not high, and it carries no label bug\n",
+            ),
+            "two values of each filter": (
+                ["--status", "todo", "--status", "active"]
+                + ["--priority", "high", "--priority", "urgent"]
+                + ["--label", "bug", "--label", "docs"],
+                {"status": "backlog", "priority": "none", "labels": ["good first"]},
+                "--status todo --status active --priority high --priority urgent"
+                " --label bug --label docs, so it loads no task:\nAPP-0001: its"
+                " status backlog is not todo or active, and its priority none is"
+                " not high or urgent, and it carries no label bug or docs\n",
+            ),
+        }
+        for name, (flags, fields, text) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run = filtered_run(tmp, *flags)
+                aven_shown_task(env, "APP-0001", **fields)
+                file = Path(tmp, "rows.json")
+                file.write_text(
+                    json.dumps([{"ref": "APP-0001", "title": "t", "files": []}])
+                )
+                message = refused("triage", str(file), cwd=repo, env=env)
+                self.assertIn(
+                    "the triage refuses 1 task of the list because of the queue"
+                    f" filters of the run, {text}",
+                    message,
+                )
+                self.assertEqual(state_of(run)["tasks"], {})
+
+    def test_triage_refuses_task_whose_blocker_filters_leave_out(self):
+        # APP-0001 waits for its open aven blocker APP-0002. The next
+        # command waits only for the tasks that the run holds.
+        task, blocker = "APP-0001", "APP-0002"
+        waits = f"it waits for {blocker}, which the queue filters leave out"
+        # Each case gives the aven status of each task, the refs of the
+        # rows, and whether the run holds the blocker before the triage.
+        # It ends with the reasons of the refusal for the task, or None
+        # when the triage loads the task.
+        cases = {
+            "a blocker that the filters leave out": (
+                {task: "todo", blocker: "inbox"},
+                [task],
+                False,
+                [waits],
+            ),
+            "a task and its blocker that the filters leave out": (
+                {task: "inbox", blocker: "inbox"},
+                [task],
+                False,
+                ["its status inbox is not todo", waits],
+            ),
+            "a blocker that the filters let in": (
+                {task: "todo", blocker: "todo"},
+                [task],
+                False,
+                None,
+            ),
+            "a blocker that the list adds": (
+                {task: "todo", blocker: "todo"},
+                [task, blocker],
+                False,
+                None,
+            ),
+            "a blocker that the run holds": (
+                {task: "todo", blocker: "active"},
+                [task],
+                True,
+                None,
+            ),
+        }
+        for name, (statuses, refs, holds, reasons) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run = filtered_run(tmp, "--status", "todo")
+                if holds:
+                    triage(tmp, repo, env, {"ref": blocker})
+                aven_dependencies(env, task, unresolved=[blocker])
+                for ref, status in statuses.items():
+                    aven_shown_task(env, ref, status=status)
+                rows = [{"ref": ref} for ref in refs]
+                if reasons is None:
+                    triage(tmp, repo, env, *rows)
+                    self.assertIn(task, state_of(run)["tasks"])
+                    self.assertEqual(state_of(run)["tasks"][task]["after"], [blocker])
+                    continue
+                file = Path(tmp, "rows.json")
+                file.write_text(
+                    json.dumps([{"title": "t", "files": [], **r} for r in rows])
+                )
+                message = refused("triage", str(file), cwd=repo, env=env)
+                self.assertIn(
+                    "the triage refuses 1 task of the list because of the queue"
+                    " filters of the run, --status todo, so it loads no task:\n"
+                    f"{task}: {', and '.join(reasons)}\nRemove the rows",
+                    message,
+                )
+                self.assertEqual(aven_shown(env), [task, blocker])
+                self.assertEqual(state_of(run)["tasks"], {})
+
+    def test_triage_refuses_task_whose_chain_of_blockers_filters_leave_out(self):
+        # APP-0001 waits for APP-0002, which waits for APP-0003. The
+        # triage command refuses a blocker whose own blocker the filters
+        # leave out, so that blocker never joins the run.
+        task, blocker, last = "APP-0001", "APP-0002", "APP-0003"
+        chain = (
+            f"it waits for {blocker}, which waits for {last}, which the queue"
+            " filters leave out"
+        )
+        # Each case gives the aven status and the open aven blockers of
+        # each task. Then it gives the refs of the rows and the refs that
+        # the run holds before the triage. It ends with the lines of the
+        # refusal, or None when the triage loads each row.
+        cases = {
+            "a blocker that waits for a task that the filters leave out": (
+                {task: "todo", blocker: "todo", last: "inbox"},
+                {task: [blocker], blocker: [last]},
+                [task],
+                [],
+                [f"{task}: {chain}"],
+            ),
+            "a list that holds that blocker": (
+                {task: "todo", blocker: "todo", last: "inbox"},
+                {task: [blocker], blocker: [last]},
+                [task, blocker],
+                [],
+                [
+                    f"{task}: {chain}",
+                    f"{blocker}: it waits for {last}, which the queue filters leave"
+                    " out",
+                ],
+            ),
+            "a chain that the filters let in": (
+                {task: "todo", blocker: "todo", last: "todo"},
+                {task: [blocker], blocker: [last]},
+                [task],
+                [],
+                None,
+            ),
+            "a chain that ends at a task that the run holds": (
+                {task: "todo", blocker: "todo", last: "inbox"},
+                {task: [blocker], blocker: [last]},
+                [task, blocker],
+                [last],
+                None,
+            ),
+            "a cycle of blockers": (
+                {task: "todo", blocker: "todo", last: "todo"},
+                {task: [blocker], blocker: [last], last: [blocker]},
+                [task],
+                [],
+                None,
+            ),
+        }
+        for name, (statuses, deps, refs, held, lines) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run = filtered_run(tmp, "--status", "todo")
+                for ref in held:
+                    triage(tmp, repo, env, {"ref": ref})
+                for ref, blockers in deps.items():
+                    aven_dependencies(env, ref, unresolved=blockers)
+                for ref, status in statuses.items():
+                    aven_shown_task(env, ref, status=status)
+                asked = len(aven_shown(env))
+                rows = [{"ref": ref} for ref in refs]
+                if lines is None:
+                    triage(tmp, repo, env, *rows)
+                    self.assertEqual(
+                        sorted(state_of(run)["tasks"]), sorted(refs + held)
+                    )
+                    self.assertEqual(state_of(run)["tasks"][task]["after"], [blocker])
+                    # The triage asks aven about each task of the chain
+                    # up to the tasks that the run holds.
+                    chained = [r for r in (task, blocker, last) if r not in held]
+                    self.assertEqual(aven_shown(env)[asked:], chained)
+                    continue
+                file = Path(tmp, "rows.json")
+                file.write_text(
+                    json.dumps([{"title": "t", "files": [], **r} for r in rows])
+                )
+                before = state_of(run)
+                message = refused("triage", str(file), cwd=repo, env=env)
+                self.assertIn(
+                    f"the triage refuses {len(lines)} task"
+                    f"{'s' if len(lines) > 1 else ''} of the list because of the"
+                    " queue filters of the run, --status todo, so it loads no"
+                    " task:\n" + "\n".join(lines) + "\nRemove the rows of those"
+                    " tasks, or change the filters with config\n",
+                    message,
+                )
+                self.assertEqual(aven_shown(env)[asked:], [task, blocker, last])
+                self.assertEqual(state_of(run), before)
+
+    def test_triage_refuses_pending_task_that_run_holds_for_its_blocker(self):
+        # The run holds the task, and aven then records an open blocker of
+        # the task that the filters leave out. The next command starts
+        # each pending task, and it waits only for the tasks that the run
+        # holds. Each case gives the aven status of the task at the
+        # reload, and whether the run started the task before it.
+        task, blocker = "APP-0001", "APP-0002"
+        cases = {
+            "a pending task": ("todo", False),
+            "a pending task that the filters leave out now": ("inbox", False),
+            "an inflight task": ("todo", True),
+        }
+        for name, (status, started) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = launchable_repo(tmp)
+                run = Path(tmp, "run")
+                ultraclose(
+                    "init", "--run", str(run), "--status", "todo", cwd=repo, env=env
+                )
+                triage(tmp, repo, env, {"ref": task})
+                if started:
+                    ultraclose("next", cwd=repo, env=env)
+                aven_shown_task(env, task, status=status)
+                aven_shown_task(env, blocker, status="inbox")
+                aven_dependencies(env, task, unresolved=[blocker])
+                if started:
+                    triage(tmp, repo, env, {"ref": task})
+                    self.assertEqual(state_of(run)["tasks"][task]["after"], [blocker])
+                    self.assertEqual(aven_shown(env), [task])
+                    continue
+                before = state_of(run)
+                file = Path(tmp, "rows.json")
+                file.write_text(json.dumps([{"ref": task, "title": "t", "files": []}]))
+                message = refused("triage", str(file), cwd=repo, env=env)
+                self.assertIn(
+                    "the triage refuses 1 task of the list because of the queue"
+                    " filters of the run, --status todo, so it loads no task:\n"
+                    f"{task}: it waits for {blocker}, which the queue filters leave"
+                    " out\nRemove the rows of those tasks, or change the filters with"
+                    f" config. The run holds {task}, and next starts it before its"
+                    " blocker lands. So also set it to noted with set REF noted"
+                    " --note TEXT, unless config lets the blocker in\n",
+                    message,
+                )
+                # The triage asks aven only about the blocker, because the
+                # run keeps each task that it holds.
+                self.assertEqual(aven_shown(env), [task, blocker])
+                self.assertEqual(state_of(run), before)
+                # The noted task does not start.
+                ultraclose(*set_args(task, "noted"), cwd=repo, env=env)
+                self.assertEqual(json.loads(ultraclose("next", cwd=repo, env=env)), [])
+
+    def test_triage_refuses_pending_tasks_that_run_holds_for_their_blockers(self):
+        # The run holds two pending tasks. Then aven records an open
+        # blocker of APP-0001 that the filters leave out. It also records
+        # a chain of blockers from APP-0003 to a task that the filters
+        # leave out.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose("init", "--run", str(run), "--status", "todo", cwd=repo, env=env)
+            triage(tmp, repo, env, {"ref": "APP-0001"}, {"ref": "APP-0003"})
+            aven_dependencies(env, "APP-0001", unresolved=["APP-0002"])
+            aven_dependencies(env, "APP-0003", unresolved=["APP-0004"])
+            aven_dependencies(env, "APP-0004", unresolved=["APP-0005"])
+            for ref in ("APP-0002", "APP-0005"):
+                aven_shown_task(env, ref, status="inbox")
+            before = state_of(run)
+            file = Path(tmp, "rows.json")
+            file.write_text(
+                json.dumps(
+                    [{"ref": r, "title": "t", "files": []} for r in before["tasks"]]
+                )
+            )
+            message = refused("triage", str(file), cwd=repo, env=env)
+            self.assertIn(
+                "the triage refuses 2 tasks of the list because of the queue filters"
+                " of the run, --status todo, so it loads no task:\nAPP-0001: it"
+                " waits for APP-0002, which the queue filters leave out\nAPP-0003:"
+                " it waits for APP-0004, which waits for APP-0005, which the queue"
+                " filters leave out\nRemove the rows of those tasks, or change the"
+                " filters with config. The run holds APP-0001 APP-0003, and next"
+                " starts each of them before its blocker lands. So also set each of"
+                " them to noted with set REF noted --note TEXT, unless config lets"
+                " the blocker in\n",
+                message,
+            )
+            self.assertEqual(state_of(run), before)
+            # Each noted task stays out of next.
+            for ref in before["tasks"]:
+                ultraclose(*set_args(ref, "noted"), cwd=repo, env=env)
+            self.assertEqual(json.loads(ultraclose("next", cwd=repo, env=env)), [])
+
+    def test_triage_keeps_tasks_that_run_holds(self):
+        # The run holds a task that passed the filters when it joined.
+        # Its aven task then fails them, and a triage updates its row.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, run = filtered_run(tmp, "--min-priority", "medium")
+            aven_shown_task(env, REF, priority="high")
+            triage(tmp, repo, env, {"ref": REF})
+            self.assertEqual(aven_shown(env), [REF])
+            aven_shown_task(env, REF, priority="none")
+            ultraclose("config", "--min-priority", "urgent", cwd=repo, env=env)
+            triage(tmp, repo, env, {"ref": REF, "files": ["a.go"]})
+            self.assertEqual(state_of(run)["tasks"][REF]["files"], ["a.go"])
+            self.assertEqual(aven_shown(env), [REF])
+
+    def test_triage_asks_aven_for_no_task_without_filters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, run = filtered_run(tmp)
+            triage(tmp, repo, env, {"ref": REF}, {"ref": "APP-0002"})
+            self.assertEqual(sorted(state_of(run)["tasks"]), ["APP-0002", REF])
+            self.assertEqual(aven_shown(env), [])
+
+    def earlier_run(self, tmp, started, rows):
+        """Start a run of an earlier session and an earlier version of the skill.
+
+        The run has no queue filter. It started the task of each ref of
+        started, and then it took one pending task per row. aven knows the
+        LABELS. Return the repository, an environment of another session,
+        and the run directory.
+        """
+        repo, env = launchable_repo(tmp)
+        aven_labels(env, *LABELS)
+        earlier = in_session(env, "first")
+        first = Path(tmp, "first").resolve()
+        script = earlier_skill(tmp)
+        ultraclose("init", "--run", str(first), cwd=repo, env=earlier, script=script)
+        if started:
+            triage(tmp, repo, earlier, *({"ref": ref} for ref in started))
+            ultraclose("next", cwd=repo, env=earlier)
+        triage(tmp, repo, earlier, *rows)
+        return repo, in_session(env, "second"), first
+
+    def test_init_leaves_pending_tasks_that_filters_leave_out(self):
+        # The earlier run stopped before its end with two pending tasks,
+        # and neither carries the label of the new run.
+        refs = ("APP-0001", "APP-0002")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first = self.earlier_run(tmp, (), [{"ref": r} for r in refs])
+            for ref in refs:
+                aven_shown_task(env, ref, labels=["docs"])
+            before = state_of(first)["tasks"]
+            second = Path(tmp, "second").resolve()
+            out = ultraclose(
+                "init", "--run", str(second), "--label", "bug", cwd=repo, env=env
+            )
+            self.assertEqual(
+                out.splitlines()[:4],
+                [
+                    f"replaced the run at {first}",
+                    "left 2 pending tasks that the queue filters leave out in that"
+                    " run:",
+                    "APP-0001: it carries no label bug",
+                    "APP-0002: it carries no label bug",
+                ],
+            )
+            self.assertEqual(aven_shown(env), list(refs))
+            self.assertEqual(state_of(second)["tasks"], {})
+            self.assertEqual(state_of(second)["replaces"], [str(first)])
+            self.assertEqual(state_of(first)["tasks"], before)
+            self.assertEqual(json.loads(ultraclose("next", cwd=repo, env=env)), [])
+            # Each task stays open in aven, and untriaged lists it after a
+            # change of the filters lets it in.
+            aven_listed_tasks(env, *({"ref": r, "labels": ["docs"]} for r in refs))
+            self.assertEqual(json.loads(ultraclose("untriaged", cwd=repo, env=env)), [])
+            ultraclose("config", "--label", "docs", cwd=repo, env=env)
+            rows = json.loads(ultraclose("untriaged", cwd=repo, env=env))
+            self.assertEqual([row["ref"] for row in rows], list(refs))
+
+    def test_init_moves_started_tasks_whatever_the_filters(self):
+        # The earlier run started a docs task and noted a docs task. Of its
+        # two pending tasks, only the bug task passes the filters.
+        inflight, skipped, passing, noted = (
+            "APP-0001",
+            "APP-0002",
+            "APP-0003",
+            "APP-0004",
+        )
+        labels = {inflight: "docs", skipped: "docs", passing: "bug", noted: "docs"}
+        rows = [{"ref": skipped}, {"ref": passing}, {"ref": noted}]
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first = self.earlier_run(tmp, [inflight], rows)
+            ultraclose(
+                *set_args(noted, "noted"), cwd=repo, env=in_session(env, "first")
+            )
+            for ref, name in labels.items():
+                aven_shown_task(env, ref, labels=[name])
+            second = Path(tmp, "second").resolve()
+            out = ultraclose(
+                "init", "--run", str(second), "--label", "bug", cwd=repo, env=env
+            )
+            self.assertEqual(
+                out.splitlines()[:7],
+                [
+                    f"replaced the run at {first}",
+                    "moved 2 unfinished tasks of that run to the new run:",
+                    f"{inflight} (inflight) {passing} (pending)",
+                    "moved 1 noted task of that run to the new run:",
+                    noted,
+                    "left 1 pending task that the queue filters leave out in that run:",
+                    f"{skipped}: it carries no label bug",
+                ],
+            )
+            # Init asks aven only about the pending tasks.
+            self.assertEqual(aven_shown(env), [skipped, passing])
+            self.assertEqual(
+                sorted(state_of(second)["tasks"]), [inflight, passing, noted]
+            )
+            self.assertTrue((second / "tasks" / inflight / "task.md").is_file())
+            self.assertEqual(
+                {r: t["state"] for r, t in state_of(first)["tasks"].items()},
+                {skipped: "pending"},
+            )
+            launches = json.loads(ultraclose("next", cwd=repo, env=env))
+            self.assertEqual([t["task"]["ref"] for t in launches], [passing])
+
+    def test_init_moves_pending_task_that_earlier_run_started(self):
+        # The earlier run started the task and set it back to pending, so
+        # its worktree holds work of the batch. The start set the aven
+        # status of the task to active, which the filters leave out.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first = self.earlier_run(tmp, [REF], [])
+            ultraclose(
+                *set_args(REF, "pending"), cwd=repo, env=in_session(env, "first")
+            )
+            wt = Path(state_of(first)["config"]["worktrees"], f"t-{REF}")
+            (wt / "work.txt").write_text("work\n")
+            aven_shown_task(env, REF, status="active")
+            second = Path(tmp, "second").resolve()
+            out = ultraclose(
+                "init", "--run", str(second), "--status", "todo", cwd=repo, env=env
+            )
+            self.assertEqual(
+                out.splitlines()[:3],
+                [
+                    f"replaced the run at {first}",
+                    "moved 1 unfinished task of that run to the new run:",
+                    f"{REF} (pending)",
+                ],
+            )
+            self.assertNotIn("queue filters", out)
+            self.assertEqual(aven_shown(env), [])
+            self.assertEqual(state_of(first)["tasks"], {})
+            self.assertEqual(state_of(second)["tasks"][REF]["state"], "pending")
+            self.assertTrue((second / "tasks" / REF / "task.md").is_file())
+            # The new run resumes the worktree of the task.
+            launches = json.loads(ultraclose("next", cwd=repo, env=env))
+            self.assertEqual([t["task"]["ref"] for t in launches], [REF])
+            self.assertEqual((wt / "work.txt").read_text(), "work\n")
+
+    def test_init_moves_each_task_that_a_moved_task_waits_for(self):
+        # Only the bug task passes the filters, and it waits for the docs
+        # tasks. So the docs tasks move too, and they land first.
+        skipped, middle, passing = "APP-0001", "APP-0002", "APP-0003"
+        labels = {skipped: "docs", middle: "docs", passing: "bug"}
+        # name: (the triage rows of the earlier run, the aven blockers of
+        # each task, the tasks that the earlier run noted, the tasks that
+        # move only for the order)
+        cases = {
+            "a row orders the tasks": (
+                [{"ref": skipped}, {"ref": passing, "after": [skipped]}],
+                {},
+                [],
+                [skipped],
+            ),
+            "aven records the blockers": (
+                [{"ref": r} for r in (skipped, middle, passing)],
+                {passing: [middle], middle: [skipped]},
+                [],
+                [skipped, middle],
+            ),
+            "a noted task waits for the task": (
+                [{"ref": skipped}, {"ref": passing, "after": [skipped]}],
+                {},
+                [passing],
+                [skipped],
+            ),
+        }
+
+        def counted(n, noun):
+            return f"{n} {noun}{'s' if n > 1 else ''}"
+
+        for name, (rows, deps, noted, waited) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = self.earlier_run(tmp, (), [])
+                for ref, blockers in deps.items():
+                    aven_dependencies(env, ref, unresolved=blockers)
+                triage(tmp, repo, in_session(env, "first"), *rows)
+                for ref in noted:
+                    ultraclose(
+                        *set_args(ref, "noted"), cwd=repo, env=in_session(env, "first")
+                    )
+                for ref in labels:
+                    aven_shown_task(env, ref, labels=[labels[ref]])
+                second = Path(tmp, "second").resolve()
+                out = ultraclose(
+                    "init", "--run", str(second), "--label", "bug", cwd=repo, env=env
+                )
+                pending = sorted(set(waited + [passing]) - set(noted))
+                lines = [
+                    f"replaced the run at {first}",
+                    f"moved {counted(len(pending), 'unfinished task')} of that run to"
+                    " the new run:",
+                    " ".join(f"{r} (pending)" for r in pending),
+                ]
+                if noted:
+                    lines += [
+                        f"moved {counted(len(noted), 'noted task')} of that run to the"
+                        " new run:",
+                        " ".join(noted),
+                    ]
+                why = "a moved task waits for it"
+                if len(waited) > 1:
+                    why = "moved tasks wait for them"
+                lines += [
+                    f"moved {counted(len(waited), 'pending task')} that the queue"
+                    f" filters leave out, because {why}:",
+                ] + [f"{r}: it carries no label bug" for r in waited]
+                self.assertEqual(out.splitlines()[: len(lines)], lines)
+                self.assertNotIn("in that run:", out)
+                self.assertEqual(
+                    sorted(state_of(second)["tasks"]), sorted(pending + noted)
+                )
+                self.assertEqual(state_of(first)["tasks"], {})
+                launches = json.loads(ultraclose("next", cwd=repo, env=env))
+                self.assertEqual([t["task"]["ref"] for t in launches], [skipped])
+
+    def test_init_moves_blocker_that_aven_recorded_after_the_triage(self):
+        # The earlier run took both tasks with no order. Then aven recorded
+        # that the bug task waits for the docs task, so the after list of
+        # the bug task lacks the docs task.
+        passing, skipped = "APP-0001", "APP-0002"
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first = self.earlier_run(
+                tmp, (), [{"ref": passing}, {"ref": skipped}]
+            )
+            self.assertEqual(state_of(first)["tasks"][passing]["after"], [])
+            aven_dependencies(env, passing, unresolved=[skipped])
+            aven_shown_task(env, passing, labels=["bug"])
+            aven_shown_task(env, skipped, labels=["docs"])
+            second = Path(tmp, "second").resolve()
+            out = ultraclose(
+                "init", "--run", str(second), "--label", "bug", cwd=repo, env=env
+            )
+            self.assertEqual(
+                out.splitlines()[:5],
+                [
+                    f"replaced the run at {first}",
+                    "moved 2 unfinished tasks of that run to the new run:",
+                    f"{passing} (pending) {skipped} (pending)",
+                    "moved 1 pending task that the queue filters leave out, because"
+                    " a moved task waits for it:",
+                    f"{skipped}: it carries no label bug",
+                ],
+            )
+            self.assertNotIn("in that run:", out)
+            self.assertEqual(state_of(first)["tasks"], {})
+            # The new run orders the tasks by the aven blocker, so next
+            # starts the blocker first.
+            tasks = state_of(second)["tasks"]
+            self.assertEqual(
+                {r: t["after"] for r, t in tasks.items()},
+                {passing: [skipped], skipped: []},
+            )
+            launches = json.loads(ultraclose("next", cwd=repo, env=env))
+            self.assertEqual([t["task"]["ref"] for t in launches], [skipped])
+
+    def test_init_asks_aven_for_no_task_without_filters(self):
+        # aven records a blocker of the pending task after its triage. An
+        # init without filters moves the task with its stored after list.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first = self.earlier_run(tmp, (), [{"ref": "APP-0001"}])
+            aven_dependencies(env, "APP-0001", unresolved=["APP-0009"])
+            second = Path(tmp, "second").resolve()
+            out = ultraclose("init", "--run", str(second), cwd=repo, env=env)
+            self.assertEqual(aven_shown(env), [])
+            self.assertEqual(state_of(second)["tasks"]["APP-0001"]["after"], [])
+            self.assertNotIn("queue filters", out)
+
+    def test_init_leaves_pending_task_whose_blocker_filters_leave_out(self):
+        # aven records an open blocker of the bug task, and the earlier
+        # run never took that blocker. The next command waits only for the
+        # tasks that the run holds.
+        task, blocker, later = "APP-0001", "APP-0002", "APP-0003"
+        waits = f"it waits for {blocker}, which the queue filters leave out"
+        left = "left 1 pending task that the queue filters leave out in that run:"
+        # Each case gives the label of the task, the label of the blocker,
+        # and the triage rows of the earlier run. It ends with the lines
+        # that init prints after the line that names the earlier run, the
+        # tasks that move, and the tasks that next starts in the new run.
+        # None skips the check of next.
+        cases = {
+            "a blocker that the filters leave out": (
+                "bug",
+                "docs",
+                [{"ref": task}],
+                [left, f"{task}: {waits}"],
+                [],
+                [],
+            ),
+            "a task and its blocker that the filters leave out": (
+                "docs",
+                "docs",
+                [{"ref": task}],
+                [left, f"{task}: it carries no label bug, and {waits}"],
+                [],
+                [],
+            ),
+            "a blocker that the filters let in": (
+                "bug",
+                "bug",
+                [{"ref": task}],
+                [
+                    "moved 1 unfinished task of that run to the new run:",
+                    f"{task} (pending)",
+                ],
+                [task],
+                [task],
+            ),
+            # Init moves the task so that it lands before the task that
+            # waits for it, and it prints the blocker that the task waits
+            # for.
+            "a moved task waits for the task": (
+                "bug",
+                "docs",
+                [{"ref": task}, {"ref": later, "after": [task]}],
+                [
+                    "moved 2 unfinished tasks of that run to the new run:",
+                    f"{task} (pending) {later} (pending)",
+                    "moved 1 pending task that the queue filters leave out, because"
+                    " a moved task waits for it:",
+                    f"{task}: {waits}",
+                ],
+                [task, later],
+                None,
+            ),
+        }
+        for name, (mine, theirs, rows, lines, moved, starts) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = self.earlier_run(tmp, (), [])
+                aven_dependencies(env, task, unresolved=[blocker])
+                triage(tmp, repo, in_session(env, "first"), *rows)
+                aven_shown_task(env, task, labels=[mine])
+                aven_shown_task(env, blocker, labels=[theirs])
+                aven_shown_task(env, later, labels=["bug"])
+                second = Path(tmp, "second").resolve()
+                out = ultraclose(
+                    "init", "--run", str(second), "--label", "bug", cwd=repo, env=env
+                )
+                self.assertEqual(
+                    out.splitlines()[: 1 + len(lines)],
+                    [f"replaced the run at {first}", *lines],
+                )
+                self.assertEqual(
+                    aven_shown(env), [row["ref"] for row in rows] + [blocker]
+                )
+                self.assertEqual(sorted(state_of(second)["tasks"]), moved)
+                self.assertEqual(
+                    sorted(state_of(first)["tasks"]),
+                    sorted({row["ref"] for row in rows} - set(moved)),
+                )
+                if starts is not None:
+                    launches = json.loads(ultraclose("next", cwd=repo, env=env))
+                    self.assertEqual([t["task"]["ref"] for t in launches], starts)
+
+    def test_init_leaves_pending_task_whose_chain_of_blockers_filters_leave_out(self):
+        # The bug task APP-0001 waits for the bug task APP-0002, which no
+        # run holds. The triage command refuses APP-0002 when the filters
+        # leave out a task on the chain of its blockers.
+        task, blocker, other = "APP-0001", "APP-0002", "APP-0003"
+        left = "that the queue filters leave out in that run:"
+        chain = (
+            f"it waits for {blocker}, which waits for {other}, which the queue"
+            " filters leave out"
+        )
+        # APP-0002 waits for the docs task APP-0003. Each case gives the
+        # tasks that the earlier run started and the refs of its pending
+        # rows. It ends with the lines that init prints after the line
+        # that names the earlier run. Then it gives the refs that init asks
+        # aven to show, and the refs that stay in the earlier run.
+        cases = {
+            "a blocker that waits for a task outside both runs": (
+                [],
+                [task],
+                [f"left 1 pending task {left}", f"{task}: {chain}"],
+                [task, blocker, other],
+                [task],
+            ),
+            "a blocker that waits for a pending task of the earlier run": (
+                [],
+                [task, other],
+                [
+                    f"left 2 pending tasks {left}",
+                    f"{task}: {chain}",
+                    f"{other}: it carries no label bug",
+                ],
+                [task, other, blocker],
+                [task, other],
+            ),
+            "a chain that ends at a task that moves": (
+                [other],
+                [task],
+                [
+                    "moved 2 unfinished tasks of that run to the new run:",
+                    f"{task} (pending) {other} (inflight)",
+                ],
+                [task, blocker],
+                [],
+            ),
+        }
+        labels = {task: "bug", blocker: "bug", other: "docs"}
+        for name, (started, rows, lines, shown, stays) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = self.earlier_run(
+                    tmp, started, [{"ref": r} for r in rows]
+                )
+                aven_dependencies(env, task, unresolved=[blocker])
+                aven_dependencies(env, blocker, unresolved=[other])
+                for ref, label in labels.items():
+                    aven_shown_task(env, ref, labels=[label])
+                second = Path(tmp, "second").resolve()
+                out = ultraclose(
+                    "init", "--run", str(second), "--label", "bug", cwd=repo, env=env
+                )
+                self.assertEqual(
+                    out.splitlines()[: 1 + len(lines)],
+                    [f"replaced the run at {first}", *lines],
+                )
+                self.assertEqual(aven_shown(env), shown)
+                self.assertEqual(sorted(state_of(first)["tasks"]), stays)
+                moved = sorted(set(rows + started) - set(stays))
+                self.assertEqual(sorted(state_of(second)["tasks"]), moved)
+                if stays:
+                    self.assertEqual(
+                        json.loads(ultraclose("next", cwd=repo, env=env)), []
+                    )
+
+    def test_init_moves_task_that_starts_while_init_asks_aven(self):
+        # The earlier session changes the task while init asks aven about
+        # it, and init reads the earlier run again under its landing lock.
+        # A start sets the task to inflight and creates its task directory.
+        # Each case makes one of the two changes, and each change alone
+        # moves the task. The value of each case is the state of the task
+        # in the new run.
+        cases = {
+            "the earlier run starts it": "inflight",
+            "the earlier run starts it and sets it back to pending": "pending",
+        }
+        for name, moved in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = self.earlier_run(tmp, (), [{"ref": REF}])
+                aven_shown_task(env, REF, labels=["docs"])
+                if moved == "inflight":
+                    st = state_of(first)
+                    st["tasks"][REF]["state"] = "inflight"
+                    changed = Path(tmp, "changed.json")
+                    changed.write_text(json.dumps(st))
+                    command = ["cp", str(changed), str(first / "state.json")]
+                else:
+                    command = ["mkdir", "-p", str(first / "tasks" / REF)]
+                hook = Path(env["AVEN_ANSWERS"], f"{REF}.show.sh")
+                hook.write_text(shlex.join(command) + "\n")
+                second = Path(tmp, "second").resolve()
+                out = ultraclose(
+                    "init", "--run", str(second), "--label", "bug", cwd=repo, env=env
+                )
+                self.assertEqual(aven_shown(env), [REF])
+                self.assertEqual(
+                    out.splitlines()[:3],
+                    [
+                        f"replaced the run at {first}",
+                        "moved 1 unfinished task of that run to the new run:",
+                        f"{REF} ({moved})",
+                    ],
+                )
+                self.assertNotIn("queue filters", out)
+                self.assertEqual(state_of(first)["tasks"], {})
+                self.assertEqual(state_of(second)["tasks"][REF]["state"], moved)
+
+    def test_init_records_pull_request_branch_of_task_that_stays(self):
+        # The earlier run records the branch of a pull request for a
+        # pending task that has no task directory, such as a task that an
+        # earlier version of the skill wrote. Init counts that task as a
+        # task that the earlier run has not started.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first = self.earlier_run(tmp, (), [{"ref": REF}])
+            st = state_of(first)
+            st["tasks"][REF].update(branch="fix/docs", pr="https://example.com/pr/1")
+            (first / "state.json").write_text(json.dumps(st))
+            git("branch", "fix/docs", cwd=repo, env=env)
+            aven_shown_task(env, REF, labels=["docs"])
+            second = Path(tmp, "second").resolve()
+            out = ultraclose(
+                "init", "--run", str(second), "--label", "bug", cwd=repo, env=env
+            )
+            self.assertEqual(
+                out.splitlines()[1:3],
+                [
+                    "left 1 task with the branch of a pull request in that run:",
+                    f"{REF} fix/docs pr=https://example.com/pr/1",
+                ],
+            )
+            self.assertEqual(
+                state_of(second)["left"],
+                {REF: {"branch": "fix/docs", "pr": "https://example.com/pr/1"}},
+            )
+
+    def test_state_without_filters_key(self):
+        # A run can continue from a state file that init wrote without the
+        # filters key. That run has no queue filter.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, run = filtered_run(tmp)
+            st = state_of(run)
+            del st["config"]["filters"]
+            (run / "state.json").write_text(json.dumps(st))
+            self.assertEqual(filters_line(repo, env), "none")
+            aven_listed_tasks(env, {"ref": "APP-0002", "labels": ["bug"]})
+            rows = json.loads(ultraclose("untriaged", cwd=repo, env=env))
+            self.assertEqual([row["ref"] for row in rows], ["APP-0002"])
+            triage(tmp, repo, env, {"ref": "APP-0002"})
+            self.assertEqual(aven_shown(env), [])
+            ultraclose("config", "--skip-label", "bug", cwd=repo, env=env)
+            self.assertEqual(filters_line(repo, env), "--skip-label bug")
 
 
 def stale(copy):
@@ -8897,6 +10234,24 @@ class SkillTest(unittest.TestCase):
         freeing = {state for state in script_constant("STATES") if state not in locking}
         named = set(re.findall(r"`set <ref> ([a-z]+)`", loop_step_one()))
         self.assertEqual(freeing - named, set())
+
+    def test_filters_section_names_each_filter_flag(self):
+        # The orchestrator maps the arguments of the skill to the filter
+        # flags of init and config, so the Filters section names each one.
+        flag = re.compile(r"--(?:skip-|min-|any-)?(?:status|priority|label)\b")
+        with tempfile.TemporaryDirectory() as tmp:
+            flags = {
+                found
+                for command in ("init", "config")
+                for found in flag.findall(
+                    ultraclose(command, "--help", cwd=tmp, env=clean_env())
+                )
+            }
+        self.assertIn("--any-label", flags)
+        section = skill_section("Filters")
+        for name in sorted(flags):
+            with self.subTest(name):
+                self.assertIn(f"`{name}", section)
 
 
 # The Workflow tool runs the body of close-task.js inside an async
