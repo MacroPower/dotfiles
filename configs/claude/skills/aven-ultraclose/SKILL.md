@@ -378,29 +378,26 @@ task.
 
    Do not give agents a commit command in `rules.md` either. The Workflow
    prompts tell each agent that commits to search the skills of its
-   session for a skill that creates a commit, such as `commit`. The agent
-   follows that skill for each commit of the task branch and for
-   `msg.txt`. An agent whose session lists no such skill commits with the
-   message `wip`. Whatever the skill says, the agent runs git in its
-   worktree, never pushes, and writes no task ref in a message. Where a
-   skill and `rules.md` disagree on the format of a message, the agent
-   follows `rules.md`.
+   session for each skill that covers committing. The agent follows such
+   a skill for each commit of the task branch and for `msg.txt`. The
+   commit rules of the prompts do not name a skill, and git is the only
+   tool that they name. So the rules hold when the skills of a session
+   change. An agent whose session lists no such skill uses its own
+   judgment, such as for a message that says what a commit changes. Where
+   a skill and `rules.md` disagree, the agent follows `rules.md`.
 
-   The agent creates each commit with `git commit --no-verify`, because the
-   commit hooks of a project can run the full check on every commit. The
-   `commit` skill sends a file that holds the hunks of two changes to
-   `git-surgeon`, and `git-surgeon commit` runs the hooks. So the agent
-   uses `git-surgeon` and other tools that a skill names only to stage
-   hunks. The agent adds commits to the task branch and never
-   rewrites one, with git or with a git-surgeon command such as `fold` or
-   `squash`.
+   Whatever a skill says, the agent follows the rules that the run
+   depends on. It runs git in its worktree. No commit of the agent runs
+   the commit hooks, because the hooks of a project can run the full
+   check on every commit. It commits on the task branch, and it never
+   creates, switches, or renames a branch. It adds commits and never
+   rewrites one. It never pushes, never opens a pull request, and writes
+   no task ref in a message.
 
    In a run with a `pr` target, each agent that commits also searches for
-   a skill that opens a pull request. It follows that skill only for the
-   title and the body in `msg.txt`. You push the branch and open the pull
-   request, as the Pull requests section says. The list of an agent leaves
-   out each skill that sets `disable-model-invocation`, such as
-   `commit-push-pr`. So the commit skill stands in for such a skill.
+   a skill that covers writing a pull request. It follows that skill only
+   for the title and the body in `msg.txt`. You push the branch and open
+   the pull request, as the Pull requests section says.
 
    All agents of the run share the memory and the CPUs of one machine. So
    the Workflow prompts allow each agent at most two build, test, or probe
@@ -761,15 +758,21 @@ until an agent revises it. When the `summary` of a result is empty, read
 File each defect that a result reports as a task of its own. A defect is a
 fault that an agent found outside its task and left unfixed, such as a
 wrong fact in a doc or a bug in nearby code. Every result lists its
-defects in `defects`, whatever its status. Each entry holds a `title` and
-a `description` in the format of the `track-issue` skill.
+defects in `defects`, whatever its status. Each entry holds a `title` in
+sentence case that names the symptom, and a `description` in Markdown with
+the sections Observed, Expected, Reproduction, and Evidence.
 
 When a result arrives, file its defects in the same turn. Act on its status
 first, so that its landing or its relaunch runs in the background while you
 file:
 
-1. Load the `track-issue` skill, and file each entry as the skill says.
-   Its duplicate search finds a defect that an earlier result reported.
+1. Search the skills that your session lists for each skill that covers
+   filing a task. Load each skill that you find, and file each entry as it
+   says. Where your session lists no such skill, use your own judgment.
+   For example, you might file each entry in the aven project of the
+   repository, so that its task joins the queue. Two results can report the
+   same defect, so search the open tasks for a duplicate before you file an
+   entry.
 2. Link each new task to the task that reported the defect, with
    `aven related add <new-ref> <ref>`.
 3. Record each new task in `notes.md`.

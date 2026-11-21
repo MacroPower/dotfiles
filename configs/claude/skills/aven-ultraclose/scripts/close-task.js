@@ -54,8 +54,7 @@ const LANDING = args.pr
   ? `The orchestrator opens a pull request against ${base} later. The first line of the message in ${MSG} becomes its title, and the rest of the message becomes its body.`
   : `The orchestrator squashes ${BRANCH} into one commit on ${base} later, and that commit takes the message in ${MSG}.`
 
-// One task that the orchestrator files, in the format of the track-issue
-// skill.
+// One task that the orchestrator files.
 const NEW_TASK = {
   type: 'object',
   properties: {
@@ -216,47 +215,49 @@ Stored summary and notes: a relaunch of this task starts from the summary in ${S
 
 // The rule for each agent that commits: the implementer, each fixer, the
 // sync agent, and the narrowing agent. Each of these agents follows the
-// commit skill that its session lists, for each commit and for msg.txt.
-// So each commit of the branch carries a message that says what it
-// changed, and a pull request carries each of those commits. An agent
-// whose session lists no commit skill commits with a fixed message.
+// skills of its session that cover committing, for each commit and for
+// msg.txt. So each commit of the branch carries a message that the
+// project expects, and a pull request carries each of those commits. The
+// rule does not name a skill, and git is the only tool that it names. So
+// a skill that changes, appears, or goes away does not need a change to
+// this script. An agent whose session lists no such skill uses its own
+// judgment.
 //
 // In a run that proposes pull requests, the agent also follows a skill
-// that opens a pull request. It follows that skill only for the title
-// and the body in msg.txt. The landing names the branch. The orchestrator
-// then pushes the branch and opens the pull request. The list of an agent
-// leaves out each skill that sets disable-model-invocation, such as
-// commit-push-pr. So the commit skill stands in for such a skill.
+// that covers writing a pull request. It follows that skill only for the
+// title and the body in msg.txt. The landing names the branch. The
+// orchestrator then pushes the branch and opens the pull request.
 //
-// The rules after the search override each skill. A skill can show the
-// git state of the directory where the session started, and that
-// directory is the main checkout. On every commit, the commit hooks of a
-// project can run the full check, or a command that rules.md forbids in
-// a worktree, such as Dagger. The landing runs the check on the whole
-// change instead. So an agent commits only with git commit --no-verify.
-// The commit skill sends a file that holds the hunks of two changes to
-// the git-surgeon skill. git-surgeon commit runs the hooks, and it has
-// no option that skips them. So an agent uses such a tool only to stage
-// hunks.
+// The rules after the search override each skill. Each rule names the
+// effect to avoid, so that it holds whatever a skill says. A skill can
+// show the git state of the directory where the session started, and
+// that directory is the main checkout. On every commit, the commit hooks
+// of a project can run the full check, or a command that rules.md
+// forbids in a worktree, such as Dagger. The landing runs the check on
+// the whole change instead. So no commit of an agent runs the hooks. A
+// skill can commit through a tool that has no option to skip the hooks,
+// so an agent uses such a tool only to stage changes.
 //
 // The landing of a run that proposes pull requests renames the branch,
 // and the remote can hold the branch of a relaunched task. So an agent
-// adds commits and never rewrites the branch. The rule names the
-// git-surgeon commands that rewrite a commit as well as the git ones.
-// The push publishes each commit message, and the landing rejects a
-// message that holds a task ref.
+// adds commits and never rewrites the branch. The push publishes each
+// commit message, and the landing rejects a message that holds a task
+// ref.
 //
-// The sentences of the rule that a run that proposes pull requests adds.
-const PR_SEARCH = args.pr ? ' This run proposes pull requests, so also search the list for a skill that opens a pull request.' : ''
-const PR_FOLLOW = args.pr ? ` When you find a skill that opens a pull request, follow it in place of the commit skill for the title and the body that ${MSG} holds, and skip each of its other steps.` : ''
+// The skills that the rule covers, and the sentences of the rule that
+// differ in a run that proposes pull requests.
+const SKILL_WORK = args.pr ? 'committing or writing a pull request' : 'committing'
+const MSG_RULE = args.pr
+  ? `Follow a skill that covers committing for each commit on ${BRANCH}. Write ${MSG} the way a skill that covers writing a pull request writes its title and its body, and skip each other step of that skill.`
+  : `Follow a skill that covers committing for each commit on ${BRANCH}, and write ${MSG} the way that skill writes the message of one commit that holds the whole change.`
 const commitRule = `
-Commits: search the skills that your session lists for a skill that creates a git commit, such as \`commit\`.${PR_SEARCH} Before you first write ${MSG} or commit, call the Skill tool to load each skill that you find. Follow the commit skill for each commit on ${BRANCH}. Write the message in ${MSG} the way that skill writes the message of one commit that holds the whole change.${PR_FOLLOW} When the list holds no skill that creates a commit, commit the work in progress with \`cd ${T.wt} && git add -A && git commit -q --no-verify -m wip\`, and write ${MSG} in the format that rules.md gives. When a step of this prompt gives the command of a commit, such as a merge, run that command for that commit. These rules override each skill that you load:
+Commits: before you first commit or write ${MSG}, search the skills that your session lists for each skill that covers ${SKILL_WORK}. Load each skill that you find, and follow it where it applies. ${MSG_RULE} Where your session lists no such skill for a part of this work, use your own judgment for that part, such as to write a commit message that says what the commit changes. When a step of this prompt gives the command of a commit, such as a merge, run that command for that commit. These rules override each skill that you load:
 - Run each git command in the worktree, and start it with \`cd ${T.wt} && \`. A skill can show the git state of the directory where your session started, which is not the worktree. Read the state of the worktree with \`cd ${T.wt} && git status\` and \`cd ${T.wt} && git diff HEAD\`.
-- Create each commit with \`cd ${T.wt} && git commit --no-verify\`. A skill can name another tool that commits, such as \`git-surgeon commit\` or \`git-surgeon commit-to\`, and such a tool runs the commit hooks. Use such a tool only to stage hunks, then commit with \`git commit --no-verify\`. On every commit, the commit hooks of a project can run the full check, or a command that rules.md forbids in a worktree. The landing runs the check on the whole change.
-- Commit on ${BRANCH}. Never create, switch, or rename a branch. Never rewrite a commit that the branch holds, such as with an amend, a rebase, a squash, or a git-surgeon command that folds, splits, moves, or rewords a commit. Add new commits instead.
+- Never let a commit run the commit hooks of the project. Create each commit with git, and pass \`--no-verify\` to each git command that creates one. When a skill commits through another tool that cannot skip the hooks, use that tool only to stage changes. On every commit, the commit hooks of a project can run the full check, or a command that rules.md forbids in a worktree. The landing runs the check on the whole change.
+- Commit on ${BRANCH}. Never create, switch, or rename a branch. Never rewrite a commit that the branch holds. Do not change the content or the message of such a commit, and do not combine, split, reorder, or drop one. Add new commits instead.
 - Never push, and never open a pull request, even where a skill says to.${args.pr ? ' The orchestrator pushes the branch and opens the pull request.' : ''}
 - Never write a task ref in a commit message, even where a skill asks for an issue or a ticket.${args.pr ? ` The push publishes each commit of ${BRANCH} with its message.` : ''}
-- Where a skill and rules.md disagree on the format of a message, follow rules.md.`
+- Where a skill disagrees with rules.md, follow rules.md.`
 
 // The rule for each agent whose result carries defects.
 const defectsRule = `

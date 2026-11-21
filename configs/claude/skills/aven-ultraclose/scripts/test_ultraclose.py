@@ -8749,6 +8749,21 @@ def named_sections(source):
     return set(re.findall(r"the ([A-Z][a-z]+(?: [a-z]+)*) section of SKILL\.md", flat))
 
 
+def flat_source(path):
+    """The text of SKILL.md or of a script, on one line.
+
+    A script can break a sentence between two lines of a comment or
+    between the parts of a string. The function joins those lines, and
+    it drops the backslash before each backtick of a template string.
+    """
+    text = path.read_text()
+    if path != SKILL:
+        text = text.replace("\\`", "`")
+        text = re.sub(r"[\"'`]\s*\n\s*f?[\"'`]", "", text)
+        text = re.sub(r"\n\s*(?://|#)", "\n", text)
+    return " ".join(text.split())
+
+
 def landing_facts(code):
     """Facts of a landing with the given result, for each action of the script.
 
@@ -8841,6 +8856,35 @@ class SkillTest(unittest.TestCase):
         for code in sent:
             with self.subTest(code):
                 self.assertIn(f"`{code}`", landing)
+
+    def test_sources_name_no_other_skill(self):
+        # The skills of a session change apart from this skill. So
+        # SKILL.md and the scripts tell an agent to search its session
+        # for the skills that cover a piece of work. They name no skill of
+        # this repository. A source names a skill when the name stands
+        # right before the word skill, in code font or not, or in the
+        # first code span after that word in its sentence. Elsewhere the
+        # same word can name something else, such as a state, a command,
+        # or a tool, so the test reads only those places.
+        others = sorted(
+            path.name
+            for path in SKILL.parent.parent.iterdir()
+            if path.is_dir() and path != SKILL.parent
+        )
+        if not others:
+            self.skipTest("no other skill sits beside this skill")
+        skill = r"\b[Ss]kills?\b"
+        for source in (SKILL, WORKFLOW, SCRIPT):
+            flat = flat_source(source)
+            for name in others:
+                with self.subTest(source.name, skill=name):
+                    word = re.escape(name)
+                    forms = [
+                        rf"`{word}`\s+{skill}",
+                        rf"(?<![\w-]){word}\s+{skill}",
+                        rf"{skill}[^.`]*`{word}`",
+                    ]
+                    self.assertEqual(re.findall("|".join(forms), flat), [])
 
     def test_loop_step_one_runs_next_after_each_set_that_frees_work(self):
         # A task that leaves the locking states frees its files, and an
@@ -9196,7 +9240,7 @@ class WorkflowRulesTest(WorkflowCase):
                             call["prompt"],
                         )
 
-    def test_agents_that_commit_follow_the_commit_skill_of_their_session(self):
+    def test_agents_that_commit_follow_the_skills_of_their_session(self):
         # label: whether the agent commits
         commits = {
             "impl": True,
@@ -9206,21 +9250,21 @@ class WorkflowRulesTest(WorkflowCase):
             "review r1": False,
             "review final": False,
         }
+        msg = f"/run/tasks/{REF}/msg.txt"
+        lead = (
+            f"Commits: before you first commit or write {msg}, search the"
+            " skills that your session lists for each skill that covers"
+        )
         # The rules that every agent that commits carries, whatever its
-        # run. The agent follows the commit skill that its session lists,
-        # for each commit and for the message file. The fixed command
-        # serves a session that lists no such skill. The rules of the run
-        # override each skill.
+        # run. The agent follows the skills of its session, and its own
+        # judgment where the session lists no such skill. The rules of the
+        # run override each skill, and each rule names the effect to
+        # avoid.
         held = (
-            "Commits: search the skills that your session lists for a skill"
-            " that creates a git commit, such as `commit`.",
-            f"Before you first write /run/tasks/{REF}/msg.txt or commit, call"
-            " the Skill tool to load each skill that you find.",
-            f"Write the message in /run/tasks/{REF}/msg.txt the way that skill"
-            " writes the message of one commit that holds the whole change.",
-            "When the list holds no skill that creates a commit, commit the"
-            " work in progress with `cd /repo/wt && git add -A && git commit"
-            " -q --no-verify -m wip`",
+            "Load each skill that you find, and follow it where it applies.",
+            "Where your session lists no such skill for a part of this work,"
+            " use your own judgment for that part, such as to write a commit"
+            " message that says what the commit changes.",
             "When a step of this prompt gives the command of a commit, such as"
             " a merge, run that command for that commit.",
             "These rules override each skill that you load:",
@@ -9228,37 +9272,52 @@ class WorkflowRulesTest(WorkflowCase):
             " `cd /repo/wt && `.",
             "Read the state of the worktree with `cd /repo/wt && git status`"
             " and `cd /repo/wt && git diff HEAD`.",
-            # A tool that a skill names, such as git-surgeon, commits with
-            # the hooks of the project and rewrites commits of the branch.
-            "- Create each commit with `cd /repo/wt && git commit"
-            " --no-verify`.",
-            "A skill can name another tool that commits, such as"
-            " `git-surgeon commit` or `git-surgeon commit-to`, and such a tool"
-            " runs the commit hooks. Use such a tool only to stage hunks, then"
-            " commit with `git commit --no-verify`.",
+            "- Never let a commit run the commit hooks of the project. Create"
+            " each commit with git, and pass `--no-verify` to each git command"
+            " that creates one.",
+            "When a skill commits through another tool that cannot skip the"
+            " hooks, use that tool only to stage changes.",
             "Never create, switch, or rename a branch. Never rewrite a commit"
-            " that the branch holds, such as with an amend, a rebase, a"
-            " squash, or a git-surgeon command that folds, splits, moves, or"
-            " rewords a commit. Add new commits instead.",
+            " that the branch holds. Do not change the content or the message"
+            " of such a commit, and do not combine, split, reorder, or drop"
+            " one. Add new commits instead.",
             "- Never push, and never open a pull request, even where a skill"
             " says to.",
             "- Never write a task ref in a commit message, even where a skill"
             " asks for an issue or a ticket.",
-            "- Where a skill and rules.md disagree on the format of a message,"
-            " follow rules.md.",
+            "- Where a skill disagrees with rules.md, follow rules.md.",
         )
-        # The rules that only an agent of a run that proposes pull
-        # requests carries. The agent follows a skill that opens a pull
-        # request only for the title and the body of the message file.
+        # The rule of a run that commits on its base branch. The message
+        # file holds the message of the one commit that the landing makes.
+        committing = (
+            f"{lead} committing.",
+            "Follow a skill that covers committing for each commit on"
+            " {branch}, and write"
+            f" {msg} the way that skill writes the message of one commit that"
+            " holds the whole change.",
+        )
+        # The rule of a run that proposes pull requests. The message file
+        # holds the title and the body of the pull request, and the push
+        # publishes the message of each commit.
         proposing = (
-            "This run proposes pull requests, so also search the list for a"
-            " skill that opens a pull request.",
-            "When you find a skill that opens a pull request, follow it in"
-            " place of the commit skill for the title and the body that"
-            f" /run/tasks/{REF}/msg.txt holds, and skip each of its other"
-            " steps.",
+            f"{lead} committing or writing a pull request.",
+            "Follow a skill that covers committing for each commit on {branch}.",
+            f"Write {msg} the way a skill that covers writing a pull request"
+            " writes its title and its body, and skip each other step of that"
+            " skill.",
             "The orchestrator pushes the branch and opens the pull request.",
+            "The push publishes each commit of {branch} with its message.",
         )
+        # The commands that the rule gives. The rule does not give a
+        # command that commits. It does not name a skill, and git is the
+        # only tool that it names, so it holds when the skills of a session
+        # change.
+        commands = {
+            "--no-verify",
+            "cd /repo/wt && ",
+            "cd /repo/wt && git status",
+            "cd /repo/wt && git diff HEAD",
+        }
         # name: (the landing argument of every_agent, the branch that the
         # rules name, whether the run proposes pull requests)
         cases = {
@@ -9280,27 +9339,33 @@ class WorkflowRulesTest(WorkflowCase):
             for label, call in calls.items():
                 with self.subTest(name, agent=label):
                     prompt = call["prompt"]
-                    self.assertEqual(held[0] in prompt, commits[label])
+                    self.assertEqual(lead in prompt, commits[label])
                     if not commits[label]:
                         # A reviewer is read-only on the worktree.
                         self.assertNotIn("git commit", prompt)
+                        self.assertNotIn("--no-verify", prompt)
                         continue
+                    self.assertEqual(prompt.count(lead), 1)
                     for sentence in held:
                         self.assertIn(sentence, prompt)
-                    self.assertEqual(prompt.count(held[0]), 1)
-                    self.assertIn(
-                        f"Follow the commit skill for each commit on {branch}.",
-                        prompt,
-                    )
                     self.assertIn(f"- Commit on {branch}.", prompt)
-                    for sentence in proposing:
-                        self.assertEqual(sentence in prompt, proposes)
-                    # The push publishes the message of each commit.
-                    self.assertEqual(
-                        f"The push publishes each commit of {branch} with its"
-                        " message." in prompt,
-                        proposes,
+                    # The rule of this run, and the rule of the other kind
+                    # of run.
+                    kept, dropped = (
+                        (proposing, committing)
+                        if proposes
+                        else (committing, proposing)
                     )
+                    for sentence in kept:
+                        self.assertIn(sentence.format(branch=branch), prompt)
+                    for sentence in dropped:
+                        self.assertNotIn(sentence.format(branch=branch), prompt)
+                    rule = prompt[prompt.index(lead) :]
+                    rule = rule[: rule.index("\n\nStored summary and notes:")]
+                    self.assertEqual(
+                        set(re.findall(r"`([^`]+)`", rule)), commands
+                    )
+                    self.assertNotIn("wip", rule)
 
 
 class WorkflowModelTest(WorkflowCase):
