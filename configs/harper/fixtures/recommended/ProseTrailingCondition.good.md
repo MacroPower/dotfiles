@@ -4,6 +4,30 @@ Use the flag if needed.
 
 Retry the request if possible.
 
+Restart the agent if needed-based checks fail.
+
+Retry the request if possible/needed.
+
+Restart the agent if needed_by_x.
+
+Restart the agent if needed+x.
+
+Restart the agent if needed—now.
+
+Restart the agent if needed@ now.
+
+Restart the agent if needed.ab now.
+
+Restart the agent if needed.com.
+
+Restart the agent if needed.COM now.
+
+Restart the agent if needed-status checks fail.
+
+Restart the agent if needed.@x.com now.
+
+Restart the agent if needed..x@y now.
+
 Check if the port is taken.
 
 Avoid the cache unless the data is static.
@@ -265,6 +289,24 @@ Restart the **agent if [^1]** needed.
 
 Restart the agent if [^1] [needed](https://example.com).
 
+Restart the agent if [^1]needed.
+
+Restart the agent if [^1]**needed**.
+
+Restart the agent if **[^1]needed**.
+
+Restart the agent if [^1][^2]needed.
+
+Restart the agent if [^a][^b]needed.
+
+Restart the agent if [^1][[needed]].
+
+Restart the agent if [^1][[page|needed]].
+
+Restart the agent if **[^1]**[[page|needed]].
+
+Restart the agent if [^1]~~[[page|needed]]~~.
+
 Restart the agent if ~x~ needed.
 
 Restart the agent if ~x y~ needed.
@@ -297,6 +339,24 @@ Restart the agent if ~x < y~ needed.
 
 Restart the agent if ~$5~ needed.
 
+Restart the agent if ^x^ needed.
+
+Restart the agent if ^x y^ needed.
+
+Restart the agent if **^x^** needed.
+
+Restart the agent if ^x^ ~y~ needed.
+
+Retry the request if ^x^ possible.
+
+Restart the agent if [^1]^x^ needed.
+
+Restart the agent if ^^x^^ needed.
+
+Restart the agent if ^^^x^^^ needed.
+
+Restart the agent if **^^x y^^** needed.
+
 <!-- prettier-ignore -->
 Restart the agent if ~x  y~ needed.
 
@@ -308,6 +368,21 @@ Restart the agent if   needed.
 
 <!-- prettier-ignore -->
 Restart the agent if [^1]   needed.
+
+<!-- prettier-ignore -->
+Restart the agent if ~x~   needed.
+
+<!-- prettier-ignore -->
+Restart the agent if   ~x~ needed.
+
+<!-- prettier-ignore -->
+Restart the agent if ~x   y~ needed.
+
+<!-- prettier-ignore -->
+Restart the agent if [[page   x|needed]].
+
+<!-- prettier-ignore -->
+Restart the agent if [[needed   now]].
 
 <!-- prettier-ignore -->
 Restart the agent
@@ -324,6 +399,9 @@ Restart the agent if ~x
 y~ needed.
 
 Restart the agent if
+^x^ needed.
+
+Restart the agent if
 ~x~ ~y~
 needed.
 
@@ -337,3 +415,7 @@ needed.
 [^1]: A note.
 
 [^2]: A note.
+
+[^a]: A note.
+
+[^b]: A note.

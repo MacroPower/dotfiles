@@ -33,17 +33,19 @@
 #
 # ProseTrailingCondition skips `if needed`, `if necessary`,
 # `if applicable`, `if appropriate`, and `if possible`, so only this
-# rule reports them. This rule matches such a phrase only when nothing
-# but emphasis, a footnote reference, a span in single tildes, or the
-# markup of a markdown link sits between its two words (`if **needed**`,
-# `if[^1] needed`, `if ~x~ needed`, `if [needed](https://example.com)`).
-# Harper shows only the text after the `|` of a wikilink, so the target
-# before the `|` counts as such markup too (`if [[page|needed]]`).
+# rule reports them. This rule matches such a phrase only when little
+# sits between its two words. Only emphasis, a footnote reference, a
+# span in single tildes or in carets, or the markup of a markdown link
+# can sit there (`if **needed**`, `if[^1] needed`, `if ~x~ needed`,
+# `if ^x^ needed`, `if [needed](https://example.com)`). Harper shows only
+# the text after the `|` of a wikilink, so the target before the `|`
+# counts as such markup too (`if [[page|needed]]`).
+#
 # ProseTrailingCondition skips the phrase in that case, and it reports
 # the `if` in `if "needed"`, `if (needed)`, `if [needed]`, and
-# `if, needed`. Harper drops a span in single tildes along with the
-# words in it, so ProseTrailingCondition also reports the `if` in
-# `if ~needed~`.
+# `if, needed`. Harper drops a span in single tildes or in carets along
+# with the words in it, so ProseTrailingCondition also reports the `if`
+# in `if ~needed~` and `if ^needed^`.
 #
 # Measurement
 #

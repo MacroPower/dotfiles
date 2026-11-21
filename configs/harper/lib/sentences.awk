@@ -15,6 +15,16 @@
 # second part of such a quotation when an attribution splits it, and
 # quotation_end(n, s) finds the token that closes a quotation.
 #
+# `tok_gap[i]` holds the text between token i - 1 and token i, with a
+# newline at each line break. The text comes from `raw`, the line before
+# lib/markdown.awk blanks its code spans and URLs, where each `>` marker
+# reads as a space. The text that prose() gets holds only whitespace
+# there, so lib/markdown.awk blanked each other character of
+# `tok_gap[i]` (`` `x` `` in ``if `x` needed``). The spaces at the end
+# of a line stay in it too, so a check can find a hard line break. For
+# the first token of a paragraph, the text runs from the start of the
+# paragraph.
+#
 # Sentences run across the lines of a paragraph and end at a token that
 # ends in `.`, `?`, or `!`, after any closing quote, paren, bracket, or
 # emphasis. A closing quote is straight or curly (`"`, `'`, `”`, or
@@ -252,6 +262,7 @@ function end_sentence(   i) {
       sent_tok[sent_n, i] = tok[i]
       sent_line[sent_n, i] = tok_line[i]
       sent_col[sent_n, i] = tok_col[i]
+      sent_gap[sent_n, i] = tok_gap[i]
     }
   }
   tok_n = 0
@@ -266,12 +277,14 @@ function end_paragraph(   s, i) {
       tok[i] = sent_tok[s, i]
       tok_line[i] = sent_line[s, i]
       tok_col[i] = sent_col[s, i]
+      tok_gap[i] = sent_gap[s, i]
     }
     sentence_file = sent_file[s]
     sentence(sent_len[s])
   }
   sent_n = 0
   para_line = -1
+  gap_text = ""
 }
 
 # Reports whether token t opens with a double quote, straight or curly,
@@ -589,6 +602,7 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
     quote_end = 0
     sent_n = 0
     para_line = -1
+    gap_text = ""
     split_line = FNR
     return
   }
@@ -733,6 +747,11 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
   while (match(rest, /[^ \t]+/)) {
     t = substr(rest, RSTART, RLENGTH)
     col = pos + RSTART
+    # `gap_text` gathers the text of `raw` since the last token, which
+    # `tok_gap` records. The text that prose() gets keeps each offset of
+    # `raw`, so the whitespace before the token in `text` sits at the same
+    # offsets.
+    gap_text = gap_text substr(raw, pos + 1, RSTART - 1)
     pos += RSTART + RLENGTH - 1
     rest = substr(rest, RSTART + RLENGTH)
     marker = lead && t ~ /^[0-9]+\.$/
@@ -747,12 +766,17 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
     }
     quote_end = 0
     if (tok_n == 0 && t ~ /^([-*+]|[0-9]+[.)])$/) {
+      # lib/markdown.awk does not blank a list marker, so the gap of the
+      # next token opens after it.
+      gap_text = ""
       continue
     }
     tok_n++
     tok[tok_n] = t
     tok_line[tok_n] = FNR
     tok_col[tok_n] = column(col)
+    tok_gap[tok_n] = gap_text
+    gap_text = ""
     if (tok_n == 1) {
       sentence_file = FILENAME
     }
@@ -769,6 +793,9 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
       quote_end = 1
     }
   }
+  # The rest of the line joins the gap of the next token. So does each
+  # line between two tokens, such as a line of only a code span.
+  gap_text = gap_text substr(raw, pos + 1) "\n"
 }
 
 # Returns the number of words in the sentence and sets `words_from` to

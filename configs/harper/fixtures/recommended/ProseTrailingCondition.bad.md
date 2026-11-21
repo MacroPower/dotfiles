@@ -106,6 +106,36 @@ Restart the agent if {needed}.
 
 Restart the agent if 1needed.
 
+Restart the agent if needed's.
+
+Restart the agent if needed’s.
+
+Restart the agent if needed''s.
+
+Restart the agent if needed'x.
+
+Restart the agent if needed1x.
+
+Restart the agent if needed@x.
+
+Restart the agent if needed'1.
+
+Restart the agent if needed@1.
+
+Restart the agent if needed'@x.
+
+Restart the agent if needed’@x.
+
+Restart the agent if needed+ops@example.com fails.
+
+Restart the agent if needed://x is down.
+
+Restart the agent if needed.txt is missing.
+
+Restart the agent if needed-x.com is down.
+
+Restart the agent if needed.status is down.
+
 Restart the agent if ![needed](https://example.com/needed.png).
 
 Set the label to [restart if] needed.
@@ -235,6 +265,12 @@ Restart the agent if [^1] (needed).
 
 Restart the agent if **[^1]**, needed.
 
+Restart the agent if [^1][needed].
+
+Restart the agent if [^1][needed](https://example.com).
+
+Restart the agent if **[^1][needed](https://example.com)**.
+
 Restart the agent if ~needed~ now.
 
 Restart the agent if ~x~, needed.
@@ -317,3 +353,47 @@ Restart the agent if ~x~ <!-- c --> needed.
 Restart the agent if ~x~
 `y` <!-- same finding -->
 needed. <!-- same finding -->
+
+Restart the agent if `x` needed.
+
+Retry the request if `x` possible.
+
+Restart the agent if `y` [^1] needed.
+
+Restart the agent if <!-- c --> needed.
+
+Restart the agent if `y`
+needed. <!-- same finding -->
+
+Restart the agent if ~x~ `y`
+needed. <!-- same finding -->
+
+Restart the agent if `y`
+~x~ needed. <!-- same finding -->
+
+Restart the agent if ~x `a`
+y~ needed. <!-- same finding -->
+
+Restart the agent if [[page `a|b`
+x|needed]]. <!-- same finding -->
+
+Restart the agent if [[needed `a|b`
+]]. <!-- same finding -->
+
+Restart the agent if ^needed^ now.
+
+Restart the agent if ^x^needed.
+
+Restart the agent if ^x~^ needed.
+
+Restart the agent if ^**x**^ needed.
+
+Restart the agent if ^x\^ needed.
+
+Restart the agent if ^^x^ needed.
+
+Restart the agent if ^x^^ needed.
+
+Restart the agent if ^^x^^needed.
+
+Restart the agent if ^^x^ y^^ needed.

@@ -1882,6 +1882,123 @@ in
           touch "$out"
         '';
 
+        # Lints sentences with an `if` and a vague word that a line break
+        # splits, which the fixtures of ProseTrailingCondition cannot
+        # hold. ProseVagueCriterion reports `if needed` and
+        # `if possible`, so ProseTrailingCondition skips them, and the
+        # test expects exactly one finding from the two rules for each
+        # sentence. The command in configs/harper/CLAUDE.md builds this
+        # test too.
+        #
+        # Two or more spaces or tabs at the end of a line form a hard
+        # line break, which Harper reads as a paragraph break. So the
+        # first seven sentences draw ProseTrailingCondition, one of them
+        # with the break inside a span in single tildes and one inside a
+        # span in single carets. editorconfig trims those spaces from a
+        # fixture. A `\` at the end of a line forms a hard line break
+        # too. One space or one tab does not, so the two sentences after
+        # it draw ProseVagueCriterion. In the last six sentences, Harper
+        # reads two line breaks with no space between them as a
+        # paragraph break. In the last one, Harper drops the space inside
+        # the span along with the span, so the two line breaks still
+        # meet. In a bad fixture, the middle line of each
+        # needs a `same finding` comment, because that line does not
+        # hold a finding of its own. ProseTrailingCondition reads that
+        # comment as blanked text and reports the `if` for that reason
+        # alone.
+        tests.trailing-condition = runCommand "prose-lint-trailing-condition" { } ''
+          printf '%s\n' \
+            'Restart the agent if  ' \
+            'needed.' \
+            "" \
+            'Retry the request if  ' \
+            'possible.' \
+            "" \
+            "$(printf 'Restart the agent if\t\t')" \
+            'needed.' \
+            "" \
+            'Restart the agent if ~x  ' \
+            'y~ needed.' \
+            "" \
+            'Restart the agent if ^x  ' \
+            'y^ needed.' \
+            "" \
+            'Restart the [agent if](https://example.com)  ' \
+            'needed.' \
+            "" \
+            'Restart the agent if [^1]  ' \
+            'needed.' \
+            "" \
+            'Restart the agent if\' \
+            'needed.' \
+            "" \
+            'Restart the agent if ' \
+            'needed.' \
+            "" \
+            "$(printf 'Restart the agent if\t')" \
+            'needed.' \
+            "" \
+            'Restart the agent if' \
+            '~x~' \
+            'needed.' \
+            "" \
+            'Restart the agent if' \
+            '^x^' \
+            'needed.' \
+            "" \
+            'Restart the agent if' \
+            '~x' \
+            'y~ needed.' \
+            "" \
+            'Restart the agent if ~x' \
+            'y~' \
+            'needed.' \
+            "" \
+            'Restart the agent if' \
+            '[^1]' \
+            'needed.' \
+            "" \
+            'Restart the agent if' \
+            '~x y~' \
+            'needed.' \
+            "" \
+            '[^1]: A note.' >breaks.md
+
+          cat >want <<'EOF'
+          breaks.md:1:19 ProseTrailingCondition
+          breaks.md:4:19 ProseTrailingCondition
+          breaks.md:7:19 ProseTrailingCondition
+          breaks.md:10:19 ProseTrailingCondition
+          breaks.md:13:19 ProseTrailingCondition
+          breaks.md:16:20 ProseTrailingCondition
+          breaks.md:19:19 ProseTrailingCondition
+          breaks.md:22:19 ProseTrailingCondition
+          breaks.md:25:19 ProseVagueCriterion
+          breaks.md:28:19 ProseVagueCriterion
+          breaks.md:31:19 ProseTrailingCondition
+          breaks.md:35:19 ProseTrailingCondition
+          breaks.md:39:19 ProseTrailingCondition
+          breaks.md:43:19 ProseTrailingCondition
+          breaks.md:47:19 ProseTrailingCondition
+          breaks.md:51:19 ProseTrailingCondition
+          EOF
+
+          rc=0
+          found=$(${lib.getExe finalAttrs.finalPackage} breaks.md) || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "breaks.md: prose-lint exited $rc" >&2
+            exit 1
+          fi
+          printf '%s\n' "$found" |
+            sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::(ProseTrailingCondition|ProseVagueCriterion): .*,\1 \2,p' |
+            sort -t: -k2,2n >got
+          if ! diff want got; then
+            echo "breaks.md draws other ProseTrailingCondition or ProseVagueCriterion findings than want lists" >&2
+            exit 1
+          fi
+          touch "$out"
+        '';
+
         # Lints two transcripts and expects a ProseOpinion finding only
         # on the lines outside the turns of their speakers. The command
         # in configs/harper/CLAUDE.md builds this test too.

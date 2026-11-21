@@ -97,6 +97,11 @@ BEGIN {
   html_open = 0
   raw_mode = ENVIRON["RAW"] != ""
   shadow_mode = ENVIRON["SHADOW"] != ""
+  # The destination of an inline link with the `]` before it, which
+  # clean() blanks (`](https://example.com)`). A check that reads the
+  # text that clean() blanked can find a link destination in it with
+  # this pattern.
+  link_dest = "\\]\\([^) \t]*([ \t]+\"[^\"]*\")?\\)"
   # A UTF-8 locale reads é as one character, and the C locale reads it
   # as two bytes.
   utf8 = length("é") == 1
@@ -247,7 +252,7 @@ function clean(s,   t) {
   s = blank(s, "<!--([^-]|-[^-])*-->")
   s = blank(s, "<(code|kbd|samp|pre)[^>]*>([^<]|<[^/])*</(code|kbd|samp|pre)>")
   s = blank(s, "<[A-Za-z][A-Za-z0-9+.-]*:[^ \t<>]*>")
-  s = blank(s, "\\]\\([^) \t]*([ \t]+\"[^\"]*\")?\\)")
+  s = blank(s, link_dest)
   t = blank_urls(s)
   # Each `*` or `:` that the URL leaves at the start of the line, as on a
   # wrapped line that opens `https://example.com/* covers`, becomes a

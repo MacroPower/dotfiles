@@ -518,6 +518,16 @@ on a set of files.
   from both files, messages included. `check.py` expects a finding on
   each bad line of a fixture, whatever its message. Only this test
   therefore checks the split that a ProseSentenceLength message names.
+- `trailing-condition` lints sentences with an `if` and a vague word
+  that a line break splits, and it expects one finding from
+  ProseTrailingCondition or ProseVagueCriterion for each sentence. A
+  hard line break of two or more spaces or tabs, or of a `\`, sits
+  between the two words of some sentences. editorconfig trims those
+  spaces from a fixture. In other sentences, a line between the two
+  words holds only a span in single tildes, a span in single carets, or
+  a footnote reference. The bad fixture of ProseTrailingCondition needs
+  a `same finding` comment at the end of that line. The rule reads the
+  comment as blanked text that splits the two words.
 - `transcripts` lints two transcripts. One marks each speaker with a
   bold label, and the test lints it as a `.md` file, as a `.markdown`
   file, and as a commit message. The other names each speaker in
