@@ -24,6 +24,16 @@
 # straightens the apostrophe in the copy that Harper reads, but this
 # check reads the original markdown file or commit message.
 #
+# Harper skips a footnote reference, so the check drops each one from a
+# word before it drops the punctuation. `if[^note]` and `if[^1]` then
+# both count as `if`. The check reads a sentence only when the first
+# letter of its first word is a capital. It finds that letter after it
+# drops the references, so `[^note]Use` and `[^1]Use` both open a
+# sentence that the check reads, but `[^Note]use` does not. A label
+# that holds a space splits the reference into two words (`if[^a` and
+# `b]`), so an `if` glued to such a reference passes (`Use the flag
+# if[^a b] the port is taken`).
+#
 # A sentence can open with a quotation, such as the label of a button
 # (`"Save" appears in the menu if the file changed`). The check then
 # reads only the words up to the closing quote, which quoted_opening()
@@ -148,9 +158,10 @@
 # reference, a span in single tildes or in carets, or the markup of a
 # markdown link can sit there. The target before the `|` of a wikilink
 # counts as such markup too. The check skips the phrase in that case,
-# so it still skips `if **needed**`, `if[^1] needed`, `if [^1] needed`,
-# `if [^1]needed`, `if ~x~ needed`, `if ^x^ needed`, `if ^^x^^ needed`,
-# `if [needed](https://example.com)`, and `if [[page|needed]]`.
+# so it still skips `if **needed**`, `if[^1] needed`,
+# `if[^note] needed`, `if [^1] needed`, `if [^1]needed`, `if ~x~ needed`,
+# `if ^x^ needed`, `if ^^x^^ needed`, `if [needed](https://example.com)`,
+# and `if [[page|needed]]`.
 #
 # A footnote reference needs a label, and Harper reads `[^]` as text, so
 # `if [^] needed` fires. Harper also reads a reference as text when a
@@ -404,9 +415,14 @@ function BEGIN_CHECK() {
   footnote = "\\[\\^[^][]+\\]"
 }
 
-# Returns token i in lowercase without the punctuation around it. The
-# strip drops a straight `'` at either end of the word, as it drops a
-# double quote, so `'Run` reads as `run` and `needed'` as `needed`. No
+# Returns token i in lowercase without its footnote references and the
+# punctuation around it. Harper skips a footnote reference, so `if[^1]`
+# and `if[^note]` both read as `if`. The function drops each reference
+# before the strip. The strip alone stops at the last letter of a label
+# that holds letters, so it leaves `if[^note`.
+#
+# The strip drops a straight `'` at either end of the word, as it drops
+# a double quote, so `'Run` reads as `run` and `needed'` as `needed`. No
 # word that the check compares opens or ends with an apostrophe. A
 # curly apostrophe inside the word then becomes a straight one, so
 # `don’t` reads as `don't`. The pattern names the curly apostrophe by
@@ -414,6 +430,7 @@ function BEGIN_CHECK() {
 # locale.
 function word(i,   w) {
   w = tolower(tok[i])
+  gsub(footnote, "", w)
   gsub(/^[^a-z]+|[^a-z]+$/, "", w)
   gsub(/\342\200\231/, "'", w)
   return w
@@ -753,9 +770,11 @@ function shown(n, j,   q) {
 # `**restart if**[^1] needed`). One can also open token j
 # (`if [^1]needed`, `if [^1]**needed**`). The check drops each footnote
 # reference before it tests the marks, and drop_notes() drops the ones
-# that open token j. Harper reads a reference before a link as text, so
-# drop_notes() keeps it, and the function then reads its marks as text
-# (`if [^1][needed](https://example.com)`).
+# that open token j. The function drops the references of token i
+# before it finds the last letter there, because a label can hold
+# letters (`if[^note] needed`). Harper reads a reference before a link
+# as text, so drop_notes() keeps it, and the function then reads its
+# marks as text (`if [^1][needed](https://example.com)`).
 #
 # The function counts the brackets after a `[` before the second word to
 # find the `]` that closes it. That `[` opens a link when no `]` closes
@@ -834,8 +853,8 @@ function side_by_side(n, i, j,   dest, title, open_title, tail, word_tok, head, 
   title = "[ \t]+(\"[^\"]*\"|'[^']*'|\\([^()]*\\))"
   open_title = "[ \t]+(\"[^\"]*|'[^']*|\\([^()]*)$"
   tail = tok[i]
-  sub(/^.*[A-Za-z]/, "", tail)
   gsub(footnote, "", tail)
+  sub(/^.*[A-Za-z]/, "", tail)
   if (tail !~ ("^" emphasis "$")) {
     return 0
   }
@@ -885,7 +904,9 @@ function side_by_side(n, i, j,   dest, title, open_title, tail, word_tok, head, 
 }
 
 function sentence(n,   i, j, k, m, at, depth, w, t, limited, quoted, resume, resume_end) {
-  if (word(1) !~ imperative || tok[1] !~ /^[^A-Za-z]*[A-Z]/) {
+  t = tok[1]
+  gsub(footnote, "", t)
+  if (word(1) !~ imperative || t !~ /^[^A-Za-z]*[A-Z]/) {
     return
   }
   # A quotation that opens the sentence holds the imperative, so the

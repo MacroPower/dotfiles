@@ -277,6 +277,14 @@ Restart the **agent if[^1]** needed.
 
 Restart the **agent if**[^1] needed.
 
+Restart the agent if[^note] needed.
+
+Restart the **agent if[^note]** needed.
+
+Use this option only[^note] if the file sits in a subdirectory.
+
+[^Note]use the flag if the port is taken.
+
 Restart the agent if [^1] needed.
 
 Restart the agent if **[^1]** needed.
@@ -419,3 +427,5 @@ needed.
 [^a]: A note.
 
 [^b]: A note.
+
+[^note]: A note.

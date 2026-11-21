@@ -255,6 +255,14 @@ Restart the agent if [needed][^1].
 
 Restart the agent if [needed](<a 'T').
 
+Use the flag if[^1] the port is taken.
+
+Use the flag if[^note] the port is taken.
+
+Use[^note] the flag if the port is taken.
+
+[^note]Use the flag if the port is taken.
+
 Restart the agent if[^] needed.
 
 Restart the agent if [^] needed.
