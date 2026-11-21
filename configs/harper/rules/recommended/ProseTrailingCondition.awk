@@ -300,11 +300,11 @@
 # So an `if` before such a wikilink draws both findings (`if [[needed`
 # and `<span>x]]`, `<a@b.co> x]]`, `< 5 x]]`, `2. x]]`, `# x]]`, or
 # `> x]]` on the next line). Harper shows the `[[` as text when another
-# list marker, a code fence, or a block HTML tag such as `<div>` ends
-# the paragraph. Harper ends the paragraph at such a line only when
-# fewer than four columns indent it. So only this rule reports the `if`
-# before a wikilink whose `]]` sits on such a line (`- x]]`, `1. x]]`,
-# or `<div>x]]` on the next line).
+# list marker, a code fence, an HTML comment, or a block HTML tag such
+# as `<div>` ends the paragraph. Harper ends the paragraph at such a
+# line only when fewer than four columns indent it. So only this rule
+# reports the `if` before a wikilink whose `]]` sits on such a line
+# (`- x]]`, `1. x]]`, `<!-- c --> x]]`, or `<div>x]]` on the next line).
 #
 # lib/sentences.awk reads any other line that four or more columns
 # indent as more text of the paragraph, as Harper does, whatever list

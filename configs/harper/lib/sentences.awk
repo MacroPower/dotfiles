@@ -34,16 +34,28 @@
 # above it.
 #
 # List items, headings, footnote definitions (`[^1]: text`), table
-# rows, horizontal rules, and lines that open with an HTML tag each
-# start a new paragraph. So does a line that opens with more `>`
-# markers than the paragraph that it follows, because it opens a
-# deeper blockquote. The test for an HTML tag reads the line after
-# lib/markdown.awk blanks it. A line that opens with an inline `code`,
-# `kbd`, or `samp` element therefore continues the paragraph. A
-# horizontal rule repeats one mark, `-`, `*`, or `_`, three or more
-# times, such as `***` or `- - -`. Headings, table rows, horizontal
-# rules, and HTML lines do not hold a sentence, and the marker that
-# opens a list item is not a token.
+# rows, horizontal rules, and HTML lines each start a new paragraph. So
+# does a line that opens with more `>` markers than the paragraph that
+# it follows, because it opens a deeper blockquote. A horizontal rule
+# repeats one mark, `-`, `*`, or `_`, three or more times, such as
+# `***` or `- - -`. Headings, table rows, horizontal rules, and HTML
+# lines do not hold a sentence, and the marker that opens a list item
+# is not a token.
+#
+# An HTML line opens with an HTML tag or an HTML comment. The test for
+# an HTML tag reads the line after lib/markdown.awk blanks it. A line
+# that opens with an inline `code`, `kbd`, or `samp` element therefore
+# continues the paragraph.
+#
+# lib/markdown.awk blanks an HTML comment too, so the test for a comment
+# reads the line before lib/markdown.awk blanks it. CommonMark reads a
+# line that opens with a comment as an HTML block, and the block takes
+# in the text after the comment (`<!-- note --> more text`). Right after
+# a line of a paragraph, a comment line ends the paragraph unless the
+# library reads it as more text by its indent, as with any HTML line.
+# On any other line, the test counts a comment only when fewer than four
+# columns indent it past the margin, the `>` markers, or the text of a
+# list item that lib/markdown.awk tracks.
 #
 # CommonMark lets a block interrupt a paragraph only at an indent of
 # fewer than four columns. The library applies that limit to list
@@ -186,7 +198,9 @@
 # lib/markdown.awk blanks its code spans and URLs, with only its HTML
 # comments blanked. A line that holds only an emphasized code span, such
 # as ``**`kubectl apply`**``, therefore stays text, although its blanked
-# text holds only `*` marks.
+# text holds only `*` marks. A line that the test for a comment counts
+# is an HTML line and never an underline (`<!-- c --> ===`), because
+# CommonMark reads it as an HTML block.
 #
 # An underline must open with as many `>` markers as its paragraph.
 # In a list item, it must also reach the column where the text of its
@@ -537,7 +551,7 @@ function horizontal_rule(line) {
   return line ~ /^[ \t]*((-[ \t]*){3,}|(\*[ \t]*){3,}|(_[ \t]*){3,})$/
 }
 
-function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, carry, s, lead, marker) {
+function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, carry, s, lead, marker, html) {
   # `raw` holds the line before clean() in lib/markdown.awk blanks its
   # code spans and URLs.
   line = blank(raw, "<!--([^-]|-[^-])*-->")
@@ -560,7 +574,16 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
   # list item where `para_open` holds 0, because GFM does not open a
   # paragraph in that item.
   deep = open && para_open && raw ~ /[^ \t]/ && quote_depth() <= para_quote && marks_hold() && indent() >= 4
-  if (!deep && underline(line)) {
+  # `html` holds 1 for a line that opens with an HTML tag or an HTML
+  # comment. clean() blanks the comment, so that test reads `raw`. Right
+  # after a line of the open paragraph, the comment counts at any indent,
+  # and the tests below read `html` only when `deep` holds 0. On any
+  # other line, the comment counts only on a `quote_block` line. Such a
+  # line indents the comment fewer than four columns past the margin, the
+  # `>` markers, or the text of a list item that lib/markdown.awk tracks.
+  # An HTML line is never an underline.
+  html = text ~ /^[ \t]*</ || (raw ~ /^[ \t]*<!--/ && (quote_block || open))
+  if (!deep && !html && underline(line)) {
     # The paragraph is a heading, so its sentences drop.
     tok_n = 0
     quote_end = 0
@@ -569,7 +592,7 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
     split_line = FNR
     return
   }
-  if (FILENAME != split_file || FNR != split_line + 1 || (bare_line && !deep) || (!deep && (text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#{1,6})([ \t]|$)/ || text ~ /^[ \t]*\[\^[^] \t]+\]:/ || horizontal_rule(line))) || (FNR == para_line + 1 && quote_depth() > para_quote) || (in_table ? !index(text, "|") || quote_depth() != table_quote : !deep && text ~ /^[ \t]*</)) {
+  if (FILENAME != split_file || FNR != split_line + 1 || (bare_line && !deep) || (!deep && (text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#{1,6})([ \t]|$)/ || text ~ /^[ \t]*\[\^[^] \t]+\]:/ || horizontal_rule(line))) || (FNR == para_line + 1 && quote_depth() > para_quote) || (in_table ? !index(text, "|") || quote_depth() != table_quote : !deep && html)) {
     end_paragraph()
     in_table = 0
   } else if (!deep && index(text, "|") && text ~ /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/) {
@@ -590,7 +613,7 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
   # A line that holds only a code span or a URL passes this test. It
   # joins the paragraph, so an underline can follow it. So does a line
   # that `deep` marks.
-  if (in_table || (!deep && (bare_line || text ~ /^[ \t]*(#{1,6}([ \t]|$)|[|<])/ || horizontal_rule(line)))) {
+  if (in_table || (!deep && (bare_line || html || text ~ /^[ \t]*(#{1,6}([ \t]|$)|\|)/ || horizontal_rule(line)))) {
     # GFM reads a line that opens with `<` or `|` as more text of the
     # open paragraph unless the line opens an HTML block or a table. It
     # also reads a delimiter row and the rows below it as more text when

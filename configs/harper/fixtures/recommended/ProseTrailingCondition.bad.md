@@ -163,6 +163,41 @@ Restart the agent if [[needed `a|b`]](https://example.com).
 Restart the agent if [[needed
 |label]]. <!-- same finding -->
 
+Restart the agent if [[needed
+<!-- c --> x]]. <!-- same finding -->
+
+> Restart the agent if [[needed
+> <!-- c --> x]]. <!-- same finding -->
+
+Restart the agent if [[needed
+<!-- c --> === <!-- same finding -->
+
+Restart the agent if [[needed
+<!-- c --> --- <!-- same finding -->
+
+<!-- prettier-ignore -->
+Restart the agent <!-- same finding -->
+    <!-- c --> if the port is taken.
+
+<!-- prettier-ignore -->
+- Restart the agent <!-- same finding -->
+      <!-- c --> if the port is taken.
+
+<!-- prettier-ignore -->
+> - Restart the agent if [[needed
+>     <!-- c --> x]]. <!-- same finding -->
+
+<!-- prettier-ignore -->
+- Restart the agent <!-- same finding -->
+and the worker if [[needed
+    <!-- c --> x]]. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+<span>intro</span> <!-- same finding -->
+- Restart the agent if [[needed
+    <!-- c --> x]]. <!-- same finding -->
+<!-- prettier-ignore-end -->
+
 Restart the agent if [[needed now.
 
 Restart the agent if [[needed [x] now.

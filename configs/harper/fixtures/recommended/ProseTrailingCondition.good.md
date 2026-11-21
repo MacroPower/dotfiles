@@ -205,6 +205,22 @@ Restart the agent if needed|label.
 
 "Restart the agent if [[a," the guide says, "b|needed]]."
 
+The agent restarts on its own.
+<!-- c --> Restart the agent if the port is taken.
+
+<!-- prettier-ignore -->
+- The agent restarts on its own.
+    <!-- c --> Restart the agent if the port is taken.
+
+<!-- prettier-ignore -->
+> - The agent restarts on its own.
+>     <!-- c --> Restart the agent if the port is taken.
+
+<!-- prettier-ignore -->
+- The agent restarts on its own.
+It waits a while.
+    <!-- c --> Restart the agent if the port is taken.
+
 <!-- prettier-ignore -->
 Restart the agent if [needed](#anchor 'A Title').
 
