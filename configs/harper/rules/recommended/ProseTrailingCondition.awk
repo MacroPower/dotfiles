@@ -96,7 +96,10 @@
 # a comma must follow `exists` or `exist`, because later words can make
 # the condition longer (`if it exists in the cache`). A closing quote,
 # paren, or bracket can follow that mark, and so can emphasis (`"if they
-# exist."`).
+# exist."`). Harper skips a footnote reference, so one can sit before or
+# after the mark too (`if it exists[^1].`, `if it exists.[^1]`). A label
+# that holds a space splits the reference into two words (`exists.[^a`
+# and `b]`), so `if it exists.[^a b]` still fires.
 #
 # An `if` after `only` passes, because the front position drops the
 # restriction (`Use this option only if the file sits in a
@@ -532,6 +535,20 @@ function first_word(t,   w, len) {
 function footnote_only(i,   t) {
   t = tok[i]
   return gsub(footnote, "", t) > 0 && t ~ ("^" emphasis "$")
+}
+
+# Reports whether token i ends in a period, a colon, or a comma, after
+# which only closing quotes, parens, brackets, and emphasis can sit
+# (`exists.`, `exist."`). Harper skips a footnote reference, so the
+# function drops each one first. A reference can then sit after the mark
+# (`exists.[^1]`, `exist.**[^note]**`), and a mark inside a label does
+# not count (`exists[^a.]`). The pattern names each curly closing quote
+# by its UTF-8 bytes, so it matches under the C locale and under a UTF-8
+# locale.
+function ends_at_mark(i,   t) {
+  t = tok[i]
+  gsub(footnote, "", t)
+  return t ~ /[.:,]([")*_\]']|\342\200\235|\342\200\231)*$/
 }
 
 # Returns a letter for what sits between token p - 1 and token p. The
@@ -975,7 +992,7 @@ function sentence(n,   i, j, k, m, at, depth, w, t, limited, quoted, resume, res
       if (word(at[k + 1]) ~ /^(any|so)$/ || (j && k + j - i <= m && at[k + j - i] == j && first_word(shown(n, j)) ~ vague && side_by_side(n, i, j)) || word(at[k - 1]) ~ checking || word(at[k - 1]) ~ /^(as|even|only)$/) {
         continue
       }
-      if ((word(at[k + 1]) ~ /^(it|they)$/ && word(at[k + 2]) ~ /^exists?$/ && tok[at[k + 2]] ~ /[.:,]([")*_\]']|\342\200\235|\342\200\231)*$/) || (word(at[k + 1]) == "there" && word(at[k + 2]) == "is" && word(at[k + 3]) == "one")) {
+      if ((word(at[k + 1]) ~ /^(it|they)$/ && word(at[k + 2]) ~ /^exists?$/ && ends_at_mark(at[k + 2])) || (word(at[k + 1]) == "there" && word(at[k + 2]) == "is" && word(at[k + 3]) == "one")) {
         continue
       }
       if (limited || tok[at[k - 1]] ~ /;$/ || word(at[k - 1]) ~ /^(and|or|but)$/) {

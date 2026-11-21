@@ -56,6 +56,10 @@ The tool says "Ready." - Run the build if the tests pass.
 
 Use the flag if it exists in the cache.
 
+Use the flag if it exists[^a.] in the cache.
+
+Use the flag if it exists[^1]
+
 Restart the agent if "needed".
 
 Restart the agent if 'needed'.

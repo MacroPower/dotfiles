@@ -52,6 +52,14 @@ Set the flag only when the job runs on a shared node if the node allows it.
 
 Use the flag if it exists.
 
+Use the flag if it exists.[^1]
+
+Use the flag if it exists[^1].
+
+Use the flag if they exist.**[^note]**
+
+Use the flag if it exists.[^note]"
+
 Use this option ‘only’ if the file sits in a subdirectory.
 
 "Save changes?" appears if you close the editor with unsaved edits.
