@@ -8354,20 +8354,26 @@ class PullRequestTest(LandCase):
                 # check.
                 self.assert_failed(repo, env, landing, result)
                 self.assertEqual(self.detail(landing[1]), [named])
-                self.assertIn(
-                    f'cd {wt} && git reset --soft "$(git merge-base main HEAD)" &&'
-                    " git commit -q --no-verify -m wip. Then land again.",
-                    self.action(landing[1]),
+                msg = Path(tmp, "run", "tasks", REF, "msg.txt").resolve()
+                command = (
+                    f"cd {shlex.quote(str(wt))} && git reset --soft"
+                    ' "$(git merge-base main HEAD)" && git commit -q --no-verify'
+                    f" -F {shlex.quote(str(msg))}"
                 )
+                self.assertIn(f"{command}. Then land again.", self.action(landing[1]))
                 self.assertFalse(Path(env["RAN"]).exists())
                 self.assertEqual(self.task(tmp)["state"], "approved")
-                # One commit in place of the commits of the branch drops
-                # the message.
-                fork = git("merge-base", "main", "HEAD", cwd=wt, env=env)
-                git("reset", "-q", "--soft", fork, cwd=wt, env=env)
-                git("commit", "-q", "--no-verify", "-m", "wip", cwd=wt, env=env)
+                # The command of the action puts one commit in place of the
+                # commits of the branch, and that commit takes the message
+                # of the task.
+                message = f"{self.SUBJECT}\n\nAdd a file to the repository."
+                msg.write_text(message + "\n")
+                subprocess.run(["sh", "-c", command], cwd=tmp, env=env, check=True)
                 status, lines = self.land(repo, env)
                 self.assertEqual((status, lines[-1]), (0, self.RESULT), lines)
+                # The pull request shows that message.
+                log = git("log", "--format=%B", f"main..{HEAD}", cwd=repo, env=env)
+                self.assertEqual(log, message)
 
     def test_change_without_content_proposes_nothing(self):
         # The second commit of the task branch removes the file that the
@@ -9429,6 +9435,34 @@ class LandActionTest(LandCase):
             + STILL_OPEN
             + RUN_NEXT,
         )
+
+    def test_action_of_ref_in_commit_message_quotes_paths(self):
+        # The orchestrator runs the command of the action in a shell. The
+        # path of the worktree and the path of the message hold a space
+        # and a quote, and the command still makes the one commit.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "a b'$(c)")
+            root.mkdir()
+            wt, env = launchable_repo(root)
+            with_identity(tmp, env)
+            git("switch", "-q", "-c", f"task/{REF}", cwd=wt, env=env)
+            Path(wt, "a.txt").write_text("a\n")
+            git("add", "a.txt", cwd=wt, env=env)
+            commit = ("commit", "-q", "--no-verify")
+            git(*commit, "-m", f"wip\n\nFor {REF}.", cwd=wt, env=env)
+            git(*commit, "--allow-empty", "-m", "wip", cwd=wt, env=env)
+            msg = Path(root, "run dir", "tasks", REF, "msg.txt")
+            msg.parent.mkdir(parents=True)
+            message = "feat: add a file\n\nAdd a file to the repository."
+            msg.write_text(message + "\n")
+            facts = {**landing_facts("LOGHASREF"), "wt": str(wt), "msg": msg}
+            action = load_script().ACTIONS["LOGHASREF"](facts)
+            self.assertIn(f"cd {shlex.quote(str(wt))} && ", action)
+            self.assertIn(f" -F {shlex.quote(str(msg))}. Then land again.", action)
+            [command] = re.findall(r": (cd .*)\. Then land again\.", action)
+            subprocess.run(["sh", "-c", command], cwd=tmp, env=env, check=True)
+            log = git("log", "--format=%B", "main..HEAD", cwd=wt, env=env)
+            self.assertEqual(log, message)
 
     def test_action_of_fault_before_check(self):
         def left_file(repo, env, wt, msg):

@@ -237,8 +237,10 @@ names the branch that waits for its push.
 The push publishes each commit of the task branch with its message. So
 such a landing fails with the result LOGHASREF when a commit message of
 the branch holds a task ref, and it prints the ID and the subject of each
-such commit. The merge commit of a landing names only the base branch,
-because the name of the task branch holds the task ref.
+such commit. The action of that result replaces the commits of the
+branch with one commit whose message is msg.txt. The merge commit of a
+landing names only the base branch, because the name of the task branch
+holds the task ref.
 
 Git keeps no branch below the name of another branch. So a local branch
 or a remote branch named TYPE blocks the name TYPE/SLUG, and the landing
@@ -3588,11 +3590,15 @@ ACTIONS = {
         " commit with git add -A and git commit --no-verify, and land again."
     ),
     "EMPTY": empty_action,
+    # The landing checks msg.txt for task refs before it checks the commit
+    # messages of the branch. So the one commit takes msg.txt as its
+    # message, and the pull request shows the message of the change.
     "LOGHASREF": lambda c: (
         "The push publishes each commit of the task branch with its message."
-        " Replace the commits of the branch with one commit: cd"
-        f' {c["wt"]} && git reset --soft "$(git merge-base {c["base"]} HEAD)"'
-        " && git commit -q --no-verify -m wip. Then land again. When the remote"
+        " Replace the commits of the branch with one commit that holds the"
+        f" message of the task: cd {shlex.quote(c['wt'])} && git reset --soft"
+        f' "$(git merge-base {c["base"]} HEAD)" && git commit -q --no-verify'
+        f" -F {shlex.quote(str(c['msg']))}. Then land again. When the remote"
         " holds the branch already, set force_with_lease on the next push."
     ),
     "BRANCHTAKEN": branch_taken_action,

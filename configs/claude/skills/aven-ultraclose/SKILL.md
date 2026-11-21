@@ -1202,7 +1202,9 @@ the push updates that pull request.
 The push publishes each commit of the branch with its message. So the
 landing fails with `LOGHASREF` when one of those messages holds a task
 ref, and its output names each such commit. The `ACTION` line gives the
-command that replaces the commits of the branch with one commit. If the
+command that replaces the commits of the branch with one commit, whose
+message is `tasks/<ref>/msg.txt`. The pull request then shows that
+message, which the landing has already checked for task refs. If the
 remote holds the branch already, the next push replaces commits there,
 so set `force_with_lease` on that push.
 
