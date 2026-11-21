@@ -376,6 +376,32 @@ task.
    section says. Agents put `rules.md` above their defaults, so a rule that
    sends the fault to `notes` hides it in prose again.
 
+   Do not give agents a commit command in `rules.md` either. The Workflow
+   prompts tell each agent that commits to search the skills of its
+   session for a skill that creates a commit, such as `commit`. The agent
+   follows that skill for each commit of the task branch and for
+   `msg.txt`. An agent whose session lists no such skill commits with the
+   message `wip`. Whatever the skill says, the agent runs git in its
+   worktree, never pushes, and writes no task ref in a message. Where a
+   skill and `rules.md` disagree on the format of a message, the agent
+   follows `rules.md`.
+
+   The agent creates each commit with `git commit --no-verify`, because the
+   commit hooks of a project can run the full check on every commit. The
+   `commit` skill sends a file that holds the hunks of two changes to
+   `git-surgeon`, and `git-surgeon commit` runs the hooks. So the agent
+   uses `git-surgeon` and other tools that a skill names only to stage
+   hunks. The agent adds commits to the task branch and never
+   rewrites one, with git or with a git-surgeon command such as `fold` or
+   `squash`.
+
+   In a run with a `pr` target, each agent that commits also searches for
+   a skill that opens a pull request. It follows that skill only for the
+   title and the body in `msg.txt`. You push the branch and open the pull
+   request, as the Pull requests section says. The list of an agent leaves
+   out each skill that sets `disable-model-invocation`, such as
+   `commit-push-pr`. So the commit skill stands in for such a skill.
+
    All agents of the run share the memory and the CPUs of one machine. So
    the Workflow prompts allow each agent at most two build, test, or probe
    commands at the same time. The prompts also forbid load that an agent
