@@ -5786,23 +5786,36 @@ STILL_OPEN = (
     "The aven task is still open, because its aven command failed. Run aven"
     f" edit {REF} --status done. "
 )
-# What the ACTION line of a landing holds when git did not remove the
-# worktree of the task. The format arguments are the worktree and the
-# main checkout.
-KEPT_WORKTREE = (
-    "git did not remove the worktree {0}. Repair the cause that the error of"
-    " git names, and run git worktree remove --force {0} again in the main"
-    " checkout {1}. When git then answers that {0} is not a working tree,"
-    " delete the directory with rm -rf {0}. "
-)
-# What the ACTION line of a landing holds when git deleted its record of
-# the worktree of the task, but the directory stays. The format argument
-# is the worktree.
-KEPT_DIRECTORY = (
-    "git deleted its record of the worktree {0}, but the directory stays."
-    " Repair the cause that the error of git names, and delete the directory"
-    " with rm -rf {0}. "
-)
+
+
+def kept_worktree(wt, repo):
+    """What the ACTION line of a landing holds when git did not remove the worktree.
+
+    The arguments are the worktree of the task and the main checkout.
+    Each command of the text quotes the worktree for a shell.
+    """
+    path = shlex.quote(str(wt))
+    return (
+        f"git did not remove the worktree {wt}. Repair the cause that the error"
+        f" of git names, and run git worktree remove --force {path} again in the"
+        f" main checkout {repo}. When git then answers that {wt} is not a"
+        f" working tree, delete the directory with rm -rf {path}. "
+    )
+
+
+def kept_directory(wt):
+    """What the ACTION line of a landing holds when the worktree directory stays.
+
+    git deleted its record of the worktree of the task, but the directory
+    stays. The command of the text quotes the worktree for a shell.
+    """
+    return (
+        f"git deleted its record of the worktree {wt}, but the directory stays."
+        " Repair the cause that the error of git names, and delete the directory"
+        f" with rm -rf {shlex.quote(str(wt))}. "
+    )
+
+
 # What the ACTION line of a landing holds when git did not delete the
 # branch of the task. The format arguments are the first step of the
 # repair and the main checkout.
@@ -6638,7 +6651,7 @@ class LandTest(LandCase):
                 # the branch, so the repair of the branch removes the
                 # worktree first.
                 real = Path(repo).resolve()
-                repairs = KEPT_WORKTREE.format(wt, real) + KEPT_BRANCH.format(
+                repairs = kept_worktree(wt, real) + KEPT_BRANCH.format(
                     FIRST_REMOVE, real
                 )
                 action = self.action(lines)
@@ -6741,7 +6754,7 @@ class LandTest(LandCase):
                     f"ACTION The task landed, and the main checkout {real} then"
                     " held a change that the commit did not record. Stop landing,"
                     " find the cause, and repair the checkout before the next"
-                    f" landing. {KEPT_WORKTREE.format(wt, real)}"
+                    f" landing. {kept_worktree(wt, real)}"
                     f"{KEPT_BRANCH.format(FIRST_REMOVE, real)}Then run"
                     " ultraclose.py next, because this landing did not run it. Do"
                     " not land the task again.",
@@ -6782,7 +6795,7 @@ class LandTest(LandCase):
             )
             self.assertEqual(self.after_result(rest), [])
             # The ACTION line gives the command that deletes the directory.
-            self.assertEqual(self.action(lines), KEPT_DIRECTORY.format(wt) + RUN_NEXT)
+            self.assertEqual(self.action(lines), kept_directory(wt) + RUN_NEXT)
             self.assertEqual(self.task_states(tmp), {REF: "landed"})
             self.assertEqual(aven_edits(env)[-1], f"{REF} --status done")
             self.assertEqual(branches(repo, env), ["main"])
@@ -8456,7 +8469,7 @@ class PullRequestTest(LandCase):
             action = rest[0].removeprefix("ACTION ")
             self.assertTrue(
                 action.startswith(
-                    KEPT_WORKTREE.format(wt, Path(repo).resolve())
+                    kept_worktree(wt, Path(repo).resolve())
                     + f"Until the worktree goes, ultraclose.py merged {REF} fails,"
                     f" because the worktree has the branch {HEAD} checked out, and"
                     " git deletes no such branch. Launch one Workflow per object"
@@ -8523,7 +8536,7 @@ class PullRequestTest(LandCase):
             self.assertEqual(
                 rest,
                 [
-                    f"ACTION {KEPT_DIRECTORY.format(wt)}{RUN_NEXT} Then push the"
+                    f"ACTION {kept_directory(wt)}{RUN_NEXT} Then push the"
                     f" branch {HEAD} and open its pull request, as the Pull"
                     " requests section of SKILL.md says.",
                     self.RESULT,
@@ -9443,7 +9456,7 @@ class OtherRepoTest(LandCase):
             self.assertTrue(
                 action.startswith(
                     "ACTION "
-                    + KEPT_WORKTREE.format(wt, other)
+                    + kept_worktree(wt, other)
                     + f"Until the worktree goes, ultraclose.py merged {REF} --repo"
                     f" {OTHER_REPO} fails, because the worktree has the branch"
                     f" {self.THEIR_HEAD} checked out, and git deletes no such branch."
@@ -9628,7 +9641,9 @@ class OtherRepoTest(LandCase):
             Path(tmp, "run", "tasks", REF, f"msg-{OTHER_REPO}.txt").unlink()
 
         # name: (the init flags, the setup, the result, the text of the
-        # action, which can name the worktree of the task there)
+        # action). The text can name the worktree of the task there as
+        # {wt}. A command of the text holds the worktree as {path} and the
+        # reason of a sync as {reason}, each quoted for a shell.
         cases = {
             "a failed check": (
                 ["--repo-check", f"{OTHER_REPO}=exit 1"],
@@ -9654,14 +9669,14 @@ class OtherRepoTest(LandCase):
                 [],
                 commit_theirs("b\n", f"wip {REF}"),
                 "LOGHASREF",
-                "cd {wt} && git reset --soft",
+                "cd {path} && git reset --soft",
             ),
             "a dirty worktree": ([], dirty, "WTDIRTY", "The worktree {wt} holds changes"),
             "a missing worktree": (
                 [],
                 missing,
                 "NOWORKTREE",
-                "Then run git worktree add {wt} task/" + REF,
+                "Then run git worktree add {path} task/" + REF,
             ),
             # The repository of the run holds a commit of the task, so the
             # relaunch resumes at a review round, and the action gives a
@@ -9670,14 +9685,19 @@ class OtherRepoTest(LandCase):
                 [],
                 lost,
                 "NOWORKTREE",
-                f"Sync the task with ultraclose.py args {REF} --sync 'The landing"
-                " found neither the worktree {wt} nor the branch task/" + REF,
+                f"Sync the task with ultraclose.py args {REF} --sync {{reason}} The"
+                " relaunch",
             ),
         }
         for name, (flags, setup, result, words) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
                 repo, other, env, launch = self.start(tmp, *flags)
                 wt = launch["task"]["repos"][0]["wt"]
+                reason = (
+                    f"The landing found neither the worktree {wt} nor the branch"
+                    f" task/{REF} of the task. Make the change of the task in that"
+                    " worktree again."
+                )
                 if setup:
                     setup(tmp, other, env, wt)
                 before = git("rev-parse", "HEAD", cwd=other, env=env)
@@ -9693,7 +9713,10 @@ class OtherRepoTest(LandCase):
                     ),
                     lines,
                 )
-                self.assertIn(words.format(wt=wt), lines[-2])
+                text = words.format(
+                    wt=wt, path=shlex.quote(wt), reason=shlex.quote(reason)
+                )
+                self.assertIn(text, lines[-2])
                 self.assertNotIn(f"set {REF}", lines[-2])
                 task = self.task(tmp)
                 self.assertEqual(task["state"], "approved")
@@ -9746,9 +9769,9 @@ class OtherRepoTest(LandCase):
                     " so the change of the task there is lost. Another repository of"
                     " the task holds a commit of the task, so a plain relaunch"
                     " resumes at a review round. Sync the task with ultraclose.py"
-                    f" args {REF} --sync '{reason}' The relaunch cuts a new branch"
-                    f" task/{REF} from main there. Land the task after its Workflow"
-                    " ends approved or landable.",
+                    f" args {REF} --sync {shlex.quote(reason)} The relaunch cuts a"
+                    f" new branch task/{REF} from main there. Land the task after"
+                    " its Workflow ends approved or landable.",
                     lines[-2],
                 )
                 self.assertNotIn("at the implementer", lines[-2])
@@ -9777,7 +9800,10 @@ class OtherRepoTest(LandCase):
 
         def reset(*wts):
             """The part of the action that resets the worktrees."""
-            steps = " and ".join(f"git -C {wt} reset -q --hard main" for wt in wts)
+            steps = " and ".join(
+                shlex.join(("git", "-C", wt, "reset", "-q", "--hard", "main"))
+                for wt in wts
+            )
             return f" Otherwise run {steps}, and relaunch the task with ultraclose.py args {REF}."
 
         unchanged = (
@@ -9845,10 +9871,11 @@ class OtherRepoTest(LandCase):
 
         def found(checkout):
             """The part of the action that finds the commit in the main checkout."""
+            log = shlex.join(("git", "-C", str(checkout), "log", "--oneline", "main"))
             return (
                 f"A commit of main in the main checkout {checkout} made the change of"
-                f" the task there. Find that commit, such as with git -C {checkout} log"
-                " --oneline main -- <file> for a file of the task there."
+                f" the task there. Find that commit, such as with {log} -- <file> for"
+                " a file of the task there."
             )
 
         def rest(each=False, url=""):
@@ -10824,7 +10851,7 @@ class LandActionTest(LandCase):
         }
         self.assertEqual(
             act(facts),
-            KEPT_WORKTREE.format("WT", "REPO")
+            kept_worktree("WT", "REPO")
             + KEPT_BRANCH.format(FIRST_REMOVE, "REPO")
             + STILL_OPEN
             + RUN_NEXT,
@@ -10834,21 +10861,165 @@ class LandActionTest(LandCase):
         facts["unremoved"] = "directory"
         self.assertEqual(
             act(facts),
-            KEPT_DIRECTORY.format("WT")
+            kept_directory("WT")
             + KEPT_BRANCH.format(FIRST_REPAIR, "REPO")
             + STILL_OPEN
             + RUN_NEXT,
         )
 
+    def test_actions_quote_paths_and_branches_of_commands(self):
+        # The orchestrator runs each command of an action in a shell. Each
+        # path holds a space, and each path and each branch name holds a
+        # quote and a command substitution. Each command of the action
+        # still passes each of them as one argument.
+        wt, repo = "/a b'$(c)/t-REF", "/a b'$(c)"
+        other_wt, other = "/x y'$(z)/t-REF", "/x y'$(z)"
+        br, base, onto = "task/a'$(b)", "dev'$(d)", "trunk'$(t)"
+        kept = {
+            "name": "x",
+            "path": other,
+            "wt": other_wt,
+            "head": "feat/x",
+            "url": "",
+            "unremoved": "worktree",
+        }
+        # name: (result, facts that differ from the facts of the result,
+        # argument lists of the commands that the action gives)
+        cases = {
+            "worktree that git keeps": (
+                "OK",
+                {"unremoved": "worktree", "undeleted": True},
+                [
+                    ["git", "worktree", "remove", "--force", wt],
+                    ["rm", "-rf", wt],
+                    ["git", "branch", "-q", "-D", br],
+                ],
+            ),
+            "directory of worktree that stays": (
+                "OK",
+                {"unremoved": "directory"},
+                [["rm", "-rf", wt]],
+            ),
+            "worktree in another repository that git keeps": (
+                "PR",
+                {"others": [kept]},
+                [
+                    ["git", "worktree", "remove", "--force", other_wt],
+                    ["rm", "-rf", other_wt],
+                ],
+            ),
+            "missing worktree": (
+                "NOWORKTREE",
+                {"has_branch": True},
+                [["git", "worktree", "add", wt, br]],
+            ),
+            "change that the base branch holds": (
+                "EMPTY",
+                {"own": True},
+                [["git", "log", "--oneline", base]],
+            ),
+            "changes that base branches of several repositories hold": (
+                "EMPTY",
+                {"own": True, "owners": [[repo, base], [other, onto]]},
+                [
+                    ["git", "-C", repo, "log", "--oneline", base],
+                    ["git", "-C", other, "log", "--oneline", onto],
+                ],
+            ),
+            "branch without change of its own": (
+                "EMPTY",
+                {"own": False},
+                [["git", "-C", wt, "reset", "-q", "--hard", base]],
+            ),
+            "branches without change of their own": (
+                "EMPTY",
+                {"own": False, "resets": [[wt, base], [other_wt, onto]]},
+                [
+                    ["git", "-C", wt, "reset", "-q", "--hard", base],
+                    ["git", "-C", other_wt, "reset", "-q", "--hard", onto],
+                ],
+            ),
+            "commits of branch with task ref": (
+                "LOGHASREF",
+                {},
+                [["cd", wt], ["git", "merge-base", base, "HEAD"]],
+            ),
+        }
+        script = load_script()
+        for name, (code, more, commands) in cases.items():
+            with self.subTest(name):
+                facts = {
+                    **landing_facts(code),
+                    "wt": wt,
+                    "repo": repo,
+                    "branch": br,
+                    "base": base,
+                    "resets": None,
+                    "resumes": False,
+                    "dropped": None,
+                    **more,
+                }
+                action = script.ACTIONS[code](facts)
+                for command in commands:
+                    self.assertIn(shlex.join(command), action)
+
+    def test_action_of_missing_worktree_and_branch_quotes_reason(self):
+        # The reason of the sync names the worktree and the branch. The
+        # worktree holds a quote, and the sync command still passes the
+        # reason as one argument.
+        wt, br = "/a b'$(c)/t-REF", "task/a'$(b)"
+        facts = {
+            **landing_facts("NOWORKTREE"),
+            "wt": wt,
+            "branch": br,
+            "has_branch": False,
+            "resumes": True,
+        }
+        action = load_script().ACTIONS["NOWORKTREE"](facts)
+        [command] = re.findall(r"Sync the task with (.*) The relaunch", action)
+        *start, reason = shlex.split(command)
+        self.assertEqual(start, ["ultraclose.py", "args", REF, "--sync"])
+        self.assertTrue(
+            reason.startswith(f"The landing found neither the worktree {wt} nor"),
+            reason,
+        )
+
+    def test_action_deletes_only_directory_of_worktree(self):
+        # The path of the worktree holds a space. A shell splits an
+        # unquoted path at the space, so rm -rf then deletes the
+        # directory that the first word names. It also deletes the path
+        # that the second word names relative to the shell. The quoted
+        # command deletes only the directory of the worktree.
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = Path(tmp, "a b", f"t-{REF}")
+            first, second = Path(tmp, "a"), Path(tmp, "b", f"t-{REF}")
+            for path in (wt, first, second):
+                path.mkdir(parents=True)
+            facts = {
+                **landing_facts("OK"),
+                "next": False,
+                "unremoved": "directory",
+                "wt": str(wt),
+            }
+            action = load_script().ACTIONS["OK"](facts)
+            [command] = re.findall(r"with (rm -rf .*)\. Run ultraclose\.py", action)
+            subprocess.run(["sh", "-c", command], cwd=tmp, check=True)
+            self.assertFalse(wt.exists())
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
     def test_action_of_ref_in_commit_message_quotes_paths(self):
         # The orchestrator runs the command of the action in a shell. The
         # path of the worktree and the path of the message hold a space
-        # and a quote, and the command still makes the one commit.
+        # and a quote, and the base branch holds a quote. The command
+        # still makes the one commit.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp, "a b'$(c)")
             root.mkdir()
             wt, env = launchable_repo(root)
             with_identity(tmp, env)
+            base = "dev'$(d)"
+            git("branch", base, cwd=wt, env=env)
             git("switch", "-q", "-c", f"task/{REF}", cwd=wt, env=env)
             Path(wt, "a.txt").write_text("a\n")
             git("add", "a.txt", cwd=wt, env=env)
@@ -10859,13 +11030,18 @@ class LandActionTest(LandCase):
             msg.parent.mkdir(parents=True)
             message = "feat: add a file\n\nAdd a file to the repository."
             msg.write_text(message + "\n")
-            facts = {**landing_facts("LOGHASREF"), "wt": str(wt), "msg": msg}
+            facts = {
+                **landing_facts("LOGHASREF"),
+                "wt": str(wt),
+                "msg": msg,
+                "base": base,
+            }
             action = load_script().ACTIONS["LOGHASREF"](facts)
             self.assertIn(f"cd {shlex.quote(str(wt))} && ", action)
             self.assertIn(f" -F {shlex.quote(str(msg))}. Then land again.", action)
             [command] = re.findall(r": (cd .*)\. Then land again\.", action)
             subprocess.run(["sh", "-c", command], cwd=tmp, env=env, check=True)
-            log = git("log", "--format=%B", "main..HEAD", cwd=wt, env=env)
+            log = git("log", "--format=%B", f"{base}..HEAD", cwd=wt, env=env)
             self.assertEqual(log, message)
 
     def test_action_of_fault_before_check(self):
@@ -11191,10 +11367,11 @@ class LandActionTest(LandCase):
                 self.assertEqual(self.task_states(tmp), {REF: "approved"})
                 self.assertEqual(self.failures(tmp), {"NOWORKTREE": 1})
                 if keeps:
+                    add = shlex.join(("git", "worktree", "add", str(wt), branch))
                     self.assertEqual(
                         action,
-                        f"{lost} Then run git worktree add {wt} {branch} there,"
-                        " record the repair in notes.md, and land the task again.",
+                        f"{lost} Then run {add} there, record the repair in"
+                        " notes.md, and land the task again.",
                     )
                     git("worktree", "prune", cwd=repo, env=env)
                     git("worktree", "add", "-q", str(wt), branch, cwd=repo, env=env)
@@ -11280,13 +11457,13 @@ class LandActionTest(LandCase):
             git("add", "-A", cwd=wt, env=env)
             git("commit", "-q", "--no-verify", "-m", "wip", cwd=wt, env=env)
             git("worktree", "remove", "--force", str(wt), cwd=repo, env=env)
+            add = shlex.join(("git", "worktree", "add", str(wt), branch))
             self.assertEqual(
                 self.action(self.failed(repo, env, "NOWORKTREE")),
                 "The worktree of the task went missing after its review, and the"
                 " run records no commit of the task on main. Run git worktree"
-                f" prune in the main checkout {repo}. Then run git worktree add"
-                f" {wt} {branch} there, record the repair in notes.md, and land"
-                " the task again.",
+                f" prune in the main checkout {repo}. Then run {add} there, record"
+                " the repair in notes.md, and land the task again.",
             )
 
     def test_landing_after_landing_that_stopped_before_it_removed_worktree(self):
@@ -11377,9 +11554,10 @@ class LandActionTest(LandCase):
 
         def reset(wt):
             """The part of the action that resets the task branch."""
+            steps = shlex.join(("git", "-C", str(wt), "reset", "-q", "--hard", "main"))
             return (
-                f" Otherwise run git -C {wt} reset -q --hard main, and relaunch"
-                f" the task with ultraclose.py args {REF}."
+                f" Otherwise run {steps}, and relaunch the task with ultraclose.py"
+                f" args {REF}."
             )
 
         # The relaunch of a proposed task removes the file that the commit

@@ -554,8 +554,10 @@ the merged command.
 
 Each landing prints an ACTION line right before its RESULT line. The
 line gives the action that the caller takes for the result, with the
-command that the caller runs. The action names the cause of the result
-where the run shows it:
+command that the caller runs. The command quotes each path and each
+branch name in it for a shell, so the caller runs the command as the
+line gives it, whatever characters those names hold. The action names
+the cause of the result where the run shows it:
 
 - The run counts the failed landings of each task by cause. So the
   action changes when a task fails again for the same cause, such as a
@@ -3914,7 +3916,11 @@ def environment_failure(log):
 
 # What the land command prints in its ACTION line, by the result of the
 # landing. Each function takes the facts of one landing and returns the
-# action that the caller takes. Every landing knows these facts:
+# action that the caller takes. The caller runs each command of an
+# action in a shell. So the action quotes each path and each branch name
+# of the command with shlex.quote. A path that only the words around the
+# command name, such as the main checkout that the command runs in, stays
+# unquoted. Every landing knows these facts:
 #
 # - ref, base, branch, wt, repo: the task, the base branch, the task
 #   branch, the worktree, and the main checkout. These facts name the
@@ -3977,12 +3983,13 @@ def unremoved_repair(c, unremoved, wt, repo, head, merged):
     says. The merged argument holds the merged command that fails until
     the worktree goes, for a landing with the result PR.
     """
+    path = shlex.quote(wt)
     if unremoved == "worktree":
         text = (
             f"git did not remove the worktree {wt}. Repair the cause that the"
-            f" error of git names, and run git worktree remove --force {wt} again"
+            f" error of git names, and run git worktree remove --force {path} again"
             f" in the main checkout {repo}. When git then answers that {wt} is"
-            f" not a working tree, delete the directory with rm -rf {wt}. "
+            f" not a working tree, delete the directory with rm -rf {path}. "
         )
         if c["code"] == "PR":
             text += (
@@ -3995,7 +4002,7 @@ def unremoved_repair(c, unremoved, wt, repo, head, merged):
         return (
             f"git deleted its record of the worktree {wt}, but the directory"
             " stays. Repair the cause that the error of git names, and delete"
-            f" the directory with rm -rf {wt}. "
+            f" the directory with rm -rf {path}. "
         )
     return ""
 
@@ -4039,7 +4046,7 @@ def repairs(c):
         )
         text += (
             f"git did not delete the branch {br}. {first}, and then run git"
-            f" branch -q -D {br} in the main checkout {repo}. "
+            f" branch -q -D {shlex.quote(br)} in the main checkout {repo}. "
         )
     if c["open"]:
         text += (
@@ -4260,9 +4267,10 @@ def no_worktree_action(c):
         f" the main checkout {c['repo']}."
     )
     if c["has_branch"]:
+        add = shlex.join(("git", "worktree", "add", c["wt"], c["branch"]))
         return (
-            f"{lost} Then run git worktree add {c['wt']} {c['branch']} there,"
-            " record the repair in notes.md, and land the task again."
+            f"{lost} Then run {add} there, record the repair in notes.md, and"
+            " land the task again."
         )
     if c["resumes"]:
         # Another repository of the task holds a commit of the task, so
@@ -4273,13 +4281,14 @@ def no_worktree_action(c):
             f" {c['branch']} of the task. Make the change of the task in that"
             " worktree again."
         )
+        sync = f"ultraclose.py args {ref} --sync {shlex.quote(reason)}"
         return (
             f"{lost} The branch {c['branch']} is gone as well, so the change of the"
             f" task there is lost. Another repository of the task holds a commit"
             f" of the task, so a plain relaunch resumes at a review round. Sync"
-            f" the task with ultraclose.py args {ref} --sync '{reason}' The"
-            f" relaunch cuts a new branch {c['branch']} from {base} there. Land"
-            " the task after its Workflow ends approved or landable."
+            f" the task with {sync} The relaunch cuts a new branch {c['branch']}"
+            f" from {base} there. Land the task after its Workflow ends approved"
+            " or landable."
         )
     return (
         f"{lost} The branch {c['branch']} is gone as well, so relaunch the task"
@@ -4362,16 +4371,18 @@ def empty_action(c):
         # The commit that made the change sits on the base branch there.
         owners = c["owners"]
         if owners is None:
+            log = shlex.join(("git", "log", "--oneline", base))
             found = (
                 f"A commit of {base} made the change of the task. Find that commit,"
-                f" such as with git log --oneline {base} -- <file> for a file of the"
-                " task. When the commit comes from this task"
+                f" such as with {log} -- <file> for a file of the task. When the"
+                " commit comes from this task"
             )
         else:
             found = " ".join(
                 f"A commit of {onto} in the main checkout {path} made the change of"
-                f" the task there. Find that commit, such as with git -C {path} log"
-                f" --oneline {onto} -- <file> for a file of the task there."
+                " the task there. Find that commit, such as with"
+                f" {shlex.join(('git', '-C', path, 'log', '--oneline', onto))} --"
+                " <file> for a file of the task there."
                 for path, onto in owners
             )
             found += (
@@ -4411,7 +4422,10 @@ def empty_action(c):
     # so the relaunch then resumes at a review of an empty diff. A task of
     # several repositories resets each branch that holds such commits.
     resets = c["resets"] if several else [(c["wt"], base)]
-    steps = " and ".join(f"git -C {wt} reset -q --hard {onto}" for wt, onto in resets)
+    steps = " and ".join(
+        shlex.join(("git", "-C", wt, "reset", "-q", "--hard", onto))
+        for wt, onto in resets
+    )
     text += f" Otherwise run {steps}, and relaunch" if steps else " Otherwise relaunch"
     text += f" the task with ultraclose.py args {ref}."
     # The url fact names the pull request of the repository of the run. A
@@ -4483,9 +4497,10 @@ ACTIONS = {
         "The push publishes each commit of the task branch with its message."
         " Replace the commits of the branch with one commit that holds the"
         f" message of the task: cd {shlex.quote(c['wt'])} && git reset --soft"
-        f' "$(git merge-base {c["base"]} HEAD)" && git commit -q --no-verify'
-        f" -F {shlex.quote(str(c['msg']))}. Then land again. When the remote"
-        " holds the branch already, set force_with_lease on the next push."
+        f' "$(git merge-base {shlex.quote(c["base"])} HEAD)" && git commit -q'
+        f" --no-verify -F {shlex.quote(str(c['msg']))}. Then land again. When"
+        " the remote holds the branch already, set force_with_lease on the next"
+        " push."
     ),
     "BRANCHTAKEN": branch_taken_action,
     "DIRTY": checkout_action,
