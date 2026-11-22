@@ -4771,6 +4771,12 @@ in
               # is a bare Boolean(), so reverting means deleting this
               # line -- "0" still reads as truthy.
               CLAUDE_CODE_REPORT_FINDINGS = "1";
+              # The repos directory of this host, for the scripts of a
+              # skill. replaceVars renders only the SKILL.md of a skill
+              # that has no other file, so a script reads this variable
+              # instead. The aven-ultraclose script finds each other
+              # repository of a run there.
+              DOTFILES_REPOS_DIR = config.dotfiles.reposDir;
             };
             # Prompt cache TTL. The main conversation holds a 1-hour
             # cache so long thinking pauses and slow tool runs still hit

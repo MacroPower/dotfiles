@@ -47,12 +47,41 @@ const NOTES = `${T.dir}/notes.txt`
 // a landing that proposes a pull request renames the branch. An input
 // without the name comes from a task that starts on its first branch.
 const BRANCH = T.branch || `task/${T.ref}`
+// The other repositories that the task changes. `ultraclose.py` names
+// each of them in the repos field of the task, with its name and its main
+// checkout as repo. Each entry also holds the base branch, the worktree
+// and the branch of the task there, and its message file as msg. Its pr
+// value holds the pull request that the task records there. The field
+// leaves out each repository whose pull request merged. A task of one
+// repository has none, and its prompts hold no text about other
+// repositories.
+const OTHERS = T.repos || []
+const SEVERAL = OTHERS.length > 0
 // What the orchestrator does with the finished change. The pr field of
 // the input is true for a run whose landings propose pull requests. The
 // landing of such a run records no commit on the base branch.
-const LANDING = args.pr
-  ? `The orchestrator opens a pull request against ${base} later. The first line of the message in ${MSG} becomes its title, and the rest of the message becomes its body.`
-  : `The orchestrator squashes ${BRANCH} into one commit on ${base} later, and that commit takes the message in ${MSG}.`
+// A task of several repositories gets one pull request per repository.
+// The change of the repository of the run can depend on the change of
+// another repository, such as with a pin to a commit. A commit of the
+// task branch there reaches a remote only through the merge of its pull
+// request, because no agent pushes. So the agents keep each such pin at
+// its old value, and the pull request of the repository of the run
+// merges last. The orchestrator syncs the task after the other merges to
+// move each pin.
+const OTHER_MESSAGES = OTHERS.map(o => `, and the message of ${o.repo} goes in ${o.msg}`).join('')
+const LANDING = SEVERAL
+  ? `The orchestrator later opens one pull request in each repository whose worktree holds a change, against the base branch of that repository. The first line of the message of a repository becomes the title of its pull request, and the rest of the message becomes its body. The message of ${repo} goes in ${MSG}${OTHER_MESSAGES}. Write the message of each repository whose worktree the change touches, and of no other repository. The pull request of ${repo} merges after the pull requests of the other repositories. A commit of the branch of the task in another repository reaches a remote only through the merge of its pull request, so no pin can name that commit before the merge. Keep each pin in ${repo} to a commit of another repository of the task at its old value, and name each such pin in the notes. The orchestrator syncs the task after the pull request of that repository merges, so that the pin then names the commit of the merge.`
+  : args.pr
+    ? `The orchestrator opens a pull request against ${base} later. The first line of the message in ${MSG} becomes its title, and the rest of the message becomes its body.`
+    : `The orchestrator squashes ${BRANCH} into one commit on ${base} later, and that commit takes the message in ${MSG}.`
+// The text of each prompt that names the messages and the diffs, for a
+// task of one repository and for a task of several repositories.
+const MESSAGES = SEVERAL ? `${MSG}${OTHERS.map(o => `, ${o.msg}`).join('')}` : MSG
+const OTHER_DIFFS = OTHERS.map(o => `, \`cd ${o.wt} && git diff ${o.base}...HEAD\``).join('')
+const othersRule = SEVERAL ? `
+- The task also changes other repositories, and it has a worktree in each of them:${OTHERS.map(o => `
+  - ${o.wt}, on branch ${o.branch}, which was cut from ${o.base} of the main checkout ${o.repo}.`).join('')}
+  Each rule about the worktree ${T.wt} holds for these worktrees too, and the base branch of a repository takes the place of ${base} in its worktree. Work only in the worktrees of the task, use absolute paths under them, and start every shell command with a \`cd\` to the worktree that it acts on. Never change files or git state in the main checkout of any of these repositories. The task is one change across the worktrees, so implement, test, and commit it in each worktree that it touches. rules.md gives the rules of each repository.` : ''
 
 // One task that the orchestrator files.
 const NEW_TASK = {
@@ -191,10 +220,10 @@ const NARROW_SCHEMA = {
 // agent that reads a message about other work can abandon its assignment.
 const rules = `
 Ground rules:
-- The worktree is ${T.wt}, on branch ${BRANCH}, which was cut from ${base}. Work only there. Use absolute paths under it for every file you read or edit, and start every shell command with \`cd ${T.wt} && \`. Never change files or git state in the main checkout ${repo} or in another worktree. Other agents work in sibling worktrees at the same time.
+- The worktree is ${T.wt}, on branch ${BRANCH}, which was cut from ${base}. Work only there. Use absolute paths under it for every file you read or edit, and start every shell command with \`cd ${T.wt} && \`. Never change files or git state in the main checkout ${repo} or in another worktree. Other agents work in sibling worktrees at the same time.${othersRule}
 - The task description is ${T.dir}/task.md. Read it in full. Its line numbers come from an older commit, so they might have drifted. Other task refs that it names are separate work for other agents, so do not implement them.
 - ${run}/rules.md holds the rules of this project: how to build and test, the full check, the commit message format, and what you must not run. Read it before you start. Its rules override your defaults.
-- Never write a task ref such as ${T.ref} in code, comments, docs, or commit messages, including the message in ${MSG}.
+- Never write a task ref such as ${T.ref} in code, comments, docs, or commit messages, including ${SEVERAL ? `the messages in ${MESSAGES}` : `the message in ${MSG}`}.
 - Never run \`git stash\` in any form. All worktrees share one stash list, so a pop takes the entry of another agent. To see the old code, run \`git show ${base}:path\` or \`git diff ${base}\`. Never run \`git checkout\`, \`git restore\`, \`git reset\`, or \`git clean\` on a file that you did not change.
 - ${LANDING}
 - Other builds share this machine. Iterate with targeted builds and tests, and run the full check only when the work is otherwise finished. Never clear a shared build cache.
@@ -247,14 +276,15 @@ Stored summary and notes: a relaunch of this task starts from the summary in ${S
 // The skills that the rule covers, and the sentences of the rule that
 // differ in a run that proposes pull requests.
 const SKILL_WORK = args.pr ? 'committing or writing a pull request' : 'committing'
-const MSG_RULE = args.pr
+const MSG_RULE = (args.pr
   ? `Follow a skill that covers committing for each commit on ${BRANCH}. Write ${MSG} the way a skill that covers writing a pull request writes its title and its body, and skip each other step of that skill.`
-  : `Follow a skill that covers committing for each commit on ${BRANCH}, and write ${MSG} the way that skill writes the message of one commit that holds the whole change.`
+  : `Follow a skill that covers committing for each commit on ${BRANCH}, and write ${MSG} the way that skill writes the message of one commit that holds the whole change.`)
+  + (SEVERAL ? ' Commit in each other worktree and write the message of each other repository in the same way.' : '')
 const commitRule = `
 Commits: before you first commit or write ${MSG}, search the skills that your session lists for each skill that covers ${SKILL_WORK}. Load each skill that you find, and follow it where it applies. ${MSG_RULE} Where your session lists no such skill for a part of this work, use your own judgment for that part, such as to write a commit message that says what the commit changes. When a step of this prompt gives the command of a commit, such as a merge, run that command for that commit. These rules override each skill that you load:
-- Run each git command in the worktree, and start it with \`cd ${T.wt} && \`. A skill can show the git state of the directory where your session started, which is not the worktree. Read the state of the worktree with \`cd ${T.wt} && git status\` and \`cd ${T.wt} && git diff HEAD\`.
+- Run each git command in the worktree, and start it with \`cd ${T.wt} && \`.${SEVERAL ? ' Run each git command of another repository in the worktree of the task there, and start it with a `cd` to that worktree.' : ''} A skill can show the git state of the directory where your session started, which is not the worktree. Read the state of the worktree with \`cd ${T.wt} && git status\` and \`cd ${T.wt} && git diff HEAD\`.
 - Never let a commit run the commit hooks of the project. Create each commit with git, and pass \`--no-verify\` to each git command that creates one. When a skill commits through another tool that cannot skip the hooks, use that tool only to stage changes. On every commit, the commit hooks of a project can run the full check, or a command that rules.md forbids in a worktree. The landing runs the check on the whole change.
-- Commit on ${BRANCH}. Never create, switch, or rename a branch. Never rewrite a commit that the branch holds. Do not change the content or the message of such a commit, and do not combine, split, reorder, or drop one. Add new commits instead.
+- Commit on ${BRANCH}.${SEVERAL ? ' In each other worktree, commit on the branch that the ground rules name for it.' : ''} Never create, switch, or rename a branch. Never rewrite a commit that the branch holds. Do not change the content or the message of such a commit, and do not combine, split, reorder, or drop one. Add new commits instead.
 - Never push, and never open a pull request, even where a skill says to.${args.pr ? ' The orchestrator pushes the branch and opens the pull request.' : ''}
 - Never write a task ref in a commit message, even where a skill asks for an issue or a ticket.${args.pr ? ` The push publishes each commit of ${BRANCH} with its message.` : ''}
 - Where a skill disagrees with rules.md, follow rules.md.`
@@ -275,7 +305,7 @@ Steps:
 4. Add or adjust tests. Each new behavior needs a test that fails without the change.
 5. Update each doc comment, doc, and example that describes a behavior or an interface that you changed.
 6. Make the full check pass in the worktree.
-7. Write the commit message for the whole change to ${MSG}, as the Commits rule says.
+7. ${SEVERAL ? 'Write the message of the change in each repository that it touches to the file of that repository, as the ground rules and the Commits rule say.' : `Write the commit message for the whole change to ${MSG}, as the Commits rule says.`}
 8. Write the summary and the notes that you return. ${storeStep}
 9. Commit the work in progress.
 ${commitRule}
@@ -286,19 +316,19 @@ Stop instead of forcing the task through. If the task requires massive scope bey
 
 const reviewPrompt = (round, summary, extra) => `You are an adversarial code reviewer. A different agent implemented task ${T.ref}: "${T.title}". Find what is wrong with the change. Assume that it has defects until you have checked.
 ${rules}
-- You are read-only on the worktree. Do not edit or commit there. Run experiments in ${T.dir}/scratch/. If an experiment requires a file inside the worktree, delete that file before you return.
+- You are read-only on ${SEVERAL ? 'the worktrees of the task' : 'the worktree'}. Do not edit or commit there. Run experiments in ${T.dir}/scratch/. If an experiment requires a file inside the worktree, delete that file before you return.
 - Do not run the full check. Run targeted builds and tests.
 
 ${summary ? `The summary from the agent that last changed the work: ${summary}` : ''}
-The proposed commit message is in ${MSG}.
+${SEVERAL ? `The proposed messages are in ${MESSAGES}, one file per repository.` : `The proposed commit message is in ${MSG}.`}
 ${extra}
 Review steps:
-1. Read the task file. Then read \`cd ${T.wt} && git diff ${base}...HEAD\` and the changed code in its full context.
+1. Read the task file. Then read \`cd ${T.wt} && git diff ${base}...HEAD\`${OTHER_DIFFS} and the changed code in its full context.
 2. Check that the change resolves the task. Run the examples of the task as real code where you can. Probe the edge cases that the implementer might have skipped, such as empty input, zero values, error paths, and concurrent use.
 3. Hunt regressions: callers in other packages, behavior that the tests stopped pinning, and performance cliffs.
 4. Check the tests. Each test must fail without the change, and each new branch that a public call reaches needs a test.
 5. Check docs and conventions: doc comments and docs that the change made false, the rules of rules.md and CLAUDE.md, leftover shims, changes outside the task scope, and task refs in the tree. Search the repository for the old names and the old behavior.
-6. Check that the commit message describes the diff and claims nothing more.
+6. ${SEVERAL ? 'Check that the message of each repository describes the diff of that repository and claims nothing more.' : 'Check that the commit message describes the diff and claims nothing more.'}
 
 Report only findings that require a change, each with a location, the proof, and the exact fix. Leave out praise, restatements, and style preferences that the linters accept. Severity: blocker for wrong behavior or a broken build, major for a missing part of the task, a regression, or a missing test, and minor for a doc or convention fault. Set regression on each finding. ${REGRESSION} Set improves_base for the change as a whole.
 
@@ -354,17 +384,17 @@ ${defects.length ? defects.map((d, i) => `${i + 1}. ${d.title}\n${d.description.
 const fixPrompt = (round, findings, exact, current) => `You repair a change after an adversarial review. A different agent implemented task ${T.ref}: "${T.title}", and a reviewer reported the findings below.
 ${rules}
 
-The current commit message is in ${MSG}.
+${SEVERAL ? `The current messages are in ${MESSAGES}, one file per repository.` : `The current commit message is in ${MSG}.`}
 ${summaryNote(current)}${defectsNote(current.defects)}
 Findings:
 ${listFindings(findings)}
 
 Steps:
-1. Read the task file and \`cd ${T.wt} && git diff ${base}...HEAD\`, so that you know the change.
+1. Read the task file and \`cd ${T.wt} && git diff ${base}...HEAD\`${OTHER_DIFFS}, so that you know the change.
 2. Check each finding against the code. Fix each finding that is right, with a test where the finding shows a behavior gap. Rebut a finding only when you can prove it wrong, and give that proof in the response detail.${exact ? `
    Keep this pass minimal. Apply only the exact fix of each finding. Do not refactor, and do not widen the change.` : ''}
 3. Make the full check pass in the worktree.
-4. Update ${MSG} so that it describes the whole diff against ${base}.
+4. ${SEVERAL ? 'Update the message of each repository so that it describes the whole diff of that repository against its base branch.' : `Update ${MSG} so that it describes the whole diff against ${base}.`}
 5. Append a section to ${HISTORY}, creating the file if it does not exist. Head it \`## Round ${round}\`. List each finding with its location and problem, followed by your answer: fixed or rebutted, and the detail.
 6. Write summary and notes that describe the whole change as you leave it, not this round alone. Start from the summary and the notes so far, and check each of their statements against the worktree and the findings. Keep each statement that still holds. Correct each statement that a finding or a fix made false, and remove each caveat that a fix resolved. Add each caveat that this round found. When the summary so far is "none", write it from the diff. ${storeStep}
 7. Commit the work in progress.
@@ -383,14 +413,14 @@ Why the branch does not land:
 ${reason}
 ${rules}
 
-The current commit message is in ${MSG}.
+${SEVERAL ? `The current messages are in ${MESSAGES}, one file per repository.` : `The current commit message is in ${MSG}.`}
 ${summaryNote(current)}
 Steps:
-1. Read the task file and \`cd ${T.wt} && git diff ${base}...HEAD\`, so that you know the change. Read \`git log --stat HEAD..${base}\`, so that you know what ${base} gained.
-2. Merge ${base} into the branch: \`cd ${T.wt} && git merge --no-verify -m "Merge ${base}" ${base}\`. Keep the \`-m\` option, because the default message of a merge names the branch of this task. Resolve each conflict so that both changes keep their intent. Before you resolve a conflicted file, read the commits of ${base} that changed it (\`git log -p HEAD..${base} -- path\`). Finish the merge with \`git commit --no-verify --no-edit\`.
+1. Read the task file and \`cd ${T.wt} && git diff ${base}...HEAD\`${OTHER_DIFFS}, so that you know the change. Read \`git log --stat HEAD..${base}\`, so that you know what ${base} gained.
+2. Merge ${base} into the branch: \`cd ${T.wt} && git merge --no-verify -m "Merge ${base}" ${base}\`. Keep the \`-m\` option, because the default message of a merge names the branch of this task. Resolve each conflict so that both changes keep their intent. Before you resolve a conflicted file, read the commits of ${base} that changed it (\`git log -p HEAD..${base} -- path\`). Finish the merge with \`git commit --no-verify --no-edit\`.${OTHERS.map(o => ` Merge ${o.base} into the branch of ${o.wt} in the same way: \`cd ${o.wt} && git merge --no-verify -m "Merge ${o.base}" ${o.base}\`.`).join('')}
 3. Adapt the code, tests, and docs of this task to the interfaces and the behavior that ${base} has. Never revert or weaken what ${base} gained. Check that the docs of this task are still true beside the new commits.
 4. Make the full check pass in the worktree.
-5. Update ${MSG} only where the merge changed what the diff against ${base} does.
+5. ${SEVERAL ? 'Update the message of each repository only where the merge changed what the diff of that repository against its base branch does.' : `Update ${MSG} only where the merge changed what the diff against ${base} does.`}
 6. Write summary and notes that describe the whole change as you leave it, not the merge alone. Start from the summary and the notes so far, and check each of their statements against the worktree. Keep each statement that still holds. Correct each statement that the merge made false, and remove each caveat that the merge resolved. Add each caveat that the merge brought. When the summary so far is "none", write it from the diff. ${storeStep}
 7. Commit the work in progress.
 8. Return in report what the merge required: each conflict and each adaptation.
@@ -409,7 +439,7 @@ ${listFindings(findings)}
 ${summaryNote(current)}${defectsNote(current.defects)}
 Steps:
 1. Do not fix the findings, and do not change behavior.
-2. Narrow the claims to what the code does. Edit each doc comment, doc, and example of this change, and the commit message in ${MSG}, so that none promises a behavior that an open finding contradicts. State a known limit where a reader would otherwise expect the full behavior.
+2. Narrow the claims to what the code does. Edit each doc comment, doc, and example of this change, and ${SEVERAL ? `the messages in ${MESSAGES}` : `the commit message in ${MSG}`}, so that none promises a behavior that an open finding contradicts. State a known limit where a reader would otherwise expect the full behavior.
 3. Make the full check pass in the worktree.
 4. Write summary and notes that describe the whole change as it lands. Start from the summary and the notes so far. Remove or reword each statement that an open finding contradicts. In notes, list each claim that you removed or reworded, and keep each caveat that still holds. When the summary so far is "none", write it from the diff. ${storeStep}
 5. Commit the work in progress.
@@ -479,7 +509,12 @@ const out = { ref: T.ref, title: T.title, rounds: 0, summary: RESUME ? RESUME.su
 const LAND = `land the task: run \`ultraclose.py land ${T.ref} --next\` in a background Bash call.`
 const NOTE_COMMAND = `ultraclose.py set ${T.ref} noted --note '<the reason and the open findings>'`
 // The text that notes the task, after a lead that says when to note it.
-const noteAfter = lead => `${lead}: run \`${NOTE_COMMAND}\`. The command adds the note and the branch of the task to the aven task, sets the aven task to todo, and keeps the branch. Describe the findings in the note, and do not count the review rounds there. Do not force the task through.${T.pr ? ` Leave the pull request ${T.pr} open for the user, and record it in notes.md.` : ''}`
+// The pull requests that the task records, in the repository of the run
+// first.
+const PRS = [T.pr, ...OTHERS.map(o => o.pr)].filter(Boolean)
+const PR_TEXT = PRS.length > 1 ? `pull requests ${PRS.join(' and ')}` : `pull request ${PRS[0]}`
+const PR_IT = PRS.length > 1 ? 'them' : 'it'
+const noteAfter = lead => `${lead}: run \`${NOTE_COMMAND}\`. The command adds the note and the branch of the task to the aven task, sets the aven task to todo, and keeps the branch. Describe the findings in the note, and do not count the review rounds there. Do not force the task through.${PRS.length ? ` Leave the ${PR_TEXT} open for the user, and record ${PR_IT} in notes.md.` : ''}`
 const NOTE = noteAfter('Note the task')
 const CLOSE = `close the task: run \`ultraclose.py set ${T.ref} closed --note '<the evidence>'\` with the evidence that the notes give. The command adds the note to the aven task and sets the aven task to done.`
 // A review that covered only the final fixes. The orchestrator reports
@@ -489,7 +524,7 @@ const sentence = text => text[0].toUpperCase() + text.slice(1)
 const ACTIONS = {
   approved: sentence(LAND),
   landable: `File each entry of followups as an aven task with \`aven add\`, and link each new task with \`aven related add <new-ref> ${T.ref}\`. Then ${LAND}`,
-  obsolete: T.pr ? `Close the pull request ${T.pr} with mcp__github__update_pull_request when it is open, and record it in notes.md. Then ${CLOSE}` : sentence(CLOSE),
+  obsolete: PRS.length ? `Close the ${PR_TEXT} with mcp__github__update_pull_request when ${PRS.length > 1 ? 'each is' : 'it is'} open, and record ${PR_IT} in notes.md. Then ${CLOSE}` : sentence(CLOSE),
   abandoned: NOTE,
   rejected: NOTE,
   unconverged: NOTE,

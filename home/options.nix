@@ -152,7 +152,10 @@ in
         that imports home/claude.nix, the Claude Code sandbox and the
         git MCP server allow the directory, workmux mounts it into the
         Lima sandbox, and the wm-spawn skill dispatches agents to the
-        repositories in it. A Lima guest sees the directory of the macOS
+        repositories in it. The DOTFILES_REPOS_DIR variable of Claude
+        Code names it for the scripts of skills, such as the
+        aven-ultraclose script that finds the other repositories of a
+        run there. A Lima guest sees the directory of the macOS
         host at its macOS path, so the guest sets that path. The macOS
         hosts share one terrarium image. So each macOS host that enables
         dotfiles.claude.lima must set the path that

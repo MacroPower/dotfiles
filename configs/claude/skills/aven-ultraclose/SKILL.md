@@ -283,6 +283,63 @@ until the pull request merges. The Pull requests section gives your
 steps after that result, and it says which tasks wait for a proposed
 task.
 
+## Other repositories
+
+A run with a `pr` target can also change other repositories. Each task
+that needs a change in another repository gets a worktree and a branch
+there too. Its agents implement and review the change in every worktree
+as one change, and its landing proposes one pull request in each
+repository that the task changes.
+
+Runs with a branch target take no other repository, because no landing
+commits a task on two base branches at once. A pin to a commit of
+another repository, such as a flake input, also needs the commit that the
+merge of a pull request makes there. So leave the row of each task that
+needs another repository out of each triage of such a run, and record
+the task with that reason in `notes.md`. Tell the user that a run with a
+`pr` target can close the task.
+
+The aven description of a task names each other repository that the
+task changes, such as by its GitHub name `MacroPower/x`. Add each such
+repository to the run with `--repo <name>=<base>` on `init` or `config`:
+
+- `<name>` is the directory of the main checkout of the repository in the
+  repos directory of the host, which the `DOTFILES_REPOS_DIR` variable
+  names, such as `x` for `MacroPower/x`.
+- `<base>` is the branch that each task of the repository starts from,
+  and that its pull requests go to. Pass the default branch of the
+  repository.
+
+Pass `--repo-check <name>='<command>'` with the full check of the
+repository, which each landing runs in the worktree of the task there.
+`config --no-repo <name>` removes a repository that no unfinished or
+noted task changes. `ultraclose.py status` prints one `repo` line per
+other repository, with its main checkout, its base branch, and its check.
+Like `init` for the base branch of a `pr` target, the `--repo` flag
+refuses a base branch that holds a commit that its upstream branch lacks.
+
+The `repos` field of a triage row names each other repository that the
+task changes, as step 6 of the Setup section says. The worktree of the
+task in another repository is `.claude/worktrees/t-<ref>` of its main
+checkout, on the branch `task/<ref>`. The message of each other
+repository goes in `tasks/<ref>/msg-<name>.txt` of the run directory,
+beside the `msg.txt` of the repository of the run. The Workflow input
+names each worktree and each message file, so the agents find them.
+
+The landing proposes each repository whose branch holds a change, and
+the Pull requests section says how you push and open each pull request.
+The pull request of the repository of the run merges last. Its change can
+depend on the change of another repository, such as with a pin to a
+commit there. The worktree and the branch of the task stay in each
+repository in which no landing proposed the task, until the task lands.
+
+A commit of the task branch in another repository reaches a remote only
+through the merge of its pull request, because no agent pushes. So no pin
+can name that commit before the merge. The agents keep each such pin at
+its old value and name it in their notes. After the last other pull
+request merges, you sync the task so that each pin names a commit that
+holds the merge, as the Pull requests section says.
+
 ## Setup
 
 1. Run `ultraclose.py status`. The script decides whether this session
@@ -342,7 +399,8 @@ task.
    `git log -15`. Find the build caches that those commands fill, and the
    file system that holds each cache. Some caches evict their content when
    the free space of the disk falls to a threshold, so find that threshold
-   for each cache.
+   for each cache. Do the same for each other repository that a task of the
+   queue changes, as the Other repositories section says.
 4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`.
    `init` prints the run directory in its `run=` line, and so does
    `status`. Each run takes a directory of its own. When
@@ -437,6 +495,12 @@ task.
    the commit hook already runs that check. Always pass the full check for
    a `pr` target, because its landings run no commit hook.
 
+   With a `pr` target, pass `--repo <name>=<base>` and
+   `--repo-check <name>='<command>'` for each other repository that a task
+   of the queue changes, as the Other repositories section says. A
+   repository that only a later task needs joins the run with
+   `ultraclose.py config` and the same flags.
+
    Pass `--health '<command>'` when the check or a commit hook requires a
    service, such as Docker. The health command is a fast command that
    fails when the service is down, such as `docker version`.
@@ -490,6 +554,8 @@ task.
    - Commands that agents must not run. A `dagger call` from a linked
      worktree has emptied the index of the main checkout, so forbid Dagger
      in worktrees unless the project requires it.
+   - A section for each other repository of the run, named after it, with
+     the rules of this list for that repository.
    - A private lint cache for each worktree, when the project lints with
      golangci-lint. With the cache that all checkouts share, golangci-lint
      2.12 reports the issues of a worktree that a landing removed, under
@@ -558,6 +624,15 @@ task.
    Load the list with `ultraclose.py triage <file>`. The same command adds
    tasks later.
 
+   For a task that changes another repository, add the `repos` field to
+   its row. The field maps the name of each such repository to the files
+   that the task edits there, such as `"repos": {"x": ["cmd/main.go"]}`,
+   and each path is relative to that repository. `triage` refuses a
+   repository that the run does not hold. The scheduler locks the files of
+   each repository apart, so one path in two repositories gives two files.
+   A row of a task that already has its branch in a repository keeps that
+   repository.
+
    `after` names the tasks that must land first. `triage` reads the
    dependencies of each task from aven, and adds each open dependency to
    the `after` of the task. So write into `after` only the order that aven
@@ -604,6 +679,11 @@ dimension replace the filters of that dimension, as the Filters section
 says. `config` prints the warning of `triage` for each glob that its
 `--shared` flag adds and that matches no file of any task.
 
+`config` also takes the `--repo` and `--repo-check` flags of `init`, and
+its `--no-repo <name>` flag removes another repository, as the Other
+repositories section says. The `repo` lines of `status` print the other
+repositories of the run.
+
 `config` has no flag for the target, because each task of the run starts
 from the base branch of that target.
 
@@ -629,6 +709,9 @@ prints those tasks, as the Scope section says. Fit the run in these ways:
   of that dimension with `ultraclose.py config`, as the Filters section
   says. The run keeps the filters of each dimension that the arguments do
   not name.
+- If one of those tasks changes another repository that the run does not
+  hold, add that repository with `ultraclose.py config --repo`, and add
+  its rules to `rules.md`, as the Other repositories section says.
 - When you change the limit, or when those tasks run a heavier test or
   build than the tasks of the run, compare the memory again, as the Setup
   section says for `rules.md`. Then fit the rule in `rules.md` that limits
@@ -731,6 +814,10 @@ for a task that is open again:
   still be open. So `init` records the branch and the pull request of
   each such task in the new run.
 
+A task that changes other repositories can leave each of these in each of
+those repositories too. The line of such work names the main checkout of
+its repository.
+
 The branch of an earlier run can sit far behind the base branch. Every
 landing carries the whole branch, as one squashed commit or as the commits
 of a pull request. So a task that starts on that branch lands the commits
@@ -768,6 +855,10 @@ the state. Take those steps, and follow these rules:
   branch, as step 2 of the merge steps of the Pull requests section
   says. A merged task does not need a new attempt, so the command then
   closes the task and sets the aven task to `done`.
+- For the branch of a pull request in another repository, pass
+  `--pr <name>=<state>` with the name of that repository. Pass one `--pr`
+  flag for each such branch. The command closes the task only when every
+  pull request of the task has merged.
 
 `ultraclose.py set <ref> noted` removes the clean worktree of the task.
 `set <ref> closed` removes that worktree and then deletes the branch.
@@ -776,6 +867,9 @@ Neither command deletes a branch whose worktree is gone or dirty.
 branch only when the worktree is gone and the base branch holds the
 change of the branch. Each of these commands removes only the work of the
 run.
+
+Each `set` command also acts on the worktree and the branch of the task
+in each other repository that the task changes, in the same way.
 
 For a task with leftover work, each `set` command keeps the worktree and
 the branch. When the worktree exists, the command prints a line that names
@@ -993,6 +1087,43 @@ sets the rest of the landing:
   You push the branch and open the pull request, as the Pull requests
   section says.
 
+A landing of a task that changes other repositories takes each
+repository whose branch holds a change of its own, and each repository
+that an earlier landing proposed. It merges the base branch into the
+worktree of each of them, and it proposes each of them whose branch then
+holds a change. It runs the check of each repository that it proposes,
+and the `TIMES` line gives the sum of those checks. The `ACTION` line of
+a failure in another repository opens with the name of that repository,
+its worktree, and its branch. The log of a step there adds the name of
+the repository, such as `logs/<ref>.x.check.log`.
+
+A branch of the task can lose its change, such as when its pull request
+merged before the run recorded the merge, or when a fix reverted the
+change there. What the landing then does depends on the repositories
+whose branch lost its change:
+
+- **Another repository that an earlier landing proposed:** the landing
+  ends with `EMPTY`, and its `ACTION` line names that repository and its
+  pull request. The Pull requests section gives the steps that record
+  the merge there.
+- **The repository of the run, when another repository still holds a
+  change:** the landing proposes the other repository and removes the
+  worktree of the task in the repository of the run. Its `RESULT` line
+  then names no branch, and its `ACTION` line names the pull request of
+  the repository of the run.
+- **Every repository of the task:** the landing ends with `EMPTY`. A
+  commit of a base branch can make the change of the task. The `ACTION`
+  line then names each repository whose branch held a change of its own,
+  with a `git log` command that finds that commit there. Otherwise the
+  `ACTION` line gives a `git reset` of each worktree whose branch holds
+  commits before the relaunch. `args` starts a task at the implementer
+  only when no branch of the task holds a commit that its base branch
+  lacks. Commits that cancel each other out still count.
+
+The landing reads the message of a repository only when its branch holds
+a change of its own. So a fix that reverts the change of a repository
+can remove its message.
+
 Each landing of a run with a health command runs that command before the
 merge, and again after a failed check or a failed commit.
 
@@ -1010,6 +1141,7 @@ The command ends its output with these lines, in this order:
 | The failing output | The last lines of the output of a failed step. The run directory holds the full output of each step in `logs/<ref>.<step>.log`. |
 | `TIMES` | How long the check and the commit took, such as `TIMES check=1m22s (median 1m24s) commit=11m52s (median 18s)`. |
 | `SLOW` | One line for each step that took more than twice its median, and more than a minute longer than its median. |
+| `REPO` | One line per other repository in which a landing with the result `PR` proposed the task, as the Pull requests section says. |
 | `ACTION` | The action that you take. |
 | `RESULT` | The result. It is the last line of a failed landing. |
 | The list of input objects | The tasks that `next` started after an `OK` or a `PR` result of a landing with `--next`. The list is empty when no task starts. |
@@ -1208,6 +1340,35 @@ message, which the landing has already checked for task refs. If the
 remote holds the branch already, the next push replaces commits there,
 so set `force_with_lease` on that push.
 
+A landing of a task that changes other repositories prints one `REPO`
+line per other repository in which it proposed the task, before its
+`ACTION` line:
+
+```text
+REPO x head=fix/retry-a-timeout base=main path=/home/me/repos/x
+ACTION ...
+RESULT APP-7KQ9 PR head=fix/retry-a-timeout base=master
+```
+
+The `RESULT` line names no `head` when the task holds no change in the
+repository of the run. Take the steps for each `PR` result for each
+`REPO` line first, and for the `RESULT` line last. For a `REPO` line,
+change the steps in these ways:
+
+- Pass the main checkout that `path` names as the `repo` of the push, and
+  take `owner` and `repo` of the pull request from the URL of its remote.
+- Take the title and the body from `tasks/<ref>/msg-<name>.txt`, where
+  `<name>` is the name that opens the line.
+- Record the pull request with `ultraclose.py opened <ref> <url> --repo <name>`.
+- A line that ends with `pr=<url>` names a recorded pull request, as the
+  `RESULT` line does.
+
+The pull request of the repository of the run merges after the pull
+requests of the other repositories, because its change can depend on
+theirs. So end its body with a line that names each of those pull
+requests, such as `Depends on <url>.`, and tell the user to merge them
+first.
+
 Every proposed task waits for its pull request to merge, and the run
 holds back the tasks that the merge affects:
 
@@ -1217,10 +1378,16 @@ holds back the tasks that the merge affects:
   the file.
 - Each task that comes after the proposed task keeps waiting, so it
   starts from a base branch that holds the change.
-- `ultraclose.py status` prints one `proposed` line per task. The line
-  names the pull request that waits for its merge, or the branch that
-  waits for its push. Each landing sets the line to the branch, also
-  after a relaunch, and `opened` sets it to the pull request.
+- `ultraclose.py status` prints one `proposed` line per task and
+  repository. The line names the pull request that waits for its merge,
+  or the branch that waits for its push. Each landing sets the line to the
+  branch, also after a relaunch, and `opened` sets it to the pull request.
+  The line of a branch in the repository of the run that lost its change
+  says that the branch holds no change, as the Landing section says. It
+  also names the pull request of that branch, which you close when it is
+  open.
+  The line of another repository names that repository after the ref,
+  such as `proposed APP-7KQ9 in x`.
 
 When a pull request has merged, land its task:
 
@@ -1250,8 +1417,9 @@ its error gives:
 - **The worktree of the task keeps the branch:** the landing that
   proposed the task did not remove the worktree. git deletes no branch
   that a worktree has checked out. Remove the worktree with the
-  `git worktree remove --force <worktree>` command that the error gives.
-  Then run `ultraclose.py merged <ref>` again.
+  `git worktree remove --force <worktree>` command that the error gives,
+  in the main checkout that the error names. Then run
+  `ultraclose.py merged <ref>` again.
 
   When git fails to remove the worktree, repair the cause that its error
   names, and run the git command again. When git then answers that the
@@ -1262,6 +1430,70 @@ its error gives:
   branch. The main checkout can have the branch checked out after a
   review. Ask the user to check out another branch there, and run the
   command again.
+
+When the pull request of another repository has merged, take the same
+steps with these changes:
+
+- In step 2, bring the merge into the local base branch of that
+  repository, in its main checkout.
+- In step 3, run `ultraclose.py merged <ref> --repo <name>`. The command
+  deletes the branch of the task there. The task lands when every pull
+  request of the task has merged. `merged <ref>` without `--repo` fails
+  until each other pull request of the task has merged.
+- When `merged <ref> --repo <name>` fails, run each git command of the
+  repair in the main checkout of that repository, which the error names.
+  git acts only on the worktrees of the checkout that it runs in. So in
+  the main checkout of the run, `git worktree remove` answers that the
+  worktree is not a working tree. The other repository still lists the
+  worktree, and the worktree keeps the branch there. Delete the directory
+  with `rm -rf <worktree>` only after git gives that answer in the main
+  checkout of that repository.
+- After the merge of the last other pull request, the command says how
+  to sync the task for a pin to a commit that holds the merge. A flake
+  input in the repository of the run is such a pin. The command names
+  each merged repository and the commit of its base branch when the run
+  recorded the merge. The agents kept each such pin at its old value and
+  named it in their notes. For such a pin, sync the task with each merged
+  commit and each pin, and land the task again after its Workflow ends
+  `approved` or `landable`. The relaunch has no worktree in a merged
+  repository.
+- When the pull request of the repository of the run still waits, the
+  `PR` result of the landing after the sync ends with `pr=<url>`. When
+  the task proposed no pull request in the repository of the run, the
+  merge lands the task. The sync then starts the landed task again, and
+  its landing proposes the pin.
+
+The landing of a relaunch can end with `EMPTY` in another repository, as
+the Landing section says. Its `ACTION` line names that repository and
+its pull request, and the task stays `approved`. Take these steps:
+
+1. Read that pull request, and close it when it is open.
+2. When it merged, bring the merge into the base branch of that
+   repository.
+3. Run `ultraclose.py merged <ref> --repo <name>`, which takes the
+   approved task. The command removes the clean worktree of the task
+   there, deletes the branch, and keeps the task `approved`.
+4. Land the task again, or sync it first for a pin, as the command says.
+   The command gives the sync only when no other pull request of the
+   task waits for its merge.
+
+When the task then holds no change in the repository of the run, the
+landing ends with `EMPTY`. Its `ACTION` line then says to set the task
+to `landed`.
+
+`merged <ref> --repo <name>` refuses an approved task while a landing
+holds the landing lock. A landing of the task might wait for that lock,
+and the landing reads the worktree that the command removes. Run the
+command again after the landing ends. The land command refuses every
+proposed task, so `merged` takes a proposed task at any time.
+
+The landing of a relaunch can also find no change in the repository of
+the run, and a change in another repository, as the Landing section
+says. Its `ACTION` line names the pull request of the repository of the
+run. Read that pull request, close it when it is open, and push nothing
+to it. Take the steps for each `REPO` line. After you record the merge
+of each other pull request, run `ultraclose.py merged <ref>`, which
+lands the task. Do not set the task to `landed` or `closed` before then.
 
 Some pull requests end without a merge, or stop merging. Act on each of
 these events as this table says:
@@ -1378,7 +1610,18 @@ When the message was about the task, take the action of the result.
   with `pr=<url>`. For a line without a pull request, the earlier session
   might have opened one before it ended. If the pull request of that
   branch is open already, record it with `ultraclose.py opened <ref> <url>`
-  in place of steps 2 to 4.
+  in place of steps 2 to 4. A line that names another repository after the
+  ref stands for a `REPO` line of that repository, and `opened` then takes
+  `--repo <name>`.
+
+  A `proposed` line that says that the branch holds no change stands for
+  the pull request of the repository of the run that a landing left out,
+  as the Pull requests section says. The line names that pull request, or
+  the branch when the task records no pull request. Close that pull
+  request, or an open pull request of that branch, when it is open. Push
+  nothing to the branch.
+  After you record the merge of each other pull request, run
+  `ultraclose.py merged <ref>`, which lands the task.
 
 ## Notes
 
@@ -1408,7 +1651,8 @@ End with a report that lists:
 
 - The landed tasks, each with its commit. For a run with a `pr` target,
   list each landed task with the pull request that `state.json` records
-  for it.
+  for it. Also list the pull request that the `repos` field of the task
+  records for each other repository.
 - The proposed tasks of a run that stops before its end, each with its
   pull request.
 - The noted tasks, each with its reason and its branch. Also give the

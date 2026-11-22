@@ -9121,6 +9121,1410 @@ class PullRequestTest(LandCase):
             self.assertNotIn("pull request", message)
 
 
+# The variable that names the repos directory of the host, and the name of
+# the other repository that the tests of OtherRepoTest create there.
+REPOS_DIR = "DOTFILES_REPOS_DIR"
+OTHER_REPO = "x"
+
+
+def other_repo(tmp, env, base="main"):
+    """Create the other repository OTHER_REPO in a repos directory of the environment.
+
+    The repository has one commit on its base branch. The REPOS_DIR
+    variable of the environment names the repos directory. Return the
+    main checkout of the repository by its real path.
+    """
+    repos = Path(tmp, "repos")
+    repos.mkdir(exist_ok=True)
+    path = repos / OTHER_REPO
+    git("init", "-q", "-b", base, str(path), cwd=tmp, env=env)
+    git(*IDENTITY, "commit", "-q", "--allow-empty", "-m", "init", cwd=path, env=env)
+    env[REPOS_DIR] = str(repos)
+    return path.resolve()
+
+
+class OtherRepoTest(LandCase):
+    """A run with the target pr can change other repositories.
+
+    Each task that changes another repository has a worktree and a
+    branch there. Its landing proposes one pull request in each
+    repository whose branch holds a change, and the task waits as
+    proposed until every pull request merged. The pull request of the
+    repository of the run merges last.
+    """
+
+    # The file that the task of start changes in the other repository.
+    THEIRS = "b.txt"
+
+    def make_run(self, tmp, *flags):
+        """Start a run with the target pr and the other repository OTHER_REPO.
+
+        The flags go to init. Return the repository of the run, the main
+        checkout of the other repository, and the environment.
+        """
+        repo, run = Path(tmp, "repo").resolve(), Path(tmp, "run").resolve()
+        config = Path(tmp, "gitconfig")
+        config.write_text("[user]\n\tname = test\n\temail = test@example.com\n")
+        env = clean_env()
+        stub_aven(tmp, env)
+        env["GIT_CONFIG_GLOBAL"] = str(config)
+        git("init", "-q", "-b", "main", str(repo), cwd=tmp, env=env)
+        git("commit", "-q", "--allow-empty", "-m", "init", cwd=repo, env=env)
+        other = other_repo(tmp, env)
+        ultraclose(
+            "init",
+            "--run",
+            str(run),
+            "--target",
+            "pr",
+            "--repo",
+            f"{OTHER_REPO}=main",
+            *flags,
+            cwd=repo,
+            env=env,
+        )
+        return repo, other, env
+
+    def start(self, tmp, *flags, own=True, theirs=True):
+        """Start a run whose task changes the other repository too.
+
+        The flags go to init. The own argument says whether the task
+        commits a change in the repository of the run, and the theirs
+        argument says whether it commits one in the other repository. The
+        task directory holds the message of each repository that the task
+        changes. Return the repository, the other repository, the
+        environment, and the Workflow input of the task.
+        """
+        repo, other, env = self.make_run(tmp, *flags)
+        triage(tmp, repo, env, {"ref": REF, "repos": {OTHER_REPO: [self.THEIRS]}})
+        launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
+        task = launch["task"]
+        [theirs_task] = task["repos"]
+        for wanted, wt, file in (
+            (own, task["wt"], self.FILE),
+            (theirs, theirs_task["wt"], self.THEIRS),
+        ):
+            if wanted:
+                Path(wt, file).write_text("a\n")
+                git("add", "-A", cwd=wt, env=env)
+                git("commit", "-q", "--no-verify", "-m", "wip", cwd=wt, env=env)
+        if own:
+            Path(task["dir"], "msg.txt").write_text(self.SUBJECT + "\n")
+        if theirs:
+            Path(theirs_task["msg"]).write_text("fix: add the other file\n")
+        return repo, other, env, launch
+
+    def task(self, tmp):
+        """The task of start, as the state of the run holds it."""
+        return state_of(Path(tmp, "run"))["tasks"][REF]
+
+    def test_init_records_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env = self.make_run(tmp, "--repo-check", f"{OTHER_REPO}=make")
+            config = state_of(Path(tmp, "run"))["config"]
+            self.assertEqual(
+                config["repos"], {OTHER_REPO: {"path": str(other), "base": "main", "check": "make"}}
+            )
+            # git of the other repository ignores the worktrees of the tasks.
+            ignored = ("check-ignore", "-q", ".claude/worktrees/x")
+            git(*ignored, cwd=other, env=env)
+            lines = ultraclose("status", cwd=repo, env=env).splitlines()
+            self.assertIn(f"repo {OTHER_REPO}: {other}, base main, check make", lines)
+
+    def test_run_without_other_repository_prints_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+            self.assertEqual(status_values(repo, env, "repos"), ["none"])
+
+    def test_branch_target_takes_no_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            other_repo(tmp, env)
+            run = str(Path(tmp, "run"))
+            message = refused(
+                "init", "--run", run, "--repo", f"{OTHER_REPO}=main", cwd=repo, env=env
+            )
+            self.assertIn("takes no other repository", message)
+            self.assertIn("the target pr or pr:BRANCH", " ".join(message.split()))
+            self.assertFalse(Path(run, "state.json").exists())
+            # A triage row of such a run names no other repository.
+            ultraclose("init", "--run", run, cwd=repo, env=env)
+            file = Path(tmp, "rows.json")
+            file.write_text(json.dumps([{"ref": REF, "title": "t", "files": [], "repos": {OTHER_REPO: []}}]))
+            message = refused("triage", str(file), cwd=repo, env=env)
+            self.assertIn(f"the run holds no repository {OTHER_REPO}", message)
+            self.assertIn("takes no other repository", message)
+
+    def test_repo_flag_refuses_what_is_no_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env = self.make_run(tmp)
+            Path(tmp, "repos", "plain").mkdir()
+            linked = ("worktree", "add", "-q", "-b", "side", str(Path(tmp, "repos", "linked")))
+            git(*linked, cwd=other, env=env)
+            # name: (the environment, the flag, the words of the refusal)
+            cases = {
+                "no repos directory": (
+                    {k: v for k, v in env.items() if k != REPOS_DIR},
+                    f"{OTHER_REPO}=main",
+                    f"{REPOS_DIR} names no repos directory",
+                ),
+                "a missing directory": (env, "y=main", "holds no directory y"),
+                "a directory without git": (env, "plain=main", "is not a git repository"),
+                "a missing base branch": (env, f"{OTHER_REPO}=dev", "has no branch dev"),
+                "a linked worktree": (
+                    env,
+                    "linked=main",
+                    f"is not the main checkout of its repository, which is {other}",
+                ),
+            }
+            for name, (environment, flag, words) in cases.items():
+                with self.subTest(name):
+                    message = refused("config", "--repo", flag, cwd=repo, env=environment)
+                    self.assertIn(words, " ".join(message.split()))
+            # The repository of the run is no other repository.
+            Path(tmp, "repos", "repo").symlink_to(repo)
+            message = refused("config", "--repo", "repo=main", cwd=repo, env=env)
+            self.assertIn("holds the repository of the run", message)
+
+    def test_flags_refuse_malformed_repository_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env = self.make_run(tmp)
+            before = state_of(Path(tmp, "run"))
+            name = "give the name of a directory in the repos directory in place of"
+            state = "give STATE or NAME=STATE in place of"
+            # (the arguments, the words of the refusal)
+            cases = [
+                (("config", "--repo", OTHER_REPO), f"give NAME=BASE, such as x=main, in place of '{OTHER_REPO}'"),
+                (("config", "--repo", f"{OTHER_REPO}= "), f"give NAME=BASE, such as x=main, in place of '{OTHER_REPO}= '"),
+                (("config", "--repo", "../x=main"), f"{name} '../x'"),
+                (("config", "--repo-check", OTHER_REPO), f"give NAME=CMD, such as x='make check', in place of '{OTHER_REPO}'"),
+                (("config", "--repo-check", "=make"), f"{name} ''"),
+                (("config", "--no-repo", ".x"), f"{name} '.x'"),
+                (("opened", REF, URL, "--repo", "x/y"), f"{name} 'x/y'"),
+                (("merged", REF, "--repo", "_x"), f"{name} '_x'"),
+                (("leftover", REF, "--pr", f"{OTHER_REPO}=bogus"), f"{state} '{OTHER_REPO}=bogus'"),
+                (("leftover", REF, "--pr", "=merged"), f"{state} '=merged'"),
+                (("leftover", REF, "--pr", "../x=merged"), f"{name} '../x'"),
+            ]
+            for args, words in cases:
+                with self.subTest(" ".join(args)):
+                    message = refused(*args, cwd=repo, env=env)
+                    self.assertIn(words, " ".join(message.split()))
+            self.assertEqual(state_of(Path(tmp, "run")), before)
+
+    def test_config_keeps_repository_that_task_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp)
+            message = refused("config", "--no-repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertIn(f"the tasks {REF} change the repository {OTHER_REPO}", message)
+            message = refused("config", "--no-repo", "y", cwd=repo, env=env)
+            self.assertIn(f"the run holds no repository y. It holds {OTHER_REPO}", message)
+            ultraclose(*set_args(REF, "closed"), cwd=repo, env=env)
+            ultraclose("config", "--no-repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertEqual(state_of(Path(tmp, "run"))["config"]["repos"], {})
+            message = refused("config", "--no-repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertIn(f"the run holds no repository {OTHER_REPO}. It holds none", message)
+
+    def test_config_keeps_base_branch_that_task_starts_from(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp)
+            git("branch", "dev", cwd=other, env=env)
+            message = refused("config", "--repo", f"{OTHER_REPO}=dev", cwd=repo, env=env)
+            self.assertIn(
+                f"the tasks {REF} start from the base branch main of {OTHER_REPO}, so"
+                " the run keeps that base branch",
+                message,
+            )
+            self.assertEqual(state_of(Path(tmp, "run"))["config"]["repos"][OTHER_REPO]["base"], "main")
+            # The run changes the base branch when no task starts from it.
+            ultraclose(*set_args(REF, "closed"), cwd=repo, env=env)
+            ultraclose("config", "--repo", f"{OTHER_REPO}=dev", cwd=repo, env=env)
+            self.assertEqual(state_of(Path(tmp, "run"))["config"]["repos"][OTHER_REPO]["base"], "dev")
+
+    def test_repo_check_sets_check_of_repository_that_run_holds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env = self.make_run(tmp, "--repo-check", f"{OTHER_REPO}=make")
+            # An empty command removes the check.
+            ultraclose("config", "--repo-check", f"{OTHER_REPO}=", cwd=repo, env=env)
+            self.assertEqual(state_of(Path(tmp, "run"))["config"]["repos"][OTHER_REPO]["check"], "")
+            lines = ultraclose("status", cwd=repo, env=env).splitlines()
+            self.assertIn(f"repo {OTHER_REPO}: {other}, base main, check none", lines)
+            message = refused("config", "--repo-check", "y=make", cwd=repo, env=env)
+            self.assertIn("the run holds no repository y, so --repo-check cannot set its check", message)
+            self.assertNotIn("y", state_of(Path(tmp, "run"))["config"]["repos"])
+
+    def test_repo_flag_compares_base_branch_with_its_upstream_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env = self.make_run(tmp)
+            flag = ("--repo", f"{OTHER_REPO}=main")
+            # The base branch follows no remote branch.
+            err = finished("config", *flag, cwd=repo, env=env).stderr
+            self.assertIn(
+                f"config did not compare main of {other} with a remote branch, because"
+                " main follows no remote branch",
+                " ".join(err.split()),
+            )
+            # The base branch follows a remote branch that holds its commits.
+            git("remote", "add", "origin", str(Path(tmp, "remote")), cwd=other, env=env)
+            git("update-ref", "refs/remotes/origin/main", "main", cwd=other, env=env)
+            git("branch", "-q", "--set-upstream-to", "origin/main", "main", cwd=other, env=env)
+            err = finished("config", *flag, cwd=repo, env=env).stderr
+            self.assertNotIn("did not compare", err)
+            # The base branch holds a commit that its upstream branch lacks.
+            empty_commit(other, env, "local")
+            before = state_of(Path(tmp, "run"))["config"]
+            message = " ".join(refused("config", *flag, cwd=repo, env=env).split())
+            self.assertEqual(state_of(Path(tmp, "run"))["config"], before)
+            self.assertIn(
+                f"each task of the repository {other} starts from the local branch"
+                " main, which holds 1 commit that its upstream branch origin/main lacks",
+                message,
+            )
+            self.assertIn("local", message)
+
+    def test_triage_refuses_row_that_drops_repository_of_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp)
+            before = self.task(tmp)
+            file = Path(tmp, "rows.json")
+            file.write_text(json.dumps([{"ref": REF, "title": "t", "files": []}]))
+            message = refused("triage", str(file), cwd=repo, env=env)
+            self.assertIn(
+                f"{REF}: the task has the branch task/{REF} in {other}, so the row keeps"
+                f" the repository {OTHER_REPO}",
+                message,
+            )
+            self.assertEqual(self.task(tmp), before)
+
+    def test_triage_refuses_malformed_repos_field(self):
+        cases = {
+            "a list": [OTHER_REPO],
+            "a text for the files": {OTHER_REPO: self.THEIRS},
+            "a number for a file": {OTHER_REPO: [1]},
+        }
+        for name, repos in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, other, env = self.make_run(tmp)
+                file = Path(tmp, "rows.json")
+                file.write_text(json.dumps([{"ref": REF, "title": "t", "files": [], "repos": repos}]))
+                message = refused("triage", str(file), cwd=repo, env=env)
+                self.assertIn(
+                    f"{REF}: the repos field maps the name of each other repository to a"
+                    " list of files",
+                    message,
+                )
+                self.assertEqual(state_of(Path(tmp, "run"))["tasks"], {})
+
+    def test_pull_request_commands_refuse_repository_that_task_does_not_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp)
+            self.land(repo, env)
+            before = self.task(tmp)
+            words = f"{REF} does not change the repository y. The other repositories of {REF} are {OTHER_REPO}"
+            for command in (("opened", REF, URL), ("merged", REF)):
+                with self.subTest(command[0]):
+                    message = refused(*command, "--repo", "y", cwd=repo, env=env)
+                    self.assertIn(words, message)
+                    self.assertEqual(self.task(tmp), before)
+
+    def test_proposes_task_whose_worktree_git_does_not_remove_in_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.start(tmp)
+            wt = launch["task"]["repos"][0]["wt"]
+            git("worktree", "lock", wt, cwd=other, env=env)
+            status, lines = self.land(repo, env)
+            self.assertEqual(status, 1, lines)
+            reports, rest = self.failed_commands(lines)
+            [(command, error, left)] = reports
+            self.assertEqual(command, f"git worktree remove --force {wt}")
+            self.assertIn("locked", error)
+            action = next(line for line in rest if line.startswith("ACTION "))
+            self.assertTrue(
+                action.startswith(
+                    "ACTION "
+                    + KEPT_WORKTREE.format(wt, other)
+                    + f"Until the worktree goes, ultraclose.py merged {REF} --repo"
+                    f" {OTHER_REPO} fails, because the worktree has the branch"
+                    f" {self.THEIR_HEAD} checked out, and git deletes no such branch."
+                ),
+                lines,
+            )
+            self.assertEqual(rest[-1], f"RESULT {REF} PR head={HEAD} base=main")
+            self.assertEqual(self.task(tmp)["state"], "proposed")
+            git("worktree", "unlock", wt, cwd=other, env=env)
+            # After the merge there, the worktree keeps the branch, so the
+            # merged command changes nothing. Its error names the main
+            # checkout that the git command runs in.
+            git("merge", "-q", "--squash", self.THEIR_HEAD, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            before = self.task(tmp)
+            message = refused("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertIn(
+                f"Remove the worktree with {command} in the main checkout {other},",
+                " ".join(message.split()),
+            )
+            self.assertEqual(self.task(tmp), before)
+            # In the main checkout of the run, git does not know the worktree.
+            elsewhere = subprocess.run(
+                command.split(), cwd=repo, env=env, capture_output=True, text=True, check=False
+            )
+            self.assertIn("is not a working tree", elsewhere.stderr)
+            self.assertTrue(Path(wt).exists())
+            git(*command.split()[1:], cwd=other, env=env)
+            out = ultraclose("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertEqual(out.splitlines()[0], f"{REF} merged in {OTHER_REPO}")
+            self.assertNotIn(self.THEIR_HEAD, branches(other, env))
+
+    def test_watch_measures_file_system_of_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env = self.make_run(tmp)
+            # The worktrees of the tasks there fill the file system of the
+            # other repository. A path that the command cannot measure
+            # shows which paths it measures.
+            Path(other).rename(Path(tmp, "moved"))
+            texts = disk_texts(repo, env)
+            self.assertTrue(
+                any(t.startswith(f"{other}: cannot measure the free space, ") for t in texts),
+                texts,
+            )
+
+    def test_triage_refuses_repository_that_run_does_not_hold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env = self.make_run(tmp)
+            file = Path(tmp, "rows.json")
+            file.write_text(
+                json.dumps([{"ref": REF, "title": "t", "files": [], "repos": {"y": []}}])
+            )
+            message = refused("triage", str(file), cwd=repo, env=env)
+            self.assertIn(f"{REF}: the run holds no repository y", message)
+            self.assertEqual(state_of(Path(tmp, "run"))["tasks"], {})
+
+    def test_locks_files_of_each_repository(self):
+        # name: (the files of the second task in the repository of the
+        # run, its files in the other repository, whether it starts beside
+        # the first task)
+        cases = {
+            "the same file in the other repository": ([], [self.THEIRS], False),
+            "the same path in the repository of the run": ([self.THEIRS], [], True),
+            "another file in the other repository": ([], ["c.txt"], True),
+        }
+        for name, (files, theirs, beside) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, other, env = self.make_run(tmp)
+                triage(
+                    tmp,
+                    repo,
+                    env,
+                    {"ref": REF, "repos": {OTHER_REPO: [f"{other}/{self.THEIRS}"]}},
+                    {"ref": self.OTHER, "files": files, "repos": {OTHER_REPO: theirs}},
+                )
+                launched = json.loads(ultraclose("next", cwd=repo, env=env))
+                # The scheduler takes the pending tasks in the order of
+                # their refs, so the second task starts first.
+                refs = [x["task"]["ref"] for x in launched]
+                self.assertEqual(refs, [self.OTHER, REF] if beside else [self.OTHER])
+                # The triage records each file relative to its repository.
+                held = self.task(tmp)["repos"][OTHER_REPO]["files"]
+                self.assertEqual(held, [self.THEIRS])
+
+    def test_next_gives_task_worktree_in_each_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.start(tmp, own=False, theirs=False)
+            wt = Path(other, ".claude", "worktrees", f"t-{REF}")
+            self.assertEqual(
+                launch["task"]["repos"],
+                [
+                    {
+                        "name": OTHER_REPO,
+                        "repo": str(other),
+                        "base": "main",
+                        "wt": str(wt),
+                        "branch": f"task/{REF}",
+                        "msg": str(Path(launch["task"]["dir"], f"msg-{OTHER_REPO}.txt")),
+                    }
+                ],
+            )
+            self.assertEqual(git("branch", "--show-current", cwd=wt, env=env), f"task/{REF}")
+            # The worktree is no change of the main checkout there.
+            self.assertEqual(git("status", "--porcelain", cwd=other, env=env), "")
+
+    def test_args_resumes_task_with_commit_only_in_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp, own=False)
+            launch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+            self.assertEqual(launch["task"]["resume"]["round"], 1)
+
+    def test_landing_proposes_task_in_each_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.start(tmp)
+            status, lines = self.land(repo, env)
+            other_head = "fix/add-the-other-file"
+            self.assertEqual(status, 0, lines)
+            self.assertEqual(
+                lines[0], f"REPO {OTHER_REPO} head={other_head} base=main path={other}"
+            )
+            self.assertRegex(lines[1], "^ACTION ")
+            self.assertIn("REPO line", lines[1])
+            self.assertEqual(lines[2:], [f"RESULT {REF} PR head={HEAD} base=main"])
+            self.assertIn(other_head, branches(other, env))
+            self.assertIn(HEAD, branches(repo, env))
+            for wt in (launch["task"]["wt"], launch["task"]["repos"][0]["wt"]):
+                self.assertFalse(Path(wt).exists(), wt)
+            task = self.task(tmp)
+            self.assertEqual(task["state"], "proposed")
+            self.assertEqual(task["repos"][OTHER_REPO]["branch"], other_head)
+            lines = ultraclose("status", cwd=repo, env=env).splitlines()
+            waits = "waits for the push of {} and its pull request | t"
+            self.assertIn(f"proposed {REF} {waits.format(HEAD)}", lines)
+            self.assertIn(f"proposed {REF} in {OTHER_REPO} {waits.format(other_head)}", lines)
+
+    def test_landing_proposes_only_repository_with_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.start(tmp, own=False)
+            status, lines = self.land(repo, env)
+            self.assertEqual((status, lines[-1]), (0, f"RESULT {REF} PR"), lines)
+            self.assertIn(f"holds no change in {repo}", lines[-2])
+            # The worktree and the branch of the task stay in the
+            # repository of the run until the task lands.
+            self.assertTrue(Path(launch["task"]["wt"]).exists())
+            self.assertNotIn("branch", self.task(tmp))
+
+    def test_landing_fails_in_other_repository(self):
+        log = f"{REF}.{OTHER_REPO}.check.log"
+
+        def commit_theirs(text, message="wip"):
+            """Commit a change of the task in the other repository."""
+
+            def setup(tmp, other, env, wt):
+                Path(wt, self.THEIRS).write_text(text)
+                git("add", "-A", cwd=wt, env=env)
+                git("commit", "-q", "--no-verify", "-m", message, cwd=wt, env=env)
+
+            return setup
+
+        def conflict(tmp, other, env, wt):
+            # The base branch of the other repository changes the file of
+            # the task there.
+            Path(other, self.THEIRS).write_text("conflict\n")
+            git("add", "-A", cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "c", cwd=other, env=env)
+
+        def taken(tmp, other, env, wt):
+            # git keeps no branch below the name of another branch.
+            git("branch", "fix", cwd=other, env=env)
+
+        def dirty(tmp, other, env, wt):
+            Path(wt, "probe").write_text("probe\n")
+
+        def missing(tmp, other, env, wt):
+            git("worktree", "remove", "--force", wt, cwd=other, env=env)
+
+        def lost(tmp, other, env, wt):
+            missing(tmp, other, env, wt)
+            git("branch", "-q", "-D", f"task/{REF}", cwd=other, env=env)
+
+        def no_message(tmp, other, env, wt):
+            Path(tmp, "run", "tasks", REF, f"msg-{OTHER_REPO}.txt").unlink()
+
+        # name: (the init flags, the setup, the result, the text of the
+        # action, which can name the worktree of the task there)
+        cases = {
+            "a failed check": (
+                ["--repo-check", f"{OTHER_REPO}=exit 1"],
+                None,
+                "CHECKFAIL",
+                log,
+            ),
+            "no message": ([], no_message, "NOMSG", f"msg-{OTHER_REPO}.txt"),
+            "a conflict": ([], conflict, "CONFLICT", "The base branch main moved"),
+            "a blocked branch name": (
+                [],
+                taken,
+                "BRANCHTAKEN",
+                "rename or delete the branch fix,",
+            ),
+            "a task ref in the diff": (
+                [],
+                commit_theirs(f"{REF}\n"),
+                "REFINDIFF",
+                "Remove each task ref from the lines that the change adds in {wt},",
+            ),
+            "a task ref in a commit message": (
+                [],
+                commit_theirs("b\n", f"wip {REF}"),
+                "LOGHASREF",
+                "cd {wt} && git reset --soft",
+            ),
+            "a dirty worktree": ([], dirty, "WTDIRTY", "The worktree {wt} holds changes"),
+            "a missing worktree": (
+                [],
+                missing,
+                "NOWORKTREE",
+                "Then run git worktree add {wt} task/" + REF,
+            ),
+            # The repository of the run holds a commit of the task, so the
+            # relaunch resumes at a review round, and the action gives a
+            # sync.
+            "a missing worktree and branch": (
+                [],
+                lost,
+                "NOWORKTREE",
+                f"Sync the task with ultraclose.py args {REF} --sync 'The landing"
+                " found neither the worktree {wt} nor the branch task/" + REF,
+            ),
+        }
+        for name, (flags, setup, result, words) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, other, env, launch = self.start(tmp, *flags)
+                wt = launch["task"]["repos"][0]["wt"]
+                if setup:
+                    setup(tmp, other, env, wt)
+                before = git("rev-parse", "HEAD", cwd=other, env=env)
+                status, lines = self.land(repo, env)
+                self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} {result}"), lines)
+                # The action names the repository, the worktree, and the
+                # branch of the task there.
+                self.assertTrue(
+                    lines[-2].startswith(
+                        f"ACTION The landing failed in the repository {OTHER_REPO},"
+                        f" in the worktree {wt} of the main checkout {other}, on the"
+                        f" branch task/{REF}. "
+                    ),
+                    lines,
+                )
+                self.assertIn(words.format(wt=wt), lines[-2])
+                self.assertNotIn(f"set {REF}", lines[-2])
+                task = self.task(tmp)
+                self.assertEqual(task["state"], "approved")
+                self.assertNotIn("branch", task["repos"][OTHER_REPO])
+                self.assertEqual(git("rev-parse", "HEAD", cwd=other, env=env), before)
+                if result != "NOWORKTREE":
+                    self.assertTrue(Path(wt).exists())
+                    # A failed merge leaves the worktree as it was.
+                    self.assertNotIn("UU", git("status", "--porcelain", cwd=wt, env=env))
+
+    def test_landing_without_worktree_or_branch_gives_sync(self):
+        # The worktree and the branch of the task go in one repository.
+        # name: (whether the task commits in the repository of the run,
+        # whether that repository is the other repository, whether the
+        # action gives a sync)
+        cases = {
+            "the other repository": (True, True, True),
+            "the repository of the run": (True, False, True),
+            "no commit elsewhere": (False, True, False),
+        }
+        for name, (own, theirs, sync) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, other, env, launch = self.start(tmp, own=own)
+                task = launch["task"]
+                path, wt = (other, task["repos"][0]["wt"]) if theirs else (repo, task["wt"])
+                git("worktree", "remove", "--force", wt, cwd=path, env=env)
+                git("branch", "-q", "-D", f"task/{REF}", cwd=path, env=env)
+                status, lines = self.land(repo, env)
+                self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} NOWORKTREE"), lines)
+                lost = (
+                    "The worktree of the task went missing after its review, and"
+                    " the run records no commit of the task on main. Run git"
+                    f" worktree prune in the main checkout {path}. The branch"
+                    f" task/{REF} is gone as well,"
+                )
+                self.assertIn(lost, lines[-2])
+                if not sync:
+                    # No branch of the task holds a commit, so the relaunch
+                    # starts at the implementer.
+                    self.assertIn("The relaunch starts from main at the implementer.", lines[-2])
+                    relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+                    self.assertNotIn("resume", relaunch["task"])
+                    continue
+                reason = (
+                    f"The landing found neither the worktree {wt} nor the branch"
+                    f" task/{REF} of the task. Make the change of the task in that"
+                    " worktree again."
+                )
+                self.assertIn(
+                    " so the change of the task there is lost. Another repository of"
+                    " the task holds a commit of the task, so a plain relaunch"
+                    " resumes at a review round. Sync the task with ultraclose.py"
+                    f" args {REF} --sync '{reason}' The relaunch cuts a new branch"
+                    f" task/{REF} from main there. Land the task after its Workflow"
+                    " ends approved or landable.",
+                    lines[-2],
+                )
+                self.assertNotIn("at the implementer", lines[-2])
+                # The sync relaunch cuts the branch from the base branch and
+                # gives its reason to the sync agent.
+                relaunch = json.loads(ultraclose("args", REF, "--sync", reason, cwd=repo, env=env))
+                self.assertEqual(relaunch["task"]["resume"]["sync"], reason)
+                self.assertTrue(Path(wt).exists())
+                ahead = git("rev-list", "--count", f"main..task/{REF}", cwd=path, env=env)
+                self.assertEqual(ahead, "0")
+
+    def test_landing_without_change_ends_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp, own=False, theirs=False)
+            status, lines = self.land(repo, env)
+            self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+
+    def test_empty_action_resets_each_branch_that_holds_commits(self):
+        def cancelled(wt, env):
+            """Commit a file in the worktree, and then commit its removal."""
+            Path(wt, "z.txt").write_text("z\n")
+            git("add", "-A", cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "add", cwd=wt, env=env)
+            git("rm", "-q", "z.txt", cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "drop", cwd=wt, env=env)
+
+        def reset(*wts):
+            """The part of the action that resets the worktrees."""
+            steps = " and ".join(f"git -C {wt} reset -q --hard main" for wt in wts)
+            return f" Otherwise run {steps}, and relaunch the task with ultraclose.py args {REF}."
+
+        unchanged = (
+            "The branches of the task hold no change of their own. Read the"
+            " summary and the notes of the Workflow result of the task. When they"
+            " say that the task does not need a change, close the task:"
+            f" ultraclose.py set {REF} closed --note '<evidence>'."
+        )
+
+        def follow(repo, env, wts):
+            """Reset the worktrees, and check that the relaunch starts at the implementer."""
+            for wt in wts:
+                git("-C", wt, "reset", "-q", "--hard", "main", cwd=repo, env=env)
+            launch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+            self.assertNotIn("resume", launch["task"])
+
+        # name: (whether the branch of the repository of the run holds
+        # commits, whether the branch of the other repository holds commits)
+        cases = {
+            "no commit": (False, False),
+            "commits in the other repository": (False, True),
+            "commits in both repositories": (True, True),
+        }
+        for name, (own, theirs) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, other, env, launch = self.start(tmp, own=False, theirs=False)
+                wt, wt_theirs = launch["task"]["wt"], launch["task"]["repos"][0]["wt"]
+                wts = [w for w, wanted in ((wt, own), (wt_theirs, theirs)) if wanted]
+                for w in wts:
+                    cancelled(w, env)
+                status, lines = self.land(repo, env)
+                self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+                steps = reset(*wts) if wts else f" Otherwise relaunch the task with ultraclose.py args {REF}."
+                self.assertEqual(self.action(lines), f"{unchanged}{steps} Do not sync the task.")
+                follow(repo, env, wts)
+        with tempfile.TemporaryDirectory() as tmp:
+            # The first landing proposes the task only in the repository of
+            # the run. A fix of the relaunch reverts the change there, and
+            # the other repository gets commits that cancel each other out.
+            repo, other, env, _ = self.start(tmp, theirs=False)
+            self.land(repo, env)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            launch = json.loads(ultraclose("args", REF, "--sync", "review", cwd=repo, env=env))
+            wt, wt_theirs = launch["task"]["wt"], launch["task"]["repos"][0]["wt"]
+            git("rm", "-q", self.FILE, cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "revert", cwd=wt, env=env)
+            cancelled(wt_theirs, env)
+            status, lines = self.land(repo, env)
+            self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+            self.assertEqual(
+                self.action(lines),
+                f"{unchanged} Close the pull request {URL} first when it is"
+                f" open.{reset(wt, wt_theirs)} The remote holds the branch of that"
+                " pull request, so set force_with_lease on the next push. Do not"
+                " sync the task.",
+            )
+            follow(repo, env, [wt, wt_theirs])
+
+    def test_empty_action_names_repository_whose_base_branch_made_change(self):
+        def same(checkout, file, env):
+            """Commit on the base branch of the main checkout the change of the task there."""
+            Path(checkout, file).write_text("a\n")
+            git("add", file, cwd=checkout, env=env)
+            git("commit", "-q", "--no-verify", "-m", "same", cwd=checkout, env=env)
+
+        def found(checkout):
+            """The part of the action that finds the commit in the main checkout."""
+            return (
+                f"A commit of main in the main checkout {checkout} made the change of"
+                f" the task there. Find that commit, such as with git -C {checkout} log"
+                " --oneline main -- <file> for a file of the task there."
+            )
+
+        def rest(each=False, url=""):
+            """The part of the action that sets the task landed or closed."""
+            shut = f" Close the pull request {url} first when it is open." if url else ""
+            return (
+                f" When {'each commit comes' if each else 'the commit comes'} from this"
+                f" task, the task has landed, so run ultraclose.py set {REF} landed."
+                " When another commit made the change, such as the commit of a task"
+                " that covers this task, close the task: ultraclose.py set"
+                f" {REF} closed --note '<evidence>'.{shut} Do not sync the task."
+            )
+
+        # name: (whether the task changes the repository of the run, and
+        # whether a commit of its base branch makes the same change)
+        cases = {
+            "the other repository": False,
+            "both repositories": True,
+        }
+        for name, both in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, other, env, _ = self.start(tmp, own=both)
+                same(other, self.THEIRS, env)
+                if both:
+                    same(repo, self.FILE, env)
+                status, lines = self.land(repo, env)
+                self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+                owners = [repo, other] if both else [other]
+                text = " ".join(found(checkout) for checkout in owners)
+                self.assertEqual(self.action(lines), text + rest(each=both))
+        with tempfile.TemporaryDirectory() as tmp:
+            # The first landing proposes the task only in the repository of
+            # the run. A fix of the relaunch reverts the change there. It
+            # also makes a change in the other repository, and a commit of
+            # the base branch there makes the same change. The merge of the
+            # pull request of the repository of the run did not make that
+            # change. So the action leaves out that merge, and it still
+            # closes the pull request.
+            repo, other, env, _ = self.start(tmp, theirs=False)
+            self.land(repo, env)
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+            launch = json.loads(ultraclose("args", REF, "--sync", "review", cwd=repo, env=env))
+            wt, [theirs] = launch["task"]["wt"], launch["task"]["repos"]
+            git("rm", "-q", self.FILE, cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "revert", cwd=wt, env=env)
+            Path(theirs["wt"], self.THEIRS).write_text("a\n")
+            git("add", self.THEIRS, cwd=theirs["wt"], env=env)
+            git("commit", "-q", "--no-verify", "-m", "wip", cwd=theirs["wt"], env=env)
+            Path(theirs["msg"]).write_text("fix: add the other file\n")
+            same(other, self.THEIRS, env)
+            status, lines = self.land(repo, env)
+            self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+            self.assertEqual(self.action(lines), found(other) + rest(url=URL))
+
+    def relaunch_after_landing(self, tmp, own=True, opened=(OTHER_REPO, "")):
+        """Propose the task of start, record its pull requests, and start it again.
+
+        The own argument says whether the task changes the repository of
+        the run. The opened argument names each repository whose pull
+        request the run records, and the empty name stands for the
+        repository of the run. Return the repository, the other
+        repository, the environment, and the Workflow input of the
+        relaunch.
+        """
+        repo, other, env, _ = self.start(tmp, own=own)
+        self.land(repo, env)
+        if OTHER_REPO in opened:
+            flags = ("--repo", OTHER_REPO)
+            ultraclose("opened", REF, self.THEIR_URL, *flags, cwd=repo, env=env)
+        if own and "" in opened:
+            ultraclose("opened", REF, URL, cwd=repo, env=env)
+        launch = json.loads(ultraclose("args", REF, "--sync", "review", cwd=repo, env=env))
+        return repo, other, env, launch
+
+    # The pull request of the task in the other repository, and the branch
+    # of that pull request.
+    THEIR_URL = "https://github.com/example/x/pull/3"
+    THEIR_HEAD = "fix/add-the-other-file"
+
+    def test_relaunch_names_each_recorded_pull_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.relaunch_after_landing(tmp)
+            status, lines = self.land(repo, env)
+            self.assertEqual(status, 0, lines)
+            self.assertEqual(
+                lines[0],
+                f"REPO {OTHER_REPO} head={self.THEIR_HEAD} base=main path={other}"
+                f" pr={self.THEIR_URL}",
+            )
+            self.assertIn(
+                f"The task records the pull requests {self.THEIR_URL} and {URL}. Read"
+                " the state of each of them before you push its branch",
+                lines[1],
+            )
+            self.assertEqual(lines[2:], [f"RESULT {REF} PR head={HEAD} base=main pr={URL}"])
+        # The run records only the pull request of the other repository.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.relaunch_after_landing(tmp, opened=(OTHER_REPO,))
+            status, lines = self.land(repo, env)
+            self.assertEqual(status, 0, lines)
+            self.assertTrue(lines[0].endswith(f" pr={self.THEIR_URL}"), lines)
+            self.assertIn(
+                f"The task records the pull request {self.THEIR_URL}. Read its state"
+                " before you push its branch, and act on that state.",
+                lines[1],
+            )
+            self.assertEqual(lines[2:], [f"RESULT {REF} PR head={HEAD} base=main"])
+
+    def test_landing_after_other_pull_request_merged(self):
+        def merged(other, env, theirs):
+            # The pull request merged before the run recorded the merge.
+            git("merge", "-q", "--squash", self.THEIR_HEAD, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+
+        def reverted(other, env, theirs):
+            # A fix reverted the change of the task there.
+            git("rm", "-q", self.THEIRS, cwd=theirs["wt"], env=env)
+            git("commit", "-q", "--no-verify", "-m", "revert", cwd=theirs["wt"], env=env)
+
+        def reverted_without_message(other, env, theirs):
+            # The fixer also removed the message of the repository, because
+            # the change no longer touches it.
+            reverted(other, env, theirs)
+            Path(theirs["msg"]).unlink()
+
+        read = f"Read the state of the pull request {self.THEIR_URL} of the task there"
+        unrecorded = (
+            "The task records no pull request there. When the remote holds an open"
+            f" pull request of {self.THEIR_HEAD}, close it."
+        )
+        # name: (the change, the repositories whose pull request the run
+        # records, the words of the action about the pull request there)
+        cases = {
+            "merged": (merged, (OTHER_REPO, ""), read),
+            "reverted": (reverted, (OTHER_REPO, ""), read),
+            "reverted without message": (reverted_without_message, (OTHER_REPO, ""), read),
+            "merged without record": (merged, ("",), unrecorded),
+        }
+        for name, (change, opened, words) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, other, env, launch = self.relaunch_after_landing(tmp, opened=opened)
+                theirs = launch["task"]["repos"][0]
+                wt = theirs["wt"]
+                change(other, env, theirs)
+                status, lines = self.land(repo, env)
+                self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+                action = lines[-2]
+                # The repository of the run still holds a change of the
+                # task, so the action neither lands nor closes the task.
+                self.assertIn(f"An earlier landing proposed the task in {OTHER_REPO}", action)
+                self.assertIn(words, action)
+                self.assertIn(f"ultraclose.py merged {REF} --repo {OTHER_REPO}", action)
+                self.assertNotIn(f"set {REF} landed", action)
+                self.assertNotIn(f"set {REF} closed", action)
+                self.assertEqual(self.task(tmp)["state"], "approved")
+                # The merged command takes the approved task, and it
+                # refuses a worktree that holds a change or that git cannot
+                # remove.
+                flags = ("--repo", OTHER_REPO)
+                before = self.task(tmp)
+                Path(wt, "probe").write_text("probe\n")
+                message = refused("merged", REF, *flags, cwd=repo, env=env)
+                self.assertIn(f"the worktree {wt} of {REF} holds changes", message)
+                self.assertEqual(self.task(tmp), before)
+                Path(wt, "probe").unlink()
+                git("worktree", "lock", wt, cwd=other, env=env)
+                message = refused("merged", REF, *flags, cwd=repo, env=env)
+                self.assertIn(
+                    f"git cannot remove the worktree {wt}, so the command changed nothing",
+                    message,
+                )
+                self.assertEqual(self.task(tmp), before)
+                self.assertTrue(Path(wt).exists())
+                self.assertIn(self.THEIR_HEAD, branches(other, env))
+                git("worktree", "unlock", wt, cwd=other, env=env)
+                out = ultraclose("merged", REF, *flags, cwd=repo, env=env)
+                self.assertEqual(out.splitlines()[0], f"{REF} merged in {OTHER_REPO}")
+                self.assertIn(f"{REF} stays approved.", out)
+                self.assertIn(f"land {REF} --next", out)
+                self.assertFalse(Path(wt).exists())
+                self.assertNotIn(self.THEIR_HEAD, branches(other, env))
+                task = self.task(tmp)
+                self.assertEqual(task["state"], "approved")
+                self.assertTrue(task["repos"][OTHER_REPO]["merged"])
+                # The next landing proposes the rest of the task.
+                status, lines = self.land(repo, env)
+                self.assertEqual(status, 0, lines)
+                self.assertEqual(lines[-1], f"RESULT {REF} PR head={HEAD} base=main pr={URL}")
+                self.assertFalse(any(line.startswith("REPO ") for line in lines), lines)
+
+    def test_landing_without_own_change_after_other_pull_request_merged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.relaunch_after_landing(tmp, own=False)
+            wt = launch["task"]["repos"][0]["wt"]
+            git("merge", "-q", "--squash", self.THEIR_HEAD, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            self.land(repo, env)
+            ultraclose("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+            # The task holds no change in the repository of the run, and its
+            # pull request in the other repository merged.
+            status, lines = self.land(repo, env)
+            self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+            self.assertIn(f"its pull request in {OTHER_REPO} merged", lines[-2])
+            self.assertIn(f"Run ultraclose.py set {REF} landed", lines[-2])
+            self.assertNotIn("closed", lines[-2])
+            ultraclose("set", REF, "landed", cwd=repo, env=env)
+            self.assertEqual(self.task(tmp)["state"], "landed")
+            self.assertFalse(Path(launch["task"]["wt"]).exists())
+            self.assertFalse(Path(wt).exists())
+
+    def test_landing_proposes_other_repository_after_own_change_went(self):
+        def merged(repo, env, task):
+            # The user merged the pull request of the repository of the run
+            # before the pull request of the other repository.
+            git("merge", "-q", "--squash", HEAD, cwd=repo, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=repo, env=env)
+
+        def reverted(repo, env, task):
+            # A fix reverted the change of the task in the repository of the
+            # run.
+            git("rm", "-q", self.FILE, cwd=task["wt"], env=env)
+            git("commit", "-q", "--no-verify", "-m", "revert", cwd=task["wt"], env=env)
+
+        def reverted_without_message(repo, env, task):
+            # The fixer also removed the message of the repository of the
+            # run, because the change no longer touches it.
+            reverted(repo, env, task)
+            Path(task["dir"], "msg.txt").unlink()
+
+        cases = {
+            "merged": merged,
+            "reverted": reverted,
+            "reverted without message": reverted_without_message,
+        }
+        for name, change in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, other, env, launch = self.relaunch_after_landing(tmp)
+                wt, theirs = launch["task"]["wt"], launch["task"]["repos"][0]["wt"]
+                change(repo, env, launch["task"])
+                # The relaunch adds a commit in the other repository.
+                Path(theirs, "c.txt").write_text("c\n")
+                git("add", "-A", cwd=theirs, env=env)
+                git("commit", "-q", "--no-verify", "-m", "more", cwd=theirs, env=env)
+                status, lines = self.land(repo, env)
+                self.assertEqual((status, lines[-1]), (0, f"RESULT {REF} PR"), lines)
+                self.assertEqual(
+                    lines[0],
+                    f"REPO {OTHER_REPO} head={self.THEIR_HEAD} base=main path={other}"
+                    f" pr={self.THEIR_URL}",
+                )
+                # The other repository still holds a change, so the action
+                # neither lands nor closes the task.
+                action = lines[-2]
+                self.assertIn(
+                    f"An earlier landing proposed the task in {repo} on the branch"
+                    f" {HEAD}, which now holds no change against main.",
+                    action,
+                )
+                self.assertIn(f"Read the state of {URL} with mcp__github__pull_request_read", action)
+                self.assertIn(f"run ultraclose.py merged {REF}, which lands the task", action)
+                self.assertNotIn(f"set {REF} landed", action)
+                self.assertNotIn(f"set {REF} closed", action)
+                task = self.task(tmp)
+                self.assertEqual(task["state"], "proposed")
+                self.assertEqual((task["branch"], task["pr"]), (HEAD, URL))
+                # The status command asks for no push of the branch there.
+                # It repeats the steps of the action, so that a new session
+                # closes the pull request there.
+                after = (
+                    f"and push nothing to {HEAD}. After the other pull requests"
+                    f" merge, run merged {REF}, which lands the task | t"
+                )
+                lines = ultraclose("status", cwd=repo, env=env).splitlines()
+                self.assertIn(
+                    f"proposed {REF} holds no change on {HEAD}. Close its pull"
+                    f" request {URL} when it is open, {after}",
+                    lines,
+                )
+                # A task that records no pull request there has the branch
+                # named in place of the pull request.
+                run = Path(tmp, "run")
+                saved = Path(run, "state.json").read_text()
+                st = json.loads(saved)
+                del st["tasks"][REF]["pr"]
+                Path(run, "state.json").write_text(json.dumps(st, indent=1))
+                lines = ultraclose("status", cwd=repo, env=env).splitlines()
+                self.assertIn(
+                    f"proposed {REF} holds no change on {HEAD}. Close an open pull"
+                    f" request of {HEAD}, {after}",
+                    lines,
+                )
+                Path(run, "state.json").write_text(saved)
+                # The landing removed the worktree, so the merged command can
+                # delete the branch.
+                self.assertFalse(Path(wt).exists())
+                self.assertIn(HEAD, branches(repo, env))
+                git("merge", "-q", "--squash", self.THEIR_HEAD, cwd=other, env=env)
+                git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+                out = ultraclose("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+                self.assertIn(f"main holds the change of the branch {HEAD} of {REF} in {repo}.", out)
+                self.assertIn(f"Otherwise run ultraclose.py merged {REF}, which lands the task", out)
+                self.assertEqual(ultraclose("merged", REF, cwd=repo, env=env), f"{REF} landed\n")
+                self.assertEqual(self.task(tmp)["state"], "landed")
+                self.assertNotIn(HEAD, branches(repo, env))
+
+    def test_landing_names_branch_of_dropped_repository_without_pull_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # The run records only the pull request of the other repository.
+            repo, other, env, launch = self.relaunch_after_landing(tmp, opened=(OTHER_REPO,))
+            wt = launch["task"]["wt"]
+            git("rm", "-q", self.FILE, cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "revert", cwd=wt, env=env)
+            status, lines = self.land(repo, env)
+            self.assertEqual((status, lines[-1]), (0, f"RESULT {REF} PR"), lines)
+            self.assertTrue(lines[0].startswith(f"REPO {OTHER_REPO} head={self.THEIR_HEAD} "), lines)
+            self.assertIn(
+                f"So a pull request of {HEAD} merged, or the task no longer changes"
+                f" {repo}. The task records no pull request there. When the remote"
+                f" holds an open pull request of {HEAD}, close it. After the pull"
+                " requests of the REPO lines merge",
+                lines[-2],
+            )
+            self.assertNotIn("pull_request_read, and close it", lines[-2])
+
+    def test_merged_takes_approved_task_only_while_no_landing_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.relaunch_after_landing(tmp)
+            wt = launch["task"]["repos"][0]["wt"]
+            lock = Path(tmp, "run", "land.lock")
+            flags = ("--repo", OTHER_REPO)
+            # The pull request of the other repository merged before the run
+            # recorded the merge, so the landing leaves the task approved.
+            git("merge", "-q", "--squash", self.THEIR_HEAD, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            status, lines = self.land(repo, env)
+            self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+            before = self.task(tmp)
+            # A landing holds the landing lock of its run.
+            with open(lock, "w") as held:
+                fcntl.flock(held, fcntl.LOCK_EX)
+                message = refused("merged", REF, *flags, cwd=repo, env=env)
+            self.assertIn(
+                f"{REF} is approved, and a landing holds the landing lock of the run",
+                message,
+            )
+            self.assertIn("The command changed nothing", message)
+            self.assertEqual(self.task(tmp), before)
+            self.assertTrue(Path(wt).exists())
+            self.assertIn(self.THEIR_HEAD, branches(other, env))
+            out = ultraclose("merged", REF, *flags, cwd=repo, env=env)
+            self.assertIn(f"{REF} stays approved.", out)
+            self.assertFalse(Path(wt).exists())
+        # The merged command takes a proposed task while a landing of
+        # another task holds the lock, because no landing takes a proposed
+        # task.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp)
+            self.land(repo, env)
+            git("merge", "-q", "--squash", self.THEIR_HEAD, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            with open(Path(tmp, "run", "land.lock"), "w") as held:
+                fcntl.flock(held, fcntl.LOCK_EX)
+                out = ultraclose("merged", REF, *flags, cwd=repo, env=env)
+            self.assertEqual(out.splitlines()[0], f"{REF} merged in {OTHER_REPO}")
+
+    def test_landing_that_waits_for_lock_reads_merge_of_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.relaunch_after_landing(tmp)
+            wt = launch["task"]["repos"][0]["wt"]
+            run = Path(tmp, "run")
+            git("merge", "-q", "--squash", self.THEIR_HEAD, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            queued = in_session(env, "queued")
+            p = None
+            try:
+                with open(run / "land.lock", "w") as held:
+                    fcntl.flock(held, fcntl.LOCK_EX)
+                    p = subprocess.Popen(
+                        [sys.executable, str(SCRIPT), "land", REF],
+                        cwd=repo,
+                        env=queued,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                    # The landing saves the state of the run when it sets its
+                    # task to approved, and the state then records its
+                    # session. Then the landing waits for the lock.
+                    deadline = time.monotonic() + 60
+                    while state_of(run).get("session") != "queued":
+                        self.assertIsNone(p.poll(), "the landing ended before the wait")
+                        self.assertLess(time.monotonic(), deadline, "the landing did not start")
+                        time.sleep(0.05)
+                    # The merged command records the merge in the other
+                    # repository before the landing takes the lock. It removes
+                    # the worktree and the branch of the task there.
+                    git("worktree", "remove", wt, cwd=other, env=env)
+                    git("branch", "-q", "-D", self.THEIR_HEAD, cwd=other, env=env)
+                    with open(run / "state.lock", "w") as saved:
+                        fcntl.flock(saved, fcntl.LOCK_EX)
+                        st = state_of(run)
+                        entry = st["tasks"][REF]["repos"][OTHER_REPO]
+                        entry["merged"] = git("rev-parse", "main", cwd=other, env=env)
+                        Path(run, "state.json").write_text(json.dumps(st, indent=1))
+                output, error = p.communicate(timeout=60)
+            finally:
+                if p and p.poll() is None:
+                    p.kill()
+                    p.wait()
+            self.assertEqual(p.returncode, 0, (output, error))
+            lines = output.splitlines()
+            # The landing proposes the rest of the task.
+            self.assertEqual(lines[-1], f"RESULT {REF} PR head={HEAD} base=main pr={URL}")
+            self.assertFalse(any(line.startswith("REPO ") for line in lines), lines)
+
+    def start_in_two_other_repositories(self, tmp):
+        """Start a run whose task changes the repository of the run, OTHER_REPO, and y.
+
+        Each worktree of the task holds a commit, and the task directory
+        holds the message of each repository. The pull request branch of
+        each other repository NAME is fix/change-NAME. Return the
+        repository, the main checkout of each other repository by name,
+        and the environment.
+        """
+        repo, other, env = self.make_run(tmp)
+        second = Path(tmp, "repos", "y")
+        git("init", "-q", "-b", "main", str(second), cwd=tmp, env=env)
+        git("commit", "-q", "--allow-empty", "-m", "init", cwd=second, env=env)
+        ultraclose("config", "--repo", "y=main", cwd=repo, env=env)
+        rows = {OTHER_REPO: [self.THEIRS], "y": ["y.txt"]}
+        triage(tmp, repo, env, {"ref": REF, "repos": rows})
+        task = json.loads(ultraclose("next", cwd=repo, env=env))[0]["task"]
+        # (the worktree, the file that the task changes there, the message
+        # file, the subject of the message)
+        changes = [(task["wt"], self.FILE, Path(task["dir"], "msg.txt"), self.SUBJECT)]
+        for o in task["repos"]:
+            changes.append((o["wt"], f"{o['name']}.txt", Path(o["msg"]), f"fix: change {o['name']}"))
+        for wt, file, msg, subject in changes:
+            Path(wt, file).write_text("a\n")
+            git("add", "-A", cwd=wt, env=env)
+            git("commit", "-q", "--no-verify", "-m", "wip", cwd=wt, env=env)
+            msg.write_text(subject + "\n")
+        return repo, {OTHER_REPO: other, "y": second.resolve()}, env
+
+    def test_pin_text_names_each_merged_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, others, env = self.start_in_two_other_repositories(tmp)
+            status, lines = self.land(repo, env)
+            self.assertEqual(status, 0, lines)
+            commits = {}
+            for name, path in others.items():
+                git("merge", "-q", "--squash", f"fix/change-{name}", cwd=path, env=env)
+                git("commit", "-q", "--no-verify", "-m", "squash", cwd=path, env=env)
+                commits[name] = git("rev-parse", "main", cwd=path, env=env)
+                out = ultraclose("merged", REF, "--repo", name, cwd=repo, env=env)
+                if name == OTHER_REPO:
+                    # The text about the pins waits for the last merge, so
+                    # that one sync moves each pin.
+                    self.assertEqual(
+                        out.splitlines(),
+                        [f"{REF} merged in {OTHER_REPO}", f"{REF} waits for the merge of its pull requests in y"],
+                    )
+            self.assertIn(f"needs a pin to a commit of {OTHER_REPO} or y,", out)
+            for name, commit in commits.items():
+                self.assertIn(
+                    f"The branch main of {name} held the merge at {commit} when the run recorded it.",
+                    out,
+                )
+
+    def test_merged_of_approved_task_gives_pin_text_after_last_other_merge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, others, env = self.start_in_two_other_repositories(tmp)
+            status, lines = self.land(repo, env)
+            self.assertEqual(status, 0, lines)
+            ultraclose("args", REF, "--sync", "review", cwd=repo, env=env)
+            # The pull request of x merged before the run recorded the merge,
+            # so the landing of the relaunch ends in EMPTY there.
+            other = others[OTHER_REPO]
+            git("merge", "-q", "--squash", f"fix/change-{OTHER_REPO}", cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            status, lines = self.land(repo, env)
+            self.assertEqual((status, lines[-1]), (2, f"RESULT {REF} EMPTY"), lines)
+            # The pull request of y still waits, so the text about the pins
+            # waits for its merge, and one sync moves each pin.
+            out = ultraclose("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertEqual(
+                out.splitlines(),
+                [
+                    f"{REF} merged in {OTHER_REPO}",
+                    f"{REF} stays approved, and it waits for the merge of its pull"
+                    f" requests in y. Land the task again: ultraclose.py land {REF} --next",
+                ],
+            )
+            self.assertEqual(self.task(tmp)["state"], "approved")
+            # The next landing proposes y and the repository of the run.
+            status, lines = self.land(repo, env)
+            self.assertEqual(status, 0, lines)
+            self.assertTrue(lines[0].startswith("REPO y head=fix/change-y "), lines)
+            self.assertTrue(lines[-1].startswith(f"RESULT {REF} PR head={HEAD} "), lines)
+            git("merge", "-q", "--squash", "fix/change-y", cwd=others["y"], env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=others["y"], env=env)
+            out = ultraclose("merged", REF, "--repo", "y", cwd=repo, env=env)
+            self.assertIn(f"args {REF} --sync", out)
+            self.assertIn(f"needs a pin to a commit of {OTHER_REPO} or y,", out)
+
+    def test_merged_of_other_repository_takes_proposed_or_approved_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.relaunch_after_landing(tmp)
+            # The relaunch runs, so its agents work in the worktrees.
+            message = refused("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertIn(
+                f"{REF} is inflight, and the merged command takes only a proposed task"
+                " or an approved task",
+                message,
+            )
+            # Without --repo, the command takes only a proposed task.
+            ultraclose("set", REF, "approved", cwd=repo, env=env)
+            message = refused("merged", REF, cwd=repo, env=env)
+            self.assertIn(f"{REF} is approved, and the merged command takes only a proposed task.", message)
+            self.assertEqual(self.task(tmp)["state"], "approved")
+
+    def test_pull_request_of_run_merges_last(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp)
+            self.land(repo, env)
+            other_head = "fix/add-the-other-file"
+            other_url = "https://github.com/example/x/pull/3"
+            out = ultraclose("opened", REF, other_url, "--repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertEqual(out, f"{REF} proposed in {OTHER_REPO} {other_url}\n")
+            lines = ultraclose("status", cwd=repo, env=env).splitlines()
+            self.assertIn(f"proposed {REF} in {OTHER_REPO} waits for the merge of {other_url} | t", lines)
+            # The pull request of the repository of the run waits for the
+            # pull request of the other repository.
+            git("merge", "-q", "--squash", HEAD, cwd=repo, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=repo, env=env)
+            message = refused("merged", REF, cwd=repo, env=env)
+            self.assertIn(f"records no merge in {OTHER_REPO}", message)
+            self.assertIn(HEAD, branches(repo, env))
+            # The merge of the other pull request lets it land.
+            git("merge", "-q", "--squash", other_head, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            out = ultraclose("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertEqual(out.splitlines()[0], f"{REF} merged in {OTHER_REPO}")
+            self.assertIn(f"args {REF} --sync", out)
+            self.assertNotIn(other_head, branches(other, env))
+            self.assertEqual(self.task(tmp)["state"], "proposed")
+            message = refused("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+            self.assertIn("merged already", message)
+            out = ultraclose("merged", REF, cwd=repo, env=env)
+            self.assertEqual(out, f"{REF} landed\n")
+            self.assertEqual(self.task(tmp)["state"], "landed")
+            self.assertIn(f"{REF} --status done", aven_edits(env))
+
+    def test_merge_of_other_repository_lands_task_without_own_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.start(tmp, own=False)
+            self.land(repo, env)
+            message = refused("merged", REF, cwd=repo, env=env)
+            self.assertIn(f"proposed no pull request in the repository {repo}", message)
+            other_head = "fix/add-the-other-file"
+            git("merge", "-q", "--squash", other_head, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            out = ultraclose("merged", REF, "--repo", OTHER_REPO, cwd=repo, env=env)
+            lines = out.splitlines()
+            self.assertEqual(lines[:2], [f"{REF} merged in {OTHER_REPO}", f"{REF} landed"])
+            # No pin in the repository of the run names the commit that the
+            # merge made, so the command says how to add one.
+            sync = f"ultraclose.py args {REF} --sync '<each merged commit and each pin to move>'"
+            self.assertIn(f"The task proposed no pull request in {repo}.", lines[2])
+            self.assertIn(sync, lines[2])
+            commit = git("rev-parse", "main", cwd=other, env=env)
+            self.assertIn(f"The branch main of {OTHER_REPO} held the merge at {commit}", lines[2])
+            # The task landed, so its work in the repository of the run goes.
+            self.assertFalse(Path(launch["task"]["wt"]).exists())
+            self.assertNotIn(f"task/{REF}", branches(repo, env))
+            # The sync starts the landed task again in the repository of the
+            # run alone, because the change in the other repository merged.
+            relaunch = json.loads(ultraclose("args", REF, "--sync", "pin", cwd=repo, env=env))
+            self.assertNotIn("repos", relaunch["task"])
+            self.assertEqual(relaunch["task"]["resume"]["sync"], "pin")
+            self.assertTrue(Path(relaunch["task"]["wt"]).exists())
+            self.assertEqual(self.task(tmp)["state"], "inflight")
+
+    def test_set_closed_removes_work_in_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.start(tmp, own=False, theirs=False)
+            wt = launch["task"]["repos"][0]["wt"]
+            ultraclose(*set_args(REF, "closed"), cwd=repo, env=env)
+            self.assertFalse(Path(wt).exists())
+            self.assertNotIn(f"task/{REF}", branches(other, env))
+
+    def test_set_noted_names_branch_of_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, launch = self.start(tmp)
+            ultraclose(*set_args(REF, "noted"), cwd=repo, env=env)
+            [(ref, note)] = aven_notes(env)
+            self.assertIn(f"In the repository {other}, the branch task/{REF}", note)
+            self.assertIn(f"task/{REF}", branches(other, env))
+
+    def test_next_refuses_leftover_work_in_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env = self.make_run(tmp)
+            # An earlier run left a branch of the task in the other
+            # repository, with a commit that main lacks.
+            git("branch", f"task/{REF}", cwd=other, env=env)
+            git("switch", "-q", f"task/{REF}", cwd=other, env=env)
+            empty_commit(other, env, "earlier")
+            git("switch", "-q", "main", cwd=other, env=env)
+            triage(tmp, repo, env, {"ref": REF, "repos": {OTHER_REPO: []}})
+            message = refused("next", cwd=repo, env=env)
+            self.assertIn(f"the branch task/{REF} in {other}, 1 commit ahead of main", message)
+            # No landing proposed that branch as a pull request.
+            message = refused("leftover", REF, "--pr", f"{OTHER_REPO}=merged", cwd=repo, env=env)
+            self.assertIn(
+                f"{REF} has no branch that a landing proposed as a pull request in"
+                f" {OTHER_REPO}, so the command takes no --pr flag for it",
+                message,
+            )
+            self.assertIn(f"task/{REF}", branches(other, env))
+            out = ultraclose("leftover", REF, cwd=repo, env=env)
+            self.assertIn(f"renamed the branch task/{REF} in {other} to kept/{REF}-", out)
+            self.assertEqual(len(json.loads(ultraclose("next", cwd=repo, env=env))), 1)
+
+    def test_leftover_moves_pull_request_branch_of_other_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, other, env, _ = self.start(tmp)
+            self.land(repo, env)
+            other_head = "fix/add-the-other-file"
+            # The new run leaves the proposed task in the earlier run, and
+            # it records the branch of each pull request of the task.
+            flags = ("--target", "pr", "--repo", f"{OTHER_REPO}=main", "--force")
+            run = str(Path(tmp, "second"))
+            out = ultraclose("init", "--run", run, *flags, cwd=repo, env=env)
+            lines = out.splitlines()
+            self.assertIn(f"{REF} {HEAD}", lines)
+            self.assertIn(f"{REF} {other_head} repo={other}", lines)
+            triage(tmp, repo, env, {"ref": REF, "repos": {OTHER_REPO: []}})
+            message = " ".join(refused("next", cwd=repo, env=env).split())
+            self.assertIn(f"the branch {other_head} in {other} that a landing proposed", message)
+            self.assertIn("--pr NAME=STATE", message)
+            # The command takes one flag per branch of a pull request.
+            message = refused("leftover", REF, "--pr", "none", cwd=repo, env=env)
+            self.assertIn("only with the --pr flag", message)
+            # The pull request of the other repository merged, and the pull
+            # request of the repository of the run never opened.
+            git("merge", "-q", "--squash", other_head, cwd=other, env=env)
+            git("commit", "-q", "--no-verify", "-m", "squash", cwd=other, env=env)
+            pr = ("--pr", "none", "--pr", f"{OTHER_REPO}=merged")
+            out = ultraclose("leftover", REF, *pr, cwd=repo, env=env)
+            self.assertIn(f"deleted the branch {other_head} in {other}, whose change main holds", out)
+            self.assertIn(f"renamed the branch {HEAD} to kept/{REF}-", out)
+            self.assertIn("has no leftover work", out)
+            self.assertNotIn(other_head, branches(other, env))
+            self.assertEqual(state_of(Path(run))["tasks"][REF]["state"], "pending")
+
+    def test_init_moves_task_only_with_its_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            other_repo(tmp, env)
+            earlier = in_session(env, "first")
+            first = Path(tmp, "first").resolve()
+            script = earlier_skill(tmp)
+            flags = ("--target", "pr", "--repo", f"{OTHER_REPO}=main")
+            ultraclose("init", "--run", str(first), *flags, cwd=repo, env=earlier, script=script)
+            triage(tmp, repo, earlier, {"ref": REF, "repos": {OTHER_REPO: []}})
+            ultraclose("next", cwd=repo, env=earlier, script=script)
+            # A run of another session and another version of the skill
+            # moves its unfinished tasks to the new run.
+            later = in_session(env, "second")
+            run = str(Path(tmp, "run"))
+            message = refused("init", "--run", run, "--target", "pr", cwd=repo, env=later)
+            self.assertIn(f"lacks the flags --repo {OTHER_REPO}=main", message)
+            ultraclose("init", "--run", run, *flags, cwd=repo, env=later)
+            self.assertIn(REF, state_of(Path(run))["tasks"])
+
+
 class SetTest(LandCase):
     """The set command also sets the aven task of a task that it notes,
     closes, or lands.
@@ -10159,12 +11563,16 @@ def landing_facts(code):
         "commit": "",
         "has_branch": True,
         "own": True,
+        "owners": None,
         "url": "",
         "head": "feat/a",
         "held": "",
         "unremoved": "",
         "undeleted": False,
         "open": False,
+        "others": [],
+        "name": "",
+        "merged": [],
     }
 
 
@@ -11843,6 +13251,116 @@ class WorkflowResultTest(WorkflowCase):
                 )
                 if reporters is not None:
                     self.assertIn(listed(*reporters), prompt)
+
+
+@unittest.skipUnless(NODE, "node is not on PATH")
+class WorkflowOtherRepoTest(WorkflowCase):
+    """The prompts of a task that changes other repositories name each worktree."""
+
+    # The other repository of the task, as ultraclose.py names it in the
+    # repos field of the task. Its base branch differs from the base
+    # branch of the run.
+    THEIRS = {
+        "name": "x",
+        "repo": "/repos/x",
+        "base": "dev",
+        "wt": f"/repos/x/.claude/worktrees/t-{REF}",
+        "branch": f"task/{REF}",
+        "msg": f"/run/tasks/{REF}/msg-x.txt",
+    }
+    # The pull request that the task records in the other repository.
+    THEIR_URL = "https://github.com/example/x/pull/3"
+
+    def args(self, resume=None, pull=None, theirs=None):
+        """The Workflow input of a task that changes the other repository.
+
+        The resume argument holds the resume field of the task. The pull
+        argument holds the pull request that the task records in the
+        repository of the run, and theirs holds the one in the other
+        repository.
+        """
+        other = {**self.THEIRS, **({"pr": theirs} if theirs else {})}
+        task = {
+            "ref": REF,
+            "title": "t",
+            "wt": "/repo/wt",
+            "branch": f"task/{REF}",
+            "dir": f"/run/tasks/{REF}",
+            "repos": [other],
+            **({"resume": resume} if resume else {}),
+            **({"pr": pull} if pull else {}),
+        }
+        return {
+            "run": "/run",
+            "repo": "/repo",
+            "base": "main",
+            "pr": True,
+            "rounds": 1,
+            "script": str(WORKFLOW),
+            "task": task,
+        }
+
+    def test_every_agent_learns_each_worktree(self):
+        _, calls = self.run_workflow(
+            {
+                "impl": IMPLEMENTED,
+                "review r1": CHANGES,
+                "fix r1": fixed(1),
+                "review final": CHANGES,
+                "narrow": NARROWED,
+            },
+            args=self.args(),
+        )
+        _, synced = self.run_workflow(
+            {"sync": SYNCED, "review r2": APPROVE}, args=self.args(resume=SYNC)
+        )
+        calls["sync"] = synced["sync"]
+        wt = self.THEIRS["wt"]
+        named = f"{wt}, on branch task/{REF}, which was cut from dev of the main checkout /repos/x."
+        diff = f"`cd {wt} && git diff dev...HEAD`"
+        for label, call in calls.items():
+            with self.subTest(label):
+                prompt = call["prompt"]
+                self.assertIn(named, prompt)
+                self.assertIn(self.THEIRS["msg"], prompt)
+                self.assertIn("rules.md gives the rules of each repository", prompt)
+                # The implementer writes the diff, and the narrowing agent
+                # does not read it.
+                if label not in ("impl", "narrow"):
+                    self.assertIn(diff, prompt)
+        merge = f'`cd {wt} && git merge --no-verify -m "Merge dev" dev`'
+        self.assertIn(merge, calls["sync"]["prompt"])
+        self.assertIn("merges after the pull requests of the other", calls["impl"]["prompt"])
+        # The commit of the task branch in the other repository is on no
+        # remote, so no pin can name it before its pull request merges.
+        pin = (
+            "Keep each pin in /repo to a commit of another repository of the task"
+            " at its old value, and name each such pin in the notes."
+        )
+        for label, call in calls.items():
+            with self.subTest(label):
+                self.assertIn(pin, call["prompt"])
+                self.assertNotIn("names a commit of the branch of the task", call["prompt"])
+
+    def test_task_of_one_repository_learns_no_other_repository(self):
+        for label, call in self.every_agent(landing=(True, f"task/{REF}")).items():
+            with self.subTest(label):
+                self.assertNotIn("other repositories", call["prompt"])
+
+    def test_action_names_each_pull_request(self):
+        urls = f"pull requests {URL} and {self.THEIR_URL}"
+        # name: (the result of the implementer, the words of the action)
+        cases = {
+            "obsolete": ("obsolete", f"Close the {urls} with"),
+            "abandoned": ("abandoned", f"Leave the {urls} open for the user"),
+        }
+        for name, (status, words) in cases.items():
+            with self.subTest(name):
+                result, _ = self.run_workflow(
+                    {"impl": {**IMPLEMENTED, "status": status}},
+                    args=self.args(pull=URL, theirs=self.THEIR_URL),
+                )
+                self.assertIn(words, result["action"])
 
 
 if __name__ == "__main__":

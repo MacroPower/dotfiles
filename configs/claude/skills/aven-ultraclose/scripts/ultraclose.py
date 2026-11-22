@@ -173,7 +173,8 @@ names a kept worktree.
        [--status STATUS]... [--skip-status STATUS]...
        [--priority PRIORITY]... [--min-priority PRIORITY]
        [--skip-priority PRIORITY]... [--label LABEL]...
-       [--skip-label LABEL]... [--force]
+       [--skip-label LABEL]... [--repo NAME=BASE]...
+       [--repo-check NAME=CMD]... [--force]
   config [--limit N] [--rounds N] [--model ROLE=MODEL]... [--check CMD]
        [--health CMD] [--step-timeout SECONDS] [--shared GLOB]...
        [--unshared GLOB]... [--disk-floor-gb N]
@@ -182,7 +183,8 @@ names a kept worktree.
        [--skip-status STATUS]... [--any-status] [--priority PRIORITY]...
        [--min-priority PRIORITY] [--skip-priority PRIORITY]...
        [--any-priority] [--label LABEL]... [--skip-label LABEL]...
-       [--any-label]
+       [--any-label] [--repo NAME=BASE]... [--repo-check NAME=CMD]...
+       [--no-repo NAME]...
                          change the config of the run, then print it
   triage FILE            add or update tasks from a JSON list
   untriaged [FILTER]...  print the open aven tasks that the run does not hold
@@ -191,13 +193,15 @@ names a kept worktree.
                          print the Workflow input that relaunches REF
   set REF STATE [--flag TEXT] [--note TEXT]
                          set the state of REF, and its aven task with it
-  leftover REF [--pr STATE]
+  leftover REF [--pr [NAME=]STATE]...
                          move the work that an earlier run left for REF out of
                          the way
   land REF [--next]      land REF on the target of the run, one landing at a time
-  opened REF URL         record the push and the pull request of the proposed
+  opened REF URL [--repo NAME]
+                         record the push and the pull request of the proposed
                          task REF
-  merged REF [--force]   record that the pull request of REF merged
+  merged REF [--force] [--repo NAME]
+                         record that the pull request of REF merged
   status
   watch [--interval SECONDS]
                          exit when free disk space runs low or the run ends
@@ -279,6 +283,98 @@ the push. It also refuses when git cannot delete the task branch, such
 as a branch that a worktree has checked out. That worktree can be the
 worktree of the task, which the landing did not remove, and the error
 then says to remove it. Each refusal changes nothing.
+
+A run whose landings propose pull requests can also change other
+repositories. Each --repo NAME=BASE flag of init and config adds the
+repository whose main checkout is the directory NAME of the repos
+directory, which the DOTFILES_REPOS_DIR variable names. Each task of
+that repository starts from its branch BASE, and init and config refuse
+a BASE that holds a commit that its upstream branch lacks. The
+--repo-check NAME=CMD flag sets the check of the repository. The
+--no-repo flag of config removes a repository that no unfinished or
+noted task changes. A run whose landings commit takes no other
+repository, because a landing cannot commit a task in two repositories
+at once. A pin to a commit of another repository also needs the commit
+that the merge of its pull request makes.
+
+The repos field of a triage row maps the name of each other repository
+that the task changes to the files that the task edits there. The
+scheduler locks those files in that repository, and the shared globs
+match them as they match the files of the repository of the run. The
+start of such a task gives it a worktree in each of those repositories,
+at .claude/worktrees/t-REF of the main checkout, on the branch task/REF.
+The Workflow input names each of them in the repos field of the task.
+The message of each other repository goes to msg-NAME.txt in the task
+directory, beside the msg.txt of the repository of the run. A landing
+reads the message of a repository only when its branch holds a change
+of its own.
+
+A landing of such a task merges the base branch into the worktree of
+each repository whose branch holds a change of its own, and of each
+repository that an earlier landing proposed. It proposes each of them
+whose branch then holds a change against its base branch, and it runs
+the check of each repository that it proposes. The worktree and the
+branch of the task stay in each repository in which no landing proposed
+the task, the repository of the run included, until the task lands. The
+landing prints one REPO line per other repository that it proposes,
+with the branch, the base branch, and the main checkout. Its RESULT line
+names the branch of the repository of the run only when it proposed the
+task there. The ACTION line of a failure in another repository opens
+with the name of that repository, the worktree of the task there, and
+its branch.
+
+The opened and merged commands take --repo NAME for the pull request of
+another repository, and the task waits as proposed until every pull
+request merged. The merged command takes the pull request of the
+repository of the run only after each other pull request merged, because
+its change can depend on theirs, such as with a pin to a commit. A
+commit of the task branch in another repository reaches a remote only
+through that merge, so the agents keep each such pin at its old value.
+After the merge of the last other pull request, the merged command says
+how to sync the task so that each pin names a commit that holds the
+merge. The text names each other repository whose merge the run
+recorded, with the commit of its base branch when the run recorded the
+merge.
+
+A pull request of another repository can merge before the run records
+the merge, and a fix can revert the change of the task there. The branch
+there then holds no change, and the next landing of the task ends with
+the result EMPTY. Its action names that repository and its pull request.
+The merged command with --repo also takes such an approved task. It
+removes the clean worktree of the task in that repository, deletes the
+branch there, and keeps the task approved, so that the next landing
+proposes the rest of the task. A landing that finds no change in the
+repository of the run, after each other pull request of the task merged,
+ends with EMPTY too, and its action says that the task has landed.
+
+A landing sets its task to approved before it waits for the landing
+lock, and it reads the worktrees of the task after it takes the lock. So
+the merged command takes an approved task only while it holds the
+landing lock, and it refuses such a task while a landing holds that
+lock. It takes a proposed task whatever holds the lock, because the land
+command refuses a proposed task.
+
+The user can also merge the pull request of the repository of the run
+early, and a fix can revert the change there. When the branch there
+then holds no change and another repository still holds one, the landing
+proposes the other repositories. It removes the worktree of the task in
+the repository of the run, and the task keeps the branch and the pull
+request there. The action names that pull request. It says to close the
+pull request when it is open, to push nothing to it, and to run the
+merged command for it after the other pull requests merge. The status
+command says that the branch holds no change, in place of a wait for its
+push or its merge, and it repeats those steps. The merged command then
+lands the task. The merged command for the last other pull request says
+so too, when the base branch of the run holds the change of that branch.
+
+The set, args, next, leftover, and init commands cover the worktrees and
+the branches of the task in each other repository as they cover those of
+the repository of the run. Init records the branch of each pull request
+of another repository for a task that stays in an earlier run. The
+leftover command then takes one --pr NAME=STATE flag per such branch,
+and it closes the task only when every pull request of the task merged.
+Init moves a task of another repository to a new run only when the new
+run holds that repository with the same main checkout and base branch.
 
 Each --model ROLE=MODEL flag of init and config names the model of the
 agents of one role of close-task.js. The roles are implementer, sync,
@@ -735,6 +831,14 @@ KEY = "ultraclose.run"
 # The environment variable in which Claude Code names the session of each
 # command that it runs.
 SESSION = "CLAUDE_CODE_SESSION_ID"
+# The environment variable that names the directory that holds the
+# repositories of the host. home/claude.nix sets it to dotfiles.reposDir.
+# Each --repo flag names another repository by its directory there.
+REPOS_DIR = "DOTFILES_REPOS_DIR"
+# The name of another repository of a run, which is the name of its
+# directory in the repos directory. The name opens with a letter or a
+# digit, so it names neither the repos directory nor its parent.
+REPO_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 # The states that the --note flag of the set command applies to. The
 # command adds the note to the aven task of a task that it sets to one
 # of them.
@@ -1040,6 +1144,23 @@ def locked(path):
 
 
 @contextmanager
+def tried(path):
+    """Take the lock of a path without a wait, and yield whether the block holds it.
+
+    The block runs either way. When another process holds the lock, the
+    block runs without it.
+    """
+    with open(path, "w") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            took = False
+        else:
+            took = True
+        yield took
+
+
+@contextmanager
 def edited(run):
     """Load state.json under a lock and save it when the block ends."""
     with locked(run / "state.lock"):
@@ -1089,6 +1210,91 @@ def branch(task, ref):
     return task.get("branch") or task_branch(ref)
 
 
+def other_repos(cfg):
+    """The other repositories of a run, by name.
+
+    Each entry holds the main checkout of the repository as path, its
+    base branch as base, and its check as check. A run can continue from
+    a state file that has no repos key. That run has no other repository.
+    """
+    return cfg.get("repos", {})
+
+
+def other_worktree(path, ref):
+    """The worktree of a task in another repository, whose main checkout is path."""
+    return f"{path}/.claude/worktrees/t-{ref}"
+
+
+def message_name(name):
+    """The file of a task directory that holds the message of one repository.
+
+    The name is the name of another repository of the run, or empty for
+    the repository of the run.
+    """
+    return f"msg-{name}.txt" if name else "msg.txt"
+
+
+def task_repos(cfg, t, ref):
+    """The repositories of a task whose change has not merged, each with its facts.
+
+    The first entry stands for the repository of the run. Each later
+    entry stands for another repository of the run that the triage row
+    of the task names, in the order of the names. The function leaves out
+    each other repository whose pull request merged, because its base
+    branch holds the change.
+
+    Each entry holds the name of the repository, which is empty for the
+    repository of the run, and its main checkout as repo. It also holds
+    the base branch, the worktree of the task, the branch of the task,
+    the file of the task directory that holds the message, and the check
+    of that repository. The pr value holds the pull request that the task
+    records there, or an empty text. The proposed value says whether a
+    landing proposed the task there, which renames the branch. The record
+    value is the part of the task that records the branch, the pull
+    request, and the push: the task itself for the repository of the run,
+    and the entry of the repository in the repos field of the task
+    otherwise.
+    """
+    found = [
+        {
+            "name": "",
+            "repo": cfg["repo"],
+            "base": cfg["base"],
+            "wt": worktree(cfg, ref),
+            "branch": branch(t, ref),
+            "msg": message_name(""),
+            "check": cfg["check"],
+            "pr": t.get("pr", ""),
+            "proposed": "branch" in t,
+            "record": t,
+        }
+    ]
+    held = other_repos(cfg)
+    for name, entry in sorted(t.get("repos", {}).items()):
+        if entry.get("merged"):
+            continue
+        if name not in held:
+            die(
+                f"{ref} changes the repository {name}, which the run does not hold."
+                f" Add it with config --repo {name}=BASE"
+            )
+        found.append(
+            {
+                "name": name,
+                "repo": held[name]["path"],
+                "base": held[name]["base"],
+                "wt": other_worktree(held[name]["path"], ref),
+                "branch": entry.get("branch") or task_branch(ref),
+                "msg": message_name(name),
+                "check": held[name].get("check", ""),
+                "pr": entry.get("pr", ""),
+                "proposed": "branch" in entry,
+                "record": entry,
+            }
+        )
+    return found
+
+
 def base_of(target):
     """The base branch of a target, and whether its landings propose pull requests."""
     kind, _, named = target.partition(":")
@@ -1136,6 +1342,34 @@ def move_refusal(cfg, target):
     return None
 
 
+def repos_refusal(st, repos):
+    """Why init keeps the unfinished tasks of a run from a run with the repositories.
+
+    Each task that init moves keeps its worktrees and its branches in the
+    other repositories that it changes, and each of them starts from the
+    base branch of its repository. So the new run must hold each such
+    repository with the same main checkout and the same base branch. The
+    repos hold the other repositories of the new run. The result names
+    the flags that the new run lacks, and it is None when the new run
+    holds every such repository.
+    """
+    unfinished, noted = moving(st["tasks"])
+    held = other_repos(st["config"])
+    missing = {}
+    for ref in unfinished + noted:
+        for name in st["tasks"][ref].get("repos", {}):
+            # A task of a repository that the run does not hold names no
+            # main checkout, so the flag names the repository alone.
+            was = held.get(name, {})
+            new = repos.get(name, {})
+            if was.get("path") != new.get("path") or was.get("base") != new.get("base"):
+                missing[name] = was.get("base", "BASE")
+    if not missing:
+        return None
+    flags = " ".join(f"--repo {name}={base}" for name, base in sorted(missing.items()))
+    return f"the new run lacks the flags {flags}"
+
+
 def target_text(cfg):
     """What the status command prints about the target of a run."""
     base = cfg["base"]
@@ -1149,6 +1383,18 @@ def branch_exists(repo, name):
     head = f"refs/heads/{name}"
     found = sh("git", "rev-parse", "-q", "--verify", head, cwd=repo, check=False)
     return not found.returncode
+
+
+def commits_ahead(p):
+    """How many commits the task branch holds that its base branch lacks.
+
+    The p argument names one repository of the task, as task_repos()
+    gives it. A branch that does not exist holds no commit.
+    """
+    if not branch_exists(p["repo"], p["branch"]):
+        return 0
+    count = ("git", "rev-list", "--count", f"{p['base']}..{p['branch']}")
+    return int(out(*count, cwd=p["repo"]))
 
 
 def listed_worktrees(repo):
@@ -1271,9 +1517,24 @@ def matches(glob, file):
     return fnmatch.fnmatch("/" + file, glob)
 
 
+def task_files(task):
+    """The files that the triage row of a task names, each with its repository.
+
+    Each file is a pair of the name of its repository and its path
+    relative to that repository. The name is empty for the repository of
+    the run, so one path in two repositories gives two files.
+    """
+    found = [("", f) for f in task["files"]]
+    for name, entry in sorted(task.get("repos", {}).items()):
+        found += [(name, f) for f in entry["files"]]
+    return found
+
+
 def locks(cfg, task):
     return {
-        f for f in task["files"] if not any(matches(g, f) for g in cfg["shared"])
+        (name, f)
+        for name, f in task_files(task)
+        if not any(matches(g, f) for g in cfg["shared"])
     }
 
 
@@ -1288,7 +1549,7 @@ def unmatched(st):
     cfg, tasks = st["config"], st["tasks"]
     if not tasks:
         return []
-    files = {f for t in tasks.values() for f in t["files"]}
+    files = {f for t in tasks.values() for _, f in task_files(t)}
     return [
         g
         for g in cfg["shared"]
@@ -1367,6 +1628,22 @@ def workflow_args(st, run, ref, resume=None):
     # names that pull request in its action.
     if t.get("pr"):
         task["pr"] = t["pr"]
+    # A task that changes other repositories has a worktree and a branch
+    # in each of them. The agents of close-task.js work in every worktree,
+    # and each repository has a message file of its own.
+    if others := task_repos(cfg, t, ref)[1:]:
+        task["repos"] = [
+            {
+                "name": p["name"],
+                "repo": p["repo"],
+                "base": p["base"],
+                "wt": p["wt"],
+                "branch": p["branch"],
+                "msg": str(run / "tasks" / ref / p["msg"]),
+                **({"pr": p["pr"]} if p["pr"] else {}),
+            }
+            for p in others
+        ]
     if resume:
         task["resume"] = resume
     return {
@@ -1785,8 +2062,11 @@ def take_over(repo, old, run, new, rejected, fresh):
     return stay, waited, added
 
 
-def ignore_worktrees(repo):
+def ignore_worktrees(repo, command="init"):
     """Make git ignore the task worktrees of a repository.
+
+    The command names the command of this script that runs the
+    function, for its error.
 
     The worktrees sit inside the main checkout. Without the exclude
     entry, git lists them as files that it does not track, and the main
@@ -1829,10 +2109,10 @@ def ignore_worktrees(repo):
                 f.write(entry)
         except OSError as e:
             die(
-                f"init cannot add the line .claude/worktrees/ to {exclude}: {e}."
-                " Without that line, git lists each task worktree as an"
+                f"{command} cannot add the line .claude/worktrees/ to {exclude}:"
+                f" {e}. Without that line, git lists each task worktree as an"
                 " untracked file of the main checkout. Remove the cause and run"
-                " init again"
+                f" {command} again"
             )
 
 
@@ -1857,6 +2137,140 @@ def upstream_of(repo, name):
     if found.returncode or not ref.startswith("refs/remotes/"):
         return None
     return ref
+
+
+def find_repo(name, own):
+    """The main checkout of the repository that a --repo flag names.
+
+    The flag names the directory of the repository in the repos directory
+    of the host, which the REPOS_DIR variable names. The command ends when
+    the variable is unset, when the directory is not the main checkout of
+    a git repository, and when the directory holds the repository of the
+    run, whose main checkout is own. The result is the path of the main
+    checkout as git prints it.
+    """
+    top = os.environ.get(REPOS_DIR, "")
+    if not top:
+        die(
+            f"the variable {REPOS_DIR} names no repos directory, so the command"
+            f" cannot find the repository {name}. Set {REPOS_DIR} to the directory"
+            " that holds the repositories of this host"
+        )
+    path = Path(top, name)
+    if not path.is_dir():
+        die(
+            f"the repos directory {top} holds no directory {name}. Each --repo"
+            " flag names the directory of a repository there"
+        )
+    p = sh("git", "worktree", "list", "--porcelain", cwd=path, check=False)
+    if p.returncode:
+        die(f"{path} is not a git repository:\n{p.stderr.strip()}")
+    main = p.stdout.splitlines()[0].split(" ", 1)[1]
+    if os.path.realpath(main) != os.path.realpath(path):
+        die(f"{path} is not the main checkout of its repository, which is {main}")
+    if os.path.realpath(main) == os.path.realpath(own):
+        die(f"{path} holds the repository of the run, so it is no other repository")
+    return main
+
+
+def add_repos(cfg, tasks, a, command):
+    """The other repositories of a run after the repository flags of init or config.
+
+    The cfg holds the config of the run, and the tasks hold its tasks.
+    Each --no-repo flag of config removes a repository that no
+    unfinished or noted task names. Each --repo NAME=BASE flag adds the
+    repository NAME of the repos directory with the base branch BASE.
+    The flag changes a repository that the run holds only while no
+    unfinished or noted task names it, because each task of such a
+    repository starts from its base branch. Each --repo-check NAME=CMD
+    flag sets the check of a repository, and an empty CMD removes it.
+
+    Only a run whose landings propose pull requests takes another
+    repository. A landing that commits cannot commit a task in two
+    repositories at once. A change in the repository of the run can pin a
+    commit of another repository, and only the merge of the pull request
+    there gives that commit.
+
+    A task of another repository starts from its local base branch. So
+    the command ends when that branch holds a commit that its upstream
+    branch lacks, because the pull request then carries that commit. For
+    a base branch that follows no remote branch, the function adds a text
+    to the unchecked list that it returns. The function also makes git of
+    each repository that it adds ignore the task worktrees, as
+    ignore_worktrees() says.
+
+    Return the repositories by name, and the unchecked texts.
+    """
+    repos = {name: dict(entry) for name, entry in other_repos(cfg).items()}
+
+    def users(name):
+        return sorted(
+            r
+            for r, t in tasks.items()
+            if name in t.get("repos", {}) and t["state"] not in SETTLED
+        )
+
+    for name in getattr(a, "no_repo", []):
+        if name not in repos:
+            die(f"the run holds no repository {name}. It holds {' '.join(repos) or 'none'}")
+        if held := users(name):
+            die(
+                f"the tasks {' '.join(held)} change the repository {name}, so the"
+                " run keeps it"
+            )
+        del repos[name]
+    if a.repo and not proposes(cfg):
+        die(
+            f"a run with the target {cfg['base']} commits each task on {cfg['base']},"
+            " and it takes no other repository. A landing cannot commit a task in"
+            " two repositories at once, and a pin to a commit of another"
+            " repository names the commit that the merge of a pull request"
+            f" makes. Start the run with the target {PR} or {PR}:BRANCH to change"
+            " other repositories"
+        )
+    unchecked = []
+    for name, base in a.repo:
+        path = find_repo(name, cfg["repo"])
+        if name in repos and (repos[name]["path"], repos[name]["base"]) != (path, base):
+            if held := users(name):
+                die(
+                    f"the tasks {' '.join(held)} start from the base branch"
+                    f" {repos[name]['base']} of {name}, so the run keeps that base"
+                    " branch"
+                )
+        if not branch_exists(path, base):
+            die(f"the repository {path} has no branch {base}")
+        if upstream := upstream_of(path, base):
+            remote = upstream.removeprefix("refs/remotes/")
+            log = ("git", "log", "--format=%h %s", f"{upstream}..refs/heads/{base}")
+            if ahead := out(*log, cwd=path).splitlines():
+                die(
+                    f"each task of the repository {path} starts from the local"
+                    f" branch {base}, which holds {counted(len(ahead), 'commit')}"
+                    f" that its upstream branch {remote} lacks, so each pull request"
+                    " carries them:\n"
+                    + "\n".join(ahead[:20])
+                    + f"\nPush {base} there, or fetch {remote} when the remote holds"
+                    f" those commits already. Then run {command} again"
+                )
+        else:
+            unchecked.append(
+                f"{command} did not compare {base} of {path} with a remote branch,"
+                f" because {base} follows no remote branch. Each pull request in"
+                f" {name} carries the commits of the local branch {base} that the"
+                " remote lacks"
+            )
+        ignore_worktrees(path, command)
+        check = repos.get(name, {}).get("check", "")
+        repos[name] = {"path": path, "base": base, "check": check}
+    for name, check in a.repo_check:
+        if name not in repos:
+            die(
+                f"the run holds no repository {name}, so --repo-check cannot set its"
+                f" check. Add it with --repo {name}=BASE"
+            )
+        repos[name]["check"] = check
+    return repos, unchecked
 
 
 def cmd_init(a):
@@ -1940,6 +2354,8 @@ def cmd_init(a):
                 + "\n".join(dirty[:20])
                 + "\nCommit or remove them, and run init again"
             )
+    target_cfg = {"repo": repo, "target": a.target, "base": base}
+    repos, repo_unchecked = add_repos(target_cfg, {}, a, "init")
     # A run that the session does not continue can hold unfinished tasks,
     # as new_run_reason() says. The new run takes them, and --force leaves
     # them.
@@ -1951,6 +2367,12 @@ def cmd_init(a):
             f"the run at {old} has unfinished tasks of the target {was}, and"
             f" {why}. Name the target {was} to move those tasks to the new run,"
             " or pass --force to start an empty run without them"
+        )
+    if takes and (why := repos_refusal(old_st, repos)):
+        die(
+            f"the run at {old} has unfinished tasks that change other"
+            f" repositories, and {why}. Pass those flags to move the tasks to the"
+            " new run, or pass --force to start an empty run without them"
         )
     # The queue filters of the new run decide which pending tasks of the
     # earlier run join it, as staying() says. The start of a task sets its
@@ -1992,6 +2414,7 @@ def cmd_init(a):
         "repo": repo,
         "target": a.target,
         "base": base,
+        "repos": repos,
         "worktrees": f"{repo}/.claude/worktrees",
         "limit": a.limit,
         "rounds": a.rounds,
@@ -2046,8 +2469,12 @@ def cmd_init(a):
             print(f"left {tasks} with the branch of a pull request in that run:")
             for ref in added:
                 entry = new["left"][ref]
-                opened = f" pr={entry['pr']}" if "pr" in entry else ""
-                print(f"{ref} {entry['branch']}{opened}")
+                if "branch" in entry:
+                    opened = f" pr={entry['pr']}" if "pr" in entry else ""
+                    print(f"{ref} {entry['branch']}{opened}")
+                for other in entry.get("repos", {}).values():
+                    opened = f" pr={other['pr']}" if "pr" in other else ""
+                    print(f"{ref} {other['branch']} repo={other['path']}{opened}")
     elif old:
         print(f"replaced a run that init cannot read, because {cause}")
     moved = sorted(new["tasks"].items())
@@ -2073,6 +2500,8 @@ def cmd_init(a):
             print(line)
     if unchecked:
         print(unchecked)
+    for text in repo_unchecked:
+        print(text)
     print(f"run={run} repo={repo} target={a.target} base={base} limit={a.limit}")
 
 
@@ -2085,6 +2514,9 @@ def cmd_config(a):
         # A run can continue from a state file that has no filters key.
         # That run has no queue filter.
         cfg["filters"] = queue_filters(cfg.get("filters", {}), a)
+        repos, unchecked = add_repos(cfg, st["tasks"], a, "config")
+        if repos or "repos" in cfg:
+            cfg["repos"] = repos
         if absent := [g for g in a.unshared if g not in cfg["shared"]]:
             die(
                 f"no shared glob {' '.join(absent)}. The shared globs are"
@@ -2122,6 +2554,8 @@ def cmd_config(a):
         # The triage command warns about the globs of earlier commands.
         unused = [g for g in unmatched(st) if g in a.shared]
     print(json.dumps(cfg, indent=1, sort_keys=True))
+    for text in unchecked:
+        print(text, file=sys.stderr)
     warn_unmatched(unused)
 
 
@@ -2260,16 +2694,69 @@ def joining_refusal(repo, st, rows, deps):
     return text
 
 
+def repos_rows_refusal(st, rows):
+    """Why the triage command refuses the repos fields of rows.
+
+    The repos field of a row maps the name of each other repository that
+    the task changes to the files that the task edits there. The run must
+    hold each such repository, and a run whose landings commit holds
+    none. A row of a task that the run holds can drop a repository only
+    while the task has no branch there, because the run then keeps no
+    work of the task there. The result is empty when the function refuses
+    no row.
+    """
+    cfg = st["config"]
+    held = other_repos(cfg)
+    found = []
+    for row in rows:
+        ref, named = row["ref"], row.get("repos", {})
+        if not isinstance(named, dict) or not all(
+            isinstance(f, list) and all(isinstance(x, str) for x in f)
+            for f in named.values()
+        ):
+            found.append(
+                f"{ref}: the repos field maps the name of each other repository to"
+                " a list of files"
+            )
+            continue
+        if unknown := sorted(set(named) - set(held)):
+            how = (
+                "Add each of them with config --repo NAME=BASE"
+                if proposes(cfg)
+                else f"A run with the target {cfg['base']} takes no other repository"
+            )
+            found.append(
+                f"{ref}: the run holds no repository {' '.join(unknown)}. {how}"
+            )
+            continue
+        t = st["tasks"].get(ref)
+        for name in sorted(set(t.get("repos", {}) if t else ()) - set(named)):
+            entry = t["repos"][name]
+            path = held.get(name, {}).get("path")
+            name_of = entry.get("branch") or task_branch(ref)
+            if path and Path(path).is_dir() and branch_exists(path, name_of):
+                found.append(
+                    f"{ref}: the task has the branch {name_of} in {path}, so the row"
+                    f" keeps the repository {name}"
+                )
+    if not found:
+        return ""
+    return "the triage loads no task:\n" + "\n".join(found)
+
+
 def cmd_triage(a):
     repo = main_checkout()
     run, saved = current(repo)
     rows = json.loads(Path(a.file).read_text())
+    if why := repos_rows_refusal(saved, rows):
+        die(why)
     # A failed aven command ends the triage before it changes the state.
     deps = {row["ref"]: dependencies(repo, row["ref"]) for row in rows}
     if why := joining_refusal(repo, saved, rows, deps):
         die(why)
     with state(run) as st:
         added = updated = 0
+        held = other_repos(st["config"])
         for row in rows:
             ref = row["ref"]
             files = sorted(
@@ -2283,6 +2770,27 @@ def cmd_triage(a):
                 "last": bool(row.get("last", False)),
             }
             old = st["tasks"].get(ref)
+            # The repos field maps each other repository that the task
+            # changes to its files. A landing adds the branch, the pull
+            # request, and the push of the task there, and the triage keeps
+            # them.
+            named = row.get("repos", {})
+            if named or (old and old.get("repos")):
+                was = old.get("repos", {}) if old else {}
+                new["repos"] = {
+                    name: {
+                        **was.get(name, {}),
+                        "files": sorted(
+                            {
+                                f.removeprefix(held[name]["path"] + "/").removeprefix(
+                                    "./"
+                                )
+                                for f in named[name]
+                            }
+                        ),
+                    }
+                    for name in sorted(named)
+                }
             if old:
                 old.update(new)
                 updated += 1
@@ -2395,20 +2903,50 @@ def left_branches(repo, st, refs):
     each branch that the state st records the same way. The record holds
     only the branches that exist.
 
+    A landing also proposes the task in each other repository that the
+    task changes. The repos field of an entry records each branch of
+    such a pull request that has not merged, with the main checkout and
+    the base branch of its repository, because the new run might not
+    hold that repository.
+
     Return the record, by ref, and the refs that the record adds for the
     tasks of the state st.
     """
-    left = {
-        ref: entry
-        for ref, entry in st.get("left", {}).items()
-        if branch_exists(repo, entry["branch"])
-    }
+
+    def exists(path, name):
+        return Path(path).is_dir() and branch_exists(path, name)
+
+    def kept(entry):
+        found = {}
+        if "branch" in entry and branch_exists(repo, entry["branch"]):
+            found = {key: entry[key] for key in ("branch", "pr") if key in entry}
+        others = {
+            name: other
+            for name, other in entry.get("repos", {}).items()
+            if exists(other["path"], other["branch"])
+        }
+        if others:
+            found["repos"] = others
+        return found
+
+    left = {ref: found for ref, entry in st.get("left", {}).items() if (found := kept(entry))}
+    held = other_repos(st["config"])
     added = []
     for ref in sorted(refs):
         t = st["tasks"][ref]
-        name = t.get("branch")
-        if name and t["state"] not in SETTLED and branch_exists(repo, name):
-            left[ref] = {key: t[key] for key in ("branch", "pr") if key in t}
+        if t["state"] in SETTLED:
+            continue
+        others = {
+            name: {
+                "path": held[name]["path"],
+                "base": held[name]["base"],
+                **{key: entry[key] for key in ("branch", "pr") if key in entry},
+            }
+            for name, entry in sorted(t.get("repos", {}).items())
+            if "branch" in entry and not entry.get("merged") and name in held
+        }
+        if found := kept({**t, "repos": others}):
+            left[ref] = found
             added.append(ref)
     return left, added
 
@@ -2423,22 +2961,18 @@ def leftovers(st, run, refs):
     names the pull request, or says that the earlier run recorded none.
     That run records no pull request before the orchestrator opens it,
     and the orchestrator might never have pushed the branch. Also return
-    the entry of the record for each line that names such a branch.
-    """
-    cfg = st["config"]
-    repo, base = cfg["repo"], cfg["base"]
-    # A run can continue from a state file that has no left key.
-    left = st.get("left", {})
-    heads = out(
-        "git",
-        "for-each-ref",
-        "--format=%(refname:lstrip=2)",
-        "refs/heads/task",
-        cwd=repo,
-    ).splitlines()
+    the entry of the record for each line that names such a branch, with
+    the name and the base branch of its repository.
 
-    def ahead(name):
-        n = int(out("git", "rev-list", "--count", f"{base}..{name}", cwd=repo))
+    The function also looks in each other repository that the task
+    changes, and in each other repository where left_branches() records a
+    branch of the task. The text of such a repository names its main
+    checkout.
+    """
+    def ahead(place, name):
+        base = place["base"]
+        count = ("git", "rev-list", "--count", f"{base}..{name}")
+        n = int(out(*count, cwd=place["repo"]))
         return f"{n} {'commit' if n == 1 else 'commits'} ahead of {base}"
 
     lines, proposals = [], []
@@ -2446,28 +2980,82 @@ def leftovers(st, run, refs):
         if owns(run, ref):
             continue
         found = []
-        # A task of an earlier run starts on the branch of task_branch().
-        name = task_branch(ref)
-        if name in heads:
-            found.append(f"the branch {name}, {ahead(name)}")
-        entry = left.get(ref)
-        if entry and branch_exists(repo, entry["branch"]):
-            name = entry["branch"]
-            if pr := entry.get("pr"):
-                found.append(
-                    f"the branch {name} of the pull request {pr}, {ahead(name)}"
-                )
-            else:
-                found.append(
-                    f"the branch {name} that a landing proposed, with no recorded"
-                    f" pull request, {ahead(name)}"
-                )
-            proposals.append(entry)
-        if Path(worktree(cfg, ref)).exists():
-            found.append(f"the worktree {worktree(cfg, ref)}")
+        for place in leftover_places(st, ref):
+            path, base = place["repo"], place["base"]
+            where = f" in {path}" if place["name"] else ""
+            # A task of an earlier run starts on the branch of task_branch().
+            name = task_branch(ref)
+            if branch_exists(path, name):
+                found.append(f"the branch {name}{where}, {ahead(place, name)}")
+            if entry := place["proposal"]:
+                name = entry["branch"]
+                if pr := entry.get("pr"):
+                    found.append(
+                        f"the branch {name}{where} of the pull request {pr},"
+                        f" {ahead(place, name)}"
+                    )
+                else:
+                    found.append(
+                        f"the branch {name}{where} that a landing proposed, with no"
+                        f" recorded pull request, {ahead(place, name)}"
+                    )
+                proposals.append({**entry, "name": place["name"], "base": base})
+            if Path(place["wt"]).exists():
+                found.append(f"the worktree {place['wt']}")
         if found:
             lines.append(f"{ref}: {', and '.join(found)}")
     return lines, proposals
+
+
+def leftover_places(st, ref):
+    """The repositories where an earlier run can have left work for a task.
+
+    The first entry stands for the repository of the run. Each later
+    entry stands for another repository that the triage row of the task
+    names and that the run holds, or where left_branches() records a
+    branch of the task. Each entry holds the name of the repository,
+    which is empty for the repository of the run, its main checkout as
+    repo, its base branch, and the worktree of the task there. The
+    proposal value holds the record of left_branches() for the branch of
+    a pull request there that still exists, or None. The function leaves
+    out a repository whose main checkout is gone.
+    """
+    cfg = st["config"]
+    # A run can continue from a state file that has no left key.
+    entry = st.get("left", {}).get(ref, {})
+    own = {k: entry[k] for k in ("branch", "pr") if k in entry} if "branch" in entry else None
+    places = [
+        {
+            "name": "",
+            "repo": cfg["repo"],
+            "base": cfg["base"],
+            "wt": worktree(cfg, ref),
+            "proposal": own if own and branch_exists(cfg["repo"], own["branch"]) else None,
+        }
+    ]
+    held = other_repos(cfg)
+    t = st["tasks"].get(ref, {})
+    recorded = entry.get("repos", {})
+    for name in sorted((set(t.get("repos", {})) & set(held)) | set(recorded)):
+        other = recorded.get(name)
+        path, base = (held[name]["path"], held[name]["base"]) if name in held else (
+            other["path"],
+            other["base"],
+        )
+        if not Path(path).is_dir():
+            continue
+        if other and not branch_exists(path, other["branch"]):
+            other = None
+        places.append(
+            {
+                "name": name,
+                "repo": path,
+                "base": base,
+                "wt": other_worktree(path, ref),
+                "proposal": other,
+            }
+        )
+    return places
 
 
 def refuse_leftovers(st, run, refs, retry):
@@ -2490,12 +3078,11 @@ def refuse_leftovers(st, run, refs, retry):
             " started no task.\n" + "\n".join(lines) + "\nMove the work of each"
             " task out of the way with ultraclose.py leftover <ref>. That"
             " command keeps each commit and each uncommitted change of the"
-            f" work. {pr_steps(st['config']['base'], proposals)}Then run"
-            f" ultraclose.py {retry}."
+            f" work. {pr_steps(proposals)}Then run ultraclose.py {retry}."
         )
 
 
-def pr_steps(base, proposals):
+def pr_steps(proposals):
     """What a caller does before the leftover command moves a pull request branch.
 
     The proposals argument holds the entry of each such branch, as
@@ -2513,15 +3100,26 @@ def pr_steps(base, proposals):
             " <owner>:<branch> and state to all. When the list is empty, the"
             " branch has no pull request."
         )
+    bases = " and ".join(
+        dict.fromkeys(
+            f"{e['base']} of {e['name']}" if e["name"] else e["base"] for e in proposals
+        )
+    )
+    other = ""
+    if any(e["name"] for e in proposals):
+        other = (
+            " For the branch of another repository, pass --pr NAME=STATE with the"
+            " name of that repository in place of --pr STATE."
+        )
     return (
         "Before the command moves the branch of a pull request, read that pull"
         f" request with mcp__github__pull_request_read.{find} Close an open pull"
         " request with mcp__github__update_pull_request, unless the user asks"
         " you to keep it open. Then pass what you found to the command as"
-        f" --pr {', --pr '.join(PR_STATES[:-1])}, or --pr {PR_STATES[-1]}. Before"
-        f" you pass --pr merged, bring the merge into the local branch {base}."
-        " The command then closes the task, because a merged task does not"
-        " need a new attempt. "
+        f" --pr {', --pr '.join(PR_STATES[:-1])}, or --pr {PR_STATES[-1]}.{other}"
+        " Before you pass --pr merged, bring the merge into the local branch"
+        f" {bases}. The command closes the task when every pull request of the"
+        " task merged, because a merged task does not need a new attempt. "
     )
 
 
@@ -2555,31 +3153,41 @@ def cmd_leftover(a):
                 " command changed nothing. A run resumes the branch and the"
                 " worktree that it created"
             )
-        # The branch that a landing of an earlier run proposed as a pull
-        # request, or None.
-        proposal = proposals[0]["branch"] if proposals else None
-        if proposal and not a.pr:
+        # The places hold the branch that a landing of an earlier run
+        # proposed as a pull request in each repository, as their proposal
+        # values say. Each --pr flag gives the state of one such pull
+        # request, by the name of its repository.
+        places = leftover_places(st, ref)
+        states = dict(a.pr)
+        named = {p["name"] for p in places if p["proposal"]}
+        if named - set(states):
             die(
                 "the command moves the branch of a pull request only with the"
                 " --pr flag, and it changed nothing.\n"
                 + "\n".join(lines)
                 + "\n"
-                + pr_steps(base, proposals).strip()
+                + pr_steps(proposals).strip()
             )
-        if a.pr and not proposal:
+        if extra := sorted(set(states) - named):
+            where = " and ".join(name or "the repository of the run" for name in extra)
             die(
-                f"{ref} has no branch that a landing proposed as a pull request,"
-                " so the command takes no --pr flag for it. The command changed"
-                " nothing"
+                f"{ref} has no branch that a landing proposed as a pull request in"
+                f" {where}, so the command takes no --pr flag for it. The command"
+                " changed nothing"
             )
-        if a.pr == "none" and "pr" in proposals[0]:
-            die(
-                f"the earlier run recorded the pull request {proposals[0]['pr']}"
-                f" for the branch {proposal}. Read that pull request, and pass"
-                " its state with --pr. The command changed nothing"
-            )
+        for p in places:
+            if states.get(p["name"]) == "none" and "pr" in p["proposal"]:
+                die(
+                    f"the earlier run recorded the pull request {p['proposal']['pr']}"
+                    f" for the branch {p['proposal']['branch']}. Read that pull"
+                    " request, and pass its state with --pr. The command changed"
+                    " nothing"
+                )
+        # A task whose every pull request merged does not need a new
+        # attempt, so the command closes it.
+        closing = bool(states) and all(s == "merged" for s in states.values())
 
-        def note_kept(kept, origin):
+        def note_kept(place, kept, origin):
             """Add the note about a kept branch to the aven task.
 
             A note of an earlier run can name the branch by its old name,
@@ -2592,90 +3200,103 @@ def cmd_leftover(a):
             """
             after = (
                 "The pull request of that attempt merged, so the task is done."
-                if a.pr == "merged"
-                else f"A new attempt starts on a new branch from {base}."
+                if closing
+                else f"A new attempt starts on a new branch from {place['base']}."
             )
+            where = f" of the repository {place['repo']}" if place["name"] else ""
             aven_note(
                 repo,
                 ref,
-                f"The branch {kept} holds an earlier attempt at this task."
+                f"The branch {kept}{where} holds an earlier attempt at this task."
                 f" {origin} The branch stays as a reference only, so do not"
                 f" merge it and do not rebase onto it. {after}",
             )
 
-        def ahead_of_base(commit):
+        def ahead_of_base(place, commit):
             """How many commits the commit holds that the base branch lacks."""
-            count = ("git", "rev-list", "--count", f"{base}..{commit}")
-            return int(out(*count, cwd=repo))
+            count = ("git", "rev-list", "--count", f"{place['base']}..{commit}")
+            return int(out(*count, cwd=place["repo"]))
 
-        wt = worktree(cfg, ref)
         # In a directory that is no worktree, git acts on the main
         # checkout that holds the directory. The check comes before the
         # aven command, so the refusal leaves the aven task as it is.
-        if Path(wt).exists():
-            top = sh("git", "rev-parse", "--show-toplevel", cwd=wt, check=False)
-            if top.returncode or not Path(top.stdout.strip()).samefile(wt):
-                die(
-                    f"{wt} is not a git worktree, so the command changed nothing."
-                    " Move the directory away, and run the command again"
-                )
+        for place in places:
+            wt = place["wt"]
+            if Path(wt).exists():
+                top = sh("git", "rev-parse", "--show-toplevel", cwd=wt, check=False)
+                if top.returncode or not Path(top.stdout.strip()).samefile(wt):
+                    die(
+                        f"{wt} is not a git worktree, so the command changed"
+                        " nothing. Move the directory away, and run the command"
+                        " again"
+                    )
         # A merged task is done. The aven command comes before each
-        # change of the branch and of the worktree. So when it fails, a
+        # change of the branches and of the worktrees. So when it fails, a
         # second run of the command finds the work of the earlier run.
-        if a.pr == "merged":
+        if closing:
             sh("aven", "edit", ref, "--status", AVEN_STATUS["closed"], cwd=repo)
-        if Path(wt).exists():
-            if uncommitted(wt):
-                sh("git", "add", "-A", cwd=wt)
-                sh("git", "commit", "-q", "--no-verify", "-m", "wip", cwd=wt)
-                print(f"committed the uncommitted changes of the worktree {wt}")
-            # A commit of a detached HEAD belongs to no branch, so the
-            # removal of the worktree loses it. A branch keeps the commit
-            # before the worktree goes.
-            tip = out("git", "rev-parse", "HEAD", cwd=wt)
-            detached = not out("git", "branch", "--show-current", cwd=wt)
-            if detached and ahead_of_base(tip):
-                kept = kept_name(repo, ref)
-                note_kept(
-                    kept,
-                    "It holds the commits of the detached HEAD of the worktree"
-                    " of that attempt.",
+        for place in places:
+            path, wt, proposal = place["repo"], place["wt"], place["proposal"]
+            where = f" in {path}" if place["name"] else ""
+            if Path(wt).exists():
+                if uncommitted(wt):
+                    sh("git", "add", "-A", cwd=wt)
+                    sh("git", "commit", "-q", "--no-verify", "-m", "wip", cwd=wt)
+                    print(f"committed the uncommitted changes of the worktree {wt}")
+                # A commit of a detached HEAD belongs to no branch, so the
+                # removal of the worktree loses it. A branch keeps the
+                # commit before the worktree goes.
+                tip = out("git", "rev-parse", "HEAD", cwd=wt)
+                detached = not out("git", "branch", "--show-current", cwd=wt)
+                if detached and ahead_of_base(place, tip):
+                    kept = kept_name(path, ref)
+                    note_kept(
+                        place,
+                        kept,
+                        "It holds the commits of the detached HEAD of the worktree"
+                        " of that attempt.",
+                    )
+                    sh("git", "branch", kept, tip, cwd=path)
+                    print(
+                        f"created the branch {kept}{where}, which keeps the commits"
+                        " of the detached HEAD of the worktree, and added a note to"
+                        " the aven task"
+                    )
+                sh("git", "worktree", "remove", wt, cwd=path)
+                print(f"removed the worktree {wt}")
+            pr_name = proposal["branch"] if proposal else None
+            for name in (task_branch(ref), pr_name):
+                if not name or not branch_exists(path, name):
+                    continue
+                ahead = ahead_of_base(place, name)
+                # The pull request of the branch merged. The base branch
+                # holds the change even when a squash gave it another
+                # commit.
+                merged = (
+                    name == pr_name
+                    and states[place["name"]] == "merged"
+                    and holds(path, place["base"], name)
                 )
-                sh("git", "branch", kept, tip, cwd=repo)
+                if merged or not ahead:
+                    sh("git", "branch", "-q", "-D", name, cwd=path)
+                    why = (
+                        f"whose change {place['base']} holds"
+                        if ahead
+                        else f"which held no commit that {place['base']} lacks"
+                    )
+                    print(f"deleted the branch {name}{where}, {why}")
+                    continue
+                kept = kept_name(path, ref)
+                note_kept(place, kept, f"It had the name {name} before.")
+                sh("git", "branch", "-m", name, kept, cwd=path)
                 print(
-                    f"created the branch {kept}, which keeps the commits of the"
-                    " detached HEAD of the worktree, and added a note to the"
-                    " aven task"
+                    f"renamed the branch {name}{where} to {kept}, which keeps its"
+                    f" {counted(ahead, 'commit')} as a reference, and added a note"
+                    " to the aven task"
                 )
-            sh("git", "worktree", "remove", wt, cwd=repo)
-            print(f"removed the worktree {wt}")
-        for name in (task_branch(ref), proposal):
-            if not name or not branch_exists(repo, name):
-                continue
-            ahead = ahead_of_base(name)
-            # The pull request of the branch merged. The base branch holds
-            # the change even when a squash gave it another commit.
-            merged = a.pr == "merged" and name == proposal and holds(repo, base, name)
-            if merged or not ahead:
-                sh("git", "branch", "-q", "-D", name, cwd=repo)
-                why = (
-                    f"whose change {base} holds"
-                    if ahead
-                    else f"which held no commit that {base} lacks"
-                )
-                print(f"deleted the branch {name}, {why}")
-                continue
-            kept = kept_name(repo, ref)
-            note_kept(kept, f"It had the name {name} before.")
-            sh("git", "branch", "-m", name, kept, cwd=repo)
-            print(
-                f"renamed the branch {name} to {kept}, which keeps its"
-                f" {counted(ahead, 'commit')} as a reference, and added a note"
-                " to the aven task"
-            )
         # A run can continue from a state file that has no left key.
         st.get("left", {}).pop(ref, None)
-        if a.pr == "merged":
+        if closing:
             t["state"] = "closed"
             print(
                 f"{ref} closed, because its pull request merged. The aven task is done"
@@ -2695,22 +3316,27 @@ def start(st, run, ref):
     and the task resumes it.
     """
     cfg, t = st["config"], st["tasks"][ref]
-    repo, wt, name = cfg["repo"], worktree(cfg, ref), branch(t, ref)
+    repo = cfg["repo"]
     # The directory of the task records that this run started the task,
     # and owns() reads that record. So the directory comes before the
     # branch and the worktree.
     d = run / "tasks" / ref
     (d / "scratch").mkdir(parents=True, exist_ok=True)
-    if not Path(wt).exists():
+    # The task has a worktree in each repository whose change has not
+    # merged, as task_repos() lists them.
+    for p in task_repos(cfg, t, ref):
+        wt, name, path = p["wt"], p["branch"], p["repo"]
+        if Path(wt).exists():
+            continue
         # A landing that proposes a pull request removes the worktree and
         # keeps the branch, so a relaunch of that task takes this path.
         # When git still lists the worktree, the relaunch resumes it. git
         # can also remove the worktree in part and leave its directory, and
         # the landing then tells the caller to delete that directory.
-        if branch_exists(repo, name):
-            sh("git", "worktree", "add", "-q", wt, name, cwd=repo)
+        if branch_exists(path, name):
+            sh("git", "worktree", "add", "-q", wt, name, cwd=path)
         else:
-            sh("git", "worktree", "add", "-q", wt, "-b", name, cfg["base"], cwd=repo)
+            sh("git", "worktree", "add", "-q", wt, "-b", name, p["base"], cwd=path)
     (d / "task.md").write_text(out("aven", "context", ref, cwd=repo) + "\n")
     sh("aven", "edit", ref, "--status", "active", cwd=repo)
     t["state"] = "inflight"
@@ -2770,15 +3396,10 @@ def cmd_args(a):
             resume["sync"] = a.sync
         was = t["state"]
         start(st, run, a.ref)
-        # A task with no commit of its own starts again at the implementer.
-        ahead = out(
-            "git",
-            "rev-list",
-            "--count",
-            f"{st['config']['base']}..{branch(t, a.ref)}",
-            cwd=repo,
-        )
-        if ahead == "0" and not a.sync:
+        # A task with no commit of its own in any of its repositories starts
+        # again at the implementer.
+        ahead = sum(commits_ahead(p) for p in task_repos(st["config"], t, a.ref))
+        if not ahead and not a.sync:
             resume = None
             unstore(run, a.ref)
         print(json.dumps(workflow_args(st, run, a.ref, resume), indent=1))
@@ -2819,7 +3440,8 @@ def cmd_set(a):
     with state(run) as st:
         cfg = st["config"]
         t = st["tasks"].get(a.ref) or die(f"unknown task {a.ref}")
-        name, base, url = branch(t, a.ref), cfg["base"], t.get("pr")
+        name, url = branch(t, a.ref), t.get("pr")
+        places = task_repos(cfg, t, a.ref)
         mine = owns(run, a.ref)
         # A failed aven command ends the command before it changes the
         # run. The status comes before the note. So when the note fails,
@@ -2827,52 +3449,83 @@ def cmd_set(a):
         # aven task gets one note.
         if a.state in AVEN_STATUS:
             sh("aven", "edit", a.ref, "--status", AVEN_STATUS[a.state], cwd=repo)
-        if a.state == "noted" and mine and branch_exists(repo, name):
+        if a.state == "noted" and mine:
             # The branch of a noted task stays, and a later attempt reads
             # the note in its task file.
-            note += f"\n\nThe branch {name} holds the work of this attempt."
-            if url:
-                note += f" The pull request of that branch is {url}."
+            if branch_exists(repo, name):
+                note += f"\n\nThe branch {name} holds the work of this attempt."
+                if url:
+                    note += f" The pull request of that branch is {url}."
+            for p in places[1:]:
+                if branch_exists(p["repo"], p["branch"]):
+                    note += (
+                        f"\n\nIn the repository {p['repo']}, the branch"
+                        f" {p['branch']} holds the work of this attempt."
+                    )
+                    if p["pr"]:
+                        note += f" The pull request of that branch is {p['pr']}."
         if a.state in NOTING:
             aven_note(repo, a.ref, note)
         t["state"] = a.state
         if a.flag:
             t["flags"].append(a.flag)
-        wt = worktree(cfg, a.ref)
-        gone = not Path(wt).exists()
-        if a.state in AVEN_STATUS and not gone:
-            # The command removes only the work of this run. The branch of
-            # an earlier run can hold commits that no other branch holds.
-            if not mine:
-                print(f"kept worktree {wt}, which this run did not create")
-            elif uncommitted(wt):
-                print(f"kept dirty worktree {wt}")
-            else:
-                sh("git", "worktree", "remove", wt, cwd=repo)
-                gone = True
-                if a.state == "closed":
-                    sh("git", "branch", "-q", "-D", name, cwd=repo)
-        # The base branch holds the change of a landed task, so its branch
-        # holds no work that the removal loses.
-        if a.state == "landed" and gone and mine and branch_exists(repo, name):
-            if not holds(repo, base, name):
-                print(f"kept the branch {name}, whose change {base} lacks")
-            else:
-                deleted = sh("git", "branch", "-q", "-D", name, cwd=repo, check=False)
-                if deleted.returncode:
-                    print(
-                        f"kept the branch {name}, which git cannot delete:"
-                        f" {deleted.stderr.strip()}"
-                    )
+        if a.state in AVEN_STATUS:
+            for p in places:
+                clear_work(p, a.state, mine)
         waiting = [line for r in sorted(st["tasks"]) if (line := stuck(st, r))]
     print(f"{a.ref} {a.state}")
-    if a.state == "closed" and url:
-        print(
-            f"{a.ref} records the pull request {url}, which the command did not close"
-        )
+    if a.state == "closed":
+        for p in places:
+            if p["pr"]:
+                print(
+                    f"{a.ref} records the pull request {p['pr']}, which the command"
+                    " did not close"
+                )
     if a.state == "noted":
         for line in waiting:
             print(line)
+
+
+def clear_work(p, task_state, mine):
+    """Remove the work of a task in one repository after the task settles or is noted.
+
+    The p argument holds the facts of the repository, as task_repos()
+    gives them, and task_state is noted, closed, or landed. The mine
+    argument says whether the run owns the work of the task, as owns()
+    says. The function removes only the work of the run, because the
+    branch of an earlier run can hold commits that no other branch holds.
+
+    The function removes the clean worktree of the task. When it removes
+    the worktree of a closed task, it also deletes the branch. It deletes
+    the branch of a landed task whose worktree is gone only when the base
+    branch holds the change of the branch. It prints a line for each
+    worktree and each branch that it keeps.
+    """
+    repo, wt, name, base = p["repo"], p["wt"], p["branch"], p["base"]
+    gone = not Path(wt).exists()
+    if not gone:
+        if not mine:
+            print(f"kept worktree {wt}, which this run did not create")
+        elif uncommitted(wt):
+            print(f"kept dirty worktree {wt}")
+        else:
+            sh("git", "worktree", "remove", wt, cwd=repo)
+            gone = True
+            if task_state == "closed":
+                sh("git", "branch", "-q", "-D", name, cwd=repo)
+    # The base branch holds the change of a landed task, so its branch
+    # holds no work that the removal loses.
+    if task_state == "landed" and gone and mine and branch_exists(repo, name):
+        where = f" of {repo}" if p["name"] else ""
+        if not holds(repo, base, name):
+            print(f"kept the branch {name}{where}, whose change {base} lacks")
+        else:
+            deleted = sh("git", "branch", "-q", "-D", name, cwd=repo, check=False)
+            if deleted.returncode:
+                print(
+                    f"kept the branch {name}{where}, which git cannot delete:"
+                    f" {deleted.stderr.strip()}"
+                )
 
 
 def default_disk_paths(repo):
@@ -2923,7 +3576,10 @@ def disks(cfg):
     # Each disk path with its device and its usage, or with no device and
     # the cause that kept the command from measuring it.
     measured = []
-    for path in disk_paths(cfg):
+    # The worktrees of the tasks in another repository fill the file
+    # system of that repository, so the run watches it too.
+    others = [entry["path"] for entry in other_repos(cfg).values()]
+    for path in dict.fromkeys(disk_paths(cfg) + others):
         try:
             measured.append((path, os.stat(path).st_dev, shutil.disk_usage(path)))
         except OSError as e:
@@ -3013,6 +3669,13 @@ def cmd_status(a):
     for text in earlier_texts(st):
         print(f"earlier run: {text}")
     print(f"target: {target_text(cfg)}")
+    if not other_repos(cfg):
+        print("repos: none")
+    for name, entry in sorted(other_repos(cfg).items()):
+        print(
+            f"repo {name}: {entry['path']}, base {entry['base']}, check"
+            f" {entry.get('check') or 'none'}"
+        )
     print(" ".join(f"{s}={n}" for s, n in counts.items()), f"limit={cfg['limit']}")
     # A run can continue from a state file that has no filters key.
     print(f"filters: {filters_text(cfg.get('filters', {})) or 'none'}")
@@ -3034,14 +3697,35 @@ def cmd_status(a):
         elif t["state"] == "approved":
             print(f"approved {ref} waits for landing | {t['title']}")
         elif t["state"] == "proposed":
-            head, url = branch(t, ref), t.get("pr")
-            if not url:
-                waits = f"waits for the push of {head} and its pull request"
-            elif t["pushed"]:
-                waits = f"waits for the merge of {url}"
-            else:
-                waits = f"waits for the push of {head} to the pull request {url}"
-            print(f"proposed {ref} {waits} | {t['title']}")
+            # The task waits for each pull request that a landing proposed
+            # and that has not merged, one line per repository.
+            for p in task_repos(cfg, t, ref):
+                if not p["proposed"]:
+                    continue
+                head, url = p["branch"], p["pr"]
+                # A landing can leave out the branch of the repository of the
+                # run, which then holds no change, as propose() says. The
+                # line repeats the steps of the action of that landing, so a
+                # new session finds them.
+                if p["record"].get("emptied"):
+                    close = (
+                        f"Close its pull request {url} when it is open"
+                        if url
+                        else f"Close an open pull request of {head}"
+                    )
+                    waits = (
+                        f"holds no change on {head}. {close}, and push nothing to"
+                        f" {head}. After the other pull requests merge, run"
+                        f" merged {ref}, which lands the task"
+                    )
+                elif not url:
+                    waits = f"waits for the push of {head} and its pull request"
+                elif p["record"].get("pushed"):
+                    waits = f"waits for the merge of {url}"
+                else:
+                    waits = f"waits for the push of {head} to the pull request {url}"
+                where = f" in {p['name']}" if p["name"] else ""
+                print(f"proposed {ref}{where} {waits} | {t['title']}")
         elif line := stuck(st, ref):
             print(line)
     for ref, t in sorted(tasks.items()):
@@ -3233,7 +3917,16 @@ def environment_failure(log):
 # action that the caller takes. Every landing knows these facts:
 #
 # - ref, base, branch, wt, repo: the task, the base branch, the task
-#   branch, the worktree, and the main checkout.
+#   branch, the worktree, and the main checkout. These facts name the
+#   repository of the run, unless the landing fails in another repository
+#   of the task. They then name that repository.
+# - others: one entry per other repository in which a landing with the
+#   result PR proposed the task, and an empty list for every other
+#   landing. Each entry holds the name of the repository and its main
+#   checkout as path. It also holds the base branch, the worktree as wt,
+#   the branch of the pull request as head, and the recorded pull request
+#   as url. Its unremoved value says what the removal of its worktree
+#   left.
 # - code: the result.
 # - n: how many landings of the task have failed for the same reason so
 #   far, with this landing. The reason is the result, or the cause that
@@ -3277,16 +3970,47 @@ def sync_action(c):
     )
 
 
+def unremoved_repair(c, unremoved, wt, repo, head, merged):
+    """The repair of the git command that did not remove one worktree of a task.
+
+    The unremoved argument says what the command left, as repairs()
+    says. The merged argument holds the merged command that fails until
+    the worktree goes, for a landing with the result PR.
+    """
+    if unremoved == "worktree":
+        text = (
+            f"git did not remove the worktree {wt}. Repair the cause that the"
+            f" error of git names, and run git worktree remove --force {wt} again"
+            f" in the main checkout {repo}. When git then answers that {wt} is"
+            f" not a working tree, delete the directory with rm -rf {wt}. "
+        )
+        if c["code"] == "PR":
+            text += (
+                f"Until the worktree goes, {merged} fails, because the worktree"
+                f" has the branch {head} checked out, and git deletes no such"
+                " branch. "
+            )
+        return text
+    if unremoved == "directory":
+        return (
+            f"git deleted its record of the worktree {wt}, but the directory"
+            " stays. Repair the cause that the error of git names, and delete"
+            f" the directory with rm -rf {wt}. "
+        )
+    return ""
+
+
 def repairs(c):
     """The repair of each command that failed at the end of a landing.
 
     A landing that commits ends with the git command that removes the
     worktree, the git command that deletes the task branch, and the aven
     command that sets the aven task to done. A landing that proposes a
-    pull request ends with the git command that removes the worktree.
-    The task landed or waits as proposed when one of these commands
-    fails, and the output reports each failed command. The text gives
-    the repair of each one in the order of the reports.
+    pull request ends with the git command that removes each worktree of
+    the task that it proposed. The task landed or waits as proposed when
+    one of these commands fails, and the output reports each failed
+    command. The text gives the repair of each one in the order of the
+    reports.
 
     These facts say what the failed commands left:
 
@@ -3297,28 +4021,14 @@ def repairs(c):
       delete it.
     - open: whether the aven task is still open, because aven did not set
       it to done.
+    - others: the unremoved value of each other repository, in its entry.
     """
-    ref, wt, repo, br = c["ref"], c["wt"], c["repo"], c["branch"]
-    text = ""
-    if c["unremoved"] == "worktree":
-        text += (
-            f"git did not remove the worktree {wt}. Repair the cause that the"
-            f" error of git names, and run git worktree remove --force {wt} again"
-            f" in the main checkout {repo}. When git then answers that {wt} is"
-            f" not a working tree, delete the directory with rm -rf {wt}. "
-        )
-        if c["code"] == "PR":
-            text += (
-                f"Until the worktree goes, ultraclose.py merged {ref} fails,"
-                f" because the worktree has the branch {c['head']} checked out,"
-                " and git deletes no such branch. "
-            )
-    elif c["unremoved"] == "directory":
-        text += (
-            f"git deleted its record of the worktree {wt}, but the directory"
-            " stays. Repair the cause that the error of git names, and delete"
-            f" the directory with rm -rf {wt}. "
-        )
+    ref, repo, br = c["ref"], c["repo"], c["branch"]
+    merged = f"ultraclose.py merged {ref}"
+    # The branch of a repository in which the landing proposed nothing
+    # keeps its name.
+    head = c["head"] or br
+    text = unremoved_repair(c, c["unremoved"], c["wt"], repo, head, merged)
     if c["undeleted"]:
         # git keeps the branch that a worktree has checked out, and the
         # worktree of the task has the task branch checked out.
@@ -3336,6 +4046,9 @@ def repairs(c):
             "The aven task is still open, because its aven command failed. Run"
             f" aven edit {ref} --status done. "
         )
+    for o in c["others"]:
+        merged = f"ultraclose.py merged {ref} --repo {o['name']}"
+        text += unremoved_repair(c, o["unremoved"], o["wt"], o["path"], o["head"], merged)
     return text
 
 
@@ -3357,6 +4070,8 @@ def passed_action(c):
     text = repairs(c) + text
     if c["code"] != "PR":
         return text
+    if c["others"]:
+        return f"{text} {others_steps(c)}"
     if c["url"]:
         return (
             f"{text} The task records the pull request {c['url']}. Read its"
@@ -3366,6 +4081,80 @@ def passed_action(c):
     return (
         f"{text} Then push the branch {c['head']} and open its pull request, as"
         " the Pull requests section of SKILL.md says."
+    )
+
+
+def others_steps(c):
+    """What a caller does after a landing that proposed a task in other repositories.
+
+    The landing prints one REPO line per other repository in which it
+    proposed the task, and its RESULT line names the branch of the
+    repository of the run when it proposed the task there too. The
+    caller pushes each branch in its repository and opens each pull
+    request. The pull request of the repository of the run merges last,
+    because its change can depend on the changes of the other
+    repositories, such as with a pin to a commit.
+    """
+    recorded = [o["url"] for o in c["others"] if o["url"]] + (
+        [c["url"]] if c["url"] else []
+    )
+    read = ""
+    if len(recorded) == 1:
+        read = (
+            f" The task records the pull request {recorded[0]}. Read its state"
+            " before you push its branch, and act on that state."
+        )
+    elif recorded:
+        read = (
+            f" The task records the pull requests {' and '.join(recorded)}. Read"
+            " the state of each of them before you push its branch, and act on"
+            " that state."
+        )
+    own = (
+        f" The RESULT line names the branch {c['head']} of {c['repo']}. Its pull"
+        " request merges after the pull requests of the REPO lines, so open it"
+        " last and tell the user that order."
+        if c["head"]
+        else f" The task holds no change in {c['repo']}, so the RESULT line names no branch."
+    )
+    return (
+        "Then push the branch of each REPO line in the main checkout that its"
+        " path names, and open its pull request against its base branch, as the"
+        f" Pull requests section of SKILL.md says.{own}{dropped_steps(c)}{read}"
+    )
+
+
+def dropped_steps(c):
+    """What a caller does about the pull request that a landing left out.
+
+    An earlier landing proposed the task in the repository of the run.
+    The branch there holds no change against the base branch when the
+    user merged that pull request before the other pull requests of the
+    task, or when a fix reverted the change there. The landing proposed
+    nothing there. The task keeps the branch and the pull request, and
+    the merged command records that pull request after the others. The
+    text is empty when the landing left out no such pull request.
+    """
+    dropped = c["dropped"]
+    if not dropped:
+        return ""
+    ref, name, url = c["ref"], dropped["branch"], dropped["url"]
+    read = (
+        f" Read the state of {url} with mcp__github__pull_request_read, and close"
+        " it when it is open. Push nothing to it."
+        if url
+        else (
+            " The task records no pull request there. When the remote holds an"
+            f" open pull request of {name}, close it."
+        )
+    )
+    merged = "its pull request" if url else f"a pull request of {name}"
+    return (
+        f" An earlier landing proposed the task in {c['repo']} on the branch"
+        f" {name}, which now holds no change against {c['base']}. So {merged}"
+        f" merged, or the task no longer changes {c['repo']}.{read} After"
+        " the pull requests of the REPO lines merge, run ultraclose.py merged"
+        f" {ref}, which lands the task. Do not set the task to landed or closed."
     )
 
 
@@ -3475,6 +4264,23 @@ def no_worktree_action(c):
             f"{lost} Then run git worktree add {c['wt']} {c['branch']} there,"
             " record the repair in notes.md, and land the task again."
         )
+    if c["resumes"]:
+        # Another repository of the task holds a commit of the task, so
+        # the relaunch resumes at a review round, as args says. The sync
+        # agent makes the change in the new branch.
+        reason = (
+            f"The landing found neither the worktree {c['wt']} nor the branch"
+            f" {c['branch']} of the task. Make the change of the task in that"
+            " worktree again."
+        )
+        return (
+            f"{lost} The branch {c['branch']} is gone as well, so the change of the"
+            f" task there is lost. Another repository of the task holds a commit"
+            f" of the task, so a plain relaunch resumes at a review round. Sync"
+            f" the task with ultraclose.py args {ref} --sync '{reason}' The"
+            f" relaunch cuts a new branch {c['branch']} from {base} there. Land"
+            " the task after its Workflow ends approved or landable."
+        )
     return (
         f"{lost} The branch {c['branch']} is gone as well, so relaunch the task"
         f" with ultraclose.py args {ref}. The relaunch starts from {base} at"
@@ -3483,10 +4289,45 @@ def no_worktree_action(c):
     )
 
 
+def other_empty_action(c):
+    """The action of a landing whose branch in another repository lost its change.
+
+    An earlier landing proposed the task in that repository. The branch
+    there holds no change against its base branch when its pull request
+    merged before the run recorded the merge, or when a fix reverted the
+    change there. Either way the repository of the run can still hold a
+    change of the task, so the task neither lands nor closes here. The
+    merged command records that the base branch there holds the change,
+    and the next landing proposes the rest of the task.
+    """
+    ref, name, url = c["ref"], c["name"], c["url"]
+    read = (
+        f"Read the state of the pull request {url} of the task there with"
+        " mcp__github__pull_request_read, and close it when it is open."
+        if url
+        else (
+            "The task records no pull request there. When the remote holds an open"
+            f" pull request of {c['branch']}, close it."
+        )
+    )
+    return (
+        f"An earlier landing proposed the task in {name}, and its branch there now"
+        f" holds no change against {c['base']}. So the pull request there merged,"
+        f" or the task no longer changes {name}. {read} When it merged, bring the"
+        f" merge into {c['base']} in the main checkout {c['repo']}. Then run"
+        f" ultraclose.py merged {ref} --repo {name}, which records that"
+        f" {c['base']} holds the change of the task there and keeps the task"
+        " approved, and land the task again. Do not sync the task, and do not set"
+        " it to landed or closed."
+    )
+
+
 def empty_action(c):
     ref, base, url = c["ref"], c["base"], c["url"]
     close = f"ultraclose.py set {ref} closed --note '<evidence>'"
     landed = f"ultraclose.py set {ref} landed"
+    if c["name"]:
+        return other_empty_action(c)
     if c["commit"]:
         return (
             f"An earlier landing of the task recorded the commit {c['commit']} on"
@@ -3504,34 +4345,79 @@ def empty_action(c):
             " mcp__github__pull_request_read."
         )
         shut = f" Close the pull request {url} first when it is open."
-    if c["own"]:
+    if c["merged"]:
+        # The pull requests of the task in other repositories merged, so
+        # the change of the task landed there.
+        noun = "pull requests" if len(c["merged"]) > 1 else "pull request"
         return (
-            f"A commit of {base} made the change of the task. Find that commit,"
-            f" such as with git log --oneline {base} -- <file> for a file of the"
-            " task. When the commit comes from this task, the task has landed,"
-            f" so run {landed}.{merge} When another commit made the change, such"
-            " as the commit of a task that covers this task, close the task:"
-            f" {close}.{shut} Do not sync the task."
+            f"The task holds no change in {c['repo']}, and its {noun} in"
+            f" {' and '.join(c['merged'])} merged. So the change of the task has"
+            f" landed.{shut} Run {landed}, which sets the aven task to done and"
+            " removes the worktree and the branch. Do not sync the task."
         )
+    if c["own"]:
+        # The owners fact is None for a task of one repository. For a task
+        # of several repositories, it names the main checkout and the base
+        # branch of each repository whose branch held a change of its own.
+        # The commit that made the change sits on the base branch there.
+        owners = c["owners"]
+        if owners is None:
+            found = (
+                f"A commit of {base} made the change of the task. Find that commit,"
+                f" such as with git log --oneline {base} -- <file> for a file of the"
+                " task. When the commit comes from this task"
+            )
+        else:
+            found = " ".join(
+                f"A commit of {onto} in the main checkout {path} made the change of"
+                f" the task there. Find that commit, such as with git -C {path} log"
+                f" --oneline {onto} -- <file> for a file of the task there."
+                for path, onto in owners
+            )
+            found += (
+                " When the commit comes from this task"
+                if len(owners) == 1
+                else " When each commit comes from this task"
+            )
+            # The url fact names the pull request of the repository of the
+            # run, whose merge made the change only there.
+            if c["repo"] not in (path for path, _ in owners):
+                merge = ""
+        return (
+            f"{found}, the task has landed, so run {landed}.{merge} When another"
+            " commit made the change, such as the commit of a task that covers"
+            f" this task, close the task: {close}.{shut} Do not sync the task."
+        )
+    # The resets fact is None for a task of one repository.
+    several = c["resets"] is not None
+    whose = (
+        "The branches of the task hold no change of their own"
+        if several
+        else f"{c['branch']} holds no change of its own"
+    )
     text = (
-        f"{c['branch']} holds no change of its own. Read the summary and the"
-        " notes of the Workflow result of the task. When they say that the task"
-        f" does not need a change, close the task: {close}.{shut}"
+        f"{whose}. Read the summary and the notes of the Workflow result of the"
+        " task. When they say that the task does not need a change, close the"
+        f" task: {close}.{shut}"
     )
     if c["n"] > 1:
         return (
             f"{text} Otherwise note the task, which has ended in EMPTY"
             f" {c['n']} times: {note_command(c)}. Do not sync the task."
         )
-    # The args command starts a task at the implementer only when the task
-    # branch holds no commit that the base branch lacks. A branch whose
-    # commits cancel each other out still holds such commits, so the
-    # relaunch then resumes at a review of an empty diff.
-    text += (
-        f" Otherwise run git -C {c['wt']} reset -q --hard {base}, and relaunch"
-        f" the task with ultraclose.py args {ref}."
-    )
-    if url:
+    # The args command starts a task at the implementer only when no branch
+    # of the task holds a commit that its base branch lacks. A
+    # branch whose commits cancel each other out still holds such commits,
+    # so the relaunch then resumes at a review of an empty diff. A task of
+    # several repositories resets each branch that holds such commits.
+    resets = c["resets"] if several else [(c["wt"], base)]
+    steps = " and ".join(f"git -C {wt} reset -q --hard {onto}" for wt, onto in resets)
+    text += f" Otherwise run {steps}, and relaunch" if steps else " Otherwise relaunch"
+    text += f" the task with ultraclose.py args {ref}."
+    # The url fact names the pull request of the repository of the run. A
+    # reset of the worktree there rewrites the branch of that pull request,
+    # so the next push replaces the branch on the remote.
+    if url and c["wt"] in (wt for wt, _ in resets):
         text += (
             " The remote holds the branch of that pull request, so set"
             " force_with_lease on the next push."
@@ -3673,29 +4559,55 @@ def cmd_land(a):
         # A task that waits for its landing frees its slot and keeps its
         # file locks.
         t["state"] = "approved"
-        br = branch(t, ref)
         prefixes = sorted({r.split("-")[0] for r in st["tasks"]})
     refs = re.compile(rf"\b(?:{'|'.join(map(re.escape, prefixes))})-[0-9A-Z]{{4,}}\b")
     wt, base = worktree(cfg, ref), cfg["base"]
     msg = run / "tasks" / ref / "msg.txt"
     logs = run / "logs"
     timeout = step_timeout(cfg)
-    # The git command that removes the worktree of the task. Each landing
-    # that proposes or lands its task ends with the command.
-    remove = ("git", "worktree", "remove", "--force", wt)
 
     # How long each timed step of this landing took, in seconds.
     times = {}
-    # The facts of this landing that each action of ACTIONS reads.
+    # The facts of this landing that each action of ACTIONS reads. The
+    # landing adds the branch of the task and the merged repositories
+    # after it takes the landing lock.
     facts = {
         "ref": ref,
         "base": base,
-        "branch": br,
         "wt": wt,
         "repo": repo,
         "msg": msg,
         "next": a.next,
+        "head": "",
+        "others": [],
+        "name": "",
+        "dropped": None,
     }
+
+    def place_facts(p):
+        """The facts of the landing that name one repository of the task.
+
+        A failure in another repository names that repository in the
+        action of its result. The facts of the repository of the run
+        equal the facts of the landing.
+        """
+        return {
+            "name": p["name"],
+            "base": p["base"],
+            "branch": p["branch"],
+            "wt": p["wt"],
+            "repo": p["repo"],
+            "msg": run / "tasks" / ref / p["msg"],
+        }
+
+    def step_log(step, p):
+        """The name of the log of a step in one repository of the task.
+
+        The logs of the repository of the run take the name of the step,
+        and the logs of another repository add the name of that
+        repository, such as x.check for the check of the repository x.
+        """
+        return f"{p['name']}.{step}" if p["name"] else step
 
     def record(code, reason=""):
         """Record the landing with its result, and print its times.
@@ -3743,8 +4655,20 @@ def cmd_land(a):
         return n
 
     def act(code, n=1, **more):
-        """Print the ACTION line of the landing, as ACTIONS gives it for the result."""
-        print(f"ACTION {ACTIONS[code]({**facts, 'code': code, 'n': n, **more})}")
+        """Print the ACTION line of the landing, as ACTIONS gives it for the result.
+
+        The line of a failure in another repository opens with the name of
+        that repository, the worktree of the task there, and its branch.
+        """
+        c = {**facts, "code": code, "n": n, **more}
+        text = ACTIONS[code](c)
+        if c["name"] and code not in PASSED:
+            text = (
+                f"The landing failed in the repository {c['name']}, in the worktree"
+                f" {c['wt']} of the main checkout {c['repo']}, on the branch"
+                f" {c['branch']}. {text}"
+            )
+        print(f"ACTION {text}")
 
     def fail(code, detail="", reason=None, **more):
         """End a failed landing with its ACTION line and its RESULT line.
@@ -3753,7 +4677,9 @@ def cmd_land(a):
         result. The run counts the failed landings of the task by reason,
         as record() says. An empty reason keeps the landing out of the
         count. The other arguments are the facts that the action of the
-        result reads beside the facts of every landing.
+        result reads beside the facts of every landing. They can replace
+        the facts of the landing with the facts of another repository of
+        the task, as place_facts() gives them.
         """
         # The RESULT line comes last, so the end of the output shows it
         # however long the detail is.
@@ -3766,6 +4692,13 @@ def cmd_land(a):
     def task_now():
         """The task of the landing, as the state of the run holds it now."""
         return json.loads((run / "state.json").read_text())["tasks"][ref]
+
+    def url_now(p):
+        """The pull request that the task records in one repository now, or an empty text."""
+        t = task_now()
+        if p["name"]:
+            t = t.get("repos", {}).get(p["name"], {})
+        return t.get("pr", "")
 
     def landed_commit():
         """The commit of the task that the base branch holds, or an empty text.
@@ -3781,7 +4714,7 @@ def cmd_land(a):
             return ""
         return out("git", "rev-parse", "--short", commit, cwd=repo)
 
-    def failed_step(code, step, log):
+    def failed_step(code, step, log, **more):
         """End a landing whose check or commit failed.
 
         The output names the failure of the environment that the log of
@@ -3792,20 +4725,52 @@ def cmd_land(a):
         if found := environment_failure(log):
             cause, line = found
             detail = f"{detail}\nthe log of the {step} names {cause}: {line}".strip()
-        fail(code, detail, reason=cause or code, step=step, log=log, cause=cause)
+        fail(
+            code, detail, reason=cause or code, step=step, log=log, cause=cause, **more
+        )
 
-    def emptied(own):
+    def emptied(own, p, detail="", several=False):
         """End a landing whose task branch holds no change against the base branch.
 
-        The own argument says whether the task branch held a change of
-        its own before the landing merged the base branch into it.
+        The p argument names the repository of the branch. The own
+        argument says whether the task branch held a change of its own
+        before the landing merged the base branch into it. The detail
+        defaults to a line that names the branch.
+
+        The several argument says that no repository of a task of
+        several repositories holds a change, and the result then holds
+        two more facts. The owners fact names the main checkout and the
+        base branch of each repository whose branch held a change of its
+        own, because a commit of that base branch made the change. The
+        resets fact names the worktree and the base branch of each
+        repository whose branch holds a commit that its base branch
+        lacks.
+
+        When a pull request of the task merged in another repository,
+        the action says that the task has landed. Otherwise, when a
+        branch held a change of its own, the action names each
+        repository of the owners fact with a git log command that finds
+        the commit there, and it gives no git reset. When no branch held
+        a change of its own and the action asks for a relaunch, it first
+        gives a git reset of each worktree of the resets fact.
         """
         fail(
             "EMPTY",
-            f"{br} holds no change against {base}",
+            detail or f"{p['branch']} holds no change against {p['base']}",
             own=own,
-            commit=landed_commit(),
-            url=task_now().get("pr", ""),
+            commit="" if p["name"] else landed_commit(),
+            url=url_now(p),
+            resets=(
+                [(q["wt"], q["base"]) for q in places if commits_ahead(q)]
+                if several
+                else None
+            ),
+            owners=(
+                [(q["repo"], q["base"]) for q in places if q["own"]]
+                if several
+                else None
+            ),
+            **place_facts(p),
         )
 
     def logged(name, *cmd, cwd, env=None, limit=None):
@@ -3817,13 +4782,15 @@ def cmd_land(a):
         path = logs / f"{ref}.{name}.log"
         return run_step(cmd, cwd, env, path, limit), path
 
-    def timed(name, *cmd, cwd, env=None):
+    def timed(name, *cmd, cwd, env=None, log=None):
         """Run a logged step under the step timeout of the run.
 
-        Add how long the step took to the times.
+        Add how long the step took to the times. The log names the log
+        of the step, and it defaults to the name of the step. The checks
+        of all the repositories of a task add to one time.
         """
         began = time.monotonic()
-        rc, path = logged(name, *cmd, cwd=cwd, env=env, limit=timeout)
+        rc, path = logged(log or name, *cmd, cwd=cwd, env=env, limit=timeout)
         times[name] = round(times.get(name, 0) + time.monotonic() - began, 1)
         return rc, path
 
@@ -3859,7 +4826,7 @@ def cmd_land(a):
             reason = "HEALTHFAIL" if step else ""
             fail("HEALTHFAIL", detail.rstrip(), reason=reason, step=step, log=log)
 
-    def passed(*cmd, left):
+    def passed(*cmd, left, cwd=repo):
         """Run a command that ends the landing, and return whether it passed.
 
         The base branch holds the commit of the task by then, or the task
@@ -3868,21 +4835,23 @@ def cmd_land(a):
         the command. Then it prints the text that the left function
         returns, which says what the command left and what the caller does
         about it. The function runs after the command, so the text can
-        depend on what the command left.
+        depend on what the command left. The command runs in the main
+        checkout of the repository of the run, unless cwd names another.
         """
-        p = sh(*cmd, cwd=repo, check=False)
+        p = sh(*cmd, cwd=cwd, check=False)
         if p.returncode:
             print(f"{' '.join(cmd)} failed:\n{p.stdout}{p.stderr}".rstrip())
             print(left())
         return not p.returncode
 
-    def remove_worktree(did):
-        """Remove the worktree of the task, and return what the git command left.
+    def remove_worktree(did, p):
+        """Remove the worktree of the task in one repository, and return what git left.
 
-        The text is empty when git removed the worktree. It is "worktree"
-        when git still lists the worktree, and "directory" when git no
-        longer lists the worktree but its directory stays. The actions of
-        OK, PR, and POSTDIRTY read the text as the unremoved fact.
+        The p argument names the repository. The text is empty when git
+        removed the worktree. It is "worktree" when git still lists the
+        worktree, and "directory" when git no longer lists the worktree
+        but its directory stays. The actions of OK, PR, and POSTDIRTY read
+        the text as the unremoved fact.
 
         The did argument opens the line that passed() prints after a
         failure, and it says what the landing did with the task. git can
@@ -3892,11 +4861,12 @@ def cmd_land(a):
         So the line then tells the caller to delete the directory.
         """
         left = ""
+        path = p["wt"]
 
         def unremoved():
             nonlocal left
-            listed = listed_worktrees(repo)
-            if listed is None or os.path.realpath(wt) in listed:
+            listed = listed_worktrees(p["repo"])
+            if listed is None or os.path.realpath(path) in listed:
                 left = "worktree"
                 return f"{did}, but its worktree still exists. {AGAIN}"
             left = "directory"
@@ -3906,60 +4876,119 @@ def cmd_land(a):
                 " delete the directory."
             )
 
-        passed(*remove, left=unremoved)
+        remove = ("git", "worktree", "remove", "--force", path)
+        passed(*remove, left=unremoved, cwd=p["repo"])
         return left
 
-    def propose(head):
-        """End a landing that proposes the task as a pull request.
+    def propose(live):
+        """End a landing that proposes the task as pull requests.
 
-        The branch of the task takes the name head. The worktree goes, and
-        the branch stays for the push. The task waits as proposed for its
-        pull request to merge, and the merged command lands it.
+        The live argument names each repository of the task that the
+        landing proposes, with the name of its pull request branch as
+        head. The branch of the task takes that name in each of them. The
+        worktrees go, and the branches stay for the push. The task waits
+        as proposed for its pull requests to merge, and the merged command
+        lands it.
 
-        The script contacts no remote. The RESULT line names the branch
-        that the caller pushes and the base branch of the pull request. It
-        also gives the address of a pull request that the task records.
-        The caller then reads the state of that pull request, and opens no
-        second pull request while it is open. The task records that the
-        branch waits for its push, until the opened command records the
-        push.
+        The script contacts no remote. The landing prints one REPO line
+        per other repository, before the ACTION line, and the RESULT line
+        last. Each line names the branch that the caller pushes and the
+        base branch of the pull request. The RESULT line names the branch
+        of the repository of the run, when the landing proposes the task
+        there. Each line also gives the address of a pull request that
+        the task records. The caller then reads the state of that pull
+        request, and opens no second pull request while it is open. The
+        task records that each branch waits for its push, until the opened
+        command records the push.
 
-        Return whether git removed the worktree. The branch has its name
-        before that git command runs. So when the command fails, the
+        The branch of the repository of the run can hold no change of the
+        task here, although an earlier landing proposed the task there.
+        The facts of the landing then name that repository as dropped. The
+        landing removes the worktree there too, and the task keeps the
+        branch and the pull request there. The task records that the
+        branch holds no change, so the status command does not ask for its
+        push. The merged command records that pull request after each other
+        pull request merged, and the action says so.
+
+        Return whether git removed every worktree. Each branch has its
+        name before those git commands run. So when one of them fails, the
         landing prints it, and the task still waits as proposed.
         """
-        if head != br:
+        for p in live:
+            head = p["head"]
+            if head == p["branch"]:
+                continue
             # Another command can create a branch with the name during the
             # check. The landing then fails with its RESULT line last.
-            renamed = sh("git", "branch", "-m", br, head, cwd=repo, check=False)
+            rename = ("git", "branch", "-m", p["branch"], head)
+            renamed = sh(*rename, cwd=p["repo"], check=False)
             if renamed.returncode:
-                fail("BRANCHTAKEN", renamed.stderr.strip(), held="")
+                fail("BRANCHTAKEN", renamed.stderr.strip(), held="", **place_facts(p))
             with state(run) as st:
-                st["tasks"][ref]["branch"] = head
+                t = st["tasks"][ref]
+                (t["repos"][p["name"]] if p["name"] else t)["branch"] = head
+            p["branch"] = head
         # git can fail here, such as with a locked worktree. A landing
         # that stops at that failure leaves an approved task, and each
         # later landing of that task stops at the same failure. So the
         # landing reports the failure and goes on.
-        unremoved = remove_worktree("The landing proposed the task")
+        dropped = facts["dropped"]
+        unremoved = {
+            p["name"]: remove_worktree("The landing proposed the task", p)
+            for p in live + ([dropped] if dropped else [])
+        }
         with state(run) as st:
             t = st["tasks"][ref]
             t["state"] = "proposed"
-            # A relaunch can add commits to the branch of a pull request
-            # that the task records, so every landing waits for a push.
-            t["pushed"] = False
-            url = t.get("pr", "")
+            # A later landing that proposes the branch of the repository of
+            # the run clears the record.
+            t.pop("emptied", None)
+            if dropped:
+                t["emptied"] = True
+            for p in live:
+                held = t["repos"][p["name"]] if p["name"] else t
+                # A relaunch can add commits to the branch of a pull
+                # request that the task records, so every landing waits
+                # for a push.
+                held["pushed"] = False
+                p["url"] = held.get("pr", "")
         record("PR")
+        own = live[0] if not live[0]["name"] else None
+        others = [
+            {
+                "name": p["name"],
+                "path": p["repo"],
+                "base": p["base"],
+                "wt": p["wt"],
+                "head": p["head"],
+                "url": p["url"],
+                "unremoved": unremoved[p["name"]],
+            }
+            for p in live
+            if p["name"]
+        ]
+        for o in others:
+            opened = f" pr={o['url']}" if o["url"] else ""
+            print(
+                f"REPO {o['name']} head={o['head']} base={o['base']}"
+                f" path={o['path']}{opened}"
+            )
         act(
             "PR",
-            head=head,
-            url=url,
-            unremoved=unremoved,
+            head=own["head"] if own else "",
+            url=own["url"] if own else "",
+            unremoved=unremoved.get("", ""),
             undeleted=False,
             open=False,
+            others=others,
+            dropped=dropped and {"branch": dropped["branch"], "url": url_now(dropped)},
         )
-        opened = f" pr={url}" if url else ""
-        print(f"RESULT {ref} PR head={head} base={base}{opened}", flush=True)
-        return not unremoved
+        if own:
+            opened = f" pr={own['url']}" if own["url"] else ""
+            print(f"RESULT {ref} PR head={own['head']} base={base}{opened}", flush=True)
+        else:
+            print(f"RESULT {ref} PR", flush=True)
+        return not any(unremoved.values())
 
     def squash(own):
         """End a landing that commits the task on the base branch.
@@ -3991,7 +5020,7 @@ def cmd_land(a):
         if not sh(
             "git", "diff", "--cached", "--quiet", cwd=repo, check=False
         ).returncode:
-            emptied(own)
+            emptied(own, places[0])
         want = out("git", "write-tree", cwd=repo)
         # A hook once emptied the index of the main checkout during a
         # commit. The commit must record the staged tree, so compare the
@@ -4066,7 +5095,7 @@ def cmd_land(a):
         # What the failed commands left, as the actions of OK and
         # POSTDIRTY read it.
         left = {
-            "unremoved": remove_worktree(landed),
+            "unremoved": remove_worktree(landed, places[0]),
             "undeleted": not passed(
                 *delete, left=lambda: f"{landed}, but its branch still exists. {AGAIN}"
             ),
@@ -4105,85 +5134,170 @@ def cmd_land(a):
         # Another landing of the task can hold the lock while this landing
         # waits for it. That landing sets the task to landed or proposed,
         # and the task then has no change that waits for a landing. So the
-        # command refuses the task as it does before the wait.
+        # command refuses the task as it does before the wait. The merged
+        # command can also record the merge of another repository of the
+        # approved task before this landing takes the lock. So the landing
+        # reads the repositories of the task after the wait.
         with state(run) as st:
-            landable(st, ref)
+            t = landable(st, ref)
+            br = branch(t, ref)
+            # The repository of the run comes first. A task that changes
+            # other repositories also has a worktree and a branch in each
+            # of them.
+            places = task_repos(cfg, t, ref)
+            # The other repositories whose pull request of the task merged.
+            # task_repos() leaves them out.
+            merged = sorted(n for n, e in t.get("repos", {}).items() if e.get("merged"))
+        facts.update(branch=br, merged=merged)
         if not pr:
             if out("git", "branch", "--show-current", cwd=repo) != base:
                 fail("NOTBASE", f"the main checkout is not on {base}")
             if dirty := uncommitted(repo):
                 fail("DIRTY", dirty)
-        if not Path(wt).exists():
-            fail(
-                "NOWORKTREE",
-                wt,
-                commit=landed_commit(),
-                has_branch=branch_exists(repo, br),
-            )
-        if dirty := uncommitted(wt):
-            fail("WTDIRTY", dirty)
-        if not msg.exists() or not msg.read_text().strip():
-            fail("NOMSG", str(msg))
-        if found := refs.findall(msg.read_text()):
-            fail("MSGHASREF", " ".join(sorted(set(found))))
-        require_health()
+        for p in places:
+            if not Path(p["wt"]).exists():
+                has = branch_exists(p["repo"], p["branch"])
+                fail(
+                    "NOWORKTREE",
+                    p["wt"],
+                    commit="" if p["name"] else landed_commit(),
+                    has_branch=has,
+                    # The args command resumes the task at a review round
+                    # when another repository of the task holds a commit
+                    # of the task. A branch that is gone then needs a sync,
+                    # because no review round makes its change again.
+                    resumes=not has
+                    and any(commits_ahead(q) for q in places if q is not p),
+                    **place_facts(p),
+                )
+            if dirty := uncommitted(p["wt"]):
+                fail("WTDIRTY", dirty, **place_facts(p))
 
-        # Whether the task branch holds a change of its own. The merge of
+        # Whether each task branch holds a change of its own. The merge of
         # the base branch can make the change of the branch empty, because
         # a commit of the base branch made the same change. The action of
         # the result EMPTY tells that case from a branch whose own commits
         # change nothing.
-        fork = sh("git", "merge-base", base, br, cwd=repo, check=False)
-        unchanged = ("git", "diff", "--quiet", fork.stdout.strip(), br)
-        own = bool(fork.returncode or sh(*unchanged, cwd=repo, check=False).returncode)
-
-        # Bring the base branch into the task branch, so that the check
-        # runs on the tree that the commit or the pull request records.
-        behind = sh(
-            "git", "merge-base", "--is-ancestor", base, br, cwd=repo, check=False
-        )
-        if behind.returncode:
-            # The default message of a merge names the task branch, and
-            # that name holds the task ref. A landing that proposes a pull
-            # request leaves the merge commit for the push.
-            merge = ("git", "merge", "--no-verify", "--no-edit")
-            rc, log = logged(
-                "merge", *merge, "-m", f"Merge branch '{base}'", base, cwd=wt
+        for p in places:
+            fork = sh("git", "merge-base", p["base"], p["branch"], cwd=p["repo"], check=False)
+            unchanged = ("git", "diff", "--quiet", fork.stdout.strip(), p["branch"])
+            p["own"] = bool(
+                fork.returncode or sh(*unchanged, cwd=p["repo"], check=False).returncode
             )
-            if rc:
-                files = out("git", "diff", "--name-only", "--diff-filter=U", cwd=wt)
-                sh("git", "merge", "--abort", cwd=wt, check=False)
-                fail("CONFLICT", files or tail(log))
-        added = [
-            line
-            for line in out(
-                "git", "diff", "-U0", f"{base}...{br}", cwd=repo
-            ).splitlines()
-            if line.startswith("+") and not line.startswith("+++") and refs.search(line)
-        ]
-        if added:
-            fail("REFINDIFF", "\n".join(added[:20]))
-        # The task branch holds the base branch here, and a pull request
-        # needs a change to show. A landing that commits finds an empty
-        # change when it stages the commit.
-        if pr:
-            same = sh("git", "diff", "--quiet", base, br, cwd=repo, check=False)
+        own = places[0]["own"]
+        # A task of one repository lands its branch whatever the branch
+        # holds, so an empty branch ends the landing with EMPTY. A task of
+        # several repositories proposes each repository whose branch holds a
+        # change of its own, and each repository that an earlier landing
+        # proposed. Its worktree and its branch stay in each repository in
+        # which no landing proposed the task, the repository of the run
+        # included, until the task lands. A task whose pull request merged
+        # in another repository still counts as a task of several
+        # repositories, although task_repos() leaves that repository out.
+        several = len(places) > 1 or bool(merged)
+        live = [p for p in places if not several or p["own"] or p["proposed"]]
+        if not live:
+            emptied(
+                False,
+                places[0],
+                "\n".join(
+                    f"{p['branch']} of {p['repo']} holds no change against {p['base']}"
+                    for p in places
+                ),
+                several=True,
+            )
+        for p in live:
+            # A branch without a change of its own equals its base branch
+            # after the landing merges the base branch into it. So the
+            # landing proposes nothing there and reads no message there.
+            # The prompts of close-task.js tell the agents to write no
+            # message for a repository that the change does not touch.
+            if several and not p["own"]:
+                continue
+            text = run / "tasks" / ref / p["msg"]
+            if not text.exists() or not text.read_text().strip():
+                fail("NOMSG", str(text), **place_facts(p))
+            if found := refs.findall(text.read_text()):
+                fail("MSGHASREF", " ".join(sorted(set(found))), **place_facts(p))
+        require_health()
+
+        for p in list(live):
+            path, name, onto = p["repo"], p["branch"], p["base"]
+            # Bring the base branch into the task branch, so that the check
+            # runs on the tree that the commit or the pull request records.
+            behind = sh(
+                "git", "merge-base", "--is-ancestor", onto, name, cwd=path, check=False
+            )
+            if behind.returncode:
+                # The default message of a merge names the task branch, and
+                # that name holds the task ref. A landing that proposes a
+                # pull request leaves the merge commit for the push.
+                merge = ("git", "merge", "--no-verify", "--no-edit")
+                rc, log = logged(
+                    step_log("merge", p),
+                    *merge,
+                    "-m",
+                    f"Merge branch '{onto}'",
+                    onto,
+                    cwd=p["wt"],
+                )
+                if rc:
+                    files = out(
+                        "git", "diff", "--name-only", "--diff-filter=U", cwd=p["wt"]
+                    )
+                    sh("git", "merge", "--abort", cwd=p["wt"], check=False)
+                    fail("CONFLICT", files or tail(log), **place_facts(p))
+            added = [
+                line
+                for line in out(
+                    "git", "diff", "-U0", f"{onto}...{name}", cwd=path
+                ).splitlines()
+                if line.startswith("+")
+                and not line.startswith("+++")
+                and refs.search(line)
+            ]
+            if added:
+                fail("REFINDIFF", "\n".join(added[:20]), **place_facts(p))
+            # The task branch holds the base branch here, and a pull request
+            # needs a change to show. A landing that commits finds an empty
+            # change when it stages the commit.
+            if not pr:
+                continue
+            same = sh("git", "diff", "--quiet", onto, name, cwd=path, check=False)
             if not same.returncode:
-                emptied(own)
+                # A commit of the base branch of another repository made
+                # the change of the task there. The landing proposes the
+                # other repositories of the task, unless an earlier landing
+                # proposed the task there.
+                if several and not p["proposed"]:
+                    live.remove(p)
+                    continue
+                # The user can merge the pull request of the repository of
+                # the run early, and a fix can revert the change there. The
+                # other repositories can still hold a change. So the landing
+                # proposes them, and the merged command records that pull
+                # request after theirs. The landing ends with EMPTY when no
+                # other repository holds a change.
+                if several and not p["name"]:
+                    live.remove(p)
+                    facts["dropped"] = p
+                    continue
+                emptied(p["own"], p)
             # The push publishes each commit of the task branch with its
             # message. Each text holds the short ID of one commit and its
             # message.
-            texts = out("git", "log", "-z", "--format=%h %B", f"{base}..{br}", cwd=repo)
+            texts = out("git", "log", "-z", "--format=%h %B", f"{onto}..{name}", cwd=path)
             named = [t.splitlines()[0] for t in texts.split("\0") if refs.search(t)]
             if named:
-                fail("LOGHASREF", "\n".join(named[:20]))
+                fail("LOGHASREF", "\n".join(named[:20]), **place_facts(p))
             # An earlier landing of the task named its branch. Otherwise
             # the landing names the branch here, so that a blocked name
             # fails the landing before the check.
-            head = t.get("branch")
+            head = p["record"].get("branch")
             if not head:
-                taken = known_branches(repo)
-                head = pr_branch(msg.read_text(), taken)
+                taken = known_branches(path)
+                text = (run / "tasks" / ref / p["msg"]).read_text()
+                head = pr_branch(text, taken)
                 if held := above(head, taken):
                     fail(
                         "BRANCHTAKEN",
@@ -4193,19 +5307,34 @@ def cmd_land(a):
                         f" request. Rename or delete each branch {held}, and land"
                         " again",
                         held=held,
+                        **place_facts(p),
                     )
-        if cfg["check"]:
+            p["head"] = head
+        if pr and not live:
+            emptied(
+                any(p["own"] for p in places),
+                places[0],
+                "\n".join(
+                    f"{p['branch']} of {p['repo']} holds no change against {p['base']}"
+                    for p in places
+                ),
+                several=True,
+            )
+        for p in live:
+            if not p["check"]:
+                continue
             # The cache sits in the git directory of the worktree. So the
             # worktree stays clean, and git removes the cache together
             # with the worktree.
-            git_dir = out("git", "rev-parse", "--absolute-git-dir", cwd=wt)
+            git_dir = out("git", "rev-parse", "--absolute-git-dir", cwd=p["wt"])
             rc, log = timed(
                 "check",
                 "sh",
                 "-c",
-                cfg["check"],
-                cwd=wt,
+                p["check"],
+                cwd=p["wt"],
                 env=lint_env(Path(git_dir, LINT_CACHE)),
+                log=step_log("check", p),
             )
             if rc is None:
                 fail(
@@ -4214,15 +5343,16 @@ def cmd_land(a):
                     step="check",
                     log=log,
                     unrestored=False,
+                    **place_facts(p),
                 )
             if rc:
                 require_health("check", log)
-                failed_step("CHECKFAIL", "check", log)
-            if dirty := uncommitted(wt):
-                fail("WTDIRTY", "the check changed files:\n" + dirty)
+                failed_step("CHECKFAIL", "check", log, **place_facts(p))
+            if dirty := uncommitted(p["wt"]):
+                fail("WTDIRTY", "the check changed files:\n" + dirty, **place_facts(p))
         # Whether each command that ends the landing passed. The landing
         # proposes or lands its task also when one of them failed.
-        finished = propose(head) if pr else squash(own)
+        finished = propose(live) if pr else squash(own)
     # Each failed landing exits before this line. The landing lock is free
     # here, so a queued landing does not wait for the tasks that start.
     if a.next:
@@ -4233,21 +5363,50 @@ def cmd_land(a):
         sys.exit(1)
 
 
-def proposed(st, ref, command):
+def proposed(st, ref, command, approved=False):
     """The proposed task with the given ref.
 
     The command ends when the run holds no such task, or when the task
     has another state. Only a landing that proposes a pull request sets
-    a task to proposed.
+    a task to proposed. With approved, the command also takes an
+    approved task.
     """
     t = st["tasks"].get(ref) or die(f"unknown task {ref}")
-    if t["state"] != "proposed":
+    if t["state"] == "proposed" or (approved and t["state"] == "approved"):
+        return t
+    takes = "a proposed task or an approved task" if approved else "a proposed task"
+    die(
+        f"{ref} is {t['state']}, and the {command} command takes only {takes}. A"
+        " landing with the result PR sets its task to proposed"
+    )
+
+
+def proposal(cfg, t, ref, name, command):
+    """The facts of one repository in which a landing proposed a task.
+
+    The name names another repository of the run, and None stands for the
+    repository of the run. The facts come from task_repos(). The command
+    ends when the task does not change that repository, when no landing
+    proposed the task there, and when its pull request there merged.
+    """
+    where = f"the repository {name}" if name else f"the repository {cfg['repo']}"
+    if name and name not in t.get("repos", {}):
+        changed = " ".join(sorted(t.get("repos", {}))) or "none"
         die(
-            f"{ref} is {t['state']}, and the {command} command takes only a"
-            " proposed task. A landing with the result PR sets its task to"
-            " proposed"
+            f"{ref} does not change the repository {name}. The other repositories"
+            f" of {ref} are {changed}"
         )
-    return t
+    if name and t["repos"][name].get("merged"):
+        die(f"the pull request of {ref} in {where} merged already")
+    found = next(p for p in task_repos(cfg, t, ref) if p["name"] == (name or ""))
+    if not found["proposed"]:
+        die(
+            f"the landing of {ref} proposed no pull request in {where}, because"
+            f" the branch of {ref} there held no change. The {command} command"
+            " takes the repository of a REPO line or of the RESULT line of that"
+            " landing"
+        )
+    return found
 
 
 def cmd_opened(a):
@@ -4255,48 +5414,139 @@ def cmd_opened(a):
     run = run_dir(repo)
     with state(run) as st:
         t = proposed(st, a.ref, "opened")
-        t["pr"], t["pushed"] = a.url, True
-    print(f"{a.ref} proposed {a.url}")
+        held = proposal(st["config"], t, a.ref, a.repo, "opened")["record"]
+        held["pr"], held["pushed"] = a.url, True
+    where = f" in {a.repo}" if a.repo else ""
+    print(f"{a.ref} proposed{where} {a.url}")
+
+
+def pin_hint(ref, t, cfg):
+    """What the merged command says about each pin to a commit that a merge made.
+
+    The commit of a task branch in another repository reaches a remote
+    only through the merge of its pull request. So the agents keep each
+    pin in the repository of the run to a commit of such a repository at
+    its old value, and a sync after the merges moves each such pin. The
+    text names each other repository whose merge the task records, with
+    the commit of its base branch when the run recorded the merge.
+    """
+    held = other_repos(cfg)
+    merged = sorted((n, e["merged"]) for n, e in t.get("repos", {}).items() if e.get("merged"))
+    names = " or ".join(n for n, _ in merged)
+    commits = " ".join(
+        f"The branch {held[n]['base']} of {n} held the merge at {commit} when the"
+        " run recorded it."
+        for n, commit in merged
+    )
+    return (
+        f"When the change of the task in {cfg['repo']} needs a pin to a commit of"
+        f" {names}, such as a flake input, sync the task so that each such pin"
+        f" names a commit that holds the merge: ultraclose.py args {ref} --sync"
+        f" '<each merged commit and each pin to move>'. {commits} Land the task"
+        " after its Workflow ends approved or landable."
+    )
 
 
 def cmd_merged(a):
     repo = main_checkout()
     run = run_dir(repo)
-    with state(run) as st:
-        t = proposed(st, a.ref, "merged")
-        name, base = branch(t, a.ref), st["config"]["base"]
+    # A landing sets its task to approved before it waits for the landing
+    # lock. It reads the worktrees and the branches of the task while it
+    # holds the lock. So the command takes an approved task only while it
+    # holds that lock. A proposed task has no landing, so the command takes
+    # it while a landing of another task holds the lock.
+    with tried(run / "land.lock") as free, state(run) as st:
+        cfg = st["config"]
+        # The landing of a relaunch leaves its task approved. The pull
+        # request of another repository can merge before the run records
+        # the merge, and that landing then ends in EMPTY in that
+        # repository. So the command records the merge of another
+        # repository for an approved task too.
+        t = proposed(st, a.ref, "merged", approved=bool(a.repo))
+        approved = t["state"] == "approved"
+        if approved and not free:
+            die(
+                f"{a.ref} is approved, and a landing holds the landing lock of the"
+                f" run. A landing of {a.ref} can run or wait for that lock, and it"
+                f" reads the worktree and the branch of {a.ref} in {a.repo}, which"
+                " the merged command removes. The command changed nothing. Run it"
+                " again when no landing runs"
+            )
+        p = proposal(cfg, t, a.ref, a.repo, "merged")
+        path, name, base, wt = p["repo"], p["branch"], p["base"], p["wt"]
+        places = task_repos(cfg, t, a.ref)
+        # The change of the repository of the run can depend on the change
+        # of each other repository, such as with a pin to a commit. So its
+        # pull request merges last, and the run records its merge last.
+        waiting = [q for q in places[1:] if q["proposed"]]
+        if not a.repo and waiting:
+            names = " ".join(q["name"] for q in waiting)
+            die(
+                f"the pull request of {a.ref} in {path} merges after the pull"
+                f" requests of {a.ref} in the other repositories, because its"
+                " change can depend on theirs, such as with a pin to a commit. The"
+                f" run records no merge in {names} yet. Record the merge of each of"
+                f" them first with merged {a.ref} --repo NAME. The command changed"
+                " nothing"
+            )
         # A task whose branch is gone has no change to compare.
-        has = branch_exists(repo, name)
-        if has and not a.force and not holds(repo, base, name):
+        has = branch_exists(path, name)
+        if has and not a.force and not holds(path, base, name):
             die(
                 f"{base} lacks the change of {a.ref}. A merge of {name} into"
                 f" {base} has a conflict or changes a file, and so does a merge"
                 f" into each commit that {base} gained after the fork of {name}."
                 " The command changed nothing. Bring the merged pull request"
                 f" into {base} first, such as with a pull while the main"
-                f" checkout has {base} checked out. Pass --force when the pull"
-                f" request merged with commits that {name} lacks"
+                f" checkout {path} has {base} checked out. Pass --force when the"
+                f" pull request merged with commits that {name} lacks"
             )
+        # The base branch of another repository holds the merge here. The
+        # merged command names its commit in the text about each pin to a
+        # commit of that repository.
+        at = out("git", "rev-parse", base, cwd=path) if a.repo else ""
+        # The relaunch of an approved task gave it a worktree in the
+        # repository again, and that worktree keeps the branch. The base
+        # branch holds the change of the branch, so the worktree goes,
+        # unless it holds a change that the branch lacks.
+        # What the command changed before a later step fails.
+        changed = "changed nothing"
+        if approved and Path(wt).exists():
+            if dirty := uncommitted(wt):
+                die(
+                    f"the worktree {wt} of {a.ref} holds changes that the branch"
+                    f" {name} lacks, so the command changed nothing:\n{dirty}\nCommit"
+                    " or delete them, and run the command again"
+                )
+            removed = sh("git", "worktree", "remove", wt, cwd=path, check=False)
+            if removed.returncode:
+                die(
+                    f"git cannot remove the worktree {wt}, so the command changed"
+                    f" nothing:\n{removed.stderr.strip()}\nRepair the cause that git"
+                    " names, and run the command again"
+                )
+            changed = f"removed the worktree {wt} and changed nothing else"
         # The branch goes before the aven task is done, as in a landing
         # that commits. A command that fails between the two steps then
         # leaves a task without a branch, and the next merged command
         # finishes it.
         if has:
-            gone = sh("git", "branch", "-q", "-D", name, cwd=repo, check=False)
+            gone = sh("git", "branch", "-q", "-D", name, cwd=path, check=False)
             if gone.returncode:
-                wt = worktree(st["config"], a.ref)
                 # The landing that proposed the task can fail to remove the
                 # worktree of the task, which then keeps the branch. A
                 # directory that git no longer lists as a worktree keeps no
                 # branch, and neither does a worktree on another branch.
-                listed = listed_worktrees(repo) or {}
+                # git acts on the worktrees of the checkout that it runs in,
+                # so the hint names the main checkout of the repository.
+                listed = listed_worktrees(path) or {}
                 if listed.get(os.path.realpath(wt)) == name:
                     hint = (
                         f"The landing that proposed {a.ref} did not remove its"
                         f" worktree {wt}, which keeps the branch. Remove the"
-                        f" worktree with git worktree remove --force {wt}, and"
-                        " repair the cause that git names when it fails. Then"
-                        " run the command again"
+                        f" worktree with git worktree remove --force {wt} in the"
+                        f" main checkout {path}, and repair the cause that git"
+                        " names when it fails. Then run the command again"
                     )
                 else:
                     hint = (
@@ -4305,12 +5555,73 @@ def cmd_merged(a):
                         " command again"
                     )
                 die(
-                    f"git cannot delete the branch {name}, so the command changed"
-                    f" nothing:\n{gone.stderr.strip()}\n{hint}"
+                    f"git cannot delete the branch {name}, so the command {changed}:"
+                    f"\n{gone.stderr.strip()}\n{hint}"
                 )
-        sh("aven", "edit", a.ref, "--status", "done", cwd=repo)
-        t["state"] = "landed"
-    print(f"{a.ref} landed")
+        if a.repo:
+            p["record"]["merged"] = at
+        # The task lands when every pull request of the task merged. The
+        # landing proposed no pull request in a repository whose branch
+        # held no change, and the worktree and the branch of the task stay
+        # there until the task lands. An approved task waits for its
+        # landing, which proposes the rest of the task.
+        rest = [q for q in task_repos(cfg, t, a.ref) if q["proposed"]]
+        landing = not approved and (not a.repo or not rest)
+        if landing:
+            sh("aven", "edit", a.ref, "--status", "done", cwd=repo)
+            t["state"] = "landed"
+            for q in task_repos(cfg, t, a.ref):
+                if not q["proposed"]:
+                    clear_work(q, "landed", owns(run, a.ref))
+    if a.repo:
+        print(f"{a.ref} merged in {a.repo}")
+    # The text about the pins waits for the merge of each other pull
+    # request, so that one sync moves every pin.
+    others = [q["name"] for q in rest if q["name"]]
+    if approved and others:
+        print(
+            f"{a.ref} stays approved, and it waits for the merge of its pull"
+            f" requests in {' '.join(others)}. Land the task again: ultraclose.py"
+            f" land {a.ref} --next"
+        )
+        return
+    if approved:
+        print(
+            f"{a.ref} stays approved. {pin_hint(a.ref, t, cfg)} Otherwise land"
+            f" the task again: ultraclose.py land {a.ref} --next"
+        )
+        return
+    if landing:
+        print(f"{a.ref} landed")
+        if a.repo:
+            # The task proposed no pull request in the repository of the
+            # run, so no pin there names the commit that the merge made.
+            print(
+                f"The task proposed no pull request in {repo}."
+                f" {pin_hint(a.ref, t, cfg)} The sync starts the landed task again"
+            )
+        return
+    if others:
+        print(f"{a.ref} waits for the merge of its pull requests in {' '.join(others)}")
+        return
+    # The user can merge the pull request of the repository of the run
+    # early, and a fix can revert the change there. The base branch then
+    # holds the change of the branch, and merged lands the task.
+    own, url = rest[0]["branch"], rest[0]["pr"]
+    if branch_exists(repo, own) and holds(repo, cfg["base"], own):
+        named = f" {url}" if url else ""
+        print(
+            f"{cfg['base']} holds the change of the branch {own} of {a.ref} in"
+            f" {repo}. So the pull request{named} of the task there merged, or"
+            f" the task no longer changes {repo}. {pin_hint(a.ref, t, cfg)}"
+            f" Otherwise run ultraclose.py merged {a.ref}, which lands the task"
+        )
+        return
+    print(
+        f"The pull request of {a.ref} in {repo} waits for its merge."
+        f" {pin_hint(a.ref, t, cfg)} Otherwise ask the user to merge that pull"
+        " request"
+    )
 
 
 def target(text):
@@ -4377,6 +5688,59 @@ def role_model(text):
             " MODEL holds no space"
         )
     return role, model
+
+
+def repo_name(text):
+    """The name of another repository, as a flag names it."""
+    if not REPO_NAME.fullmatch(text):
+        raise argparse.ArgumentTypeError(
+            f"give the name of a directory in the repos directory in place of"
+            f" {text!r}. The name opens with a letter or a digit, and it holds"
+            " only letters, digits, dots, hyphens, and underscores"
+        )
+    return text
+
+
+def repo_base(text):
+    """The name and the base branch of a --repo flag.
+
+    The text is NAME=BASE, and the first "=" ends the name.
+    """
+    name, sep, base = text.partition("=")
+    if not sep or not base.strip():
+        raise argparse.ArgumentTypeError(
+            f"give NAME=BASE, such as x=main, in place of {text!r}"
+        )
+    return repo_name(name), base.strip()
+
+
+def repo_check(text):
+    """The name and the check of a --repo-check flag.
+
+    The text is NAME=CMD, and the first "=" ends the name. The check is
+    empty when the flag removes the check of the repository.
+    """
+    name, sep, check = text.partition("=")
+    if not sep:
+        raise argparse.ArgumentTypeError(
+            f"give NAME=CMD, such as x='make check', in place of {text!r}"
+        )
+    return repo_name(name), check
+
+
+def pr_state(text):
+    """The repository and the state of a --pr flag of the leftover command.
+
+    The text is STATE for the repository of the run, or NAME=STATE for
+    another repository. The name is empty for the repository of the run.
+    """
+    name, sep, found = text.rpartition("=")
+    if found not in PR_STATES or (sep and not name):
+        raise argparse.ArgumentTypeError(
+            f"give STATE or NAME=STATE in place of {text!r}. STATE is one of"
+            f" {', '.join(PR_STATES)}"
+        )
+    return (repo_name(name) if sep else ""), found
 
 
 def label(text):
@@ -4462,6 +5826,52 @@ STEP_TIMEOUT_HELP = (
     " runs longer than SECONDS. Give more than the time that the slowest step"
     " of a healthy landing takes"
 )
+REPO_HELP = (
+    f"the run also changes the repository NAME in the repos directory that"
+    f" {REPOS_DIR} names, and each task of that repository starts from its"
+    f" branch BASE. Only a run with the target {PR} or {PR}:BRANCH takes"
+    " another repository"
+)
+REPO_CHECK_HELP = (
+    "the full check of the repository NAME, which each landing runs in the"
+    " worktree of the task there"
+)
+
+
+def add_repo_flags(s, changes):
+    """Add the flags of the other repositories to the parser of init or of config.
+
+    With changes, the parser of config also gets the --no-repo flag, and
+    an empty CMD of --repo-check removes the check of a repository.
+    """
+    s.add_argument(
+        "--repo",
+        action="append",
+        default=[],
+        type=repo_base,
+        metavar="NAME=BASE",
+        help=REPO_HELP,
+    )
+    s.add_argument(
+        "--repo-check",
+        action="append",
+        default=[],
+        type=repo_check,
+        metavar="NAME=CMD",
+        help=f"{REPO_CHECK_HELP}. An empty CMD removes the check"
+        if changes
+        else REPO_CHECK_HELP,
+    )
+    if changes:
+        s.add_argument(
+            "--no-repo",
+            action="append",
+            default=[],
+            type=repo_name,
+            metavar="NAME",
+            help="remove the repository NAME, which no unfinished or noted task"
+            " changes",
+        )
 
 
 def main():
@@ -4531,6 +5941,7 @@ def main():
         help=DISK_PATH_HELP,
     )
     add_filter_flags(s, changes=False)
+    add_repo_flags(s, changes=False)
     s.add_argument(
         "--force",
         action="store_true",
@@ -4605,6 +6016,7 @@ def main():
         ),
     )
     add_filter_flags(s, changes=True)
+    add_repo_flags(s, changes=True)
     s.set_defaults(fn=cmd_config)
 
     s = sub.add_parser("triage")
@@ -4667,14 +6079,20 @@ def main():
     s.add_argument("ref")
     s.add_argument(
         "--pr",
-        choices=PR_STATES,
+        action="append",
+        default=[],
+        type=pr_state,
+        metavar="[NAME=]STATE",
         help="the state of the pull request of the branch that a landing of an"
-        " earlier run proposed. The command requires the flag for such a"
-        " branch, so read the pull request first. Pass none for a branch"
-        " without a pull request, and open only when the user asks you to keep"
-        " the pull request open. With merged, the command sets the aven task"
-        " to done, deletes the branch when the base branch holds its change,"
-        " and sets the task to closed",
+        " earlier run proposed. STATE is one of"
+        f" {', '.join(PR_STATES)}. The command requires one flag for each such"
+        " branch, so read each pull request first. NAME names another"
+        " repository of the branch, and a flag without NAME stands for the"
+        " repository of the run. Pass none for a branch without a pull request,"
+        " and open only when the user asks you to keep the pull request open."
+        " With merged, the command deletes the branch when the base branch holds"
+        " its change. When every pull request of the task merged, the command"
+        " sets the aven task to done and sets the task to closed",
     )
     s.set_defaults(fn=cmd_leftover)
 
@@ -4698,13 +6116,21 @@ def main():
     )
     s.add_argument("ref")
     s.add_argument("url", metavar="URL", help="the address of the pull request")
+    s.add_argument(
+        "--repo",
+        type=repo_name,
+        metavar="NAME",
+        help="the pull request is in the other repository NAME, as the REPO line"
+        " of the landing names it",
+    )
     s.set_defaults(fn=cmd_opened)
 
     s = sub.add_parser(
         "merged",
-        description="Record that the pull request of a proposed task merged."
-        " The command deletes the task branch, sets the aven task to done, and"
-        " sets the task to landed.",
+        description="Record that a pull request of a proposed task merged."
+        " The command deletes the branch of the pull request. When every pull"
+        " request of the task merged, it sets the aven task to done and sets"
+        " the task to landed.",
     )
     s.add_argument("ref")
     s.add_argument(
@@ -4713,6 +6139,15 @@ def main():
         help="record the merge although the base branch lacks the change of"
         " the task branch, such as for a pull request that gained commits after"
         " the push",
+    )
+    s.add_argument(
+        "--repo",
+        type=repo_name,
+        metavar="NAME",
+        help="the pull request merged in the other repository NAME. The command"
+        " takes the pull request of the repository of the run only after the"
+        " pull request of each other repository merged. With this flag, it also"
+        " takes an approved task, and it keeps that task approved",
     )
     s.set_defaults(fn=cmd_merged)
 
