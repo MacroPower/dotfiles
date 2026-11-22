@@ -600,11 +600,11 @@ let
   workmuxConfig = (pkgs.formats.yaml { }).generate "config.yaml" {
     nerdfont = true;
     merge_strategy = "rebase";
-    # Start independent worktrees from the repo's effective main branch
-    # (configured main_branch or detected default) instead of whatever
-    # branch happens to be checked out, so spawning a task while sitting
-    # on a feature branch doesn't silently stack unrelated work on it.
-    # Explicit --base and --pr checkouts still take precedence.
+    # Start independent worktrees from the repo's effective main branch,
+    # which is the configured main_branch or the detected default, instead
+    # of the current branch. A task spawned on a feature branch then does
+    # not stack unrelated work on that branch. Explicit --base and --pr
+    # checkouts still take precedence.
     base_branch = "auto";
     inherit (cfg.workmux) agent;
     # Named agent entry consumed by the focused pane's <agent> placeholder.
@@ -755,8 +755,8 @@ let
         }
         {
           # Read-only: the guest reads only the static key. Its own history
-          # DB lives at the Linux /home/<user>/.local/share/atuin -- a
-          # different absolute path -- so there is no write conflict.
+          # DB lives at the Linux /home/<user>/.local/share/atuin, which is
+          # a different absolute path, so its writes never reach this mount.
           host_path = atuinDataDir;
           guest_path = atuinDataDir;
           writable = false;
@@ -1508,14 +1508,14 @@ let
   # irrecoverably. `--no-extensions` disables the plugin and reintroduces
   # that, so it must not come back; the explicit `--extensions` flags pin
   # the entry points the plugin registers. mdformat-gfm also preserves task
-  # lists, strikethrough, and bare autolinks. The wrapped python binary is
-  # invoked directly through its store-path `/bin/mdformat` so
-  # hook-router-wrapper doesn't need it on PATH and the formatter's own
-  # python wrapper script stays intact.
+  # lists, strikethrough, and bare autolinks. The command runs the wrapped
+  # python binary by its store path, `/bin/mdformat` under mdformatBin. So
+  # hook-router-wrapper does not need mdformat on PATH, and the formatter's
+  # own python wrapper script stays intact.
   mdformatBin = pkgs.mdformat.withPlugins (ps: [ ps.mdformat-gfm ]);
 
-  # `--compact-tables` leaves table cells unpadded, so a table doesn't get
-  # rewritten end-to-end whenever one cell's width changes.
+  # `--compact-tables` leaves table cells unpadded, so a change to the width
+  # of one cell does not rewrite the whole table.
   mdformatCommand = [
     "${mdformatBin}/bin/mdformat"
     "--wrap"
@@ -1643,9 +1643,9 @@ let
     "/Library/Developer"
     "/System"
 
-    # Narrow /dev set — blanket /dev would expose /dev/disk*, /dev/kmem,
-    # /dev/mem. Mirrors the nodes Claude Code auto-allows for writes plus
-    # common stdin/entropy/fd nodes.
+    # A narrow /dev set, because all of /dev exposes /dev/disk*, /dev/kmem,
+    # and /dev/mem. The list mirrors the nodes that Claude Code auto-allows
+    # for writes, plus the common stdin, entropy, and fd nodes.
     "/dev/null"
     "/dev/zero"
     "/dev/random"
@@ -1661,7 +1661,7 @@ let
     "/tmp"
     "/private/tmp"
 
-    # macOS dyld shared cache — every binary launch reads this.
+    # macOS dyld shared cache, which every binary launch reads.
     "/var/db/dyld"
     "/private/var/db/dyld"
 
@@ -1692,8 +1692,9 @@ let
     "~/.claude"
     "~/.tflint.d"
 
-    # ~/Library narrowed — blanket access leaks Keychains, Cookies,
-    # Messages, Mail, Containers, Application Support subdirs, etc.
+    # A narrow ~/Library set, because access to all of ~/Library leaks
+    # data such as Keychains, Cookies, Messages, Mail, Containers, and the
+    # subdirs of Application Support.
     "~/Library/Caches"
     "~/Library/Preferences"
     "~/Library/Fonts"
@@ -1704,7 +1705,7 @@ let
     "~/go"
 
     # home-manager `home.file` places these directly under $HOME, so
-    # `~/.config/**` and friends don't cover them.
+    # the directory entries, such as `~/.config`, do not cover them.
     "~/Taskfile.yaml"
     "~/task"
 
@@ -1714,8 +1715,8 @@ let
     "~/.config/git/config"
     "~/.config/git/ignore"
 
-    # Listed explicitly so the read list doesn't depend on the vaultsDir
-    # default (which resolves under ~/Library/Mobile Documents/...).
+    # Listed explicitly so the read list does not depend on the vaultsDir
+    # default, which resolves under `~/Library/Mobile Documents/`.
     researchDir
   ]
   ++ bundledReadPaths;
@@ -4170,13 +4171,13 @@ in
                 }) leaves
               ) ghCloneRedirectGroups
             );
-          # Fail-closed gating for the gh CLI, derived from the
-          # ghGroups / ghAllowCommands tables above: read-only subcommands
-          # fall through (redirected by the deny rules above, allowed by
-          # the permission entries above, or by the sandbox auto-allow),
-          # everything else gets a forced prompt -- including gh
-          # subcommands that do not exist yet. Order matters:
-          # subcommand-scoped rules run before the top-level fallback.
+          # Fail-closed gating for the gh CLI, derived from the ghGroups
+          # and ghAllowCommands tables. Read-only subcommands fall through
+          # to the deny rules that redirect them, to the permission entries
+          # that allow them, or to the sandbox auto-allow. Every other
+          # subcommand gets a forced prompt, and so does each gh subcommand
+          # that does not exist yet. Order matters, because the
+          # subcommand-scoped rules must run before the top-level fallback.
           commandRules.ask =
             map (group: {
               command = "gh";
@@ -4266,9 +4267,9 @@ in
           # mirror) and ~/.terraform.d/plugin-cache (shared download
           # cache when TF_PLUGIN_CACHE_DIR is set). Both need
           # read+write so providers can be downloaded and loaded.
-          # Sibling ~/.terraform.d/credentials.tfrc.json stays
-          # unreachable -- it is not under either subdirectory and
-          # is additionally denied at the permission layer.
+          # The sibling ~/.terraform.d/credentials.tfrc.json stays
+          # unreachable, because it sits outside both subdirectories
+          # and the permission layer denies it as well.
           "~/.terraform.d/plugins"
           "~/.terraform.d/plugin-cache"
         ];
@@ -4768,8 +4769,8 @@ in
               # backgrounded sub-conversation whose results often never
               # land. This flag routes it inline and has it report
               # through the ReportFindings tool instead. The read site
-              # is a bare Boolean(), so reverting means deleting this
-              # line -- "0" still reads as truthy.
+              # is a bare Boolean(), so "0" still reads as truthy, and
+              # reverting means deleting this line.
               CLAUDE_CODE_REPORT_FINDINGS = "1";
               # The repos directory of this host, for the scripts of a
               # skill. replaceVars renders only the SKILL.md of a skill
@@ -4782,9 +4783,10 @@ in
             # cache so long thinking pauses and slow tool runs still hit
             # it; everything spawned around it (subagents, workflows,
             # background helpers) keeps the cheaper 5-minute writes,
-            # since those turns are short-lived anyway. Unset would mean
-            # "automatic", which already picks 1h for a subscription --
-            # setting both pins the split explicitly.
+            # since those turns are short-lived anyway. Leaving both unset
+            # means "automatic", which on a subscription already picks 1h
+            # for the main conversation and 5m for most other requests.
+            # Setting both pins the split explicitly.
             promptCacheTtl = "1h";
             subagentPromptCacheTtl = "5m";
             disableAutoMode = "disable";
@@ -5522,7 +5524,8 @@ in
       );
 
       # Lima refuses to start when this extra_mounts host_path is missing,
-      # and atuin creates the dir lazily on first run -- pre-create it.
+      # and atuin creates the dir only on its first run. So the activation
+      # creates it ahead of time.
       activation.ensureAtuinDataDir = lib.mkIf cfg.lima.enable (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           run mkdir -p "${atuinDataDir}"
