@@ -374,9 +374,17 @@ in
     # through the marker or the last dash. So `{--| x -}` becomes
     # `{-   x -}`, and `{-- x -}` becomes `{-  x -}`. Harper keeps the `{`
     # of a block comment in the text that it lints, so it reads the
-    # `--` of a `{--` opener as a dash in prose. The scan keeps a dash
-    # right before a `}`, because that dash closes the comment, as in
-    # `{--}`.
+    # `--` of a `{--` opener as a dash in prose.
+    #
+    # tree-sitter-haskell 0.24.1 reads each dash right after a `{-` as
+    # part of the opener. So for it, `{---}` does not close, and Harper
+    # lints the code after it as comment text. GHC reads `{---}` as an
+    # empty comment that closes. The scan therefore keeps the dash right
+    # before the `}`, so `{---}` becomes `{- -}`, which closes for
+    # tree-sitter too. The empty comment `{--}` holds no other dash, and
+    # the `{--}` ... `--}` idiom that toggles a block of code uses it. So
+    # the scan puts four spaces in place of `{--}`, which GHC reads as
+    # whitespace.
     unmark_comments() {
       awk '
         {
@@ -386,6 +394,9 @@ in
             end = RSTART + RLENGTH - 1
             if (substr(rest, end, 2) == "|]") {
               line = line substr(rest, 1, end)
+            } else if (substr(rest, RSTART, 4) == "{--}") {
+              line = line substr(rest, 1, RSTART - 1) "    "
+              end++
             } else if (substr(rest, RSTART, 1) == "{") {
               if (substr(rest, end, 2) == "-}") {
                 end--
@@ -454,6 +465,20 @@ in
     # leaves open ends with the line, so a stray quote does not hide the
     # code after it.
     #
+    # tree-sitter-haskell 0.24.1 reads the text of some strings as code.
+    # It does so in a multiline string and after a string gap that opens
+    # and closes on one line. In a file with CRLF line endings, it also
+    # does so after each string gap. A `{-` in that text opens a block
+    # comment for it, and Harper lints the code after the `{-` as comment
+    # text, string literals included. A `--` there opens a line comment,
+    # and Harper lints the rest of the line as comment text.
+    #
+    # So the copy holds two spaces in place of each `{-` and each `--` in
+    # a string that scan follows. Harper does not lint the text of a
+    # string, so the spaces hide no prose from it. The shadow reads the
+    # copy, so it leaves out each line of a multiline string that opens
+    # with `--`.
+    #
     # Haddock reads a bird track or a property as code only at the start
     # of a paragraph. Under a line of text, it reads one as more text of
     # the paragraph. A writer who puts one there means code, so the cut
@@ -467,16 +492,24 @@ in
     # the copy, and Harper reports a finding there at its column in the
     # source. scan reads a character literal such as `'é'` under either
     # locale too.
+    #
+    # The file that the argument names takes the line and the columns of
+    # the dashes that open each line comment that scan finds, for
+    # drop_comment_markers. Each column counts characters under either
+    # locale, as Harper does.
     blank_examples() {
-      awk '
+      MARKERS="$1" awk '
         BEGIN {
           utf8 = length("é") == 1
+          markers = ENVIRON["MARKERS"]
         }
 
         # Follows the string of the line s from column i, and returns the
         # column of its closing quote, or n when the string stays open
         # after the line. str is 1 inside a string and 3 inside a
-        # multiline string, and gap is 1 inside a string gap.
+        # multiline string, and gap is 1 inside a string gap. openers
+        # takes the column of each `{-` and each `--` in the string, and
+        # nopeners counts them.
         function string(s, i, n,   c) {
           for (; i <= n; i++) {
             c = substr(s, i, 1)
@@ -492,6 +525,9 @@ in
               i += str - 1
               str = 0
               return i
+            } else if ((c == "{" || c == "-") && substr(s, i + 1, 1) == "-") {
+              openers[++nopeners] = i
+              i++
             }
           }
           if (str == 1 && !gap) {
@@ -512,7 +548,9 @@ in
         # that stay open after the line, and quasi is 1 inside a
         # quasiquote. ends takes the column of the first `-}` that
         # leaves no block comment open or `|]` that closes a quasiquote,
-        # or 0 when the line holds neither.
+        # or 0 when the line holds neither. marker and marker_end take the
+        # columns of the first and the last dash that open a line comment,
+        # or 0 when the line holds none.
         #
         # Each test reads only the characters that it needs. The longest
         # character literal holds the escape `\o4177777` between its two
@@ -522,6 +560,9 @@ in
         function scan(s,   n, i, j, c, two) {
           n = length(s)
           ends = 0
+          marker = 0
+          marker_end = 0
+          nopeners = 0
           i = str ? string(s, 1, n) + 1 : 1
           for (; i <= n; i++) {
             c = substr(s, i, 1)
@@ -555,6 +596,8 @@ in
               for (j = i + 2; substr(s, j, 1) == "-"; j++) {
               }
               if ((i == 1 || substr(s, i - 1, 1) !~ /[-!#$%&*+.\/<=>?@\\^|~:]/) && substr(s, j, 1) !~ /[!#$%&*+.\/<=>?@\\^|~:]/) {
+                marker = i
+                marker_end = j - 1
                 return
               }
               i = j - 1
@@ -587,11 +630,29 @@ in
           return out substr(s, to + 1)
         }
 
+        # Returns the column of the character at column i of the line s,
+        # as Harper counts columns. Under the C locale, a column holds one
+        # byte, so the count leaves out each byte that continues a UTF-8
+        # character.
+        function column(s, i,   head) {
+          if (utf8) {
+            return i
+          }
+          head = substr(s, 1, i)
+          return i - gsub("[\x80-\xBF]", "", head)
+        }
+
         {
           cr = sub(/\r$/, "")
           inside = depth > 0
           quoted = str > 0
           scan($0)
+          if (marker) {
+            print NR ":" column($0, marker) ":" column($0, marker_end) > markers
+          }
+          for (k = 1; k <= nopeners; k++) {
+            $0 = substr($0, 1, openers[k] - 1) "  " substr($0, openers[k] + 2)
+          }
           last = length($0)
           if (inside) {
             match($0, /^[ \t]*(--+([ \t]+|$))?/)
@@ -1672,6 +1733,39 @@ in
       '
     }
 
+    # Drops each finding that starts on the dashes that open a line
+    # comment of a Haskell file. blank_examples writes the file in the
+    # argument. Each of its lines holds a line number and the columns of
+    # the first and the last of those dashes, as in `3:31:32`.
+    #
+    # Harper joins two comments that only whitespace separates into one
+    # text. It strips the comment marker only at the start of each line
+    # of that text. In `x = 1 {- a -} -- b`, it therefore reads the `--`
+    # that opens the line comment as a dash in prose, and ProseDash
+    # reports it. Harper strips the dashes of a line comment that opens a
+    # line of the text, so they draw no finding. The filter therefore
+    # drops only the findings that the joined text causes.
+    drop_comment_markers() {
+      MARKERS="$1" awk '
+        BEGIN {
+          while ((getline m < ENVIRON["MARKERS"]) > 0) {
+            split(m, f, ":")
+            from[f[1]] = f[2] + 0
+            to[f[1]] = f[3] + 0
+          }
+        }
+        {
+          if (match($0, /:[0-9]+:[0-9]+: /)) {
+            split(substr($0, RSTART + 1), pos, ":")
+            if ((pos[1] in from) && pos[2] + 0 >= from[pos[1]] && pos[2] + 0 <= to[pos[1]]) {
+              next
+            }
+          }
+          print
+        }
+      '
+    }
+
     # Runs every awk check over a markdown file and prints the findings
     # under their internal names. Each check prints `Kind::Name:`, and
     # the sed renames that to `Kind::Name_Tier:` so the tag step finds
@@ -1839,16 +1933,18 @@ in
     esac
 
     # The shadow and the copy that merge_comments prints read the
-    # comments of a Haskell file from a copy without its Haddock markers
-    # and code examples (see unmark_comments and blank_examples). A file
-    # that prose-lint cannot read stays the source, so prose-lint fails
-    # on it as on a file of any other language. A failed redirection
-    # exits 1, which a caller reads as findings, so a failed copy exits
-    # 2.
+    # comments of a Haskell file from a copy of it. The copy omits the
+    # Haddock markers, the code examples, and each `{-` and `--` in a
+    # string (see unmark_comments and blank_examples). A file that
+    # prose-lint cannot read stays the source, so prose-lint fails on it
+    # as on a file of any other language. A failed redirection exits 1,
+    # which a caller reads as findings, so a failed copy exits 2.
     source=$file
+    markers=$tmp_dir/markers
+    : >"$markers"
     if [ "$ext" = hs ] && [ -f "$file" ] && [ -r "$file" ]; then
       source=$tmp_dir/source.hs
-      unmark_comments <"$file" | blank_examples >"$source" || exit 2
+      unmark_comments <"$file" | blank_examples "$markers" >"$source" || exit 2
     fi
 
     # --shadow prints the shadow and stops, so a corpus measurement
@@ -1993,6 +2089,13 @@ in
         printf '%s\n' "$out" | drop_comment_lines "$shadow" | sed '/^$/d'
         cat "$tmp_dir/shadow_found"
       )
+    fi
+
+    # Harper reads the dashes that open a line comment of a Haskell file
+    # as prose when a block comment ends right before them (see
+    # drop_comment_markers).
+    if [ "$ext" = hs ]; then
+      out=$(printf '%s\n' "$out" | drop_comment_markers "$markers")
     fi
 
     if [ -n "$comment_kind" ]; then
@@ -2447,6 +2550,24 @@ in
         # puts a space in place of each byte of `é`, the comment moves one
         # column to the right.
         #
+        # In the next three cases, a `--` comment of prose follows the
+        # `-}` of a block comment of prose on the same line. Harper joins
+        # the two comments and reads the dashes that open the second one
+        # as a dash in prose. drop_comment_markers drops the ProseDash
+        # finding on them. In the first case, a space sits between the two
+        # comments, and `'é'` comes before them. A column that counts the
+        # two bytes of `é` under the C locale misses the dashes. The
+        # comment of that case also holds a `--` in its prose, and the test
+        # expects a ProseDash finding there. In the second case, nothing
+        # sits between the `-}` and the `---` that opens the comment. The
+        # block of the third case closes on a `--` line.
+        #
+        # The file ends in an empty `{--}` comment above a string that
+        # holds prose. unmark_comments puts four spaces in place of it.
+        # When the copy keeps the `{--}`, tree-sitter-haskell reads it as a
+        # block comment that does not close, and Harper then lints the
+        # string.
+        #
         # The test expects the shadow of example.hs to hold text only on
         # the lines of prose and on the cut lines that keep a `-}` or a
         # `|]`. It also lints a copy of example.hs with
@@ -2463,36 +2584,44 @@ in
         # user, which can be either one.
         #
         # The strings of strings.hs hold a `{-` that scan must skip. A
-        # multiline string, which `"""` opens, holds a `{-`, a `--` line
-        # with a bird track, and a `{-` after a `"`. One string gap runs
-        # from the end of a line to a `\` and a `"` on the next line.
-        # Another gap opens and closes inside one line, and a `{-` follows
-        # each gap. The file ends in a `{-|` block whose last result line
-        # ends in the `-}` of the block, above a `--` comment of prose.
-        # When scan reads a `{-` of a string as the opener of a block
-        # comment, that `-}` leaves the block open, and blank_examples
-        # cuts the comment.
+        # multiline string, which `"""` opens, holds a `{-`, two `--`
+        # lines, and a `{-` after a `"`. One `--` line holds a bird track,
+        # and the other holds prose. One string gap runs from the end of a
+        # line to a `\` and a `"` on the next line. Another gap opens and
+        # closes inside one line, and a `{-` follows each gap. A string
+        # that holds prose follows each of these cases.
         #
-        # The `--` line of the multiline string belongs to the string, so
-        # blank_examples keeps it whole. The test also reads a copy of
-        # strings.hs with CRLF line endings, where a `\r` follows the `\`
-        # that opens the first gap. scan must read that `\` as the last
-        # character of its line.
+        # Two more strings hold a `--` and prose. One follows a gap that
+        # runs to the next line, and the other follows a gap inside one
+        # line. The file ends in a `{-|` block whose last result line ends
+        # in the `-}` of the block, above a `--` comment of prose. When
+        # scan reads a `{-` of a string as the opener of a block comment,
+        # that `-}` leaves the block open, and blank_examples cuts the
+        # comment.
         #
-        # tree-sitter-haskell 0.24.1 reads the `{-` of a multiline string
-        # as the opener of a block comment. It reads the `{-` after a gap
-        # inside one line the same way, and the `{-` after each gap of a
-        # file with CRLF line endings. Harper then lints the code after
-        # that `{-`, so the test checks only the shadows of strings.hs and
-        # of its copy.
+        # The `--` lines of the multiline string belong to the string, so
+        # blank_examples puts spaces in place of their dashes, and the
+        # shadow leaves them out. The test also reads a copy of strings.hs
+        # with CRLF line endings, where a `\r` follows the `\` that opens
+        # the first gap. scan must read that `\` as the last character of
+        # its line.
+        #
+        # tree-sitter-haskell 0.24.1 reads the text of a multiline string
+        # as code. It reads the text of a string after a gap inside one
+        # line as code too. In a file with CRLF line endings, it does so
+        # after each gap. blank_examples puts spaces in place of each `{-`
+        # and each `--` in a string. When the copy keeps one of them,
+        # Harper lints the prose after it as comment text. The test lints
+        # strings.hs and its copy and expects findings only on the
+        # comments.
         #
         # harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that
         # holds a comment, and harperOverlay in lib/default.nix patches
         # it. When harper-cli aborts on a probe file, the test checks
         # only the shadows and the exit status. The Verification section
         # of configs/harper/CLAUDE.md gives the command that builds this
-        # test with the patched harper and lints doc.hs and example.hs
-        # end to end.
+        # test with the patched harper and lints the Haskell files end to
+        # end.
         tests.haddock = runCommand "prose-lint-haddock" { nativeBuildInputs = [ gawk ]; } ''
           cat >doc.hs <<'EOF'
           module Doc where
@@ -2700,6 +2829,20 @@ in
           h3 :: Int
           h3 = 1 {- It may help here.
           -- > café -} 1 -- It may help here.
+
+          h4 :: Char
+          h4 = 'é' {- It may help here. -} -- It may help -- here.
+
+          h5 :: Int
+          h5 = 1 {- It may help here. -}--- It may help here.
+
+          h6 :: Int
+          h6 = {- It may help here.
+          -- x -} -- It may help here.
+
+          {--}
+          m2 :: String
+          m2 = "It may help here."
           EOF
           sed -i '17s/$/ /' example.hs
           sed 's/$/\r/' example.hs >crlf.hs
@@ -2713,15 +2856,29 @@ in
             """
             tool {-v|-q} FILE
             -- > lookup 1 m
+            -- It may help here.
             say "a {-" here
             """
+          m :: String
+          m = "It may help here."
 
           s :: String
           s = "a \
               \" ++ "{-"
+          m2 :: String
+          m2 = "It may help here."
 
           s2 :: String
           s2 = "a\ \" ++ "{-"
+          m3 :: String
+          m3 = "It may help here."
+
+          s3 :: String
+          s3 = "a \
+                \" ++ "-- It may help here."
+
+          s4 :: String
+          s4 = "a\ \" ++ "-- It may help here."
 
           {-| It may help here.
           >>> lookup 1 m
@@ -2749,7 +2906,8 @@ in
               '78: -- {- It may help here.'
             printf '%s: --              -} 1 -- It may help here.\n' 115 119 123
             printf '%s\n' '139: --                -} 1 {- It may help here. -}' \
-              '144: -- It may help here.' '154: --        -} 1 -- It may help here.'
+              '144: -- It may help here.' '154: --        -} 1 -- It may help here.' \
+              '164: -- x -} -- It may help here.'
           } >want
           ${findUtf8Locale}
           for locale in C "$utf8"; do
@@ -2763,7 +2921,7 @@ in
             done
           done
 
-          printf '%s\n' '8:   -- > lookup 1 m' '22: -- It may help here.' >want
+          printf '%s\n' '36: -- It may help here.' >want
           for f in strings.hs strings-crlf.hs; do
             ${lib.getExe finalAttrs.finalPackage} --shadow "$f" |
               awk '$0 != "x" && /[^ \t-]/ { print NR ": " $0 }' >got
@@ -2792,7 +2950,7 @@ in
           rc=0
           HOME=$TMPDIR ${harper}/bin/harper-cli lint --format compact probe.hs >/dev/null 2>&1 || rc=$?
           if [ "$rc" -ge 2 ]; then
-            echo "harper-cli exited $rc on probe.hs, so the test skips the lint of doc.hs and example.hs"
+            echo "harper-cli exited $rc on probe.hs, so the test skips the lint of the Haskell files"
             touch "$out"
             exit 0
           fi
@@ -2820,10 +2978,14 @@ in
             exit 1
           fi
 
-          printf '%s ProseMayPossibility\n' 3:7 8:7 12:7 18:7 23:7 25:8 26:13 32:8 41:4 \
-            48:7 50:4 51:4 61:7 65:33 70:7 76:13 78:10 81:13 87:13 93:13 99:13 \
-            105:13 111:13 114:19 115:28 118:20 119:28 122:14 123:28 125:7 126:7 \
-            129:4 134:11 135:29 138:11 139:30 141:8 144:7 150:13 153:14 154:22 | sort >want
+          {
+            printf '%s ProseMayPossibility\n' 3:7 8:7 12:7 18:7 23:7 25:8 26:13 32:8 41:4 \
+              48:7 50:4 51:4 61:7 65:33 70:7 76:13 78:10 81:13 87:13 93:13 99:13 \
+              105:13 111:13 114:19 115:28 118:20 119:28 122:14 123:28 125:7 126:7 \
+              129:4 134:11 135:29 138:11 139:30 141:8 144:7 150:13 153:14 154:22 \
+              157:16 157:40 160:14 160:38 163:12 164:15
+            echo '157:49 ProseDash'
+          } | sort >want
           for locale in C "$utf8"; do
             for f in example.hs crlf.hs; do
               findings "$f" "$locale" >got
@@ -2832,6 +2994,15 @@ in
                 exit 1
               fi
             done
+          done
+
+          printf '%s ProseMayPossibility\n' 33:8 36:7 >want
+          for f in strings.hs strings-crlf.hs; do
+            findings "$f" C >got
+            if ! diff want got; then
+              echo "$f draws other findings than want lists" >&2
+              exit 1
+            fi
           done
           touch "$out"
         '';

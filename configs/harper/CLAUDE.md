@@ -561,6 +561,25 @@ on a set of files.
     above a line of code that opens with `>` and ends in a comment
   - a block that closes on a bird track that holds `café`, with code and
     a comment of prose after its `-}`
+  - a block comment of prose and a `--` comment of prose on one line,
+    with a space between them. `'é'` comes before the block, and the
+    prose of the comment holds a `--`.
+  - a block comment of prose with a `---` comment of prose right after
+    its `-}`
+  - a block that closes on a `--` line, with a `--` comment of prose
+    after its `-}`
+  - an empty `{--}` comment above a string that holds prose, which
+    prose-lint rewrites as four spaces, so no block opens there
+
+  Harper joins a block comment and a line comment that only whitespace
+  separates. It strips the comment marker only at the start of each
+  line, so it reads the dashes that open the line comment as a dash.
+  prose-lint drops each finding on those dashes. The test expects a
+  ProseDash finding only on the `--` in the prose of the comment.
+
+  tree-sitter-haskell 0.24.1 reads each dash right after a `{-` as part
+  of the opener. So for it, a `{--}` that the copy keeps does not close,
+  and Harper lints the string after it.
 
   The test expects the same shadow and findings from a copy of the
   second file with CRLF line endings. In both copies, a trailing space
@@ -575,27 +594,36 @@ on a set of files.
   So under that locale, a cut that puts a space in place of each byte
   moves the comment after the `-}` of `café` to the right.
 
-  A third Haskell file puts a `{-` in strings that run on past the end
-  of a line or hold a `\` and whitespace. One multiline string, which
-  `"""` opens, holds a `{-`, a `--` line with a bird track, and a `{-`
-  after a `"`. One string gap runs from the end of a line to the next
-  line, and another opens and closes inside one line. The file ends in
-  a `{-|` block whose last result line ends in the `-}` of the block,
-  above a `--` comment of prose. prose-lint keeps the `--` line of the
-  multiline string whole. The test expects the shadow of the file, and
-  of its copy with CRLF line endings, to hold that line and the comment.
+  A third Haskell file puts a `{-` and a `--` in strings that run on
+  past the end of a line or hold a `\` and whitespace. One multiline
+  string, which `"""` opens, holds a `{-`, a `--` line with a bird
+  track, a `--` line of prose, and a `{-` after a `"`. One string gap
+  runs from the end of a line to the next line, and another opens and
+  closes inside one line. A `{-` follows each gap, and a string that
+  holds prose follows each case. Two more strings hold a `--` and prose,
+  one after a gap of each kind.
 
-  tree-sitter-haskell 0.24.1 reads the `{-` of a multiline string as the
-  opener of a block comment. It reads the `{-` after a gap inside one
-  line the same way, and the `{-` after each gap of a file with CRLF
-  line endings. So the test checks only the shadows of the third file.
+  The file ends in a `{-|` block whose last result line ends in the `-}`
+  of the block, above a `--` comment of prose. The test expects the
+  shadow of the file, and of its copy with CRLF line endings, to hold
+  only that comment. prose-lint puts spaces in place of the dashes of
+  each `--` line of the multiline string, so the shadow leaves those
+  lines out.
+
+  tree-sitter-haskell 0.24.1 reads the text of a multiline string as
+  code. It reads the text of a string after a gap inside one line as
+  code too. In a file with CRLF line endings, it does so after each gap.
+  A `{-` in that text opens a block comment, and a `--` opens a line
+  comment. So prose-lint puts spaces in place of each `{-` and each `--`
+  in a string. The test lints the third file and its CRLF copy and
+  expects a ProseMayPossibility finding only on the comments.
 
   harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that holds
   a comment. With that harper-cli, the test checks only the shadows and
   the exit status. The command that builds the `haddock` test from a
   home configuration of the flake uses the patched harper of
-  harperOverlay in `lib/default.nix`. Only that command lints the first
-  two Haskell files of the test end to end.
+  harperOverlay in `lib/default.nix`. Only that command lints the
+  Haskell files of the test end to end.
 
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).
@@ -1028,8 +1056,7 @@ the `haddock` test checks only the shadows and the exit status there.
 On a Linux host, this command builds the `haddock` test from the `dev`
 home configuration of the flake for the system of the host. The harper
 of that configuration carries the patches of harperOverlay in
-`lib/default.nix`, so the test also lints its first two Haskell files end
-to end.
+`lib/default.nix`, so the test also lints its Haskell files end to end.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); in f.homeConfigurations."dev@${builtins.currentSystem}".pkgs.prose-lint.passthru.tests.haddock'
