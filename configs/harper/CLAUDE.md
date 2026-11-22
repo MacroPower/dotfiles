@@ -504,18 +504,22 @@ on a set of files.
   language.
 
   The test also lints a second Haskell file, which holds Haddock code
-  examples and block comments that open with `{--`. prose-lint puts
-  spaces in place of the code of each Haddock code example, in `--`
-  comments and in block comments. It cuts bird tracks (`> f x`),
-  examples (`>>> f x`) and their result lines, and properties
-  (`prop> f x`). It keeps each `{-`, `-}`, and `|]` at its column, so
-  the comments and quasiquotes of the copy close where they do in the
-  file.
+  examples, fenced code blocks, and block comments that open with `{--`.
+  prose-lint puts spaces in place of the code of each Haddock code
+  example, in `--` comments and in block comments. It cuts bird tracks
+  (`> f x`), examples (`>>> f x`) and their result lines, properties
+  (`prop> f x`), and the lines between the two `@` lines of a code
+  block. As in Haddock, a line of only `@` opens a code block only when
+  a later line of its comment opens with `@`. prose-lint keeps each
+  `{-`, `-}`, and `|]` at its column, on the lines that it cuts and on
+  the lines of a fence. So the comments and quasiquotes of the copy
+  close where they do in the file.
 
   The code holds `Just`, `Maybe`, and a `--` comment. The test expects a
   ProseMayPossibility finding only on the lines of prose. The shadow
-  holds text only on those lines and on the cut lines that keep a `-}`
-  or a `|]`. The file holds these cases:
+  holds text only on those lines, on the `@` lines, on the lines of text
+  under an `@` that no line closes, and on the lines that keep a `{-`, a
+  `-}`, or a `|]`. The file holds these cases:
 
   - an indented bird track, and a bird track in a `---` comment
   - a line of prose right under a bird track and right under a property
@@ -561,6 +565,40 @@ on a set of files.
     above a line of code that opens with `>` and ends in a comment
   - a block that closes on a bird track that holds `café`, with code and
     a comment of prose after its `-}`
+  - a code block in a `--` comment with an empty comment line in it,
+    with a line of prose under its closing `@`
+  - a code block whose first line opens with `@`, with a line of prose
+    under its closing `@`
+  - a line of only `@` right under a line of prose, with a line of text
+    and a line of code under it and an `@since` comment of prose under
+    the code
+  - a `{-|` block that holds a code block and a line of prose
+  - a line of only `@` right above the `-}` of its block, with prose
+    before the `-}`, code and a comment of prose after it, and an
+    `@since` comment of prose under the block
+  - result lines of an example that hold a line of only `@`, with an
+    empty comment line, a line of prose, and an `@since` line under them
+  - a code block that closes on a line of prose that opens with
+    `@since`, with a line of prose under it
+  - a code block whose opening `@` line ends in a space, with a line of
+    prose under its closing `@`
+  - a fence in the `--` lines of a block, with a line that holds the
+    `-}` of the block, above a string that holds prose
+  - a fence whose opening line holds the `-}` of its block, above a
+    string that holds prose
+  - a fence with a line that opens a nested block, inside a block of
+    prose
+  - a fence whose last line holds the `-}` of a block and `café`, with
+    code and a comment of prose after the `-}`
+  - a fence whose last line holds the `|]` of a quasiquote, with code
+    and a comment of prose after the `|]`
+  - a line of only `@` that no line closes, with an example, its result
+    line, an empty comment line, and a line of prose under it
+  - a `{-|` block with a line of only `@` that no line closes, and a
+    line of text, an empty line, and a line of prose under it
+  - a line of only `@` right under a line of prose, above a line that
+    closes inline code in the middle of the line, an empty comment line,
+    and a line of prose
   - a block comment of prose and a `--` comment of prose on one line,
     with a space between them. `'é'` comes before the block, and the
     prose of the comment holds a `--`.
@@ -583,10 +621,11 @@ on a set of files.
 
   The test expects the same shadow and findings from a copy of the
   second file with CRLF line endings. In both copies, a trailing space
-  ends the empty comment line under the first result lines, and
-  editorconfig trims that space from a fixture. In the CRLF copy, a
-  `\r` follows the space, and prose-lint must not read it as text of a
-  result line.
+  ends the empty comment line under the first result lines and the
+  opening `@` line of the last closed code block. Editorconfig trims
+  those spaces from a fixture, so the test adds them. In the CRLF copy,
+  a `\r` follows each space, and prose-lint must not read it as text of
+  the line.
 
   The test reads the shadows of the second file and of its CRLF copy
   under the C locale and under a UTF-8 locale. It lints each copy under
@@ -618,12 +657,20 @@ on a set of files.
   in a string. The test lints the third file and its CRLF copy and
   expects a ProseMayPossibility finding only on the comments.
 
+  A fourth Haskell file opens with an example, its result line, an
+  empty comment line, and a line of prose. It ends in a multiline string
+  that does not close. prose-lint reads each Haskell file twice to find
+  the `@` lines that a later line closes. The test expects the shadow of
+  the fourth file to hold text only on the line of prose. When the
+  second read starts inside that string, the shadow leaves out that
+  line.
+
   harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that holds
   a comment. With that harper-cli, the test checks only the shadows and
   the exit status. The command that builds the `haddock` test from a
   home configuration of the flake uses the patched harper of
   harperOverlay in `lib/default.nix`. Only that command lints the
-  Haskell files of the test end to end.
+  first three Haskell files of the test end to end.
 
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).
@@ -1056,7 +1103,8 @@ the `haddock` test checks only the shadows and the exit status there.
 On a Linux host, this command builds the `haddock` test from the `dev`
 home configuration of the flake for the system of the host. The harper
 of that configuration carries the patches of harperOverlay in
-`lib/default.nix`, so the test also lints its Haskell files end to end.
+`lib/default.nix`, so the test also lints its first three Haskell files
+end to end.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); in f.homeConfigurations."dev@${builtins.currentSystem}".pkgs.prose-lint.passthru.tests.haddock'
