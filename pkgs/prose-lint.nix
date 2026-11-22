@@ -352,6 +352,49 @@ in
       '
     }
 
+    # Prints the Haskell source from stdin with a space in place of each
+    # Haddock marker, the `|` or `^` that opens a doc comment such as
+    # `-- |` or `{-^`. tree-sitter-haskell gives a doc comment the node
+    # kind `haddock`, and Harper lints only the nodes whose kind holds
+    # `comment`. Harper therefore skips each doc comment, the `--` lines
+    # that continue one included. Without its Haddock marker, a doc
+    # comment parses as a plain comment, which Harper lints. The space
+    # keeps every column in place.
+    #
+    # A line comment opens at a run of two or more dashes after a
+    # character that is not a symbol, because `<--` is an operator.
+    # Whitespace must sit between the dashes and the marker, because
+    # `--|` is an operator too. The scan does not track strings, so it
+    # also clears a marker inside a string, whose text Harper does not
+    # lint. It keeps a `|` before a `]`, which can close a quasiquote.
+    #
+    # A block comment opens at `{-`, and more dashes and whitespace can
+    # sit between it and the marker. The scan keeps the `{-` and puts a
+    # space in place of each character after it through the marker, so
+    # `{--| x -}` becomes `{-   x -}`. Harper keeps the `{` of a block
+    # comment in the text that it lints, so it reads the `--` of a
+    # `{--` opener as a dash in prose.
+    unmark_haddock() {
+      awk '
+        {
+          rest = $0
+          line = ""
+          while (match(rest, /(^|[^-!#$%&*+.\/<=>?@\\^|~:])--+[ \t]+[|^]|[{]-+[ \t]*[|^]/)) {
+            end = RSTART + RLENGTH - 1
+            if (substr(rest, end, 2) == "|]") {
+              line = line substr(rest, 1, end)
+            } else if (substr(rest, RSTART, 1) == "{") {
+              line = line substr(rest, 1, RSTART + 1) sprintf("%" (RLENGTH - 2) "s", "")
+            } else {
+              line = line substr(rest, 1, end - 1) " "
+            }
+            rest = substr(rest, end + 1)
+          }
+          print line rest
+        }
+      '
+    }
+
     # Prints the file's full-line comments at their lines and columns
     # and an `x` on every other line. The `x` keeps two comments that
     # code separates from merging into one run, which a blank line
@@ -1279,6 +1322,18 @@ in
       *) comment_kind=$shadow_kind ;;
     esac
 
+    # The shadow and the copy that merge_comments prints read the
+    # comments of a Haskell file from a copy without its Haddock markers
+    # (see unmark_haddock). A file that prose-lint cannot read stays the
+    # source, so prose-lint fails on it as on a file of any other
+    # language. A failed redirection exits 1, which a caller reads as
+    # findings, so a failed copy exits 2.
+    source=$file
+    if [ "$ext" = hs ] && [ -f "$file" ] && [ -r "$file" ]; then
+      source=$tmp_dir/source.hs
+      unmark_haddock <"$file" >"$source" || exit 2
+    fi
+
     # --shadow prints the shadow and stops, so a corpus measurement
     # lints comments the same way the hook does. It drops the shifts
     # files. So a finding on a line that close_spans shifted reads right
@@ -1289,7 +1344,7 @@ in
         echo "prose-lint: $file has no comment shadow" >&2
         exit 2
       fi
-      comment_lines "$comment_kind" "$file" /dev/null | end_list_leads | blank_fences |
+      comment_lines "$comment_kind" "$source" /dev/null | end_list_leads | blank_fences |
         close_spans /dev/null | break_fence_runs | straighten
       exit 0
     fi
@@ -1348,7 +1403,7 @@ in
       span_shifts=$tmp_dir/span_shifts
       : >"$shifts"
       : >"$span_shifts"
-      comment_lines "$comment_kind" "$file" "$shifts" | end_list_leads | blank_fences |
+      comment_lines "$comment_kind" "$source" "$shifts" | end_list_leads | blank_fences |
         close_spans "$span_shifts" | break_fence_runs | straighten >"$shadow"
     fi
 
@@ -1368,7 +1423,7 @@ in
       hcl|yaml|hash) ;;
       *)
         if [ -z "$shadow_kind" ] && [ -n "$comment_kind" ]; then
-          straighten <"$file" | merge_comments "$shadow" >"$norm_dir/$base"
+          straighten <"$source" | merge_comments "$shadow" >"$norm_dir/$base"
           lint "$rules" "$norm_dir/$base" | unshift "$shifts" "$span_shifts" >"$tmp_dir/file_found" &
         else
           straighten <"$file" >"$norm_dir/$base"
@@ -1753,6 +1808,145 @@ in
               exit 1
             fi
           done
+          touch "$out"
+        '';
+
+        # Lints Haddock comments in a Haskell file, and expects a
+        # ProseMayPossibility finding on each of them and no other
+        # finding. The file holds a `-- |` comment and a `--` line that
+        # continues it, and a `-- ^` comment after code and on a line of
+        # its own. It holds a `{-^` block after code and a `{-  ^` block
+        # on a line of its own. It also holds `{-|`, `{- |`, and `{--|`
+        # blocks, a `--  |` comment, and a `--- |` comment. Each of
+        # those forms opens a doc comment in tree-sitter-haskell, so a
+        # pattern in unmark_haddock that misses one of them fails the
+        # test.
+        #
+        # unmark_haddock also puts a space in place of the second dash
+        # of `{--|`. Without that space, Harper reads the `--` as a dash
+        # and reports ProseDash on the opener.
+        #
+        # The last `-- |` comment sits between two quasiquotes, and the
+        # first one ends in `-- |]`. unmark_haddock keeps the `|` that
+        # closes it. Without that `|`, Harper reads the first quasiquote
+        # on to the end of the second and skips the comment. The file
+        # ends in the operator `--|`, after code and at the start of a
+        # line, and the test expects no finding there.
+        #
+        # The test also expects the shadow to hold each full-line `--`
+        # comment without its Haddock marker. comment_lines takes a `--`
+        # marker only before whitespace or the line end, so the shadow
+        # does not hold a line for the operator or the `--- |` comment.
+        # The test expects prose-lint to exit 2 on an unreadable copy of
+        # the file, as on the file of any other language.
+        #
+        # harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that
+        # holds a comment, and harperOverlay in lib/default.nix patches
+        # it. When harper-cli aborts on a probe file, the test checks
+        # only the shadow and the exit status. The Verification section
+        # of configs/harper/CLAUDE.md gives the command that builds this
+        # test with the patched harper and lints doc.hs end to end.
+        tests.haddock = runCommand "prose-lint-haddock" { } ''
+          cat >doc.hs <<'EOF'
+          module Doc where
+
+          -- | It may help here.
+          -- It may help here.
+          f :: Int
+          f = 1
+
+          data T = T
+            { a :: Int -- ^ It may help here.
+            , b :: Int
+              -- ^ It may help here.
+            , c :: Int {-^ It may help here. -}
+            , d :: Int
+              {-  ^ It may help here. -}
+            }
+
+          {-| It may help here. -}
+          g :: Int
+          g = 1
+
+          {- | It may help here. -}
+          i :: Int
+          i = 1
+
+          {--| It may help here. -}
+          j :: Int
+          j = 1
+
+          --  | It may help here.
+          k :: Int
+          k = 1
+
+          --- | It may help here.
+          l :: Int
+          l = 1
+
+          q :: String
+          q = [x| -- |]
+
+          -- | It may help here.
+          h :: Int
+          h = 1
+
+          r :: String
+          r = [x| b |]
+          s :: Int
+          s = 1 --| It may help here
+            --| It may help here
+          EOF
+
+          ${lib.getExe finalAttrs.finalPackage} --shadow doc.hs |
+            awk '$0 != "x" { print NR ": " $0 }' >got
+          printf '%s\n' '3: --   It may help here.' '4: -- It may help here.' \
+            '11:     --   It may help here.' '29: --    It may help here.' \
+            '40: --   It may help here.' >want
+          if ! diff want got; then
+            echo "the shadow of doc.hs holds other comment lines than want lists" >&2
+            exit 1
+          fi
+
+          cp doc.hs unread.hs
+          chmod 000 unread.hs
+          if [ -r unread.hs ]; then
+            echo "unread.hs stays readable after chmod 000, so the test skips the exit status check"
+          else
+            for mode in "" --shadow; do
+              rc=0
+              ${lib.getExe finalAttrs.finalPackage} $mode unread.hs >/dev/null 2>&1 || rc=$?
+              if [ "$rc" -ne 2 ]; then
+                echo "unread.hs: prose-lint''${mode:+ $mode} exited $rc, not 2" >&2
+                exit 1
+              fi
+            done
+          fi
+
+          printf '%s\n' 'module Probe where' "" '-- This is is a comment.' 'x = 1' >probe.hs
+          rc=0
+          HOME=$TMPDIR ${harper}/bin/harper-cli lint --format compact probe.hs >/dev/null 2>&1 || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "harper-cli exited $rc on probe.hs, so the test skips the lint of doc.hs"
+            touch "$out"
+            exit 0
+          fi
+
+          rc=0
+          found=$(${lib.getExe finalAttrs.finalPackage} doc.hs) || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "doc.hs: prose-lint exited $rc" >&2
+            exit 1
+          fi
+          printf '%s\n' "$found" |
+            sed -E 's,^[^:]+:([0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::([A-Za-z0-9_]+): .*,\1 \2,' |
+            sort >got
+          printf '%s ProseMayPossibility\n' 3:9 4:7 9:22 11:13 12:21 14:14 17:8 21:9 25:9 29:10 33:10 40:9 |
+            sort >want
+          if ! diff want got; then
+            echo "doc.hs draws other findings than want lists" >&2
+            exit 1
+          fi
           touch "$out"
         '';
 

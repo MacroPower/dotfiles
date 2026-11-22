@@ -477,6 +477,39 @@ on a set of files.
   tests the end of a line, so it still drops the ` x` after each `*/`
   in that copy.
 
+- `haddock` lints Haddock comments in a Haskell file, and it expects a
+  ProseMayPossibility finding on each of them and no other finding. The
+  file holds these forms of Haddock comment, and each opens a doc
+  comment in tree-sitter-haskell:
+
+  - a `-- |` comment and a `--` line that continues it
+  - a `-- ^` comment after code and on a line of its own
+  - a `{-^` block after code and a `{-  ^` block on a line of its own
+  - `{-|`, `{- |`, and `{--|` blocks
+  - a `--  |` comment and a `--- |` comment
+
+  In the copy that Harper lints, prose-lint keeps the `{-` of a Haddock
+  block and puts a space in place of each character after it through the
+  Haddock marker. So the `--` of the `{--|` block does not draw a
+  ProseDash finding. The last `-- |` comment sits between two
+  quasiquotes, and the first one ends in `-- |]`. The file ends in the
+  operator `--|`, after code and at the start of a line, and the test
+  expects no finding there.
+
+  The test also expects the shadow to hold each full-line `--` comment
+  without its Haddock marker. The shadow takes a `--` marker only before
+  whitespace or the line end, so it does not hold a line for the
+  operator or the `--- |` comment. The test expects prose-lint to exit 2
+  on an unreadable copy of the file, as on the file of any other
+  language.
+
+  harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that holds
+  a comment. With that harper-cli, the test checks only the shadow and
+  the exit status. The command that builds the `haddock` test from a
+  home configuration of the flake uses the patched harper of
+  harperOverlay in `lib/default.nix`. Only that command lints the
+  Haskell file of the test end to end.
+
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).
   It also lints lines after a fence marker four columns in after quoted
@@ -707,4 +740,15 @@ This command builds every test.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; prose-weirpack = pkgs.callPackage ./pkgs/prose-weirpack.nix { }; in (pkgs.callPackage ./pkgs/prose-lint.nix { inherit prose-weirpack; }).passthru.tests'
+```
+
+The command that builds every test uses harper-cli from nixpkgs, so
+the `haddock` test checks only the shadow and the exit status there.
+On a Linux host, this command builds the `haddock` test from the `dev`
+home configuration of the flake for the system of the host. The harper
+of that configuration carries the patches of harperOverlay in
+`lib/default.nix`, so the test also lints its Haskell file end to end.
+
+```bash
+nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); in f.homeConfigurations."dev@${builtins.currentSystem}".pkgs.prose-lint.passthru.tests.haddock'
 ```
