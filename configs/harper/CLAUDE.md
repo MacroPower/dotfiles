@@ -399,7 +399,25 @@ a rule file, or a file under `lib/`. Each test runs the built wrapper
 on a set of files.
 
 - `license-headers` lints source files that open with a license header
-  and expects no finding.
+  and expects no finding. The header of one file is a block comment that
+  opens with `Licensed to`, as the headers of the Apache Software
+  Foundation do. In another file, a block comment that names a
+  copyright follows a `// SPDX-License-Identifier` line and joins the
+  header.
+
+  The test also lints two files in which a comment that names neither a
+  copyright nor a license comes right after the header. In one, a
+  description in a block comment follows an SPDX line. In the other, a
+  `//` line follows a block that names a copyright. That comment stays
+  out of the header, so the test expects a finding on it.
+
+  A line of two or more `#` marks or three or more `-` marks with no
+  text, such as a banner, ends the header. One more file opens with
+  such a line above a Haddock module header in a Lua file, whose
+  `Copyright` field sits among its docs. In another, such a line
+  follows the license lines of a shell file, above a description. The
+  test expects a finding on the description line of each file.
+
 - `crlf` lints the source files in `fixtures/crlf/` and copies of them
   with CRLF line endings. The files hold a YAML block scalar, an HCL
   heredoc, and license headers, whose lines the comment shadow skips.
@@ -658,6 +676,15 @@ on a set of files.
   `--` and on the string whose text ends in an ` x` of its own after the
   `--`.
 
+  The test also lints copies of `code.sh` whose comment lines open with
+  `##`, as a shell and a Python file, and with `---`, as a Lua file.
+  Other copies turn each run of comment lines into a block comment that
+  opens with `/*` and closes with ` */`. The test lints those copies as
+  a TypeScript, Rust, Go, and Nix file. It expects the findings of
+  `code.sh` from each copy, one column further right. The `---` marker
+  puts them two columns right. One more copy of the TypeScript block
+  file has CRLF line endings.
+
   The test also lints `fixtures/comment-code/template.ts`, whose
   template literals hold `//` lines that end the template or open a
   fence. Its code also holds backticks in strings, in regular
@@ -665,24 +692,129 @@ on a set of files.
   or hold an escaped quote. Some of the regular expressions hold a
   character class or an escaped `/`, and three open their line.
 
-  The last three block comments of the fixture each end on a `//` line
+  The last four block comments of the fixture each end on a `//` line
   that ends in `*/`. A regular expression with a backtick follows the
   first block, and a template follows the second. A comment line and
-  then such a regular expression follow the third. The comment shadow
-  adds ` x` after each `*/`. merge_comments in `pkgs/prose-lint.nix`
-  drops it, even when comment text follows the line, as after the third
-  block. With the ` x`, the `/` of the regular expression reads as a
-  division, and its backtick opens a template that hides the comment
-  after it.
+  then such a regular expression follow the third. The fourth opens
+  after code, and such a regular expression follows it.
+
+  The comment shadow holds the first three blocks and drops each `*/`
+  from its line. merge_comments in `pkgs/prose-lint.nix` puts the `*/`
+  back at the end of the line, so a ` x` or a run of backticks that the
+  shadow adds stays inside the block. The `//` line of the fourth block
+  counts as a line comment, and merge_comments drops the ` x` after its
+  `*/`. After the `*/`, such text lands in code, where the `/` of the
+  regular expression reads as a division. Its backtick then opens a
+  template that hides the comment after it.
 
   The test expects a finding on each comment after these cases, and on
   the text after each wrapped span. It lints copies of the fixture as a
   JavaScript, JSX, and TSX file too, and it expects the same findings
   from each. It also lints a copy with CRLF line endings and expects
   the same findings from it. merge_comments drops the `\r` before it
-  tests the end of a line, so it still drops the ` x` after each `*/`
-  in that copy.
+  finds the `*/` at the end of a line, and it puts the `\r` back after
+  the `*/`.
 
+- `doc-comments` lints doc comments that `comment-code` does not hold,
+  and it expects the ProseMayPossibility, ProseLatinAbbreviation,
+  ProseDash, ProseSentenceLength, and ProseSlash findings that it lists.
+  Only the awk checks, which read the comment shadow, report
+  ProseLatinAbbreviation, ProseSentenceLength, and ProseSlash. The test
+  expects no finding inside a span, a fence, an inline tag, or a gofmt
+  code block. The files hold these comments:
+  - A Nix block whose later lines open without a `*`, as the doc
+    comments of nixpkgs do. Its `*/` sits under the opener, so each `*`
+    two columns right of the `/` of the opener opens a list item there.
+  - A `/*` that opens a line of a Nix indented string, and a `*/` in a
+    later string. The scan of Nix strings keeps that `/*` from opening a
+    block, so the awk checks do not report the `e.g.` after it.
+  - A Go block whose text starts in the first column, so its shadow
+    lines gain columns in front. Another Go block opens its later lines
+    with a `*` in the first column.
+  - A Go block right above `import "C"`, which holds C code for cgo. The
+    shadow leaves it out, so the awk checks do not report its `e.g.`.
+  - Two Go blocks with gofmt code blocks, whose lines a tab indents past
+    the text of the block. The text of one block starts in the first
+    column, and two tabs indent the text of the other.
+  - A Go block in a function body with text after its opener, whose
+    later lines the tab of the body indents. gofmt does not read such a
+    block as a doc comment, so those lines hold prose and draw findings.
+  - A Go raw string that holds a block comment. The scan of Go strings
+    keeps the block out of the shadow.
+  - A `/*` in a TypeScript template literal and in a Rust raw string.
+    Neither one opens a block, so the comment lines after the raw string
+    stay in the shadow.
+  - TypeScript blocks of one line, an empty block (`/**/`), a block that
+    a tab indents, and a block with code after its `*/`. The line of
+    that last block stays out of the shadow.
+  - A JSDoc and a Javadoc comment, each with a run of block tags such as
+    `@param`. Each tag line opens a paragraph, so the run does not draw
+    a ProseSentenceLength finding. The description of the Javadoc
+    `@return` tag wraps onto two more lines and holds a long sentence.
+    The test expects the ProseSentenceLength finding of that sentence at
+    the tag.
+  - A JSDoc and a Javadoc comment with inline tags, such as
+    `{@code read/write}` and `{@link Files e.g. here}`. Harper reads an
+    inline tag as code, and the shadow mode of lib/markdown.awk blanks
+    it, so the test expects no ProseSlash or ProseLatinAbbreviation
+    finding in the tags.
+  - LuaLS doc lines that open with `---`, where a `---@param` line stays
+    out of the shadow. A banner (`--- The section ---`) above a `---`
+    line with text does not draw a ProseDash finding.
+  - A Scaladoc comment in the default layout of scalafmt, which puts
+    each `*` and the `*/` two columns right of the `/` of the opener.
+    The `*` that opens each later line sits under the `*` of the `*/`,
+    so it stands in for the opener. The comment holds a span that
+    wraps and a fence after it.
+  - A C block whose later lines open with their text. The block holds
+    a span in three backticks that wraps, so the shadow opens the next
+    line with that run. The copy that Harper lints puts a `%` in front
+    of the run. Harper then does not read that line as a fence that
+    runs to the end of the block.
+  - Block comments right next to another comment, in a TypeScript and a
+    C file. A block sits above a block, another block sits above a `//`
+    line, and a run of `//` lines sits above a block. The first comment
+    of each pair holds a lone backtick or a fence that does not close.
+    Each comment ends at the edge of the block, as Harper reads it in
+    the source. So the test expects a finding on each `may` in the
+    comment after it.
+  - Comments that end in `--` right above another comment, in a
+    TypeScript and a Nix file: a line comment above a block, a block
+    above a line comment, a block above a block, and a comment after
+    code above a block. The comment ends at the edge of the block, so
+    the test expects no ProseDash finding on these dashes. A `--` that
+    ends a line of a block, whose sentence goes on in the next line of
+    the block, draws one.
+  - Comments right next to a block of one line, in a TypeScript and a
+    C file: a `//` line above such a block, and two such blocks. No
+    comment ends in a period, and each one holds fewer than 32 words.
+    Each comment ends at the edge of the block, so the test expects no
+    ProseSentenceLength finding on them.
+- `java-spans` lints code spans and a fence in the comments of a Java
+  file. Harper reads each Java comment as HTML, so merge_comments puts
+  an inline tag of the same width in place of each span, such as
+  `{@xxx}` for `` `make` ``. The file holds spans in `//`, `///`, and
+  block comments, a span that wraps, a span that holds `<b>`, and spans
+  of one character. The test expects a ProseMayPossibility finding on
+  each `may` after a span or the fence, and none inside them.
+
+  Other spans sit in comments that share their line with code. One
+  comment follows code, a block opens after code, and another block
+  holds code after its `*/`. One more comment follows a character
+  literal that holds a double quote. Two spans hold an accented letter.
+  gawk counts bytes under the C locale, but Harper counts characters.
+  So the test lints under the C locale and under a UTF-8 locale, and it
+  expects the same columns from both.
+
+- `trailing-dash` lints comments that follow code on their line and end
+  in `--`, in a shell, Nix, TypeScript, Rust, and Lua file. It also
+  lints a copy of the shell file with CRLF line endings. Such a comment
+  stays out of the comment shadow. When the sentence goes on in the
+  comment line under it, hide_end_dashes lists the line, and
+  merge_comments adds ` x` after the `--`. So the test expects a
+  ProseDash finding there. Code or an empty comment line
+  under such a comment ends its paragraph, and a banner is decoration.
+  The test expects no finding on those lines.
 - `haddock` lints Haddock comments in a Haskell file, and it expects a
   ProseMayPossibility finding on each of them and no other finding. The
   file holds these forms of Haddock comment, and each opens a doc
@@ -708,12 +840,12 @@ on a set of files.
   ` x` that the shadow adds after it. The test expects no finding on the
   banner.
 
-  The test also expects the shadow to hold each full-line `--` comment
-  without its Haddock marker, and the banner without the ` x`. The
-  shadow takes a `--` marker only before whitespace or the line end, so
-  it does not hold a line for the operator or the `--- |` comment. The
-  test expects prose-lint to exit 2 on an unreadable copy of the file,
-  as on the file of any other language.
+  The test also expects the shadow to hold each full-line `--` or `---`
+  comment without its Haddock marker, and the banner without the ` x`.
+  The shadow takes a marker of dashes only before whitespace or the line
+  end, so it does not hold a line for the operator. The test expects
+  prose-lint to exit 2 on an unreadable copy of the file, as on the file
+  of any other language.
 
   The test also lints a second Haskell file, which holds Haddock code
   examples, fenced code blocks, and block comments that open with `{--`.
@@ -820,6 +952,8 @@ on a set of files.
     after its `-}`
   - an empty `{--}` comment above a string that holds prose, which
     prose-lint rewrites as four spaces, so no block opens there
+  - a fence in the `---` lines of a block, whose last line holds the
+    `-}` of the block, above a string that holds prose
 
   Harper joins a block comment and a line comment that only whitespace
   separates. It strips the comment marker only at the start of each
@@ -877,12 +1011,19 @@ on a set of files.
   second read starts inside that string, the shadow leaves out that
   line.
 
+  A fifth Haskell file holds a `-- |` comment of one sentence of more
+  than 32 words, and one of its lines opens with `@spaceConsumer@`.
+  Haddock reads that name as inline code, so the sentence goes on
+  there. prose-lint does not read a line that opens with `@` in a
+  Haskell file as a block tag, and the test expects the
+  ProseSentenceLength finding of the whole sentence.
+
   harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that holds
   a comment. With that harper-cli, the test checks only the shadows and
   the exit status. The command that builds the `haddock` test from a
   home configuration of the flake uses the patched harper of
   harperOverlay in `lib/default.nix`. Only that command lints the
-  first three Haskell files of the test end to end.
+  first three Haskell files and the fifth one of the test end to end.
 
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).

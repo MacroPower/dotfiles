@@ -286,7 +286,8 @@ class ModeTest(unittest.TestCase):
                 self.assertEqual(self.report(exported, raw=True), whole)
 
     def test_env(self):
-        with mock.patch.dict(os.environ, {"RAW": "1", "SHADOW": "1", "KEEP": "1"}):
+        exported = {"RAW": "1", "SHADOW": "1", "BLOCKS": "/blocks", "HADDOCK": "1", "KEEP": "1"}
+        with mock.patch.dict(os.environ, exported):
             cases = {
                 "": {},
                 "RAW": {"RAW": "1"},
@@ -296,7 +297,12 @@ class ModeTest(unittest.TestCase):
                 with self.subTest(mode=mode):
                     env = check.awk_env(Path("/lib"), mode)
                     self.assertEqual(
-                        {k: v for k, v in env.items() if k in ("RAW", "SHADOW")}, want
+                        {
+                            k: v
+                            for k, v in env.items()
+                            if k in ("RAW", "SHADOW", "BLOCKS", "HADDOCK")
+                        },
+                        want,
                     )
                     self.assertEqual((env["AWKPATH"], env["KEEP"]), ("/lib", "1"))
 

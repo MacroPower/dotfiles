@@ -30,9 +30,12 @@ lint the Go file itself and keep the hits on lines the shadow leaves
 out, such as a trailing comment. Set PROSE_LINT to run a prose-lint
 other than the one on PATH. On Go, only the awk checks that
 comment-checks.txt lists run, and each reads the shadow with SHADOW=1,
-which blanks each comment marker. A check that the list marks `!go`
-skips Go, and a scratch check runs on Go only when the list names its
-stem. ProseTypography reads the raw Go file with RAW=1, string
+which blanks each comment marker. The checks do not get the blocks
+file of the shadow, so they read a block comment and a comment right
+next to it as one paragraph, where the hook ends the paragraph at the
+edge of the block. A check that the list marks `!go` skips Go, and a
+scratch check runs on Go only when the list names its stem.
+ProseTypography reads the raw Go file with RAW=1, string
 literals included, as the hook does. Harper reads each file with a
 curly apostrophe between two letters straightened, as the hook does.
 
@@ -347,27 +350,77 @@ def straightened(docs: list[Doc], tmp: Path) -> list[Doc]:
     return copies
 
 
-COMMENT_LINE = re.compile(r"^[ \t]*(//[/!]?|#|--)([ \t]|$)")
-LICENSE_WORDS = re.compile(r"Copyright|SPDX-License-Identifier|Licensed under|license that can be found")
+COMMENT_LINE = re.compile(r"^[ \t]*(//[/!]?|#+|-{2,})([ \t]|$)")
+MARKS_LINE = re.compile(r"^[ \t]*(#{2,}|-{3,})[ \t]*$")
+BLOCK_OPENER = re.compile(r"^[ \t]*/\*")
+LICENSE_WORDS = re.compile(r"Copyright|SPDX-License-Identifier|Licensed (under|to)|license that can be found")
 
 
 def license_lines(path: Path) -> set[int]:
-    """Return the lines of the file's license header, as prose-lint finds them.
+    """Return the lines of the Go file's license header, as prose-lint finds them.
 
-    The header is the first run of full-line comments, after any blank
+    The header opens with the file's first comment, after any blank
     lines and a shebang, when one of its lines names a copyright or a
-    license.
+    license. A comment is a run of full-line comments or one block
+    comment that opens a line. Each comment right under the header
+    joins it when one of its own lines also names a copyright or a
+    license. Code after the `*/` of a block ends the header after that
+    line, and a `/*` that no `*/` closes does not open a block. A line
+    of marks with no text, such as a banner, ends the header too. Inside
+    a run of line comments whose first marker holds at least as many of
+    the same mark, it is an empty comment line.
     """
-    run: set[int] = set()
-    found = False
+    header: set[int] = set()
+    unit: set[int] = set()
+    named = False
+    lines = False
+    started = False
+    start = 0
+    lead = ""
+
+    def take() -> bool:
+        """Move the comment in unit into the header when it names a license."""
+        nonlocal named, lines
+        if not named:
+            return False
+        header.update(unit)
+        unit.clear()
+        named = lines = False
+        return True
+
     for i, line in enumerate(path.read_text(errors="replace").splitlines(), start=1):
-        if not run and (not line.strip() or (i == 1 and line.startswith("#!"))):
+        if not started and (not line.strip() or (i == 1 and line.startswith("#!"))):
             continue
-        if not COMMENT_LINE.match(line):
-            break
-        run.add(i)
-        found = found or bool(LICENSE_WORDS.search(line))
-    return run if found else set()
+        started = True
+        if not start and (opener := BLOCK_OPENER.match(line)):
+            if lines and not take():
+                return header
+            start = opener.end() + 1
+        if start:
+            unit.add(i)
+            named = named or bool(LICENSE_WORDS.search(line))
+            end = line.find("*/", start - 1)
+            start = 1
+            if end >= 0:
+                start = 0
+                if not take() or line[end + 2 :].strip(" \t"):
+                    return header
+            continue
+        marks = MARKS_LINE.match(line)
+        if marks and not (lines and lead.startswith(marks.group(1))):
+            take()
+            return header
+        if not (comment := COMMENT_LINE.match(line)):
+            take()
+            return header
+        if not lines:
+            lead = comment.group(1)
+        lines = True
+        unit.add(i)
+        named = named or bool(LICENSE_WORDS.search(line))
+    if not start:
+        take()
+    return header
 
 
 def code_lines(docs: list[Doc]) -> set[tuple[str, str, int]]:
@@ -593,7 +646,7 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
                 lint_weir(straight_md + go_docs, pack, weir_only, env), root
             )
             # The hook also lints the Go file itself and keeps the hits
-            # on lines that hold no full-line comment.
+            # on the lines that its shadow leaves out.
             code = code_lines(go_docs)
             hits += [
                 h

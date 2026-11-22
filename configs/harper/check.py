@@ -246,10 +246,11 @@ def awk_env(lib: Path, mode: str = "") -> dict[str, str]:
     comment shadow when SHADOW is set. With neither set, it reads the
     file as markdown. The environment sets `mode`, RAW or SHADOW, to 1
     and leaves out the other. An empty `mode` leaves out both. The
-    caller's RAW and SHADOW therefore never reach the check, as in
-    prose-lint.
+    environment also leaves out BLOCKS and HADDOCK, which prose-lint
+    sets for the shadow of each file. The caller's values of those
+    variables therefore never reach the check, as in prose-lint.
     """
-    env = {k: v for k, v in os.environ.items() if k not in ("RAW", "SHADOW")}
+    env = {k: v for k, v in os.environ.items() if k not in ("RAW", "SHADOW", "BLOCKS", "HADDOCK")}
     env["AWKPATH"] = str(lib)
     if mode:
         env[mode] = "1"

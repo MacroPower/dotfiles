@@ -41,7 +41,12 @@
 # comments, and `pre` elements. A bare `>` between two quoted
 # paragraphs is one. A line that holds only a code span or a URL
 # reaches prose() as spaces, but it continues the sentence of the line
-# above it.
+# above it. In a comment shadow, a paragraph also ends before a line
+# that opens with a block tag such as `@param`, which lib/markdown.awk
+# marks in `tag_line`. It also ends before a line that opens a comment
+# of its own at an edge of a block comment, which lib/markdown.awk marks
+# in `edge_line`. Neither line is ever more text of the paragraph by its
+# indent.
 #
 # List items, headings, footnote definitions (`[^1]: text`), table
 # rows, horizontal rules, and HTML lines each start a new paragraph. So
@@ -585,8 +590,10 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
   # marks a line of only `>` markers and whitespace either, because that
   # line stays a blank line of the quote. Nor does it mark a line after a
   # list item where `para_open` holds 0, because GFM does not open a
-  # paragraph in that item.
-  deep = open && para_open && raw ~ /[^ \t]/ && quote_depth() <= para_quote && marks_hold() && indent() >= 4
+  # paragraph in that item. A block tag or an edge of a block comment in
+  # a comment shadow, which `tag_line` and `edge_line` mark, opens a
+  # paragraph at any indent.
+  deep = !tag_line && !edge_line && open && para_open && raw ~ /[^ \t]/ && quote_depth() <= para_quote && marks_hold() && indent() >= 4
   # `html` holds 1 for a line that opens with an HTML tag or an HTML
   # comment. clean() blanks the comment, so that test reads `raw`. Right
   # after a line of the open paragraph, the comment counts at any indent,
@@ -594,9 +601,10 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
   # other line, the comment counts only on a `quote_block` line. Such a
   # line indents the comment fewer than four columns past the margin, the
   # `>` markers, or the text of a list item that lib/markdown.awk tracks.
-  # An HTML line is never an underline.
+  # An HTML line is never an underline, and nor is a line at an edge of
+  # a block comment.
   html = text ~ /^[ \t]*</ || (raw ~ /^[ \t]*<!--/ && (quote_block || open))
-  if (!deep && !html && underline(line)) {
+  if (!deep && !html && !edge_line && underline(line)) {
     # The paragraph is a heading, so its sentences drop.
     tok_n = 0
     quote_end = 0
@@ -606,7 +614,7 @@ function prose(text,   rest, pos, t, col, line, e, deep, n, i, k, open, lazy, ca
     split_line = FNR
     return
   }
-  if (FILENAME != split_file || FNR != split_line + 1 || (bare_line && !deep) || (!deep && (text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#{1,6})([ \t]|$)/ || text ~ /^[ \t]*\[\^[^] \t]+\]:/ || horizontal_rule(line))) || (FNR == para_line + 1 && quote_depth() > para_quote) || (in_table ? !index(text, "|") || quote_depth() != table_quote : !deep && html)) {
+  if (FILENAME != split_file || FNR != split_line + 1 || tag_line || edge_line || (bare_line && !deep) || (!deep && (text ~ /^[ \t]*([-*+]|[0-9]+[.)]|#{1,6})([ \t]|$)/ || text ~ /^[ \t]*\[\^[^] \t]+\]:/ || horizontal_rule(line))) || (FNR == para_line + 1 && quote_depth() > para_quote) || (in_table ? !index(text, "|") || quote_depth() != table_quote : !deep && html)) {
     end_paragraph()
     in_table = 0
   } else if (!deep && index(text, "|") && text ~ /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/) {

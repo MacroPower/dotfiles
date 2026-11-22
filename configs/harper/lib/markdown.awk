@@ -82,12 +82,40 @@
 # shadow that prose-lint builds from a source file. Each comment line
 # keeps its line and column there, and every other line reads `x`.
 # lib/markdown.awk takes an `x` line as blank, so the comments on each
-# side of a line of code stay apart. It blanks the comment marker (`#`,
-# `//`, `///`, `//!`, or `--`) to spaces, so the columns stay put, and
-# drops the ` x` that the shadow adds after a line that ends in `-`,
-# `#`, `/`, `*`, or `!`. It also reads indented code as prose, in a
-# blockquote too, because comment text is often indented under its
+# side of a line of code stay apart. It blanks the comment marker to
+# spaces, so the columns stay put. The marker is `//`, `///`, `//!`, a
+# run of `#` marks, or a run of two or more `-` marks. The shadow mode
+# drops the ` x` that the shadow adds after a line that ends in
+# `-`, `#`, `/`, `*`, or `!`. It also reads indented code as prose, in
+# a blockquote too, because comment text is often indented under its
 # marker.
+#
+# The shadow mode also blanks each inline tag of Javadoc and JSDoc. A
+# tag runs from `{@` and a letter to the next `}` on its line, such as
+# `{@code a/b}` or `{@link Map}`. Harper reads such a tag as code in a
+# Java, JavaScript, or TypeScript comment, so a check does not report
+# the words in it either. A tag that wraps onto the next line stays
+# prose there.
+#
+# Before each call to prose() in that mode, lib/markdown.awk sets
+# `tag_line` to 1 when the comment text opens with a block tag, an `@`
+# and a letter (`@param`, `@return`). It sets `tag_line` to 0 on every
+# other line. Javadoc, JSDoc, and Doxygen end a description at each
+# block tag. A check that splits paragraphs therefore ends one before a
+# tag line, so a run of tags does not read as one long sentence. With
+# HADDOCK=1 in the environment, the shadow comes from a Haskell file,
+# and `tag_line` stays 0. Haddock reads `@` marks as the ends of inline
+# code (`@spaceConsumer@`), so a sentence can wrap onto such a line.
+#
+# In that mode, BLOCKS in the environment can name the blocks file that
+# prose-lint writes for the shadow. Each line of the file opens with the
+# number of a shadow line that belongs to a block comment, and its last
+# field is 1 on the line that holds the `*/`. lib/markdown.awk then sets
+# `edge_line` to 1 on the first line of each block comment, and on a
+# comment line right under a line that holds a `*/`. It sets
+# `edge_line` to 0 on every other line. Such a line opens a comment of
+# its own in the source, so a check that splits paragraphs ends one
+# before it.
 
 BEGIN {
   RS = "\r?\n"
@@ -113,6 +141,7 @@ BEGIN {
   cells_now = 0
   foot_open = 0
   html_open = 0
+  tag_line = 0
   html_level = 0
   html_stop = ""
   html_shut = 0
@@ -130,6 +159,17 @@ BEGIN {
   html_lone = "^[ \t]*(<[a-z][a-z0-9-]*([ \t]+[a-z_:][a-z0-9_.:-]*([ \t]*=[ \t]*([^ \t\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*[ \t]*/?>|</[a-z][a-z0-9-]*[ \t]*>)[ \t]*$"
   raw_mode = ENVIRON["RAW"] != ""
   shadow_mode = ENVIRON["SHADOW"] != ""
+  haddock = ENVIRON["HADDOCK"] != ""
+  edge_line = 0
+  # `comment_block` holds each shadow line of a block comment, and the
+  # value 1 marks the line that holds the `*/`.
+  if (shadow_mode && ENVIRON["BLOCKS"] != "") {
+    while ((getline block_record < ENVIRON["BLOCKS"]) > 0) {
+      split(block_record, block_fields, " ")
+      comment_block[block_fields[1]] = block_fields[4]
+    }
+    close(ENVIRON["BLOCKS"])
+  }
   # The destination of an inline link with the `]` before it, which
   # clean() blanks (`](https://example.com)`). A check that reads the
   # text that clean() blanked can find a link destination in it with
@@ -148,13 +188,17 @@ raw_mode {
 }
 
 shadow_mode {
+  tag_line = 0
+  edge_line = 0
   if ($0 == "x") {
     $0 = ""
-  } else if (match($0, /^[ \t]*(\/\/[\/!]?|#|--)/)) {
+  } else if (match($0, /^[ \t]*(\/\/[\/!]?|#+|-{2,})/)) {
     $0 = spaces(RLENGTH) substr($0, RLENGTH + 1)
     if ($0 ~ /[-#\/*!][ \t]* x$/) {
       $0 = substr($0, 1, length($0) - 2)
     }
+    tag_line = !haddock && $0 ~ /^[ \t]*@[A-Za-z]/
+    edge_line = (FNR in comment_block) != ((FNR - 1) in comment_block) || ((FNR - 1) in comment_block && comment_block[FNR - 1])
   }
 }
 
@@ -282,6 +326,9 @@ function strip_code(s,   out, i, L, c, n, j, m, found) {
 
 function clean(s,   t) {
   s = strip_code(s)
+  if (shadow_mode) {
+    s = blank(s, "[{]@[A-Za-z][^}]*[}]")
+  }
   s = blank(s, "<!--([^-]|-[^-])*-->")
   s = blank(s, "<(code|kbd|samp|pre)[^>]*>([^<]|<[^/])*</(code|kbd|samp|pre)>")
   s = blank(s, "<[A-Za-z][A-Za-z0-9+.-]*:[^ \t<>]*>")

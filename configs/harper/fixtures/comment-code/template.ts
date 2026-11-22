@@ -71,3 +71,8 @@ const blk = `
 /`/.test("x");
 // A span wraps over `it may
 // stop` here, and then it may stop.
+const after = 1; /*
+// The block ends here. */
+/`/.test("x");
+// A span wraps over `it may
+// stop` here, and then it may stop.

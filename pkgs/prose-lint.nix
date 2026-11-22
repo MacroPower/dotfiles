@@ -755,8 +755,11 @@ in
     # and an `x` on every other line. The `x` keeps two comments that
     # code separates from merging into one run, which a blank line
     # would allow. A comment needs whitespace or the line end after its
-    # marker, so a Go directive (`//go:build`, `//nolint:`) and a
-    # shebang stay out.
+    # marker. So a Go directive (`//go:build`, `//nolint:`), a LuaLS
+    # annotation (`---@param`), and a shebang stay out. A `#` marker
+    # can repeat its mark, and a `--` marker can take more dashes. So a
+    # shell `##` line and a Lua `---` line count, with the whole run as
+    # the marker.
     #
     # The kind picks the markers. Go takes `//`, and a line whose marker
     # a tab follows sits in a gofmt code block, so the shadow keeps only
@@ -785,7 +788,8 @@ in
     # right after `- key: |`, which errs toward linting less. Weir, awk,
     # and the other `#` languages take `#`, the same as any other kind.
     # Rust, JavaScript, and the other `//` languages take `//`, `///`, and
-    # `//!` (kind slash), and Haskell and Lua take `--` (kind dash).
+    # `//!` (kind slash), and Haskell and Lua take `--` and `---` (kind
+    # dash).
     # Harper parses the comments of those languages itself, so it reads
     # their shadow lines in the copy that merge_comments prints.
     #
@@ -800,7 +804,56 @@ in
     # keyword such as `return`, or nothing on its line. It also needs a
     # `/` that closes the expression on that line, outside a character
     # class. Without one, the scan reads the rest of the line as code.
-    # A `//` line inside a block comment still counts.
+    # A `//` line inside a block comment that opens after code still
+    # counts.
+    #
+    # In a language with `/* */` comments (see block_comments), each
+    # line of a block comment that opens a line counts too. A block that
+    # opens after code stays out, and so does a line that holds code
+    # after the `*/`. The shadow puts the marker of the kind's line
+    # comments, `//` or `#`, and a space in the columns before the text.
+    # Those columns hold the opener, the `*` that opens a later line, or
+    # the indent of a later line without a `*`. In the `//` languages, a
+    # `//` that opens a later line stands in for the `*`. The shadow line
+    # drops the `*/`, and the whitespace and `*` marks before it.
+    # close_spans then fixes the spans and fences of the block, as in
+    # line comments.
+    #
+    # A `*` that opens a later line stands in for the opener when it sits
+    # at most one column right of the `/` of the opener, as in Javadoc.
+    # It also does so under the `*` of a `*/` that opens the last line,
+    # where scalafmt puts each `*`. Any other `*` opens a list item, as
+    # in the doc comments of nixpkgs, whose `*/` sits under the opener.
+    #
+    # The columns before the text can hold fewer characters than the
+    # marker and the space. The shadow line then gains columns in front,
+    # and the wrapper lists the line in the shifts file once for each
+    # column. The blocks file lists each line of a block. Each record
+    # holds the columns in front of the text, the columns that the line
+    # gained, and whether the line holds the `*/`. From that list,
+    # merge_comments puts the opener and the `*/` back in its copy, and
+    # close_spans ends each comment at the edges of a block.
+    #
+    # In Go, a block line without a `*` in front sits in a gofmt code
+    # block when a tab follows the whitespace that every line of text in
+    # the block opens with. The text on the line of the opener counts
+    # only when the opener sits in the first column, as in a doc comment.
+    # The shadow keeps only the marker of such a line, as for a `//` line
+    # that a tab follows. In Go, a block right above `import "C"` holds C
+    # code for cgo, so it stays out.
+    #
+    # A `/*` that no `*/` closes, such as one in a raw string, does not
+    # open a block. In a JavaScript or TypeScript file, the scan of
+    # template literals keeps a `/*` inside a template from opening a
+    # block. In a Go or a Nix file, a scan of each line follows strings,
+    # so a `/*` inside a string does not open a block either. The `//`
+    # lines inside a Go string and the `#` lines inside a Nix string
+    # still count. They mostly hold the comments of an embedded program
+    # or a shell script. In the other languages, comment_lines does not
+    # track strings. So a `/*` that opens a line of a raw string still
+    # opens a block there when a later `*/` closes it. The lines between
+    # them then count. A nested block comment, which Rust and Swift
+    # allow, ends at its first `*/`.
     #
     # The file's license header prints as `x` too, because its text
     # must stay verbatim (see license_lines).
@@ -812,11 +865,13 @@ in
     # draws the same findings as its copy with LF endings. Its shadow
     # ends each line in `\n` alone.
     comment_lines() {
-      local js=0
+      local js=0 nix=""
       case "$2" in
         *.js|*.jsx|*.ts|*.tsx) js=1 ;;
+        *.nix) nix=1 ;;
       esac
-      KIND="$1" SHIFTS="$3" JS="$js" LICENSE="$(license_lines "$2")" awk '
+      KIND="$1" SHIFTS="$3" BLOCKS="$4" BLOCK="$block_comments" JS="$js" NIX="$nix" \
+        LICENSE="$(license_lines "$2")" awk '
         # Reports whether the `/` at column i of the line s opens a
         # regular expression. The test reads the last character before
         # the `/` that is not a space or a tab, and the keyword that ends
@@ -903,20 +958,316 @@ in
           }
         }
 
+        # Follows the line s of Nix code. Two single quotes open and close
+        # an indented string. The state is "s" inside a string in double
+        # quotes, "i" inside an indented string, "b" inside a block
+        # comment, and empty in code. Each dollar sign and opening brace in
+        # a string opens a level of code. nest holds the state that the
+        # closing brace of each level returns to, and braces counts the
+        # braces open in that level. Two single quotes after a letter, a
+        # digit, `_`, or a single quote end a name, so they do not open a
+        # string there.
+        function nix_scan(s,   n, i, c, two) {
+          n = length(s)
+          for (i = 1; i <= n; i++) {
+            c = substr(s, i, 1)
+            two = substr(s, i, 2)
+            if (nstate == "b") {
+              if (two == "*/") {
+                nstate = ""
+                i++
+              }
+            } else if (nstate != "") {
+              if (nstate == "s" && c == "\\") {
+                i++
+              } else if (nstate == "s" && c == "\"") {
+                nstate = ""
+              } else if (nstate == "i" && two == "\047\047") {
+                c = substr(s, i + 2, 1)
+                if (c == "\047" || c == "$") {
+                  i += 2
+                } else if (c == "\\") {
+                  i += 3
+                } else {
+                  nstate = ""
+                  i++
+                }
+              } else if (two == "$$") {
+                i++
+              } else if (c == "$" && substr(s, i + 1, 1) == "{") {
+                nest[++ntop] = nstate
+                braces[ntop] = 0
+                nstate = ""
+                i++
+              }
+            } else if (c == "#") {
+              return
+            } else if (two == "/*") {
+              nstate = "b"
+              i++
+            } else if (c == "\"") {
+              nstate = "s"
+            } else if (two == "\047\047" && (i == 1 || substr(s, i - 1, 1) !~ /[A-Za-z0-9_\047]/)) {
+              nstate = "i"
+              i++
+            } else if (c == "{") {
+              braces[ntop]++
+            } else if (c == "}") {
+              if (braces[ntop]) {
+                braces[ntop]--
+              } else if (ntop) {
+                nstate = nest[ntop--]
+              }
+            }
+          }
+        }
+
+        # Follows the line s of Go code. The state is "r" inside a raw
+        # string, which a backtick opens and closes and which can span
+        # lines. It is "b" inside a block comment, and empty in code. A
+        # string in double quotes and a rune in single quotes end on
+        # their line, and a backslash in them escapes the character after
+        # it. A raw string has no escapes.
+        function go_scan(s,   n, i, c, j) {
+          n = length(s)
+          for (i = 1; i <= n; i++) {
+            c = substr(s, i, 1)
+            if (gstate == "b") {
+              if (substr(s, i, 2) == "*/") {
+                gstate = ""
+                i++
+              }
+            } else if (gstate == "r") {
+              if (c == "`") {
+                gstate = ""
+              }
+            } else if (substr(s, i, 2) == "//") {
+              return
+            } else if (substr(s, i, 2) == "/*") {
+              gstate = "b"
+              i++
+            } else if (c == "`") {
+              gstate = "r"
+            } else if (c == "\"" || c == "\047") {
+              for (j = i + 1; j <= n && substr(s, j, 1) != c; j++) {
+                if (substr(s, j, 1) == "\\") {
+                  j++
+                }
+              }
+              i = j
+            }
+          }
+        }
+
+        # Returns the column of the first `*/` in s at or after column i,
+        # or 0 when s holds none there.
+        function closer_at(s, i,   p) {
+          p = index(substr(s, i), "*/")
+          return p ? i + p - 1 : 0
+        }
+
+        # Returns the shadow line of the line s when no block comment
+        # holds s, for the kinds that have block comments.
+        function plain(s) {
+          if (kind == "go" && match(s, /^[ \t]*\/\/\t/)) {
+            return substr(s, 1, RLENGTH - 1)
+          }
+          if (kind == "go") {
+            return s ~ /^[ \t]*\/\/([ \t]|$)/ ? s : "x"
+          }
+          if (kind == "slash") {
+            return s ~ /^[ \t]*\/\/[\/!]?([ \t]|$)/ ? s : "x"
+          }
+          return s ~ /^[ \t]*#+([ \t]|$)/ ? s : "x"
+        }
+
+        # Sets gobase to the whitespace that every line of text in the
+        # buffered block comment opens with, as `go/doc` finds it in a
+        # doc comment. On the first line, the text starts after the
+        # opener. gofmt reads a block as a doc comment only when its
+        # opener sits in the first column. An indented block sits in a
+        # function body or a type. The text of its first line does not
+        # count there, as in the common prefix that gofmt strips.
+        function go_base(   k, s, c, lead, i, found) {
+          gobase = ""
+          found = 0
+          for (k = 1; k <= nbuf; k++) {
+            s = buf[k]
+            if (k == 1) {
+              match(s, /^[ \t]*\/\*/)
+              if (RLENGTH > 2) {
+                continue
+              }
+              s = substr(s, RLENGTH + 1)
+            }
+            c = index(s, "*/")
+            if (c) {
+              s = substr(s, 1, c - 1)
+            }
+            if (s !~ /[^ \t]/) {
+              continue
+            }
+            match(s, /^[ \t]*/)
+            lead = substr(s, 1, RLENGTH)
+            if (!found) {
+              gobase = lead
+              found = 1
+              continue
+            }
+            for (i = 1; i <= length(gobase) && substr(gobase, i, 1) == substr(lead, i, 1); i++) {
+            }
+            gobase = substr(gobase, 1, i - 1)
+          }
+        }
+
+        # Sets out[k] to the shadow line of buf[k], which sits at line
+        # bfirst + k - 1 in a block comment. It sets rec[k] to the record
+        # of that line for the blocks file. A `*` that opens a later line
+        # stands in for the opener when it sits at most one column right
+        # of the `/` of the opener. It also does so in the column of a `*/`
+        # that opens the last line (ccol). Any other `*` opens a list item.
+        #
+        # In Go, a later line without a `*` or a `//` in front sits in a
+        # gofmt code block when a tab follows gobase on it. Its shadow
+        # line holds only the marker, as for a `//` line that a tab
+        # follows.
+        function block_line(k,   s, c, pre, region, t, need, bare) {
+          s = buf[k]
+          if (k == 1) {
+            match(s, /^[ \t]*\/\*/)
+            ocol = RLENGTH - 1
+            c = closer_at(s, RLENGTH + 1)
+          } else {
+            c = closer_at(s, 1)
+          }
+          shifted[k] = 0
+          rec[k] = ""
+          if (c && substr(s, c + 2) !~ /^[ \t]*$/) {
+            out[k] = "x"
+            return
+          }
+          pre = c ? substr(s, 1, c - 1) : s
+          bare = 0
+          if (k == 1) {
+            match(pre, /^[ \t]*\/\*[*!]*[ \t]?/)
+          } else if (match(pre, /^[ \t]*\*+[ \t]?/) && match(pre, /^[ \t]*/) && (RLENGTH <= ocol || RLENGTH == ccol)) {
+            match(pre, /^[ \t]*\*+[ \t]?/)
+          } else if (kind == "hash" || !match(pre, /^[ \t]*\/\/[\/!]?([ \t]|$)/)) {
+            match(pre, /^[ \t]*/)
+            bare = 1
+          }
+          region = RLENGTH
+          t = substr(pre, region + 1)
+          if (c) {
+            sub(/[ \t]*\**$/, "", t)
+          }
+          if (kind == "go" && bare && t != "" && substr(pre, length(gobase) + 1, 1) == "\t") {
+            t = ""
+          }
+          if (t == "") {
+            out[k] = marker
+          } else {
+            need = length(marker) + 1
+            shifted[k] = need > region ? need - region : 0
+            out[k] = sprintf("%*s", region + shifted[k] - need, "") marker " " t
+          }
+          rec[k] = region " " shifted[k] " " (c ? 1 : 0)
+        }
+
+        # Prints the shadow lines of the buffered block comment, or an `x`
+        # for each of them when drop is 1, and empties the buffer. Each
+        # printed line goes into the blocks file, and into the shifts file
+        # once for each column that it gained.
+        function flush_block(drop,   k, j) {
+          for (k = 1; k <= nbuf; k++) {
+            if (drop || out[k] == "x") {
+              print "x"
+              continue
+            }
+            print out[k]
+            print (bfirst + k - 1) " " rec[k] > ENVIRON["BLOCKS"]
+            for (j = 1; j <= shifted[k]; j++) {
+              print bfirst + k - 1 > ENVIRON["SHIFTS"]
+            }
+          }
+          nbuf = 0
+          held = 0
+        }
+
+        # Builds the shadow lines of the buffered block comment after its
+        # `*/`. In Go, they wait for the next line, which drops them when
+        # it imports `C`. When a `*/` opens the last line, ccol holds the
+        # width of the whitespace in front of it, and -1 otherwise.
+        function close_block(   k) {
+          if (kind == "go") {
+            go_base()
+          }
+          ccol = -1
+          if (nbuf > 1 && match(buf[nbuf], /^[ \t]*\*+\//)) {
+            match(buf[nbuf], /^[ \t]*/)
+            ccol = RLENGTH
+          }
+          for (k = 1; k <= nbuf; k++) {
+            block_line(k)
+          }
+          if (kind == "go") {
+            held = 1
+          } else {
+            flush_block(0)
+          }
+        }
+
         BEGIN {
           RS = "\r?\n"
           block = -1
+          kind = ENVIRON["KIND"]
+          marker = kind == "hash" ? "#" : "//"
           n = split(ENVIRON["LICENSE"], header, "\n")
           for (i = 1; i <= n; i++) {
             license[header[i]] = 1
           }
         }
         {
+          if (held) {
+            flush_block($0 ~ /^[ \t]*import[ \t]+"C"/)
+          }
+          # in_code holds 1 when the line starts in code, outside the
+          # strings and block comments that the scan of a Go or a Nix file
+          # follows.
+          in_code = nstate == "" && gstate == ""
+          if (ENVIRON["NIX"]) {
+            nix_scan($0)
+          } else if (kind == "go") {
+            go_scan($0)
+          }
           if (NR in license) {
             print "x"
             next
           }
-          kind = ENVIRON["KIND"]
+          # A block comment that opens a line waits in the buffer for its
+          # `*/`.
+          if (nbuf) {
+            buf[++nbuf] = $0
+            if (ENVIRON["JS"]) {
+              scan($0)
+            }
+            if (closer_at($0, 1)) {
+              close_block()
+            }
+            next
+          }
+          if (ENVIRON["BLOCK"] && (!ENVIRON["JS"] || state == "") && in_code && match($0, /^[ \t]*\/\*/)) {
+            nbuf = 1
+            bfirst = NR
+            buf[1] = $0
+            if (ENVIRON["JS"]) {
+              scan($0)
+            }
+            if (closer_at($0, RLENGTH + 1)) {
+              close_block()
+            }
+            next
+          }
           if (kind == "yaml" && block >= 0) {
             match($0, /^[ \t]*/)
             if ($0 ~ /^[ \t]*$/ || RLENGTH > block) {
@@ -943,13 +1294,13 @@ in
               }
             }
           } else if (kind == "dash") {
-            keep = $0 ~ /^[ \t]*--([ \t]|$)/
+            keep = $0 ~ /^[ \t]*-{2,}([ \t]|$)/
           } else if (kind == "hcl") {
-            keep = heredoc == "" && $0 ~ /^[ \t]*(#|\/\/)([ \t]|$)/
+            keep = heredoc == "" && $0 ~ /^[ \t]*(#+|\/\/)([ \t]|$)/
           } else if (kind == "yaml") {
-            keep = $0 ~ /^[ \t]*#([ \t]|$)/
+            keep = $0 ~ /^[ \t]*#+([ \t]|$)/
           } else {
-            keep = !in_string && $0 ~ /^[ \t]*#([ \t]|$)/
+            keep = !in_string && $0 ~ /^[ \t]*#+([ \t]|$)/
           }
           if (!keep) {
             line = $0
@@ -1006,41 +1357,147 @@ in
           }
           print
         }
+
+        # A block comment that never closes is not a comment, so its lines
+        # print as lines that no block holds.
+        END {
+          if (held) {
+            flush_block(0)
+          }
+          for (k = 1; k <= nbuf; k++) {
+            print plain(buf[k])
+          }
+        }
       ' "$2"
     }
 
     # Prints the line numbers of a source file's license header, one per
-    # line. The header is the file's first run of full-line comments,
-    # after any blank lines and a shebang, when one of its lines names a
-    # copyright or a license. License text must stay verbatim, so no
-    # finding on it can be fixed, and the wrapper drops them all. The
-    # awk program drops the `\r` from each line that ends in `\r\n`. A
-    # blank line before the header and an empty comment line inside it
-    # then read the same with either line ending.
+    # line. The header opens with the file's first comment, after any
+    # blank lines and a shebang, when one of its lines names a copyright
+    # or a license. A comment is a run of full-line comments or one block
+    # comment that opens a line. Each comment right under the header
+    # joins it when one of its own lines also names a copyright or a
+    # license. So a description in a block comment under a
+    # `// SPDX-License-Identifier` line stays out of the header and draws
+    # findings.
+    #
+    # Code after the `*/` of a block comment ends the header after that
+    # line. A `/*` that no `*/` closes does not open a block, as in
+    # comment_lines, so its lines stay out of the header.
+    #
+    # A line of two or more `#` marks or three or more `-` marks with no
+    # text, such as a banner, ends the header as a line of code does.
+    # So a file that opens with a banner has no header, and a Haddock
+    # module header under a banner draws findings on its docs. A
+    # description under a banner after the header draws them too. Inside
+    # a run of line comments whose first marker holds at least as many of
+    # the same mark, such a line is an empty comment line, such as a `##`
+    # line under `## Copyright`.
+    #
+    # License text must stay verbatim, so no finding on it can be fixed,
+    # and the wrapper drops them all. The awk program drops the `\r` from
+    # each line that ends in `\r\n`. A blank line before the header and
+    # an empty comment line inside it then read the same with either line
+    # ending.
     license_lines() {
-      awk '
+      BLOCK="$block_comments" awk '
         BEGIN {
           RS = "\r?\n"
+        }
+        # Adds the line to the comment that unit holds.
+        function add() {
+          unit[NR] = 1
+          if (/Copyright|SPDX-License-Identifier|Licensed (under|to)|license that can be found/) {
+            named = 1
+          }
+        }
+        # Moves the comment that unit holds into the header when one of
+        # its lines names a copyright or a license. Otherwise the header
+        # ends before that comment.
+        function take(   k) {
+          if (!named) {
+            exit
+          }
+          for (k in unit) {
+            run[k] = 1
+          }
+          delete unit
+          named = 0
+          lines = 0
+        }
+        # Ends the block comment at the `*/` in column p of the text
+        # after column from. Code after the `*/` ends the header.
+        function close_block(p) {
+          open = 0
+          take()
+          if (substr($0, from + p + 1) !~ /^[ \t]*$/) {
+            exit
+          }
         }
         !started && (/^[ \t]*$/ || (NR == 1 && /^#!/)) {
           next
         }
-        /^[ \t]*(\/\/[\/!]?|#|--)([ \t]|$)/ {
+        {
           started = 1
-          run[NR] = 1
-          if (/Copyright|SPDX-License-Identifier|Licensed under|license that can be found/) {
-            found = 1
+        }
+        open {
+          add()
+          from = 1
+          p = index($0, "*/")
+          if (p) {
+            close_block(p)
           }
           next
         }
+        ENVIRON["BLOCK"] && match($0, /^[ \t]*\/\*/) {
+          if (lines) {
+            take()
+          }
+          open = 1
+          from = RLENGTH + 1
+          add()
+          p = index(substr($0, from), "*/")
+          if (p) {
+            close_block(p)
+          }
+          next
+        }
+        # A line of marks with no text ends the header. It is an empty
+        # comment line instead when the first marker of its run of line
+        # comments holds at least as many of the same mark.
+        match($0, /^[ \t]*(#{2,}|-{3,})[ \t]*$/) {
+          s = $0
+          gsub(/[ \t]/, "", s)
+          if (!lines || index(lead, s) != 1) {
+            if (lines) {
+              take()
+            }
+            exit
+          }
+        }
+        match($0, /^[ \t]*(\/\/[\/!]?|#+|-{2,})([ \t]|$)/) {
+          if (!lines) {
+            lead = substr($0, 1, RLENGTH)
+            gsub(/[ \t]/, "", lead)
+          }
+          lines = 1
+          add()
+          next
+        }
         {
+          if (lines) {
+            take()
+          }
           exit
         }
         END {
-          if (found) {
-            for (line in run) {
-              print line
+          if (named && !open) {
+            for (k in unit) {
+              run[k] = 1
             }
+          }
+          for (line in run) {
+            print line
           }
         }
       ' "$1"
@@ -1080,7 +1537,7 @@ in
       awk '
         function item(s, text) {
           text = s
-          if (!sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)) {
+          if (!sub(/^[ \t]*(\/\/[\/!]?|#+|-{2,})/, "", text)) {
             return 0
           }
           return text ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/
@@ -1108,6 +1565,8 @@ in
     # words of a span that wraps between two lines (`keep in` and
     # `mind`) would read as prose. Harper reads each Java comment as
     # HTML, so it reads every code span there as prose, wrapped or not.
+    # merge_comments therefore puts an inline tag in place of each span
+    # of a Java comment.
     #
     # The backtick runs pair as in CommonMark. A run opens a span that
     # closes at the next run of the same length in the paragraph. Outside
@@ -1124,6 +1583,18 @@ in
     # - A heading (`# Panics` after the marker), which holds a paragraph
     #   of its own. A heading can open the text of a list item, after
     #   one or more list markers.
+    # - The line before the first line of a block comment, and the line
+    #   that holds the `*/` of one.
+    #
+    # The blocks file that the third argument names lists the lines of
+    # each block comment (see comment_lines). The first line of a block,
+    # and the line under the line that holds its `*/`, start a comment
+    # of their own. Each of them ends the fence and the list items that
+    # are open above it, as a line that is not a comment does. So a
+    # backtick in one comment does not pair with a backtick in a comment
+    # right next to it. Nor does a fence that one comment leaves open
+    # blank the next comment. Harper reads each of those comments on its
+    # own in the source.
     #
     # A list marker starts an item on the first line of a paragraph.
     # On a later line, a bullet or a `1.` with text after it starts
@@ -1248,11 +1719,17 @@ in
     # line in the shifts file once for each column. A space keeps each
     # added run apart from a backtick next to it.
     close_spans() {
-      SHIFTS="$1" DELIMITERS="$2" awk '
+      SHIFTS="$1" DELIMITERS="$2" BLOCKS="$3" awk '
         BEGIN {
           while ((getline s < ENVIRON["DELIMITERS"]) > 0) {
             i = index(s, "\t")
             delimited[substr(s, 1, i - 1)] = substr(s, i + 1)
+          }
+          # in_block holds each line of a block comment, and the value 1
+          # marks the line that holds the `*/`.
+          while ((getline s < ENVIRON["BLOCKS"]) > 0) {
+            split(s, f, " ")
+            in_block[f[1]] = f[4]
           }
         }
 
@@ -1536,7 +2013,7 @@ in
         }
 
         {
-          if ($0 == "x" || !match($0, /^[ \t]*(\/\/[\/!]?|#|--)[ \t]?/)) {
+          if ($0 == "x" || !match($0, /^[ \t]*(\/\/[\/!]?|#+|-{2,})[ \t]?/)) {
             flush()
             fence = ""
             items = 0
@@ -1544,8 +2021,15 @@ in
             next
           }
           mark = RLENGTH
+          # A line that starts a comment of its own, at an edge of a block
+          # comment, ends the comment above it.
+          if ((NR in in_block) != ((NR - 1) in in_block) || ((NR - 1) in in_block && in_block[NR - 1])) {
+            flush()
+            fence = ""
+            items = 0
+          }
           rest = substr($0, mark + 1)
-          match($0, /^[ \t]*(\/\/[\/!]?|#|--)/)
+          match($0, /^[ \t]*(\/\/[\/!]?|#+|-{2,})/)
           bare = substr($0, 1, RLENGTH)
           # Adds ` x` after text that ends in a mark that Harper strips.
           own = substr($0, RLENGTH + 1)
@@ -1670,9 +2154,10 @@ in
     # when the `-` ends a comment paragraph, a heading, or a banner.
     # Harper then strips the marks that end the line, so the `--` does not
     # draw a ProseDash finding, as at the end of a markdown paragraph. The
-    # arguments name the comment kind and the source file of the shadow on
-    # stdin. The shadow lint and the copy that merge_comments prints both
-    # read the result, so every language draws the same findings on these
+    # first two arguments name the comment kind and the source file of the
+    # shadow on stdin. The third names the blocks file of comment_lines.
+    # The shadow lint and the copy that merge_comments prints both read
+    # the result, so every language draws the same findings on these
     # lines.
     #
     # The step reads each run of comment lines as a markdown file with the
@@ -1713,6 +2198,9 @@ in
     #   blanks and the marks `-`, `#`, `/`, `*`, and `!`. Harper strips
     #   the marks that end a comment line, so the step reads most such
     #   lines as blank lines, such as an empty comment line or a lone `#`.
+    # - The first line of a block comment, and the line under a line that
+    #   holds a `*/`. Each comment ends at the edges of a block comment,
+    #   as in close_spans.
     #
     # A line whose marks form `-` or `*` list markers or a thematic break,
     # such as `-`, `- -`, `* -`, or `-----`, does not read as blank. It
@@ -1747,7 +2235,9 @@ in
     # the opening run with the comment marker, but a markdown file reports
     # that run. Without the ` x`, Harper strips the closing run too, so the
     # banner does not draw a finding. A line that opens with a flag such as
-    # `--force` is not a banner.
+    # `--force` is not a banner. A line whose marker holds three or more
+    # `-` marks, such as a Lua `---` line, is a banner too when its text
+    # ends in three or more `-` marks (`--- Section ---`).
     #
     # The step tests the text of the source line, because a comment can
     # end in ` x` of its own (`# a - x`). A shadow line that ends in ` x`
@@ -1760,9 +2250,46 @@ in
     # string, whatever the next line holds. The step reads such a string
     # as code for the comment lines around it. So a comment line above
     # the string ends its paragraph there, and a comment line under the
-    # string opens a new paragraph.
+    # string opens a new paragraph. On a line of a block comment, the
+    # step tests the text after the columns in front of it that the blocks
+    # file lists, and before the `*/`.
+    #
+    # A comment that follows code on its line stays out of the shadow.
+    # When the fourth argument names a file, the step reads such a
+    # comment when its line ends in `-`. It reads the text of the comment
+    # as a paragraph outside any block. When that text is not a banner
+    # and the next comment line continues the paragraph, the step writes
+    # the number of the line to that file. merge_comments then adds ` x`
+    # at the end of the line. A scan of the line finds the marker of the
+    # comment kind after code and whitespace, outside a string in quotes
+    # or backticks, with whitespace or the line end after it.
     hide_end_dashes() {
-      KIND="$1" SOURCE="$2" awk '
+      KIND="$1" SOURCE="$2" BLOCKS="$3" TRAILS="$4" awk '
+        # Returns the text of source line k after its marker, and sets
+        # marker to that marker. On a line of a block comment, the text
+        # follows the columns in front of it that the blocks file lists
+        # and ends before the `*/`, and marker is empty.
+        function own_text(k,   s) {
+          s = source[k]
+          marker = ""
+          if (k in region) {
+            if (closed[k] && match(s, /[ \t]*\**\*\/[ \t]*$/)) {
+              s = substr(s, 1, RSTART - 1)
+            }
+            return substr(s, region[k] + 1)
+          }
+          if (match(s, /^[ \t]*(\/\/[\/!]?|#+|-{2,})/)) {
+            marker = substr(s, 1, RLENGTH)
+            s = substr(s, RLENGTH + 1)
+          }
+          return s
+        }
+
+        # Reports whether the text after the marker is a banner.
+        function banner(marker, text) {
+          return text ~ /^[ \t]*(---|--[ \t])/ || (marker ~ /---$/ && text ~ /---[ \t]*$/)
+        }
+
         # Sets text to the shadow line s of source line k after its marker
         # and one blank. Returns 0 for a line that is not a comment.
         # comment_lines writes the `//` marker of an HCL comment as `# `, so
@@ -1778,7 +2305,7 @@ in
         # `-` or `*` list markers, a thematic break, or both. text keeps
         # such a line whole.
         function comment_text(s, k,   own, i, mark, tail) {
-          mark = "^[ \t]*(//[/!]?|#|--)[ \t]?"
+          mark = "^[ \t]*(//[/!]?|#+|-{2,})[ \t]?"
           if (hcl && source[k] ~ /^[ \t]*\/\// && s ~ /^[ \t]*# /) {
             mark = "^[ \t]*# [ \t]?"
           }
@@ -1786,8 +2313,7 @@ in
             return 0
           }
           text = substr(s, RLENGTH + 1)
-          own = source[k]
-          sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", own)
+          own = own_text(k)
           if (own ~ /[-#\/*!][ \t]*$/ && match(text, / x`*$/)) {
             text = substr(text, 1, RSTART - 1) substr(text, RSTART + 2)
           }
@@ -1849,6 +2375,57 @@ in
           return b ~ /^([-*+]|[0-9]{1,9}[.)])([ \t]|$)/
         }
 
+        # Returns the column of the marker of a comment that follows code
+        # on the line s, or 0 when s holds none. Whitespace sits on each
+        # side of the marker. The scan skips strings in double quotes,
+        # single quotes, and backticks, where a backslash escapes the
+        # character after it.
+        function trailing(s,   n, i, c, q, code) {
+          n = length(s)
+          q = ""
+          code = 0
+          for (i = 1; i <= n; i++) {
+            c = substr(s, i, 1)
+            if (q != "") {
+              if (c == "\\") {
+                i++
+              } else if (c == q) {
+                q = ""
+              }
+            } else if (c !~ /[ \t]/) {
+              code = 1
+              if (c == "\"" || c == "\047" || c == "`") {
+                q = c
+              }
+            } else if (code && match(substr(s, i + 1), trail_mark) && substr(s, i + 1 + RLENGTH, 1) ~ /^[ \t]?$/) {
+              return i + 1
+            }
+          }
+          return 0
+        }
+
+        # Reads the comment that follows code on source line k. Returns 1
+        # when its text holds a character other than blanks and the marks
+        # `-`, `#`, `/`, `*`, and `!`, so it opens a paragraph. In that
+        # case, dashed[k] holds 1 when the text ends in `-` and is not a
+        # banner.
+        function after_code(k,   s, col, text) {
+          s = source[k]
+          col = trailing(s)
+          if (!col) {
+            return 0
+          }
+          match(substr(s, col), trail_mark)
+          text = substr(s, col + RLENGTH)
+          if (text !~ /[^-#\/*! \t]/) {
+            return 0
+          }
+          if (text ~ /-[ \t]*$/ && !banner(substr(s, col, RLENGTH), text)) {
+            dashed[k] = 1
+          }
+          return 1
+        }
+
         # Reads the shadow line t of source line k. depth, kind, and width
         # hold the blocks that hold the line before it, and para is 1 when
         # that line holds paragraph text. When the line before opens a list
@@ -1857,7 +2434,10 @@ in
         # before. A lazy line keeps the blocks that it leaves open, as in
         # CommonMark. A blank line right under an empty list item ends the
         # item. A quoted HCL `description` or `error_message` string ends
-        # the blocks, as code does.
+        # the blocks, as code does, and so does an edge of a block
+        # comment. With a trails file, a line of code that ends in a
+        # comment and a `-` holds the paragraph of that comment (see
+        # after_code).
         #
         # When markers is 1, t opens its list items, and its thematic break
         # opens no block. Such a line never continues the paragraph of the
@@ -1867,7 +2447,15 @@ in
           if (!comment_text(t, k) || (hcl && source[k] ~ describes)) {
             depth = 0
             para = 0
+            if (trail_mark != "" && t == "x" && source[k] ~ /-[ \t]*$/) {
+              para = after_code(k)
+            }
             return 0
+          }
+          if ((k in region) != ((k - 1) in region) || ((k - 1) in region && closed[k - 1])) {
+            depth = 0
+            para = 0
+            fresh = 0
           }
           n = stay()
           if (markers && rest ~ /^[ \t]{4}/) {
@@ -1924,8 +2512,12 @@ in
         # Prints the shadow line s of source line k. goes_on is 1 when the
         # next shadow line continues the paragraph of s. advance ends the
         # paragraph at a quoted `description` or `error_message` string, so
-        # goes_on is 0 after one.
+        # goes_on is 0 after one. When a comment after code on line k keeps
+        # its dash, emit writes k to the trails file.
         function emit(k, s, goes_on,   text, i, c, ends) {
+          if (s == "x" && goes_on && (k in dashed)) {
+            print k > ENVIRON["TRAILS"]
+          }
           text = source[k]
           if (hcl && match(text, describes)) {
             text = substr(text, RLENGTH + 1)
@@ -1939,8 +2531,8 @@ in
             }
             text = substr(text, 1, i - 1)
           } else {
-            sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)
-            ends = text ~ /^[ \t]*(---|--[ \t])/
+            text = own_text(k)
+            ends = banner(marker, text)
           }
           if (s != "x" && text ~ /-[ \t]*$/ && (ends || !goes_on) && match(s, / x`*$/)) {
             s = substr(s, 1, RSTART - 1) substr(s, RSTART + 2)
@@ -1956,6 +2548,21 @@ in
           rule = "((-[ \t]*){3,}|(\\*[ \t]*){3,})"
           while ((getline line < ENVIRON["SOURCE"]) > 0) {
             source[++lines] = line
+          }
+          while ((getline line < ENVIRON["BLOCKS"]) > 0) {
+            split(line, f, " ")
+            region[f[1]] = f[2]
+            closed[f[1]] = f[4]
+          }
+          trail_mark = ""
+          if (ENVIRON["TRAILS"] != "") {
+            if (ENVIRON["KIND"] == "hash") {
+              trail_mark = "^#+"
+            } else if (ENVIRON["KIND"] == "dash") {
+              trail_mark = "^--+"
+            } else {
+              trail_mark = "^//[/!]?"
+            }
           }
         }
         {
@@ -1995,7 +2602,7 @@ in
     break_fence_runs() {
       awk '
         {
-          if ($0 != "x" && match($0, /^[ \t]*(\/\/[\/!]?|#|--)/)) {
+          if ($0 != "x" && match($0, /^[ \t]*(\/\/[\/!]?|#+|-{2,})/)) {
             mark = RLENGTH
             match($0, /^[ \t#\/*!>-]*/)
             if (RLENGTH > mark && substr($0, RLENGTH + 1, 3) == "```") {
@@ -2008,10 +2615,11 @@ in
     }
 
     # Prints the source file from stdin, with the shadow line in place of
-    # each line that the shadow in the argument keeps. Harper lints this
-    # copy in place of a file whose comments it parses itself. Its parser
-    # then still decides which lines are comments, so a `#` line inside a
-    # string stays unlinted. A line that ends in `\r\n` keeps its `\r`.
+    # each line that the shadow in the first argument keeps. Harper
+    # lints this copy in place of a file whose comments it parses itself.
+    # Its parser then still decides which lines are comments, so a `#`
+    # line inside a string stays unlinted. A line that ends in `\r\n`
+    # keeps its `\r`.
     #
     # Harper reads the code of the copy as in the source while each
     # string in it stays whole. comment_lines keeps no `//` line inside a
@@ -2035,24 +2643,213 @@ in
     # code there only when such a line follows the line that closes the
     # literal. Ruby code rarely writes such a literal. close_spans can put
     # a run of backticks after the ` x`, and that run stays.
+    #
+    # A comment that follows code on its line stays out of the shadow.
+    # The copy adds ` x` at the end of each line that the trails file of
+    # hide_end_dashes lists, which the fifth argument names. Harper then
+    # reads the `--` that ends the comment on that line, as in a
+    # full-line comment.
+    #
+    # The second argument names the blocks file of comment_lines. On each
+    # line of a block comment that it lists, the copy keeps the columns
+    # in front of the text and the `*/` from the source. It takes the
+    # text from the shadow line, after the marker and the columns that
+    # the shadow line gained. break_fence_runs can put a `%` in the last
+    # column in front of the text, and that `%` stays. A line with no
+    # columns in front of its text gains one for the `%`. The copy lists
+    # such a line in the shifts file that the fourth argument names.
+    # Without the `%`, Harper reads a line whose text opens with three
+    # backticks as a fence. A line that holds no text prints as in the
+    # source.
+    #
+    # When the third argument is not empty, the copy is a Java file.
+    # Harper reads each Java comment as HTML, where a backtick does not
+    # open code. So the copy puts an inline tag of the same width, such
+    # as `{@xxx}`, in place of each code span of a comment. Harper reads
+    # an inline tag of a Java comment (`{@code make}`) as code. A span
+    # of one character becomes `{@}`, which Harper reads as marks. Each
+    # tag closes with a `}`, because harper-cli 3.0.0 aborts on a `{@`
+    # and a word that no `}` follows. On a shadow line, the tags replace
+    # the spans of the shadow text. On the other lines, a scan of the
+    # Java code finds the comments, such as one after code or a block
+    # comment with code after its `*/`. The scan skips strings,
+    # character literals, and text blocks.
     merge_comments() {
-      SHADOW="$1" awk '
+      SHADOW="$1" BLOCKS="$2" JAVA="$3" SHIFTS="$4" TRAILS="$5" awk '
+        # Returns the length of the run of backticks that starts at column
+        # i of s.
+        function ticks(s, i,   m) {
+          m = 0
+          while (substr(s, i + m, 1) == "`") {
+            m++
+          }
+          return m
+        }
+
+        # Returns s with an inline tag of the same width in place of each
+        # code span, such as `{@xxx}` for `` `make` ``. A span of one
+        # character becomes `{@}`. A run of backticks opens a span that
+        # closes at the next run of the same length on the line. Outside a
+        # span, a backslash escapes the character after it. Under the C
+        # locale, gawk counts bytes, so the width of a tag drops one
+        # column for each byte that continues a UTF-8 character. Harper
+        # counts characters.
+        function tag_spans(s,   out, i, m, j, r, w, span, tag) {
+          out = ""
+          i = 1
+          while (i <= length(s)) {
+            if (substr(s, i, 1) == "\\") {
+              out = out substr(s, i, 2)
+              i += 2
+              continue
+            }
+            if (substr(s, i, 1) != "`") {
+              out = out substr(s, i, 1)
+              i++
+              continue
+            }
+            m = ticks(s, i)
+            for (j = i + m; j <= length(s); j += r) {
+              r = substr(s, j, 1) == "`" ? ticks(s, j) : 1
+              if (r == m && substr(s, j, 1) == "`") {
+                break
+              }
+            }
+            if (j > length(s)) {
+              out = out substr(s, i, m)
+              i += m
+              continue
+            }
+            w = j + m - i
+            if (!utf8) {
+              span = substr(s, i, w)
+              w -= gsub("[\x80-\xBF]", "", span)
+            }
+            tag = sprintf("%*s", w - 3, "")
+            gsub(/ /, "x", tag)
+            out = out "{@" tag "}"
+            i = j + m
+          }
+          return out
+        }
+
+        # Follows the line s of Java code and returns it with tag_spans
+        # applied to the text of each comment on it, or to none of them
+        # when skip is 1. The state jstate is "b" inside a block comment,
+        # "t" inside a text block (`"""`), and empty in code. A string or
+        # a character literal ends at the end of its line.
+        function java_tag(s, skip,   n, i, c, p, out, from) {
+          n = length(s)
+          out = ""
+          from = 1
+          i = 1
+          while (i <= n) {
+            if (jstate == "b") {
+              p = index(substr(s, i), "*/")
+              out = out substr(s, from, i - from)
+              if (!p) {
+                return out (skip ? substr(s, i) : tag_spans(substr(s, i)))
+              }
+              out = out (skip ? substr(s, i, p - 1) : tag_spans(substr(s, i, p - 1)))
+              i += p - 1
+              from = i
+              i += 2
+              jstate = ""
+              continue
+            }
+            c = substr(s, i, 1)
+            if (jstate == "t") {
+              if (c == "\\") {
+                i++
+              } else if (substr(s, i, 3) == "\"\"\"") {
+                jstate = ""
+                i += 2
+              }
+            } else if (substr(s, i, 2) == "//") {
+              out = out substr(s, from, i + 2 - from)
+              return out (skip ? substr(s, i + 2) : tag_spans(substr(s, i + 2)))
+            } else if (substr(s, i, 2) == "/*") {
+              jstate = "b"
+              i += 2
+              continue
+            } else if (substr(s, i, 3) == "\"\"\"") {
+              jstate = "t"
+              i += 2
+            } else if (c == "\"" || c == "\047") {
+              for (i++; i <= n && substr(s, i, 1) != c; i++) {
+                if (substr(s, i, 1) == "\\") {
+                  i++
+                }
+              }
+            }
+            i++
+          }
+          return out substr(s, from)
+        }
+
         BEGIN {
+          utf8 = length("\303\251") == 1
           while ((getline s < ENVIRON["SHADOW"]) > 0) {
             shadow[++n] = s
+          }
+          while ((getline s < ENVIRON["BLOCKS"]) > 0) {
+            split(s, f, " ")
+            region[f[1]] = f[2]
+            gained[f[1]] = f[3]
+            closed[f[1]] = f[4]
+          }
+          while ((getline s < ENVIRON["TRAILS"]) > 0) {
+            trails[s] = 1
           }
         }
         {
           if (!(NR in shadow) || shadow[NR] == "x") {
-            print
+            s = $0
+            cr = sub(/\r$/, "", s)
+            if (ENVIRON["JAVA"]) {
+              s = java_tag(s, 0)
+            }
+            if (NR in trails) {
+              s = s " x"
+            }
+            print s (cr ? "\r" : "")
             next
           }
           s = shadow[NR]
           cr = sub(/\r$/, "")
-          text = $0
-          sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)
+          if (ENVIRON["JAVA"]) {
+            java_tag($0, 1)
+          }
+          block = NR in region
+          if (block) {
+            tail = closed[NR] && match($0, /[ \t]*\**\*\/[ \t]*$/) ? substr($0, RSTART) : ""
+            text = substr($0, region[NR] + 1, length($0) - region[NR] - length(tail))
+            if (text == "") {
+              print $0 (cr ? "\r" : "")
+              next
+            }
+          } else {
+            match($0, /^[ \t]*(\/\/[\/!]?|#+|-{2,})/)
+            text = substr($0, RLENGTH + 1)
+          }
           if (text ~ /[^-#\/*! \t]/ && text ~ /[#\/*!][ \t]*$/ && match(s, / x`*$/)) {
             s = substr(s, 1, RSTART - 1) substr(s, RSTART + 2)
+          }
+          if (block) {
+            w = region[NR] + gained[NR]
+            lead = substr($0, 1, region[NR])
+            if (substr(s, w, 1) == "%") {
+              if (region[NR]) {
+                lead = substr(lead, 1, region[NR] - 1) "%"
+              } else {
+                lead = "%"
+                print NR > ENVIRON["SHIFTS"]
+              }
+            }
+            s = lead substr(s, w + 1) tail
+          }
+          if (ENVIRON["JAVA"]) {
+            s = tag_spans(s)
           }
           print s (cr ? "\r" : "")
         }
@@ -2060,9 +2857,10 @@ in
     }
 
     # Moves each finding on a line the shifts files list one column left
-    # for each time they list it. That undoes the `#` that comment_lines
-    # put in front of the line and the backticks that close_spans put
-    # after its marker.
+    # for each time they list it. That undoes the columns that
+    # comment_lines put in front of the line, such as the `#` of an HCL
+    # heredoc line or the marker of a block comment line. It also undoes
+    # the backticks that close_spans put after the marker of the line.
     unshift() {
       SHIFTS="$(printf '%s\n' "$@")" awk '
         BEGIN {
@@ -2156,22 +2954,24 @@ in
         case " $2 " in
           *" $name "*) continue ;;
         esac
-        start_check "$dir" "$internal" "$script" "$1" ""
+        start_check "$dir" "$internal" "$script" "$1" "" "" ""
       done <<< "$awk_checks"
       collect_checks "$dir"
     }
 
     # Starts one awk check in the background with SHADOW set to the
     # fifth argument and RAW empty. With RAW set, lib/markdown.awk reads
-    # each line whole, code included. The empty RAW keeps a value that
-    # the caller exports out of the check. Its findings go under their
-    # internal name into a file of their own in the directory the first
-    # argument names. The checks share no state, so they all run at
-    # once. The PID goes into check_pids for collect_checks.
+    # each line whole, code included. BLOCKS takes the sixth argument
+    # and HADDOCK the seventh, which lib/markdown.awk reads in a comment
+    # shadow. The empty values keep a value that the caller exports out
+    # of the check. Its findings go under their internal name into a
+    # file of their own in the directory the first argument names. The
+    # checks share no state, so they all run at once. The PID goes into
+    # check_pids for collect_checks.
     check_pids=()
     start_check() {
       local name=''${2%_*}
-      RAW="" SHADOW="$5" AWKPATH="$awk_lib" awk -f "$3" "$4" |
+      RAW="" SHADOW="$5" BLOCKS="$6" HADDOCK="$7" AWKPATH="$awk_lib" awk -f "$3" "$4" |
         sed "s/::$name:/::$2:/" >"$1/$2" &
       check_pids+=("$!")
     }
@@ -2197,7 +2997,10 @@ in
     # each comment marker. It prints the findings under their internal
     # names, the way markdown_checks does. The second argument is the
     # comment kind, and a check skips each kind that comment-checks.txt
-    # lists after its name.
+    # lists after its name. The third argument names the blocks file of
+    # the shadow, so a check ends a paragraph at each edge of a block
+    # comment. The fourth is 1 for the shadow of a Haskell file, where a
+    # line that opens with `@` does not open a block tag.
     comment_checks() {
       local internal script name dir
       dir=$(mktemp -d -p "$tmp_dir")
@@ -2214,7 +3017,7 @@ in
         case " $skips " in
           *" $name "*) continue ;;
         esac
-        start_check "$dir" "$internal" "$script" "$1" 1
+        start_check "$dir" "$internal" "$script" "$1" 1 "$3" "$4"
       done <<< "$awk_checks"
       collect_checks "$dir"
     }
@@ -2300,12 +3103,20 @@ in
     # would read the words of a code span that wraps onto the next
     # comment line as prose, and it misreads fenced code (see
     # close_spans). So Harper lints a copy of the file whose comment
-    # lines come from the shadow (see merge_comments).
+    # lines come from the shadow (see merge_comments). The comment lines
+    # include the lines of each block comment that opens a line.
     case "$ext" in
       nix|sh|bash|rb|toml|ex|exs|ps1) comment_kind="hash" ;;
       rs|c|cpp|h|cs|dart|gleam|groovy|gradle|java|js|jsx|kt|kts|php|scala|sol|swift|ts|tsx|zig) comment_kind="slash" ;;
       hs|lua) comment_kind="dash" ;;
       *) comment_kind=$shadow_kind ;;
+    esac
+
+    # The languages with `/* */` comments. comment_lines and
+    # license_lines read their block comments.
+    case "$ext" in
+      go|nix|rs|c|cpp|h|cs|dart|groovy|gradle|java|js|jsx|kt|kts|php|scala|sol|swift|ts|tsx) block_comments=1 ;;
+      *) block_comments="" ;;
     esac
 
     # The shadow and the copy that merge_comments prints read the
@@ -2331,16 +3142,24 @@ in
 
     # --shadow prints the shadow and stops, so a corpus measurement
     # lints comments the same way the hook does. It drops the shifts
-    # files. So a finding on a line that close_spans shifted reads right
-    # of the source, by one column for each character that close_spans
-    # put after the marker.
+    # files. So a finding on a line that the shadow shifted reads right
+    # of the source. It moves one column for each character that
+    # comment_lines put in front of the line or close_spans put after
+    # the marker. It keeps the blocks file, so close_spans and
+    # hide_end_dashes end each comment at the edges of a block comment
+    # as in the hook. It does not print the blocks file. So the awk
+    # checks that read the printed shadow, as measure.py runs them, read
+    # a block comment and a comment right next to it as one paragraph.
     if [ "$shadow_only" = 1 ]; then
       if [ -z "$comment_kind" ]; then
         echo "prose-lint: $file has no comment shadow" >&2
         exit 2
       fi
-      comment_lines "$comment_kind" "$source" /dev/null | end_list_leads |
-        close_spans /dev/null "$delimiters" | hide_end_dashes "$comment_kind" "$source" | break_fence_runs | straighten
+      : >"$tmp_dir/blocks"
+      comment_lines "$comment_kind" "$source" /dev/null "$tmp_dir/blocks" >"$tmp_dir/lines"
+      end_list_leads <"$tmp_dir/lines" |
+        close_spans /dev/null "$delimiters" "$tmp_dir/blocks" |
+        hide_end_dashes "$comment_kind" "$source" "$tmp_dir/blocks" "" | break_fence_runs | straighten
       exit 0
     fi
 
@@ -2388,18 +3207,33 @@ in
     # The shadow holds the file's comments for the shadow lint and the
     # comment checks. A language whose comments Harper parses itself
     # gets one for the comment checks and for merge_comments.
+    # close_spans reads the blocks file that comment_lines writes, so
+    # comment_lines writes its lines to a file and ends before
+    # close_spans starts. For such a language, hide_end_dashes also
+    # writes the trails file, which lists the comments after code that
+    # keep the dash at their end (see merge_comments). Harper does not
+    # lint a copy of a file in the other languages, so they do not get
+    # one.
     if [ -n "$comment_kind" ]; then
       if [ -n "$shadow_kind" ]; then
         shadow=$tmp_dir/shadow.$shadow_ext
+        trails=""
       else
         shadow=$tmp_dir/comments
+        trails=$tmp_dir/trails
+        : >"$trails"
       fi
       shifts=$tmp_dir/shifts
       span_shifts=$tmp_dir/span_shifts
+      blocks=$tmp_dir/blocks
       : >"$shifts"
       : >"$span_shifts"
-      comment_lines "$comment_kind" "$source" "$shifts" | end_list_leads |
-        close_spans "$span_shifts" "$delimiters" | hide_end_dashes "$comment_kind" "$source" | break_fence_runs | straighten >"$shadow"
+      : >"$blocks"
+      comment_lines "$comment_kind" "$source" "$shifts" "$blocks" >"$tmp_dir/lines"
+      end_list_leads <"$tmp_dir/lines" |
+        close_spans "$span_shifts" "$delimiters" "$blocks" |
+        hide_end_dashes "$comment_kind" "$source" "$blocks" "$trails" |
+        break_fence_runs | straighten >"$shadow"
     fi
 
     # The harper-cli runs and the awk checks share no state, so each
@@ -2413,13 +3247,23 @@ in
     : >"$tmp_dir/comment_found"
     # For a language whose comments Harper parses itself, Harper reads
     # the copy that merge_comments prints. unshift then moves each
-    # finding on a comment line back to the source column.
+    # finding on a comment line back to the source column. The copy keeps
+    # the columns in front of the text of each block comment line from
+    # the source. So the backticks that close_spans adds shift such a
+    # line. The `%` that merge_comments puts in front of the text of a
+    # line with no columns before it shifts that line too.
     case "$shadow_kind" in
       hcl|yaml|hash) ;;
       *)
         if [ -z "$shadow_kind" ] && [ -n "$comment_kind" ]; then
-          straighten <"$source" | merge_comments "$shadow" >"$norm_dir/$base"
-          lint "$rules" "$norm_dir/$base" | unshift "$shifts" "$span_shifts" >"$tmp_dir/file_found" &
+          java=""
+          if [ "$ext" = java ]; then
+            java=1
+          fi
+          merge_shifts=$tmp_dir/merge_shifts
+          : >"$merge_shifts"
+          straighten <"$source" | merge_comments "$shadow" "$blocks" "$java" "$merge_shifts" "$trails" >"$norm_dir/$base"
+          lint "$rules" "$norm_dir/$base" | unshift "$span_shifts" "$merge_shifts" >"$tmp_dir/file_found" &
         else
           straighten <"$file" >"$norm_dir/$base"
           lint "$rules" "$norm_dir/$base" >"$tmp_dir/file_found" &
@@ -2454,7 +3298,11 @@ in
     # unshift moves each comment finding back to the source column, and
     # the awk step names the source file in place of the shadow.
     if [ -n "$comment_kind" ]; then
-      comment_checks "$shadow" "$comment_kind" | unshift "$shifts" "$span_shifts" |
+      haddock=""
+      if [ "$ext" = hs ]; then
+        haddock=1
+      fi
+      comment_checks "$shadow" "$comment_kind" "$blocks" "$haddock" | unshift "$shifts" "$span_shifts" |
         FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }' >"$tmp_dir/comment_found" &
       pids+=("$!")
     fi
@@ -2526,11 +3374,25 @@ in
       passthru = prev.passthru // {
         # Lints source files that open with a license header and expects no
         # finding, then lints a control file whose first comment is no
-        # license and expects one. configs/harper/CLAUDE.md gives the
-        # command that builds it.
+        # license and expects one. The header of asf.java is a block
+        # comment that opens with `Licensed to`, as the headers of the
+        # Apache Software Foundation do. In gpl.c, a block comment that
+        # names a copyright follows a `// SPDX-License-Identifier` line,
+        # so it joins the header. In spdx.ts, a description in a block
+        # comment follows that line, and in blockdoc.go, a `//` line
+        # follows a block comment that names a copyright. Neither the
+        # description nor that `//` line names a copyright or a license.
+        # So each one stays out of the header, and the test expects a
+        # finding on it. banner.lua opens with a line of `-` marks above
+        # a Haddock module header, whose `Copyright` field sits among its
+        # docs. In banner.sh, a line of `#` marks follows the license
+        # lines, above a description. A line of marks with no text ends
+        # the header, so the test expects a finding on the description
+        # line of each file. configs/harper/CLAUDE.md gives the command
+        # that builds the test.
         tests.license-headers = runCommand "prose-lint-license-headers" { } ''
           cp ${../configs/harper/fixtures/license}/* .
-          for f in bsd.go apache.go apache.py apache.ts; do
+          for f in bsd.go apache.go apache.py apache.ts asf.java gpl.c; do
             if ! ${lib.getExe finalAttrs.finalPackage} "$PWD/$f"; then
               echo "$f: the license header drew a finding" >&2
               exit 1
@@ -2540,6 +3402,16 @@ in
             echo "control.go: expected a finding" >&2
             exit 1
           fi
+          for want in spdx.ts:2 blockdoc.go:4 banner.lua:7 banner.sh:5; do
+            f=''${want%:*}
+            rc=0
+            found=$(${lib.getExe finalAttrs.finalPackage} "$PWD/$f") || rc=$?
+            if [ "$rc" -ne 1 ] || ! printf '%s\n' "$found" | grep "^$PWD/$want:" >/dev/null; then
+              echo "$f: expected a finding on line ''${want#*:}" >&2
+              printf '%s\n' "$found" >&2
+              exit 1
+            fi
+          done
           touch "$out"
         '';
 
@@ -2898,6 +3770,21 @@ in
         # finding on that `--` and on the string whose text ends in an ` x`
         # of its own after the `--`.
         #
+        # The test also lints copies of code.sh whose comment lines open
+        # with `##`, as a shell and a Python file, and with `---`, as a Lua
+        # file. comment_lines takes each run of marks whole as the marker.
+        # Other copies turn each run of comment lines into a block comment,
+        # and the test lints them as a TypeScript, Rust, Go, and Nix file.
+        # The first line of each block opens with `/*`, each later line
+        # opens with ` *`, and the last line ends in ` */`. The shadow puts
+        # a marker in place of the `/*` and the ` *` (see comment_lines).
+        # The test also lints the TypeScript copy with CRLF line endings.
+        # The `##` marker is one column wider than `#`, and so are the `/*`
+        # and ` *` that open the lines of a block. The findings in those
+        # copies therefore sit one column right of the findings in the
+        # files whose lines open with `#`. The `---` marker puts them two
+        # columns right.
+        #
         # The test also lints configs/harper/fixtures/comment-code/template.ts.
         # Its template literals hold `//` lines with a fence in tildes and
         # a backtick after a backslash, and four of them end on a `//`
@@ -2915,19 +3802,24 @@ in
         # the comment after each of them, and in a comment in the code of a
         # template.
         #
-        # The last three block comments of the file each end on a line that
+        # The last four block comments of the file each end on a line that
         # opens with `//` and ends in `*/`. The scan finds the end of each
         # block on that line, so it sees the code after the block. A
         # regular expression that opens its line and holds a backtick
         # follows the first block, and a template follows the second. A
         # comment line and then such a regular expression follow the third.
+        # The fourth opens after code, and such a regular expression
+        # follows it.
         #
-        # The shadow adds ` x` after each `*/`. merge_comments drops it,
-        # even when comment text follows the line, as after the third
-        # block. So Harper reads the code after each block as in the
-        # source. With the ` x`, the `/` of the regular expression reads as
-        # a division, and its backtick opens a template that hides the
-        # comment after it.
+        # The first three blocks open a line, so the shadow holds them and
+        # drops the `*/` from the text of each last line. merge_comments
+        # puts the `*/` back at the end of that line. The fourth block
+        # stays out of the shadow, but its `//` line counts as a line
+        # comment. The shadow adds ` x` after the `*/` of that line, and
+        # merge_comments drops it. So Harper reads the code after each
+        # block as in the source. With a ` x` after the `*/`, the `/` of
+        # the regular expression reads as a division, and its backtick
+        # opens a template that hides the comment after it.
         #
         # The test expects a finding on each comment after a template, and
         # on the text after each span. Harper reads each `//` line that the
@@ -2937,7 +3829,8 @@ in
         # too, and it expects the same findings from each. It also lints a
         # copy with CRLF line endings and expects the same findings from
         # it. merge_comments drops the `\r` before it tests the end of a
-        # line, so it still drops the ` x` after each `*/` in that copy.
+        # line, so it still finds each `*/` at the end of a line in that
+        # copy.
         tests.comment-code = runCommand "prose-lint-comment-code" { } ''
           cp ${../configs/harper/fixtures/comment-code}/code.sh .
           cp ${../configs/harper/fixtures/comment-code}/template.ts .
@@ -2957,6 +3850,38 @@ in
           sed 's,^#,//,' code.sh >slash.tf
           sed 's/$/\r/' code.sh >crlf.sh
           sed 's/$/\r/' template.ts >crlf.ts
+          sed 's,^#,##,' code.sh >double.sh
+          sed 's,^#,##,' code.sh >double.py
+          sed 's,^#,---,; s/^x=1$/local x = 1/' code.sh >doc.lua
+
+          # Each run of comment lines becomes a block comment that opens
+          # at the first line of the run and closes at its last line.
+          awk '
+            function comment(s) {
+              return s ~ /^#/
+            }
+            {
+              line[NR] = $0
+            }
+            END {
+              for (i = 1; i <= NR; i++) {
+                if (!comment(line[i])) {
+                  print line[i]
+                  continue
+                }
+                s = (i == 1 || !comment(line[i - 1]) ? "/*" : " *") substr(line[i], 2)
+                if (i == NR || !comment(line[i + 1])) {
+                  s = s " */"
+                }
+                print s
+              }
+            }
+          ' code.sh >block.txt
+          sed 's/^x=1$/const x = 1;/' block.txt >block.ts
+          sed 's/^x=1$/let x = 1;/' block.txt >block.rs
+          sed 's/^x=1$/var x = 1/' block.txt >block.go
+          sed 's/^x=1$/x = 1;/' block.txt >block.nix
+          sed 's/$/\r/' block.ts >crlf-block.ts
           sed 's/$/\r/' describe.tf >crlf.tf
           printf '%s\n' 'x=1' '# The job runs -- ' 'x=1' '# > The rule follows --' \
             '# > ----- ' 'x=1' >trail.sh
@@ -3028,17 +3953,20 @@ in
           314:24
           EOF
           awk -F: '{ print $1 ":" $2 + 1 }' hash >wide
+          awk -F: '{ print $1 ":" $2 + 2 }' hash >deep
           printf '%s\n' 5:28 8:28 11:28 14:28 18:7 22:7 26:7 30:7 33:30 38:28 \
-            41:28 44:28 47:28 50:28 53:28 56:28 61:28 67:7 73:28 >template
+            41:28 44:28 47:28 50:28 53:28 56:28 61:28 67:7 73:28 78:28 >template
           printf '%s\n' 6:31 40:18 >describe
 
           rules='ProseDash|ProseMayPossibility'
           for f in code.sh crlf.sh code.nix code.awk code.py code.yaml code.tf code.rs code.ts \
-            code.lua code.go slash.tf template.ts template.js template.jsx template.tsx crlf.ts \
+            code.lua code.go slash.tf double.sh double.py doc.lua block.ts block.rs block.go \
+            block.nix crlf-block.ts template.ts template.js template.jsx template.tsx crlf.ts \
             describe.tf crlf.tf trail.sh trail.py; do
             case "$f" in
               describe.tf | crlf.tf) want=describe ;;
-              slash.tf) want=wide ;;
+              slash.tf | double.* | block.* | crlf-block.ts) want=wide ;;
+              doc.lua) want=deep ;;
               trail.*) want=none ;;
               *.sh | *.nix | *.awk | *.py | *.yaml | *.tf) want=hash ;;
               template.* | crlf.ts) want=template ;;
@@ -3058,6 +3986,524 @@ in
               exit 1
             fi
           done
+          touch "$out"
+        '';
+
+        # Lints doc comments that the comment-code test does not hold, and
+        # expects the ProseMayPossibility, ProseLatinAbbreviation,
+        # ProseDash, ProseSentenceLength, and ProseSlash findings that it
+        # lists. Harper reports ProseMayPossibility and ProseDash, and only
+        # the awk checks, which read the shadow, report the others. The
+        # test expects no finding inside a span, a fence, an inline tag, or
+        # a gofmt code block, and each finding after one at its source
+        # column. The command in configs/harper/CLAUDE.md builds
+        # this test too.
+        #
+        # - doc.nix holds a block whose later lines open without a `*`, as
+        #   the doc comments of nixpkgs do. A `*` two columns right of the
+        #   `/` of the opener opens a list item there, and a span wraps in
+        #   the item. An indented string after the block holds a `/*` that
+        #   opens its line, and a `*/` sits in a later string. The scan of
+        #   the Nix strings keeps that `/*` from opening a block, so the
+        #   awk checks do not report the `e.g.` after it.
+        # - doc.go holds a block whose text starts in the first column, so
+        #   each of its shadow lines gains three columns in front. Another
+        #   block opens its later lines with a `*` in the first column. A
+        #   block right above `import "C"` holds C code for cgo and stays
+        #   out of the shadow. Harper reports its `may` from the source,
+        #   but the awk checks do not report its `e.g.`. Two more blocks
+        #   hold gofmt code blocks, whose lines a tab indents past the text
+        #   of the block. The text of one block starts in the first column,
+        #   and two tabs indent the text of the other. In a function body,
+        #   one more block holds text after its opener, and the tab of the
+        #   body indents its later lines. Those lines hold prose. A raw
+        #   string at the end of the file holds a block comment, which the
+        #   scan of the Go strings keeps out of the shadow.
+        # - doc.ts holds a `/*` in a template literal, which does not open
+        #   a block. It also holds a block of one line, an empty block
+        #   (`/**/`), a block that a tab indents, and a block with code
+        #   after its `*/`. The last line of that block stays out of the
+        #   shadow, so the awk checks do not report its `e.g.`. A JSDoc
+        #   comment holds a run of block tags (`@param`, `@returns`). Each
+        #   tag line opens a paragraph, so the run does not draw a
+        #   ProseSentenceLength finding. The last JSDoc comment holds
+        #   inline tags (`{@link store/cache}`), whose words the awk
+        #   checks blank, as Harper does.
+        # - Tags.java holds a Javadoc comment with the same run of tags.
+        #   The description of its `@return` tag wraps onto two more lines
+        #   and holds a sentence of 41 words. The test expects the
+        #   ProseSentenceLength finding of that sentence at the tag. A
+        #   later Javadoc comment holds inline tags (`{@code read/write}`)
+        #   with a slash and an `e.g.` in them, and the test expects no
+        #   finding in them.
+        # - raw.rs holds a `/*` in a raw string that no `*/` closes. So it
+        #   does not open a block, and a span wraps in the comment lines
+        #   after it.
+        # - ldoc.lua holds LuaLS doc lines. comment_lines takes `---` as
+        #   the marker of a line, but `---@param` stays out of the shadow.
+        #   A banner (`--- The section ---`) sits above a `---` line with
+        #   text, and the test expects no ProseDash finding on it.
+        # - Doc.scala holds a Scaladoc comment in the default layout of
+        #   scalafmt, which puts each `*` and the `*/` two columns right
+        #   of the `/` of the opener. A span wraps in it, and a fence
+        #   follows.
+        # - fence.c holds a block whose later lines open with their text,
+        #   with no whitespace or `*` in front. A span in three backticks
+        #   wraps in it, so close_spans opens the next line with that run.
+        #   merge_comments puts a `%` in front of the run. Harper then does
+        #   not read that line as a fence that runs to the end of the
+        #   block.
+        # - next.ts holds block comments right next to another comment. A
+        #   block sits above a block, another block sits above a `//` line,
+        #   and a run of `//` lines sits above a block. A lone backtick sits
+        #   in the first comment of each of the first two pairs. A fence
+        #   opens in the `//` lines and in a block above a `//` line, and
+        #   neither one closes. Each comment ends at the edge of the block,
+        #   so the test expects a finding on each `may` in the comment after
+        #   it. next.c holds the same comments.
+        # - dash.ts holds comments that end in `--` right above another
+        #   comment: a `//` line above a block, a block above a `//` line,
+        #   a block above a block, and a comment after code above a block.
+        #   Each comment ends at the edge of the block, so the test expects
+        #   no ProseDash finding on those dashes. A `--` that ends a line of
+        #   a block whose sentence goes on in the next line of the block
+        #   draws one. dash.nix holds the same comments with `#` lines.
+        # - adj.ts holds a `//` line right above a block of one line, and
+        #   adj.c holds two blocks of one line, one right above the other.
+        #   None of their comments ends in a period, and each one holds
+        #   fewer than 32 words. Each comment ends at the edge of the
+        #   block, so the test expects no ProseSentenceLength finding on
+        #   them.
+        tests.doc-comments = runCommand "prose-lint-doc-comments" { } ''
+          cat >doc.nix <<'EOF'
+          {
+            /**
+              A span wraps over `it may
+              stop` here, and then it may stop.
+
+              * It may help, e.g. in the item.
+              * The item wraps `it may
+                stop` and then it may stop.
+
+              ```nix
+              It may help.
+              ```
+              It may help after the fence.
+            */
+            add = a: b: a + b;
+            glob = '''
+              ''${lib.concatStrings [ "a" ]}
+              /* It may help, e.g. in a string.
+            ''';
+            src = "src/**/*.c";
+          }
+          EOF
+
+          sed -e ':a' -e 's/^\(\t*\)>/\1\t/' -e 'ta' >doc.go <<'EOF'
+          /*
+          Package doc wraps `it may
+          stop` here, and then it may stop.
+
+          It may help, e.g. here.
+          */
+          package doc
+
+          /*
+          #include <stdio.h>
+          // It may help, e.g. in C.
+          */
+          import "C"
+
+          /*
+          * A span wraps over `it may
+          * stop` here, and then it may stop.
+          */
+          var x = 1
+
+          /*
+          Run it like this:
+
+          >doc -x e.g. a | b/c
+          >doc --may-stop it may stop
+          */
+          var y = 1
+
+          func f() {
+          >/*
+          >>It may help, e.g. in a function.
+
+          >>>doc -x e.g. it may stop
+          >*/
+          }
+
+          func g() {
+          >/* It may help in a function.
+          >It may help, e.g. on the next line.
+
+          >It may stop here.
+          >*/
+          }
+
+          const src = `
+          /*
+           * It may help, e.g. in C.
+           */
+          `
+          EOF
+
+          sed 's/^>/\t/' >doc.ts <<'EOF'
+          const s = `
+          /* It may help, e.g. in a template.
+          */
+          `;
+          /** It may help, e.g. on one line. */
+          const a = 1;
+          /**/
+          /* A span wraps over `it may
+            stop` here, and then it may stop. */
+          const b = 1;
+          >/**
+          > * A tab indents `it may
+          > * stop` here, and then it may stop.
+          > */
+          const c = 1;
+          /* It may help, e.g. before code. */ const d = 1;
+          /**
+           * Adds three numbers.
+           *
+           * @param a - the first number to add to the running total
+           * @param b - the second number to add to the running total
+           * @param c - the third number to add to the running total
+           * @returns the sum of all the numbers that the caller passes in
+           */
+          const add = (a: number, b: number, c: number) => a + b + c;
+          /** It may read {@link store/cache} values, as {@linkcode Store e.g. here} does. */
+          const e = 1;
+          EOF
+
+          cat >Tags.java <<'EOF'
+          class Tags {
+            /**
+             * Adds three numbers.
+             *
+             * @param a the first number to add to the running total
+             * @param b the second number to add to the running total
+             * @param c the third number to add to the running total
+             * @return the sum of all the numbers that the caller passes in, and it
+             *     helps to know that the caller sums them in the order that it reads
+             *     them from the input, so the sum can overflow before the last one
+             */
+            int add(int a, int b, int c) {
+              return a + b + c;
+            }
+
+            /** Opens it in {@code read/write} mode, as {@link Files e.g. here}, and it may stop. */
+            void open() {}
+          }
+          EOF
+
+          cat >raw.rs <<'EOF'
+          let s = r"
+          /* It may help, e.g. in a string.
+          ";
+          // A span wraps over `it may
+          // stop` here, and then it may stop.
+          fn f() {}
+          EOF
+
+          cat >ldoc.lua <<'EOF'
+          --- Returns the sum, e.g. of two numbers.
+          ---@param a number It may help, e.g. here.
+          --- @return number
+          local function add(a) return a end
+          --- The section ---
+          --- It holds the value.
+          local b = 1
+          EOF
+
+          cat >Doc.scala <<'EOF'
+          object Doc {
+            /** Runs the code below, and a span wraps over `it may
+              * stop` here, and then it may stop.
+              *
+              * ```scala
+              * val x = 1 // it may stop
+              * ```
+              * It may help after the fence.
+              */
+            def f = 1
+          }
+          EOF
+
+          cat >fence.c <<'EOF'
+          int a;
+          /*
+          Set ```CFLAGS
+          -O2``` first, and then it may stop.
+          It may stop here.
+          */
+          int b;
+          EOF
+
+          cat >next.ts <<'EOF'
+          /* Return `true' when the file is open. */
+          /* It may help to set `flag' first. */
+          int a;
+          /** Set `x. */
+          // It may help `here` and it may stop.
+          int b;
+          // Run it:
+          // ```
+          // make it
+          /** It may help here. */
+          int c;
+          /**
+           * Run it:
+           * ```
+           * make it
+           */
+          // It may help here.
+          int d;
+          EOF
+          cp next.ts next.c
+
+          cat >dash.ts <<'EOF'
+          // The cache holds the value for a subscription --
+          /* setting both pins the split. */
+          const a = 1;
+          /* The cache holds the value for a subscription -- */
+          // setting both pins the split.
+          const b = 1;
+          /* The cache holds the value for a subscription -- */
+          /* setting both pins the split. */
+          const c = 1;
+          const d = 1; // The cache holds the value for a subscription --
+          /* setting both pins the split. */
+          const e = 1;
+          /*
+           * The cache holds the value for a subscription --
+           * setting both pins the split.
+           */
+          const f = 1;
+          EOF
+
+          cat >dash.nix <<'EOF'
+          {
+            # The cache holds the value for a subscription --
+            /* setting both pins the split. */
+            a = 1;
+            /* The cache holds the value for a subscription -- */
+            # setting both pins the split.
+            b = 1;
+            /* The cache holds the value for a subscription -- */
+            /* setting both pins the split. */
+            c = 1;
+            d = 1; # The cache holds the value for a subscription --
+            /* setting both pins the split. */
+            e = 1;
+            /*
+             * The cache holds the value for a subscription --
+             * setting both pins the split.
+             */
+            f = 1;
+          }
+          EOF
+
+          cat >adj.ts <<'EOF'
+          // The name of the host that the client sends each of its requests to by default when the caller names none
+          /** The port on that host that the client connects to when the caller sets none and the host publishes none */
+          export const port = 1;
+          EOF
+
+          cat >adj.c <<'EOF'
+          struct opts {
+              /* Delay in milliseconds that the client waits between two of those retries when the server answers busy */
+              /* Upper bound in milliseconds on the delay that the client waits between retries when the server keeps answering busy */
+              int delay;
+          };
+          EOF
+
+          cat >want <<'EOF'
+          doc.nix:4:29 ProseMayPossibility
+          doc.nix:6:10 ProseMayPossibility
+          doc.nix:6:20 ProseLatinAbbreviation
+          doc.nix:8:25 ProseMayPossibility
+          doc.nix:13:8 ProseMayPossibility
+          doc.go:3:25 ProseMayPossibility
+          doc.go:5:4 ProseMayPossibility
+          doc.go:5:14 ProseLatinAbbreviation
+          doc.go:11:7 ProseMayPossibility
+          doc.go:17:27 ProseMayPossibility
+          doc.go:31:6 ProseMayPossibility
+          doc.go:31:16 ProseLatinAbbreviation
+          doc.go:38:8 ProseMayPossibility
+          doc.go:39:5 ProseMayPossibility
+          doc.go:39:15 ProseLatinAbbreviation
+          doc.go:41:5 ProseMayPossibility
+          doc.ts:5:8 ProseMayPossibility
+          doc.ts:5:18 ProseLatinAbbreviation
+          doc.ts:9:27 ProseMayPossibility
+          doc.ts:13:29 ProseMayPossibility
+          doc.ts:16:7 ProseMayPossibility
+          doc.ts:26:8 ProseMayPossibility
+          Tags.java:8:6 ProseSentenceLength
+          Tags.java:16:79 ProseMayPossibility
+          raw.rs:5:28 ProseMayPossibility
+          ldoc.lua:1:22 ProseLatinAbbreviation
+          Doc.scala:3:31 ProseMayPossibility
+          Doc.scala:8:10 ProseMayPossibility
+          fence.c:4:27 ProseMayPossibility
+          fence.c:5:4 ProseMayPossibility
+          next.ts:2:7 ProseMayPossibility
+          next.ts:5:7 ProseMayPossibility
+          next.ts:5:30 ProseMayPossibility
+          next.ts:10:8 ProseMayPossibility
+          next.ts:17:7 ProseMayPossibility
+          next.c:2:7 ProseMayPossibility
+          next.c:5:7 ProseMayPossibility
+          next.c:5:30 ProseMayPossibility
+          next.c:10:8 ProseMayPossibility
+          next.c:17:7 ProseMayPossibility
+          dash.ts:14:49 ProseDash
+          dash.nix:15:51 ProseDash
+          EOF
+
+          for f in doc.nix doc.go doc.ts Tags.java raw.rs ldoc.lua Doc.scala fence.c next.ts next.c \
+            dash.ts dash.nix adj.ts adj.c; do
+            rc=0
+            found=$(${lib.getExe finalAttrs.finalPackage} "$f") || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "$f: prose-lint exited $rc" >&2
+              exit 1
+            fi
+            printf '%s\n' "$found" |
+              sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::(ProseMayPossibility|ProseLatinAbbreviation|ProseDash|ProseSentenceLength|ProseSlash): .*,\1 \2,p' |
+              sort -t: -k2,2n -k3,3n
+          done >got
+          if ! diff want got; then
+            echo "the doc comments draw other findings than want lists" >&2
+            exit 1
+          fi
+          touch "$out"
+        '';
+
+        # Lints code spans and a fence in the comments of a Java file, and
+        # expects the ProseMayPossibility findings that it lists. Harper
+        # reads each Java comment as HTML, so merge_comments puts an inline
+        # tag in place of each span. The file holds a span in a `//`
+        # comment, in a `///` comment, and in a block comment of one line.
+        # A span wraps in a Javadoc comment, and a fence, a span that holds
+        # `<b>`, and spans of one character follow it.
+        #
+        # Other comments share their line with code. One follows code, and
+        # code follows another. A block opens after code, and another one
+        # holds code after its `*/`. One more comment follows a character
+        # literal that holds a double quote. Two spans hold an accented
+        # letter, so the test lints under the C locale and under a UTF-8
+        # locale and expects the same columns. The test expects no finding
+        # inside a span or the fence, and a finding on each `may` after
+        # one. The command in configs/harper/CLAUDE.md builds this test
+        # too.
+        tests.java-spans = runCommand "prose-lint-java-spans" { nativeBuildInputs = [ gawk ]; } ''
+          cat >Spans.java <<'EOF'
+          class Spans {
+            // Run `it may stop` here, and then it may stop.
+            /// Run ``it may stop`` here, and then it may stop.
+            /** Run `it may stop` here, and then it may stop. */
+            int a;
+            /**
+             * A span wraps over `it may
+             * stop` here, and then it may stop.
+             *
+             * ```java
+             * It may help.
+             * ```
+             * It may help after the fence, and `a <b> c` may stop.
+             * Set `x` and it may stop, or `y` may stop.
+             * Set `café` and then it may stop.
+             */
+            int b;
+            // Set `café` and then it may stop.
+            int c; // Run `it may stop` here, and then it may stop.
+            /* Run `it may stop` here. */ int d; // Then it may stop.
+            int e; /* Run `it may stop` here, and then it may stop. */
+            int f; /* A block opens after code with `it may stop`
+             * and goes on with `it may stop`, and then it may stop.
+             */
+            /**
+             * Run `it may stop` here, and then it may stop. */ int g;
+            char q = '"'; // Run `it may stop` here, and then it may stop.
+          }
+          EOF
+
+          printf '%s\n' 2:42 3:45 4:43 8:30 13:9 13:49 14:21 14:38 15:29 18:29 \
+            19:49 20:51 21:49 23:50 26:42 27:56 >want
+          ${findUtf8Locale}
+          for locale in C "$utf8"; do
+            rc=0
+            found=$(LC_ALL=$locale ${lib.getExe finalAttrs.finalPackage} Spans.java) || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "Spans.java: prose-lint exited $rc under the $locale locale" >&2
+              exit 1
+            fi
+            printf '%s\n' "$found" |
+              sed -nE 's,^[^:]+:([0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::ProseMayPossibility: .*,\1,p' |
+              sort -t: -k1,1n -k2,2n >got
+            if ! diff want got; then
+              echo "Spans.java draws other ProseMayPossibility findings than want lists under the $locale locale" >&2
+              exit 1
+            fi
+          done
+          touch "$out"
+        '';
+
+        # Lints comments that follow code on their line and end in `--`, in
+        # a shell, Nix, TypeScript, Rust, and Lua file. It expects the
+        # ProseDash findings that it lists. The sentence of the first such
+        # comment goes on in the comment line under it, so the test expects
+        # a finding on its `--`, as a markdown paragraph draws. Code follows
+        # the second such comment, and an empty comment line follows the
+        # third. A banner (`# --- The section ---`) after code sits above a
+        # comment line with text. The test expects no finding on those
+        # lines. It also lints a copy of the shell file with CRLF line
+        # endings. The command in configs/harper/CLAUDE.md builds this test
+        # too.
+        tests.trailing-dash = runCommand "prose-lint-trailing-dash" { } ''
+          printf '%s\n' 'a=1 # The cache holds the value for a subscription --' \
+            '# setting both pins the split.' \
+            'b=2 # The cache holds the value for a subscription --' \
+            'c=3' \
+            'd="# x" # --- The section ---' \
+            '# It holds the value.' \
+            'e=4 # It holds the value --' \
+            '#' \
+            'f=5' >trail.sh
+          sed 's/$/\r/' trail.sh >crlf.sh
+          {
+            echo '{'
+            sed -E 's/^([a-z])=([^ ]*)/  \1 = \2;/; s/^#/  #/' trail.sh
+            echo '}'
+          } >trail.nix
+          sed -E 's/^([a-z])=([^ ]*)/const \1 = \2;/; s, # , // ,; s,^#,//,' trail.sh >trail.ts
+          sed -E 's/^([a-z])=([^ ]*)/let \1 = \2;/; s, # , // ,; s,^#,//,' trail.sh >trail.rs
+          sed -E 's/^([a-z])=([^ ]*)/local \1 = \2/; s/ # / -- /; s/^#/--/' trail.sh >trail.lua
+
+          printf '%s\n' trail.sh:1:52 crlf.sh:1:52 trail.nix:2:57 trail.ts:1:62 \
+            trail.rs:1:60 trail.lua:1:61 >want
+          for f in trail.sh crlf.sh trail.nix trail.ts trail.rs trail.lua; do
+            rc=0
+            found=$(${lib.getExe finalAttrs.finalPackage} "$f") || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "$f: prose-lint exited $rc" >&2
+              exit 1
+            fi
+            printf '%s\n' "$found" |
+              sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::ProseDash: .*,\1,p'
+          done >got
+          if ! diff want got; then
+            echo "the comments after code draw other ProseDash findings than want lists" >&2
+            exit 1
+          fi
           touch "$out"
         '';
 
@@ -3089,10 +4535,10 @@ in
         # finds the banner and drops the ` x` after it. The test expects
         # the shadow line without the ` x`, and no finding on the banner.
         #
-        # The test also expects the shadow to hold each full-line `--`
-        # comment without its Haddock marker. comment_lines takes a `--`
-        # marker only before whitespace or the line end, so the shadow
-        # does not hold a line for the operator or the `--- |` comment.
+        # The test also expects the shadow to hold each full-line `--` or
+        # `---` comment without its Haddock marker. comment_lines takes a
+        # marker of dashes only before whitespace or the line end, so the
+        # shadow does not hold a line for the operator.
         # The test expects prose-lint to exit 2 on an unreadable copy of
         # the file, as on the file of any other language.
         #
@@ -3269,11 +4715,17 @@ in
         # sits between the `-}` and the `---` that opens the comment. The
         # block of the third case closes on a `--` line.
         #
-        # The file ends in an empty `{--}` comment above a string that
-        # holds prose. unmark_comments puts four spaces in place of it.
-        # When the copy keeps the `{--}`, tree-sitter-haskell reads it as a
-        # block comment that does not close, and Harper then lints the
-        # string.
+        # An empty `{--}` comment sits above a string that holds prose.
+        # unmark_comments puts four spaces in place of it. When the copy
+        # keeps the `{--}`, tree-sitter-haskell reads it as a block comment
+        # that does not close, and Harper then lints the string.
+        #
+        # The file ends in a block whose fence sits in `---` lines, and the
+        # last line of the fence holds the `-}` of the block. A string that
+        # holds prose follows the block. comment_lines takes the `---`
+        # lines into the shadow, so close_spans blanks them. When it blanks
+        # the last line down to its marker, the copy loses the `-}`, and
+        # Harper then lints the string.
         #
         # The test expects the shadow of example.hs to hold text on the
         # lines of prose and on the `@` lines. It also expects text on the
@@ -3333,6 +4785,12 @@ in
         # the comment as text of that string and puts spaces in place of
         # each `--`. The shadow then leaves out the line of prose. The test
         # expects the shadow of open.hs to hold text only on that line.
+        #
+        # long.hs holds a sentence of more than 32 words in a `-- |`
+        # comment, and one of its lines opens with `@spaceConsumer@`.
+        # Haddock reads that name as inline code, and the sentence goes on
+        # there. The test expects the ProseSentenceLength finding of the
+        # whole sentence.
         #
         # harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that
         # holds a comment, and harperOverlay in lib/default.nix patches
@@ -3673,6 +5131,12 @@ in
           {--}
           m4 :: String
           m4 = "It may help here."
+
+          {- Old notes.
+          --- ```
+          --- x -}
+          m5 :: String
+          m5 = "It may help here."
           EOF
           sed -i '17s/$/ /; 200s/$/ /' example.hs
           sed 's/$/\r/' example.hs >crlf.hs
@@ -3721,8 +5185,8 @@ in
             awk '$0 != "x" { print NR ": " $0 }' >got
           printf '%s\n' '3: --   It may help here.' '4: -- It may help here.' \
             '11:     --   It may help here.' '29: --    It may help here.' \
-            '40: --   It may help here.' '43: --   --- The section ---' \
-            '44: -- The section reads the flags.' >want
+            '33: ---   It may help here.' '40: --   It may help here.' \
+            '43: --   --- The section ---' '44: -- The section reads the flags.' >want
           if ! diff want got; then
             echo "the shadow of doc.hs holds other comment lines than want lists" >&2
             exit 1
@@ -3753,7 +5217,7 @@ in
               '257: -- It may help here.' '258: -- @' \
               '259: -- lookup k m@ for the key. It may help here.' \
               '261: -- It may help here.' \
-              '273: -- x -} -- It may help here.'
+              '273: -- x -} -- It may help here.' '281: ---   -}'
           } >want
           ${findUtf8Locale}
           for locale in C "$utf8"; do
@@ -3862,6 +5326,18 @@ in
               exit 1
             fi
           done
+
+          printf '%s\n' 'module Long where' "" \
+            '-- | The parser reads each token of the input and hands it to the other' \
+            '-- functions of this module, and when the docs name the parser' \
+            '-- @spaceConsumer@ in an example, the name stands for the space parser that' \
+            '-- the caller of that function passes to it.' 'f :: Int' 'f = 1' >long.hs
+          printf '%s\n' '3:6 ProseSentenceLength' >want
+          findings long.hs C >got
+          if ! diff want got; then
+            echo "long.hs draws other findings than want lists" >&2
+            exit 1
+          fi
           touch "$out"
         '';
 
