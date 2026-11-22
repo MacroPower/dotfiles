@@ -532,6 +532,11 @@ func (h *handler) handleGetItem(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	table, err := loot.Load()
+	if err != nil {
+		return h.toolError(ctx, toolGetItem, err)
+	}
+
 	s, _, err := h.loadAnnotated(ctx, false)
 	if err != nil {
 		return h.toolError(ctx, toolGetItem, err)
@@ -566,7 +571,7 @@ func (h *handler) handleGetItem(
 		tested = h.clarity.Load(ctx)
 	}
 
-	return textResult(renderItem(s, item, ratings, tested)), nil, nil
+	return textResult(renderItem(s, item, table, ratings, tested)), nil, nil
 }
 
 func (h *handler) handleCompareDuplicates(

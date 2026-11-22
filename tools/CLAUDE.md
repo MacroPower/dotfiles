@@ -64,7 +64,7 @@ Destiny 2 is frozen, so the game data that `mcp-destiny` vendors does not go sta
 
 Bungie has announced plans for later Destiny 2 updates but has not set a release date for any of them. On 2026-09-17, Bungie announced work to bring vaulted campaigns, destinations, and raids back into the game. On 2026-10-29, Bungie said that the work stays in pre-production until about February 2027 and then needs about 12 months of production. Bungie also announced a Destiny 2 "Celebration" that brings new updates, and it plans to give more news about the Celebration in February 2027.
 
-These rules cover game data from a source other than the Bungie API and Agg's Destiny Vault Manager, such as the weapon curves of D2Foundry's Oracle Engine and the weapon sources of `mcp-destiny/loot/loot.json`.
+These rules cover game data from a source other than the Bungie API and Agg's Destiny Vault Manager. Examples are the weapon curves of D2Foundry's Oracle Engine and the weapon sources and red border notes of `mcp-destiny/loot/loot.json`.
 
 - Do not count future patches as a cost when you choose a source of game data. Do not plan for balance changes. A source that describes an update before Update 9.7.0.6 still costs a check against the patch notes after that update. It also loses each value that those notes change without giving the new value. When two sources otherwise match, prefer the source that describes the later update.
 - Prefer a vendored snapshot that the binary embeds over a download at run time.

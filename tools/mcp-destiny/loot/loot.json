@@ -18,6 +18,166 @@
       "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_7_0_2",
       "date": "2026-06-23",
       "patch": "9.7.0.2"
+    },
+    "9.7.0": {
+      "title": "Destiny 2 Update 9.7.0",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_7_0",
+      "date": "2026-06-09",
+      "patch": "9.7.0"
+    },
+    "sax-post": {
+      "title": "Sax: I've Spent 30 Hours in Monument of Triumph HUNTING Every Legendary Weapon... For Science!, a post on r/DestinyTheGame and the replies of its author, read on the date of this source",
+      "url": "https://www.reddit.com/r/DestinyTheGame/comments/1ualg92/",
+      "date": "2026-11-22",
+      "patch": "9.7.0"
+    },
+    "sax-video": {
+      "title": "Sax: Crafted Weapons are META Again.. So Here's How to Unlock Them All!, a video on YouTube",
+      "url": "https://www.youtube.com/watch?v=JQqLEfWJce0",
+      "date": "2026-06-23",
+      "patch": "9.7.0.1"
+    },
+    "itemlevel": {
+      "title": "Item Level Gaming: Destiny 2: How To Unlock Past Season Crafted Weapons in Monument of Triumph",
+      "url": "https://itemlevel.net/destiny-2-how-to-unlock-past-season-crafted-weapons-in-monument-of-triumph/",
+      "date": "2026-06-14",
+      "patch": "9.7.0"
+    },
+    "neomuna-post": {
+      "title": "How to actually farm Round Robin in Monument of Triumph ?, a post on r/destiny2 and its replies, read on the date of this source",
+      "url": "https://www.reddit.com/r/destiny2/comments/1xijs2t/",
+      "date": "2026-11-22",
+      "patch": "9.7.0"
+    },
+    "blueberries-throne-world": {
+      "title": "Blueberries.gg: Destiny 2 Throne World Weapons & Armor: Updated Loot Pool, the section on where to find the weapons",
+      "url": "https://www.blueberries.gg/weapons/throne-world-loot-pool/",
+      "date": "2026-06-22",
+      "patch": "9.7.0.1"
+    },
+    "blueberries-pale-heart": {
+      "title": "Blueberries.gg: Destiny 2 Pale Heart Weapons & Armor: Updated Loot Pool, the section on where to get the weapons",
+      "url": "https://www.blueberries.gg/weapons/pale-heart-weapons/",
+      "date": "2026-06-22",
+      "patch": "9.7.0.1"
+    },
+    "raid-rotator-post": {
+      "title": "How long do we have til the player population drops below playable for some higher-end content?, a post on r/destiny2 and its replies, read on the date of this source",
+      "url": "https://www.reddit.com/r/destiny2/comments/1v6gd1q/",
+      "date": "2026-11-22",
+      "patch": "9.7.0"
+    }
+  },
+  "places": {
+    "Avalon mission": {
+      "redBorders": "Run the mission in Pinnacle Ops with the Classic Collector modifier. If you own the season whose weapons the mission drops, through its Season Pass or the edition of Lightfall that includes it, each clear drops 2 red borders until every pattern of the mission is complete. Some players report fewer red borders on Normal or Advanced difficulty, so run the highest difficulty that you can clear quickly.",
+      "sources": ["9.7.0", "sax-post", "sax-video", "itemlevel"],
+      "checked": "9.7.0.6"
+    },
+    "Banshee-44": {
+      "redBorders": "Banshee-44 focuses copies with Legacy Focused Decoding. The sources do not say whether a copy can carry a red border, but a Deepsight Harmonizer gives one to any copy.",
+      "sources": ["sax", "sax-video"],
+      "checked": "9.7.0.6"
+    },
+    "Crota's End raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. In other weeks, Master mode, challenges, and the Deepsight chest drop red borders, and Standard mode has a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0"],
+      "checked": "9.7.0.6"
+    },
+    "Dares of Eternity": {
+      "redBorders": "Dares of Eternity runs earn a currency that Xûr's Treasure Hoard in Eternity exchanges for its weapons. The sources do not say how often a copy carries a red border, but a Deepsight Harmonizer gives one to any copy.",
+      "sources": ["sax-video"],
+      "checked": "9.7.0.6"
+    },
+    "Deep Stone Crypt raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. The raid has no Master mode. A player reports that in other weeks only Standard mode drops red borders, and only at a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0", "raid-rotator-post"],
+      "checked": "9.7.0.6"
+    },
+    "Duality dungeon": {
+      "redBorders": "Duality drops its craftable weapons, and red borders come at random. A week that features the dungeon does not guarantee them, but a Deepsight Harmonizer gives one to any copy.",
+      "sources": ["9.7.0.2", "sax-post", "sax-video"],
+      "checked": "9.7.0.6"
+    },
+    "Encore mission": {
+      "redBorders": "Run the mission in Pinnacle Ops with the Classic Collector modifier. If you own The Final Shape, each clear drops 2 red borders until every pattern of the mission is complete. Some players report fewer red borders on Normal or Advanced difficulty, so run the highest difficulty that you can clear quickly.",
+      "sources": ["9.7.0", "sax-post", "sax-video", "itemlevel"],
+      "checked": "9.7.0.6"
+    },
+    "Garden of Salvation raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. The raid has no Master mode. A player reports that in other weeks only Standard mode drops red borders, and only at a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0", "raid-rotator-post"],
+      "checked": "9.7.0.6"
+    },
+    "King's Fall raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. In other weeks, Master mode, challenges, and the Deepsight chest drop red borders, and Standard mode has a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0"],
+      "checked": "9.7.0.6"
+    },
+    "Last Wish raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. The raid has no Master mode. A player reports that in other weeks only Standard mode drops red borders, and only at a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0", "raid-rotator-post"],
+      "checked": "9.7.0.6"
+    },
+    "Neomuna": {
+      "redBorders": "Each character gets a red border of Round Robin the first time it finishes the Lightfall campaign and the ...To Hero quest after it. Chests, public events, and heroic patrols on Neomuna and the reputation ranks of Nimbus also drop its weapons, and red borders come at random. A Deepsight Harmonizer gives one to any copy.",
+      "sources": ["neomuna-post", "sax", "sax-video"],
+      "checked": "9.7.0.6"
+    },
+    "Operation: Seraph's Shield mission": {
+      "redBorders": "Run the mission in Pinnacle Ops with the Classic Collector modifier. If you own the season whose weapons the mission drops, through its Season Pass or the edition of The Witch Queen that includes it, each clear drops 2 red borders until every pattern of the mission is complete. Some players report fewer red borders on Normal or Advanced difficulty, so run the highest difficulty that you can clear quickly.",
+      "sources": ["9.7.0", "sax-post", "sax-video", "itemlevel"],
+      "checked": "9.7.0.6"
+    },
+    "Presage mission": {
+      "redBorders": "Run the mission in Pinnacle Ops with the Classic Collector modifier. If you own the season whose weapons the mission drops, through its Season Pass or the edition of The Witch Queen that includes it, each clear drops 2 red borders until every pattern of the mission is complete. Some players report fewer red borders on Normal or Advanced difficulty, so run the highest difficulty that you can clear quickly.",
+      "sources": ["9.7.0", "sax-post", "sax-video", "itemlevel"],
+      "checked": "9.7.0.6"
+    },
+    "Root of Nightmares raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. In other weeks, Master mode, challenges, and the Deepsight chest drop red borders, and Standard mode has a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0"],
+      "checked": "9.7.0.6"
+    },
+    "Salvation's Edge raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. In other weeks, Master mode, challenges, and the Deepsight chest drop red borders, and Standard mode has a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0"],
+      "checked": "9.7.0.6"
+    },
+    "Savathûn's Throne World": {
+      "redBorders": "Its weapons come from public events, patrols, and chests on the Throne World, from the reputation ranks of Fynch, and from The Witch Queen campaign. The sources do not say how often a copy carries a red border, but a Deepsight Harmonizer gives one to any copy.",
+      "sources": ["blueberries-throne-world", "neomuna-post", "sax-video"],
+      "checked": "9.7.0.6"
+    },
+    "Starcrossed mission": {
+      "redBorders": "Run the mission in Pinnacle Ops with the Classic Collector modifier. If you own the season whose weapons the mission drops, through its Season Pass or the edition of Lightfall that includes it, each clear drops 2 red borders until every pattern of the mission is complete. Some players report fewer red borders on Normal or Advanced difficulty, so run the highest difficulty that you can clear quickly.",
+      "sources": ["9.7.0", "sax-post", "sax-video", "itemlevel"],
+      "checked": "9.7.0.6"
+    },
+    "The Pale Heart": {
+      "redBorders": "Its weapons come from Pale Heart activities, such as quests and public events, from the Pale Heart engrams that your Ghost decodes, from the reputation ranks of your Ghost, and from The Final Shape campaign and the missions of Micah-10 after it. The sources do not say how often a copy carries a red border, but a Deepsight Harmonizer gives one to any copy.",
+      "sources": ["blueberries-pale-heart", "sax-video"],
+      "checked": "9.7.0.6"
+    },
+    "Vault of Glass raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. In other weeks, Master mode, challenges, and the Deepsight chest drop red borders, and Standard mode has a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0"],
+      "checked": "9.7.0.6"
+    },
+    "Vow of the Disciple raid": {
+      "redBorders": "When the weekly rotator features the raid, each encounter drops a red border or Tier 5 armor. In other weeks, Master mode, challenges, and the Deepsight chest drop red borders, and Standard mode has a chance. Encounters have no weekly lockout.",
+      "sources": ["9.7.0"],
+      "checked": "9.7.0.6"
+    },
+    "Vox Obscura mission": {
+      "redBorders": "Run the mission in Pinnacle Ops with the Classic Collector modifier. If you own the season whose weapons the mission drops, through its Season Pass or the edition of The Witch Queen that includes it, each clear drops 2 red borders until every pattern of the mission is complete. Some players report fewer red borders on Normal or Advanced difficulty, so run the highest difficulty that you can clear quickly.",
+      "sources": ["9.7.0", "sax-post", "sax-video", "itemlevel"],
+      "checked": "9.7.0.6"
+    },
+    "Xûr": {
+      "redBorders": "Xûr sells each of his weapons in some weeks for 17 Strange Coins. His Strange Weapon Engrams, at 7 Strange Coins each, drop them at random, and a copy from an engram sometimes carries a red border. A Deepsight Harmonizer gives a red border to any other copy.",
+      "sources": ["9.7.0.2", "sax-post", "sax-video"],
+      "checked": "9.7.0.6"
     }
   },
   "activities": {

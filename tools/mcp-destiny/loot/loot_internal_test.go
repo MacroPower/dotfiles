@@ -13,9 +13,10 @@ import (
 const lastUpdate = "9.7.0.6"
 
 // TestEmbeddedData pins the provenance of the loot data. The data passes
-// the checks of the loader, so each drop names a source. Each weapon also
-// names the last update of the game as the update of its last check. Each
-// place that names a raid, a dungeon, or a mission has an activity.
+// the checks of the loader, so each drop and each red border note names a
+// source. Each place and each weapon also names the last update of the
+// game as the update of its last check. Each place that names a raid, a
+// dungeon, or a mission has an activity.
 func TestEmbeddedData(t *testing.T) {
 	t.Parallel()
 
@@ -35,6 +36,10 @@ func TestEmbeddedData(t *testing.T) {
 		assert.NotEmpty(t, src.Patch, key)
 	}
 
+	for name, p := range f.Places {
+		assert.Equal(t, lastUpdate, p.Checked, name)
+	}
+
 	for _, w := range f.Weapons {
 		assert.Equal(t, lastUpdate, w.Checked, w.Name)
 
@@ -51,19 +56,27 @@ func TestEmbeddedData(t *testing.T) {
 func TestParse(t *testing.T) {
 	t.Parallel()
 
-	// doc returns loot data with the given weapons.
-	doc := func(weapons ...string) string {
+	// doc returns loot data with the given places and weapons. Places
+	// joins the entries of the places object.
+	doc := func(places string, weapons ...string) string {
 		return `{
 			"patch": "9.7.0.2",
 			"sources": {"sax": {"title": "Sax", "url": "https://example.com", "date": "2026-11-22", "patch": "9.7.0.2"}},
+			"places": {` + places + `},
 			"weapons": [` + strings.Join(weapons, ", ") + `]
 		}`
 	}
 
-	// withActivities returns loot data with the given weapons and the
-	// activities of the given JSON object.
-	withActivities := func(activities string, weapons ...string) string {
-		return strings.Replace(doc(weapons...), `"weapons"`, `"activities": `+activities+`, "weapons"`, 1)
+	// place returns the entry of one place with the given name and
+	// fields.
+	place := func(name, fields string) string {
+		return `"` + name + `": {` + fields + `}`
+	}
+
+	// withActivities returns loot data with the given places and weapons
+	// and the activities of the given JSON object.
+	withActivities := func(activities, places string, weapons ...string) string {
+		return strings.Replace(doc(places, weapons...), `"weapons"`, `"activities": `+activities+`, "weapons"`, 1)
 	}
 
 	// weapon returns one weapon with the given name and drops.
@@ -71,36 +84,50 @@ func TestParse(t *testing.T) {
 		return `{"name": "` + name + `", "drops": [` + drops + `], "checked": "9.7.0.6"}`
 	}
 
-	const raid = `{"from": "Vault of Glass raid", "sources": ["sax"]}`
+	const (
+		raid = `{"from": "Vault of Glass raid", "sources": ["sax"]}`
+
+		// note holds the fields of a valid place.
+		note = `"redBorders": "Run the raid.", "sources": ["sax"], "checked": "9.7.0.6"`
+	)
+
+	vog := place("Vault of Glass raid", note)
+	encore := place("Encore mission", `"redBorders": "Run the mission.", "sources": ["sax"], "checked": "9.7.0.6"`)
 
 	tests := map[string]struct {
-		want       map[string][]string
+		want       map[string][]Drop
 		data       string
 		err        string
 		activities []activity
 	}{
 		"valid": {
 			data: doc(
+				vog+", "+encore+", "+
+					place("Xûr", `"redBorders": "Buy it.", "sources": ["sax"], "checked": "9.7.0.6"`),
 				weapon("Fatebringer", raid),
 				weapon(
 					"Aberrant Action",
 					`{"from": "Encore mission", "sources": ["sax"]}, {"from": "Xûr", "sources": ["sax"]}`,
 				),
 			),
-			want: map[string][]string{
-				"fatebringer":     {"Vault of Glass raid"},
-				"aberrant action": {"Encore mission", "Xûr"},
+			want: map[string][]Drop{
+				"fatebringer": {{Place: "Vault of Glass raid", RedBorders: "Run the raid."}},
+				"aberrant action": {
+					{Place: "Encore mission", RedBorders: "Run the mission."},
+					{Place: "Xûr", RedBorders: "Buy it."},
+				},
 			},
 		},
 		"activities ordered by place": {
 			data: withActivities(
 				`{"Vault of Glass raid": "Vault of Glass", "Encore mission": "Encore"}`,
+				vog+", "+encore,
 				weapon("Fatebringer", raid),
 				weapon("Aberrant Action", `{"from": "Encore mission", "sources": ["sax"]}`),
 			),
-			want: map[string][]string{
-				"fatebringer":     {"Vault of Glass raid"},
-				"aberrant action": {"Encore mission"},
+			want: map[string][]Drop{
+				"fatebringer":     {{Place: "Vault of Glass raid", RedBorders: "Run the raid."}},
+				"aberrant action": {{Place: "Encore mission", RedBorders: "Run the mission."}},
 			},
 			activities: []activity{
 				{place: "Encore mission", name: "encore"},
@@ -108,16 +135,17 @@ func TestParse(t *testing.T) {
 			},
 		},
 		"activity of a place that no drop names": {
-			data: withActivities(`{"Encore mission": "Encore"}`, weapon("Fatebringer", raid)),
+			data: withActivities(`{"Encore mission": "Encore"}`, vog, weapon("Fatebringer", raid)),
 			err:  `loot data: the activity of "Encore mission" belongs to a place that no drop names`,
 		},
 		"activity without a name": {
-			data: withActivities(`{"Vault of Glass raid": ""}`, weapon("Fatebringer", raid)),
+			data: withActivities(`{"Vault of Glass raid": ""}`, vog, weapon("Fatebringer", raid)),
 			err:  `loot data: the activity of "Vault of Glass raid" has no name`,
 		},
 		"two places with one activity name in another letter case": {
 			data: withActivities(
 				`{"Vault of Glass raid": "Vault of Glass", "Encore mission": "VAULT OF GLASS"}`,
+				vog+", "+encore,
 				weapon("Fatebringer", raid),
 				weapon("Aberrant Action", `{"from": "Encore mission", "sources": ["sax"]}`),
 			),
@@ -125,50 +153,90 @@ func TestParse(t *testing.T) {
 		},
 		"weapon with a note": {
 			data: doc(
-				`{"name": "Palmyra-B", "note": "The sources disagree.", "drops": [` + raid + `], "checked": "9.7.0.6"}`,
+				vog,
+				`{"name": "Palmyra-B", "note": "The sources disagree.", "drops": [`+raid+`], "checked": "9.7.0.6"}`,
 			),
-			want: map[string][]string{"palmyra-b": {"Vault of Glass raid"}},
+			want: map[string][]Drop{"palmyra-b": {{Place: "Vault of Glass raid", RedBorders: "Run the raid."}}},
 		},
 		"not JSON": {
 			data: "{",
 			err:  "loot data: unexpected EOF",
 		},
 		"unknown field": {
-			data: strings.Replace(doc(weapon("Fatebringer", raid)), `"patch"`, `"version"`, 1),
+			data: strings.Replace(doc(vog, weapon("Fatebringer", raid)), `"patch"`, `"version"`, 1),
 			err:  `loot data: json: unknown field "version"`,
 		},
 		"weapon without a name": {
-			data: doc(weapon("", raid)),
+			data: doc(vog, weapon("", raid)),
 			err:  `loot data: weapon 0 has the name "", which is empty or taken`,
 		},
 		"weapon twice in another letter case and with another apostrophe": {
-			data: doc(weapon("Zaouli's Bane", raid), weapon("ZAOULI\u2019S BANE", raid)),
+			data: doc(vog, weapon("Zaouli's Bane", raid), weapon("ZAOULI\u2019S BANE", raid)),
 			err:  "loot data: weapon 1 has the name \"ZAOULI\u2019S BANE\", which is empty or taken",
 		},
 		"weapon without the update of its last check": {
-			data: doc(`{"name": "Fatebringer", "drops": [` + raid + `]}`),
+			data: doc(vog, `{"name": "Fatebringer", "drops": [`+raid+`]}`),
 			err:  "loot data: Fatebringer: the weapon names no game update of its last check",
 		},
 		"weapon without a drop": {
-			data: doc(weapon("Fatebringer", "")),
+			data: doc(vog, weapon("Fatebringer", "")),
 			err:  "loot data: Fatebringer: the weapon has no drop",
 		},
 		"drop without a place": {
-			data: doc(weapon("Fatebringer", `{"from": "", "sources": ["sax"]}`)),
+			data: doc(vog, weapon("Fatebringer", `{"from": "", "sources": ["sax"]}`)),
 			err:  `loot data: Fatebringer: the drop from "" is empty or repeats`,
 		},
 		"place twice": {
-			data: doc(weapon("Fatebringer", raid+", "+raid)),
+			data: doc(vog, weapon("Fatebringer", raid+", "+raid)),
 			err:  `loot data: Fatebringer: the drop from "Vault of Glass raid" is empty or repeats`,
 		},
 		"drop without a source": {
-			data: doc(weapon("Fatebringer", `{"from": "Vault of Glass raid", "sources": []}`)),
+			data: doc(vog, weapon("Fatebringer", `{"from": "Vault of Glass raid", "sources": []}`)),
 			err:  `loot data: Fatebringer: the drop from "Vault of Glass raid" names no source`,
 		},
+		"drop from a place that the file does not describe": {
+			data: doc(vog, weapon("Fatebringer", raid+`, {"from": "Xûr", "sources": ["sax"]}`)),
+			err:  `loot data: Fatebringer: the drop from "Xûr" names a place that the file does not describe`,
+		},
 		"drop with an unknown source": {
-			data: doc(weapon("Fatebringer", `{"from": "Vault of Glass raid", "sources": ["forum"]}`)),
+			data: doc(vog, weapon("Fatebringer", `{"from": "Vault of Glass raid", "sources": ["forum"]}`)),
 			err: `loot data: Fatebringer: the drop from "Vault of Glass raid" names "forum", ` +
 				`which is not a source of the file`,
+		},
+		"place without a red border note": {
+			data: doc(
+				place("Vault of Glass raid", `"sources": ["sax"], "checked": "9.7.0.6"`),
+				weapon("Fatebringer", raid),
+			),
+			err: `loot data: place "Vault of Glass raid": the place has no red border note`,
+		},
+		"place without the update of its last check": {
+			data: doc(
+				place("Vault of Glass raid", `"redBorders": "Run the raid.", "sources": ["sax"]`),
+				weapon("Fatebringer", raid),
+			),
+			err: `loot data: place "Vault of Glass raid": the place names no game update of its last check`,
+		},
+		"place without a source": {
+			data: doc(
+				place("Vault of Glass raid", `"redBorders": "Run the raid.", "sources": [], "checked": "9.7.0.6"`),
+				weapon("Fatebringer", raid),
+			),
+			err: `loot data: place "Vault of Glass raid": the place names no source`,
+		},
+		"place with an unknown source": {
+			data: doc(
+				place(
+					"Vault of Glass raid",
+					`"redBorders": "Run the raid.", "sources": ["forum"], "checked": "9.7.0.6"`,
+				),
+				weapon("Fatebringer", raid),
+			),
+			err: `loot data: place "Vault of Glass raid": the place names "forum", which is not a source of the file`,
+		},
+		"place where no weapon drops": {
+			data: doc(vog+", "+place("Xûr", note), weapon("Fatebringer", raid)),
+			err:  `loot data: place "Xûr": no weapon drops there`,
 		},
 	}
 
@@ -204,6 +272,10 @@ func TestPlaceLongestName(t *testing.T) {
 		return []byte(`{
 			"patch": "9.7.0.2",
 			"sources": {"sax": {"title": "Sax", "url": "https://example.com", "date": "2026-11-22", "patch": "9.7.0.2"}},
+			"places": {
+				"Vault of Glass raid": {"redBorders": "Run the raid.", "sources": ["sax"], "checked": "9.7.0.6"},
+				"Encore mission": {"redBorders": "Run the mission.", "sources": ["sax"], "checked": "9.7.0.6"}
+			},
 			"activities": ` + activities + `,
 			"weapons": [
 				{"name": "Fatebringer", "drops": [{"from": "Vault of Glass raid", "sources": ["sax"]}], "checked": "9.7.0.6"},

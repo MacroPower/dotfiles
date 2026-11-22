@@ -141,9 +141,9 @@ func newWeekSources(
 	}
 
 	for _, row := range rows {
-		for _, place := range table.Drops(row.Name) {
-			if len(featured[place]) > 0 {
-				w.Activities[row.Hash] = append(w.Activities[row.Hash], featured[place]...)
+		for _, drop := range table.Drops(row.Name) {
+			if len(featured[drop.Place]) > 0 {
+				w.Activities[row.Hash] = append(w.Activities[row.Hash], featured[drop.Place]...)
 			}
 		}
 	}

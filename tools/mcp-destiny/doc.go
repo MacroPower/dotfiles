@@ -463,14 +463,16 @@
 // pattern of each copy on its Pattern line.
 //
 // Each row of the list_patterns tool also names the places where the
-// weapon drops, as the Weapon Sources section describes. With
-// include_ratings, the row gives the tier of the weapon on the Aegis sheet
-// and on the PvP sheet, as the Roll Ratings section describes. One call
-// can therefore rank the patterns by the quality of the weapon and by the
-// place that drops its copies. With this_week, the tool keeps only the
-// patterns whose weapon a vendor of one character sells now or a featured
-// activity of that character drops, as the Weekly Sources section
-// describes.
+// weapon drops. A block after the table tells how to get red borders at
+// each place of an incomplete pattern, as the Weapon Sources section
+// describes. The get_item tool gives the same block for a craftable weapon
+// with an incomplete pattern. With include_ratings, the row gives the tier
+// of the weapon on the Aegis sheet and on the PvP sheet, as the Roll
+// Ratings section describes. One call can therefore rank the patterns by
+// the quality of the weapon and by the effort that its red borders cost.
+// With this_week, the tool keeps only the patterns whose weapon a vendor
+// of one character sells now or a featured activity of that character
+// drops, as the Weekly Sources section describes.
 //
 // Two flags of list_items, get_item, and compare_duplicates give the
 // Deepsight state of a copy. The server reads both from the crafting
@@ -607,6 +609,27 @@
 // pattern crafts. The source cell of a weapon that the table does not
 // list, such as an exotic weapon, is empty. The table is part of the
 // server, so the tools do not send any request for it.
+//
+// The table also holds a red border note for each place. The note tells
+// how a player gets copies with Deepsight Resonance at the place, such as
+// with one of these methods:
+//
+//   - The Classic Collector modifier of Pinnacle Ops drops 2 red borders
+//     at the end of each run of an exotic mission for a player who owns
+//     the season of the mission.
+//   - A raid drops a red border or Tier 5 armor from each encounter in a
+//     week that features it.
+//   - The Strange Weapon Engrams of Xûr sometimes drop a copy with a red
+//     border, and a Deepsight Harmonizer gives a red border to any copy.
+//
+// The collectible text does not give any of these methods. The notes come
+// from the patch notes of Bungie and from community guides of the game
+// after Update 9.7.0. They follow the patch notes up to the last hotfix.
+// After the table, list_patterns prints one line for each place that the
+// source cell of an incomplete pattern on the page names. The get_item
+// tool prints one line for each place that drops the weapon of a
+// craftable copy with an incomplete pattern. A complete pattern does not
+// get a line, because the player has no red border left to farm.
 //
 // # Weekly Sources
 //

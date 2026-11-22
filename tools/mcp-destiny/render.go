@@ -468,7 +468,11 @@ func renderSaveCount(count saveCount) string {
 // save_autotag_rule result.
 const saveCountCaveat = "The count ignores the other rules, so an earlier rule can take some of these items first."
 
-// renderItem renders one item in full. For a weapon, ratings holds the
+// renderItem renders one item in full. For an item with an incomplete
+// pattern, the block of [writeRedBorders] follows the fields and gives
+// each place that table names for the weapon of the pattern. An item with
+// a complete pattern does not get the block, because the player has no
+// red border left to farm. For a weapon, ratings holds the
 // [rolls.Rating] of each game mode, and the output gains the roll ratings
 // block. Ratings is nil for every other item. For an item with perks,
 // tested holds the [clarity.State] of the call, which [writePerks] reads.
@@ -477,6 +481,7 @@ const saveCountCaveat = "The count ignores the other rules, so an earlier rule c
 func renderItem(
 	s *inventory.Snapshot,
 	item *inventory.Item,
+	table *loot.Table,
 	ratings map[string]rolls.Rating,
 	tested clarity.State,
 ) string {
@@ -498,6 +503,10 @@ func renderItem(
 	writeField(&b, "Flags", strings.Join(flagsOf(item), ", "))
 	writeField(&b, "Pattern", patternLabel(item.Pattern))
 	writeField(&b, "Note", item.Note)
+
+	if item.Pattern != nil && !item.Pattern.Complete {
+		writeRedBorders(&b, table.Drops(item.Pattern.Name))
+	}
 
 	if len(item.Perks) > 0 {
 		b.WriteString("\nPerks:\n")
@@ -1413,7 +1422,11 @@ const noPatternsRefusal = "the service publishes no record definitions, " +
 // the weapon. It also lists the instance ids of the copies with Deepsight
 // Resonance and of the copies that a Deepsight Harmonizer can give
 // Deepsight Resonance. Each harmonizable copy carries the cost of its
-// activation, as [activationCost] names it.
+// activation, as [activationCost] names it. The block of
+// [writeRedBorders] follows the table. It gives each place that the
+// source cell of an incomplete pattern names one time, in the order of
+// the page. The places of a complete pattern still fill its source cell,
+// but they do not add a line to the block.
 //
 // Week holds the sources of this week, and nil leaves them out. With
 // week, the table gains the columns "sold by" and "featured in". Their
@@ -1484,8 +1497,22 @@ func renderPatterns(
 
 	b.WriteString("\n")
 
+	// notes holds each place of the incomplete patterns of the page. It
+	// holds a place one time, so a place that several rows name gets one
+	// line after the table.
+	var notes []loot.Drop
+
 	for _, row := range rows {
-		var deepsight, harmonizable []string
+		var places, deepsight, harmonizable []string
+
+		for _, drop := range table.Drops(row.Name) {
+			places = append(places, drop.Place)
+
+			listed := slices.ContainsFunc(notes, func(n loot.Drop) bool { return n.Place == drop.Place })
+			if !row.Complete && !listed {
+				notes = append(notes, drop)
+			}
+		}
 
 		for _, item := range row.Copies {
 			if item.Deepsight {
@@ -1499,7 +1526,7 @@ func renderPatterns(
 
 		fields := []string{
 			row.Name,
-			strings.Join(table.Drops(row.Name), ", "),
+			strings.Join(places, ", "),
 			patternLabel(&row.Pattern),
 			strconv.Itoa(len(row.Copies)),
 			strings.Join(deepsight, ", "),
@@ -1523,7 +1550,25 @@ func renderPatterns(
 		b.WriteString("\n")
 	}
 
+	writeRedBorders(&b, notes)
+
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// writeRedBorders writes a block with one line for each drop, in the
+// order of drops. The line names the place of the drop and tells how to
+// get red borders there, as [loot.Drop.RedBorders] gives it. A blank line
+// opens the block. Without a drop, writeRedBorders writes nothing.
+func writeRedBorders(b *strings.Builder, drops []loot.Drop) {
+	if len(drops) == 0 {
+		return
+	}
+
+	b.WriteString("\nRed borders by source:\n")
+
+	for _, drop := range drops {
+		fmt.Fprintf(b, "- %s: %s\n", drop.Place, drop.RedBorders)
+	}
 }
 
 // weaponRatingLabel returns the text of a rating cell for a weapon with

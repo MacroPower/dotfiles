@@ -18,10 +18,12 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/clarity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/loot"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 )
 
@@ -806,6 +808,115 @@ func TestPatternLabel(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, tc.want, patternLabel(tc.pattern))
+		})
+	}
+}
+
+// TestRenderPatternsRedBorders pins the block of red borders after the
+// table of list_patterns. The block names each place of the incomplete
+// patterns of the page one time, in the order of the page, also when
+// several rows name the place. A weapon that the loot data does not list
+// does not add a line. A complete pattern keeps its source cell but does
+// not add a line, so a page of complete patterns has no block.
+func TestRenderPatternsRedBorders(t *testing.T) {
+	t.Parallel()
+
+	table, err := loot.Load()
+	require.NoError(t, err)
+
+	// page renders one page with a row for each pattern.
+	page := func(patterns ...inventory.Pattern) string {
+		s := &inventory.Snapshot{Patterns: patterns}
+		rows := make([]inventory.PatternRow, 0, len(patterns))
+
+		for _, pattern := range patterns {
+			rows = append(rows, inventory.PatternRow{Pattern: pattern})
+		}
+
+		return renderPatterns(s, rows, 0, len(rows), table, nil, nil)
+	}
+
+	got := page(
+		inventory.Pattern{Name: "Fatebringer"},
+		inventory.Pattern{Name: "Osteo Striga"},
+		inventory.Pattern{Name: "The Epicurean", Complete: true},
+		inventory.Pattern{Name: "Aberrant Action"},
+		inventory.Pattern{Name: "Vision of Confluence"},
+		inventory.Pattern{Name: "Austringer", Complete: true},
+	)
+
+	_, block, ok := strings.Cut(got, "\n\nRed borders by source:\n")
+	require.True(t, ok, got)
+
+	var places []string
+
+	for line := range strings.Lines(block) {
+		place, note, ok := strings.Cut(strings.TrimPrefix(line, "- "), ": ")
+		require.True(t, ok, line)
+		assert.NotEmpty(t, strings.TrimSpace(note), place)
+
+		places = append(places, place)
+	}
+
+	assert.Equal(t, []string{"Vault of Glass raid", "Encore mission", "Xûr"}, places)
+	assert.Contains(t, got, "\nVision of Confluence | Vault of Glass raid | incomplete | 0 |  | \n")
+	assert.Contains(t, got, "\nOsteo Striga |  | incomplete | 0 |  | \n")
+	assert.Contains(t, got, "\nThe Epicurean | Duality dungeon | complete | 0 |  | \n")
+	assert.Contains(t, got, "\nAustringer | Presage mission | complete | 0 |  | \n")
+
+	got = page(inventory.Pattern{Name: "Fatebringer", Complete: true})
+	assert.NotContains(t, got, "Red borders", "a page of complete patterns")
+	assert.True(t, strings.HasSuffix(got, "\nFatebringer | Vault of Glass raid | complete | 0 |  | "), got)
+}
+
+// TestRenderItemRedBorders pins the block of red borders that get_item
+// writes after the fields of an item. Only an item with an incomplete
+// pattern gets the block.
+func TestRenderItemRedBorders(t *testing.T) {
+	t.Parallel()
+
+	table, err := loot.Load()
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		pattern *inventory.Pattern
+		want    string
+	}{
+		"incomplete pattern": {
+			pattern: &inventory.Pattern{
+				Name:       "Fatebringer",
+				Objectives: []inventory.Objective{{Progress: 3, Completion: 5}},
+			},
+			want: "Pattern: 3 of 5\n\nRed borders by source:\n- Vault of Glass raid: ",
+		},
+		"complete pattern": {
+			pattern: &inventory.Pattern{Name: "Fatebringer", Complete: true},
+		},
+		"weapon that the loot data does not list": {
+			pattern: &inventory.Pattern{Name: "Osteo Striga"},
+		},
+		"item without a pattern": {},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			item := &inventory.Item{
+				Name:       "Fatebringer",
+				InstanceID: "1",
+				Owner:      inventory.OwnerVault,
+				Pattern:    tc.pattern,
+			}
+			got := renderItem(&inventory.Snapshot{}, item, table, nil, clarity.State{})
+
+			if tc.want == "" {
+				assert.NotContains(t, got, "Red borders")
+
+				return
+			}
+
+			assert.Contains(t, got, tc.want)
 		})
 	}
 }

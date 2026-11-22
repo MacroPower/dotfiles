@@ -410,6 +410,10 @@ func newServer(h *handler) *mcp.Server {
 			"with the plugs that can fill it. " +
 			"For a craftable weapon, the Pattern line gives the progress of its crafting pattern, " +
 			"such as '3 of 5' extractions, or 'complete'. " +
+			"For a craftable weapon with an incomplete pattern and a source on list_patterns, " +
+			"a 'Red borders by source' block follows the fields. " +
+			"It names each place that drops the weapon and tells how to get red borders there, " +
+			"as list_patterns describes. " +
 			"Under each perk, the in-game text of Bungie comes first. " +
 			"A line that starts with 'Clarity:' then opens the tested description of the Clarity database, " +
 			"for each perk that Clarity covers. " +
@@ -529,6 +533,12 @@ func newServer(h *handler) *mcp.Server {
 			"The places come from community sources that describe the game after Update 9.7.0. " +
 			"That update made the collectible text of the game out of date, so the server does not read the text. " +
 			"The source column is empty for a weapon that those sources do not list, such as an exotic weapon. " +
+			"A block after the table, 'Red borders by source', gives one line for each place " +
+			"that the source cell of an incomplete pattern on the page names. " +
+			"The line tells how to get red borders, the copies with Deepsight Resonance, at that place, " +
+			"such as the Classic Collector modifier of Pinnacle Ops for the weapons of an exotic mission, " +
+			"a week that features a raid, or a Deepsight Harmonizer for a copy from X\u00fbr. " +
+			"The lines come from Bungie's patch notes and from community sources. " +
 			"Each row also counts the owned copies of the weapon and gives the instance ids of some of them. " +
 			"The deepsight column lists the copies with Deepsight Resonance, the red border of the game. " +
 			"For an incomplete pattern, the user can extract the progress of such a copy in the game. " +

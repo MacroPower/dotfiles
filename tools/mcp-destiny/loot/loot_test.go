@@ -65,7 +65,121 @@ func TestDrops(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.want, table.Drops(tc.name))
+			var got []string
+			for _, drop := range table.Drops(tc.name) {
+				got = append(got, drop.Place)
+			}
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestRedBorders pins the red border note of one weapon of each kind of
+// place. Each want lists phrases that the note of each place of the
+// weapon holds, in the order of the places.
+func TestRedBorders(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		name string
+		want [][]string
+	}{
+		"weapon of an exotic mission of The Witch Queen": {
+			name: "Austringer",
+			want: [][]string{{
+				"Classic Collector",
+				"through its Season Pass or the edition of The Witch Queen that includes it",
+				"2 red borders",
+				"highest difficulty",
+			}},
+		},
+		"weapon of an exotic mission of Lightfall": {
+			name: "Scatter Signal",
+			want: [][]string{{
+				"Classic Collector",
+				"through its Season Pass or the edition of Lightfall that includes it",
+				"2 red borders",
+				"highest difficulty",
+			}},
+		},
+		"weapon of an exotic mission and of Xur": {
+			name: "Aberrant Action",
+			want: [][]string{
+				{"Classic Collector", "If you own The Final Shape,"},
+				{
+					"each of his weapons",
+					"Strange Weapon Engrams",
+					"sometimes carries a red border",
+					"Deepsight Harmonizer",
+				},
+			},
+		},
+		"raid weapon": {
+			name: "Fatebringer",
+			want: [][]string{{"features the raid", "Tier 5 armor", "Master mode, challenges, and the Deepsight chest"}},
+		},
+		"weapon of a raid without Master mode": {
+			name: "Apex Predator",
+			want: [][]string{{"features the raid", "Tier 5 armor", "no Master mode", "only at a chance"}},
+		},
+		"weapon that only Xur sells": {
+			name: "Tarnished Mettle",
+			want: [][]string{{"Xûr", "sometimes carries a red border", "Deepsight Harmonizer"}},
+		},
+		"destination weapon": {
+			name: "Round Robin",
+			want: [][]string{{
+				"Lightfall campaign",
+				"first time it finishes",
+				"heroic patrols on Neomuna",
+				"reputation ranks of Nimbus",
+				"at random",
+				"Deepsight Harmonizer",
+			}},
+		},
+		"weapon of the Throne World": {
+			name: "Father's Sins",
+			want: [][]string{{"Fynch", "The Witch Queen campaign", "do not say how often", "Deepsight Harmonizer"}},
+		},
+		"weapon of the Pale Heart": {
+			name: "The Call",
+			want: [][]string{{
+				"reputation ranks of your Ghost",
+				"The Final Shape campaign",
+				"do not say how often",
+				"Deepsight Harmonizer",
+			}},
+		},
+		"weapon of Banshee-44": {
+			name: "Syncopation-53",
+			want: [][]string{{"Legacy Focused Decoding", "Deepsight Harmonizer"}},
+		},
+		"dungeon weapon": {
+			name: "The Epicurean",
+			want: [][]string{{"Duality", "at random", "Deepsight Harmonizer"}},
+		},
+		"weapon of Dares of Eternity": {
+			name: "Half-Truths",
+			want: [][]string{{"Treasure Hoard", "do not say how often", "Deepsight Harmonizer"}},
+		},
+	}
+
+	table, err := loot.Load()
+	require.NoError(t, err)
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			drops := table.Drops(tc.name)
+			require.Len(t, drops, len(tc.want))
+
+			for i, phrases := range tc.want {
+				for _, phrase := range phrases {
+					assert.Contains(t, drops[i].RedBorders, phrase, drops[i].Place)
+				}
+			}
 		})
 	}
 }

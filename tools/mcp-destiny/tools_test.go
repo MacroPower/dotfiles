@@ -3427,6 +3427,28 @@ func patternFakes(t *testing.T) *fakes {
 	return f
 }
 
+// The blocks of red borders that list_patterns prints after the table for
+// the patterns of [patternFakes]. The block gives the red border note of
+// each place that the source cell of an incomplete pattern on the page
+// names. Midnight Coup has a complete pattern and no place, so a page with
+// only Midnight Coup has no block.
+const (
+	redBordersHeader = "\n\nRed borders by source:"
+	presageNote      = "\n- Presage mission: Run the mission in Pinnacle Ops with the Classic Collector modifier. " +
+		"If you own the season whose weapons the mission drops, through its Season Pass " +
+		"or the edition of The Witch Queen that includes it, " +
+		"each clear drops 2 red borders until every pattern of the mission is complete. " +
+		"Some players report fewer red borders on Normal or Advanced difficulty, " +
+		"so run the highest difficulty that you can clear quickly."
+	vaultOfGlassNote = "\n- Vault of Glass raid: When the weekly rotator features the raid, " +
+		"each encounter drops a red border or Tier 5 armor. " +
+		"In other weeks, Master mode, challenges, and the Deepsight chest drop red borders, " +
+		"and Standard mode has a chance. Encounters have no weekly lockout."
+	presageNotes = redBordersHeader + presageNote
+	raidNotes    = redBordersHeader + vaultOfGlassNote
+	bothNotes    = redBordersHeader + presageNote + vaultOfGlassNote
+)
+
 func TestListPatterns(t *testing.T) {
 	t.Parallel()
 
@@ -3483,7 +3505,7 @@ func TestListPatterns(t *testing.T) {
 		return "Patterns 1-3 of 3." + held + reasons + ratedTable +
 			austringer + " | " + austringerCells + "\n" +
 			fatebringer + " | " + fatebringerCells + "\n" +
-			coup + " | " + coupCells
+			coup + " | " + coupCells + bothNotes
 	}
 
 	tests := map[string]struct {
@@ -3521,14 +3543,14 @@ func TestListPatterns(t *testing.T) {
 		"rating reasons follow the paging hint and the held materials": {
 			in: ListPatternsInput{Limit: 1, IncludeRatings: true},
 			want: "Patterns 1-1 of 2. Pass offset=1 for the next page." + held + noAegis + noPvP + ratedTable +
-				austringer + " | unavailable | unavailable",
+				austringer + " | unavailable | unavailable" + presageNotes,
 		},
 		"no match with ratings": {
 			in:   ListPatternsInput{Query: "thorn", IncludeRatings: true},
 			want: "No patterns match.",
 		},
 		"incomplete patterns by default, the fewest extractions left first": {
-			want: "Patterns 1-2 of 2." + header + austringer + "\n" + fatebringer,
+			want: "Patterns 1-2 of 2." + header + austringer + "\n" + fatebringer + bothNotes,
 		},
 		"complete patterns": {
 			in:   ListPatternsInput{Status: "complete"},
@@ -3536,13 +3558,13 @@ func TestListPatterns(t *testing.T) {
 		},
 		"every pattern": {
 			in:   ListPatternsInput{Status: "all"},
-			want: "Patterns 1-3 of 3." + header + austringer + "\n" + fatebringer + "\n" + coup,
+			want: "Patterns 1-3 of 3." + header + austringer + "\n" + fatebringer + "\n" + coup + bothNotes,
 		},
 		// The harmonizer socket of Midnight Coup does not count, because
 		// its pattern is complete.
 		"patterns with a harmonizable copy": {
 			in:   ListPatternsInput{Status: "all", Harmonizable: true},
-			want: "Patterns 1-2 of 2." + header + austringer + "\n" + fatebringer,
+			want: "Patterns 1-2 of 2." + header + austringer + "\n" + fatebringer + bothNotes,
 		},
 		// Without the source tags, the server cannot tell whether a
 		// weapon drops in a raid.
@@ -3550,7 +3572,8 @@ func TestListPatterns(t *testing.T) {
 			edit: func(f *fakes) { f.defs.SourcesListed = false },
 			in:   ListPatternsInput{Query: "fatebringer"},
 			want: "Patterns 1-1 of 1." + header + "Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " +
-				"2002 (1 harmonizer + 15 Spoils if a raid weapon), 2004 (1 harmonizer + 15 Spoils if a raid weapon)",
+				"2002 (1 harmonizer + 15 Spoils if a raid weapon), 2004 (1 harmonizer + 15 Spoils if a raid weapon)" +
+				raidNotes,
 		},
 		"account with one Deepsight Harmonizer and no Spoils of Conquest": {
 			edit: func(f *fakes) {
@@ -3560,7 +3583,7 @@ func TestListPatterns(t *testing.T) {
 			},
 			in: ListPatternsInput{Query: "austringer"},
 			want: "Patterns 1-1 of 1.\nThe account holds 1 Deepsight Harmonizer and 0 Spoils of Conquest. " +
-				"The Postmaster also holds 1 Deepsight Harmonizer." + table + austringer,
+				"The Postmaster also holds 1 Deepsight Harmonizer." + table + austringer + presageNotes,
 		},
 		"Postmaster with both materials": {
 			edit: func(f *fakes) {
@@ -3570,7 +3593,8 @@ func TestListPatterns(t *testing.T) {
 			},
 			in: ListPatternsInput{Query: "austringer"},
 			want: "Patterns 1-1 of 1.\nThe account holds 2 Deepsight Harmonizers and 45 Spoils of Conquest. " +
-				"The Postmaster also holds 3 Deepsight Harmonizers and 20 Spoils of Conquest." + table + austringer,
+				"The Postmaster also holds 3 Deepsight Harmonizers and 20 Spoils of Conquest." + table + austringer +
+				presageNotes,
 		},
 		"Postmaster without materials": {
 			edit: func(f *fakes) {
@@ -3578,11 +3602,11 @@ func TestListPatterns(t *testing.T) {
 			},
 			in: ListPatternsInput{Query: "austringer"},
 			want: "Patterns 1-1 of 1.\nThe account holds 2 Deepsight Harmonizers and 45 Spoils of Conquest." +
-				table + austringer,
+				table + austringer + presageNotes,
 		},
 		"query in another letter case": {
 			in:   ListPatternsInput{Query: "FATE"},
-			want: "Patterns 1-1 of 1." + header + fatebringer,
+			want: "Patterns 1-1 of 1." + header + fatebringer + raidNotes,
 		},
 		"query that no name contains": {
 			in:   ListPatternsInput{Query: "F4TE"},
@@ -3594,7 +3618,7 @@ func TestListPatterns(t *testing.T) {
 		},
 		"page": {
 			in:   ListPatternsInput{Limit: 1},
-			want: "Patterns 1-1 of 2. Pass offset=1 for the next page." + header + austringer,
+			want: "Patterns 1-1 of 2. Pass offset=1 for the next page." + header + austringer + presageNotes,
 		},
 		"offset past the last pattern": {
 			in:   ListPatternsInput{Offset: 5},
@@ -3848,9 +3872,11 @@ func TestListPatternsThisWeek(t *testing.T) {
 		want    string
 		isError bool
 	}{
+		// The block of red borders follows the table, as it does without
+		// this_week.
 		"incomplete patterns with a source this week": {
 			in:   ListPatternsInput{ThisWeek: true},
-			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" + fatebringer,
+			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" + fatebringer + bothNotes,
 		},
 		// The Hunter can buy the first Fatebringer of Banshee-44 and not
 		// the second, so the later sale does not mark Banshee-44 as
@@ -3865,7 +3891,7 @@ func TestListPatternsThisWeek(t *testing.T) {
 				).Replace(weekVendorsBody)
 			},
 			in:   ListPatternsInput{ThisWeek: true},
-			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" + fatebringer,
+			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" + fatebringer + bothNotes,
 		},
 		// Two enabled vendors share the name Xûr, and each sells a copy
 		// that advances Fatebringer. list_vendors selects each of them
@@ -3883,7 +3909,7 @@ func TestListPatternsThisWeek(t *testing.T) {
 			in: ListPatternsInput{ThisWeek: true},
 			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" +
 				"Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
-				" | Banshee-44, Xûr (2190858386), Xûr (3751514131) (unavailable) | Vault of Glass: Master",
+				" | Banshee-44, Xûr (2190858386), Xûr (3751514131) (unavailable) | Vault of Glass: Master" + bothNotes,
 		},
 		// The disabled Xûr does not count as a source, but list_vendors
 		// still selects the other Xûr only by its hash.
@@ -3894,7 +3920,7 @@ func TestListPatternsThisWeek(t *testing.T) {
 			in: ListPatternsInput{ThisWeek: true},
 			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" +
 				"Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
-				" | Banshee-44, Xûr (3751514131) (unavailable) | Vault of Glass: Master",
+				" | Banshee-44, Xûr (3751514131) (unavailable) | Vault of Glass: Master" + bothNotes,
 		},
 		// Bungie lists Vault of Glass without its weekly challenge, so the
 		// raid does not count as featured.
@@ -3906,7 +3932,7 @@ func TestListPatternsThisWeek(t *testing.T) {
 			in: ListPatternsInput{ThisWeek: true},
 			want: "Patterns 1-2 of 2." + held + "\nFeatured activities of Hunter: Presage: Customize, The Coil." + table +
 				austringer + "\n" + "Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
-				" | Banshee-44, Strange Gear Offers (unavailable) | ",
+				" | Banshee-44, Strange Gear Offers (unavailable) | " + bothNotes,
 		},
 		"pattern whose activity is not featured": {
 			edit: func(f *fakes) {
@@ -3916,7 +3942,7 @@ func TestListPatternsThisWeek(t *testing.T) {
 			},
 			in: ListPatternsInput{ThisWeek: true},
 			want: "Patterns 1-1 of 1." + held +
-				"\nFeatured activities of Hunter: The Coil, Vault of Glass: Master." + table + fatebringer,
+				"\nFeatured activities of Hunter: The Coil, Vault of Glass: Master." + table + fatebringer + raidNotes,
 		},
 		// The disabled Xûr does not count for Austringer.
 		"vendors without a featured activity": {
@@ -3924,19 +3950,19 @@ func TestListPatternsThisWeek(t *testing.T) {
 			in:   ListPatternsInput{ThisWeek: true},
 			want: "Patterns 1-1 of 1." + held + "\nBungie does not list a featured activity for Hunter." + table +
 				"Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
-				" | Banshee-44, Strange Gear Offers (unavailable) | ",
+				" | Banshee-44, Strange Gear Offers (unavailable) | " + raidNotes,
 		},
 		"every pattern": {
 			in:   ListPatternsInput{Status: "all", ThisWeek: true},
-			want: "Patterns 1-3 of 3." + held + featured + table + austringer + "\n" + fatebringer + "\n" + coup,
+			want: "Patterns 1-3 of 3." + held + featured + table + austringer + "\n" + fatebringer + "\n" + coup + bothNotes,
 		},
 		"query": {
 			in:   ListPatternsInput{Query: "AUSTRINGER", ThisWeek: true},
-			want: "Patterns 1-1 of 1." + held + featured + table + austringer,
+			want: "Patterns 1-1 of 1." + held + featured + table + austringer + presageNotes,
 		},
 		"page": {
 			in:   ListPatternsInput{Limit: 1, Offset: 1, ThisWeek: true},
-			want: "Patterns 2-2 of 2." + held + featured + table + fatebringer,
+			want: "Patterns 2-2 of 2." + held + featured + table + fatebringer + raidNotes,
 		},
 		"no pattern with a source this week": {
 			edit: func(f *fakes) {
@@ -3955,7 +3981,7 @@ func TestListPatternsThisWeek(t *testing.T) {
 			in: ListPatternsInput{Status: "all", Character: "TITAN", ThisWeek: true},
 			want: "Patterns 1-2 of 2." + held + "\nFeatured activity of Titan: Vault of Glass: Master." + table +
 				"Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize + " |  | Vault of Glass: Master\n" +
-				"Midnight Coup |  | complete | 1 |  |  | Banshee-44 | ",
+				"Midnight Coup |  | complete | 1 |  |  | Banshee-44 | " + raidNotes,
 		},
 		"ratings": {
 			in: ListPatternsInput{Query: "austringer", ThisWeek: true, IncludeRatings: true},
@@ -3963,7 +3989,7 @@ func TestListPatternsThisWeek(t *testing.T) {
 				"\nPvE: rating unavailable: the service publishes no Aegis sheet" +
 				"\nPvP: rating unavailable: the service publishes no PvP sheet" +
 				"\n\nweapon | source | progress | copies | deepsight | harmonizable | sold by | featured in | " +
-				"pve rating | pvp rating\n" + austringer + " | unavailable | unavailable",
+				"pve rating | pvp rating\n" + austringer + " | unavailable | unavailable" + presageNotes,
 		},
 		"character without this_week": {
 			in:      ListPatternsInput{Character: "titan"},
@@ -4092,6 +4118,23 @@ func TestDeepsightFlags(t *testing.T) {
 		"copy with Deepsight Resonance": {
 			id:   "2001",
 			want: "Location: Vault\nFlags: deepsight\nPattern: 3 of 5\n",
+		},
+		// The block of red borders follows the fields of a weapon that
+		// the loot data lists.
+		"red borders of a raid weapon": {
+			id: "2001",
+			want: "Pattern: 3 of 5\n\nRed borders by source:\n" +
+				"- Vault of Glass raid: When the weekly rotator features the raid, ",
+		},
+		// A Timelost copy gets the block of the base weapon.
+		"red borders of a Timelost copy": {
+			id:   "2004",
+			want: "Pattern: 3 of 5\n\nRed borders by source:\n- Vault of Glass raid: ",
+		},
+		"red borders of a weapon outside the raids": {
+			id: "2005",
+			want: "Pattern: 1 of 2\n\nRed borders by source:\n" +
+				"- Presage mission: Run the mission in Pinnacle Ops with the Classic Collector modifier. ",
 		},
 		"raid weapon that a Deepsight Harmonizer can give Deepsight Resonance": {
 			id:   "2002",

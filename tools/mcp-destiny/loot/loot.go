@@ -17,7 +17,8 @@ import (
 
 var (
 	// ErrData reports loot data that does not decode or that fails a
-	// check, such as a drop without a source.
+	// check, such as a drop without a source or a place without a red
+	// border note.
 	ErrData = errors.New("loot data")
 
 	// embedded holds the loot data of the package.
@@ -36,8 +37,18 @@ var (
 // drops. It also maps each activity of the loot data to its place.
 // [Load] returns the table of the embedded data.
 type Table struct {
-	drops      map[string][]string
+	drops      map[string][]Drop
 	activities []activity
+}
+
+// Drop is one place where a weapon drops. Place names the place, such as
+// "Vault of Glass raid" or "Xûr". RedBorders tells how a player gets
+// copies with Deepsight Resonance, the red border of the game, at the
+// place, such as with a modifier of an activity or with a Deepsight
+// Harmonizer. Every weapon that drops at one place shares its note.
+type Drop struct {
+	Place      string
+	RedBorders string
 }
 
 // activity is the activity of one place, such as the Vault of Glass raid.
@@ -56,10 +67,11 @@ func Load() (*Table, error) {
 }
 
 // Drops returns the places where the weapon with the given name drops,
-// in the order of the data. It returns nil for a weapon that the data
-// does not list. The lookup folds letter case and diacritics as
-// [fold.Name] does, and it reads a curly apostrophe as a straight one.
-func (t *Table) Drops(name string) []string {
+// in the order of the data, each with its red border note. It returns nil
+// for a weapon that the data does not list. The lookup folds letter case
+// and diacritics as [fold.Name] does, and it reads a curly apostrophe as
+// a straight one.
+func (t *Table) Drops(name string) []Drop {
 	return t.drops[key(name)]
 }
 
@@ -95,23 +107,34 @@ func key(name string) string {
 }
 
 // file is the loot data as loot.json stores it. Patch names the last game
-// update that changed a drop of the data. Activities maps each place that
-// is an activity to the name that the Destiny definitions give the
-// activity.
+// update that changed a drop or a red border note of the data. Places
+// holds the red border note of each place that a drop names. Activities
+// maps each place that is an activity to the name that the Destiny
+// definitions give the activity.
 type file struct {
 	Sources    map[string]source `json:"sources"`
+	Places     map[string]place  `json:"places"`
 	Activities map[string]string `json:"activities"`
 	Patch      string            `json:"patch"`
 	Weapons    []weapon          `json:"weapons"`
 }
 
-// source is one origin of the drops. Patch is the game update that the
-// source describes.
+// source is one origin of the drops or of the red border notes. Patch is
+// the game update that the source describes.
 type source struct {
 	Title string `json:"title"`
 	URL   string `json:"url"`
 	Date  string `json:"date"`
 	Patch string `json:"patch"`
+}
+
+// place tells how a player gets red borders at one place. Each entry of
+// Sources keys the sources of the file. Checked names the last game update
+// whose patch notes leave the note as it stands.
+type place struct {
+	RedBorders string   `json:"redBorders"`
+	Checked    string   `json:"checked"`
+	Sources    []string `json:"sources"`
 }
 
 // weapon lists the places where one weapon drops. Checked names the last
@@ -132,11 +155,14 @@ type drop struct {
 	Sources []string `json:"sources"`
 }
 
-// parse decodes the loot data and checks it. Each weapon must have a name
-// of its own, at least one drop, and the update of its last check. Each drop
-// must name a place that the weapon does not repeat. It must also name at
-// least one source of the file. Each activity must belong to a place that
-// a drop names, and it must have a name that no other activity has.
+// parse decodes the loot data and checks it. Each place must have a red
+// border note, at least one source of the file, and the update of its last
+// check. At least one weapon must drop at each place. Each weapon must
+// have a name of its own, at least one drop, and the update of its last
+// check. Each drop must name a place of the file that the weapon does not
+// repeat. It must also name at least one source of the file. Each activity
+// must belong to a place that a drop names, and it must have a name that
+// no other activity has.
 func parse(data []byte) (*Table, error) {
 	var f file
 
@@ -148,7 +174,15 @@ func parse(data []byte) (*Table, error) {
 		return nil, fmt.Errorf("%w: %w", ErrData, err)
 	}
 
-	t := &Table{drops: map[string][]string{}}
+	for _, name := range slices.Sorted(maps.Keys(f.Places)) {
+		err := f.checkPlace(f.Places[name])
+		if err != nil {
+			return nil, fmt.Errorf("%w: place %q: %w", ErrData, name, err)
+		}
+	}
+
+	t := &Table{drops: map[string][]Drop{}}
+	used := map[string]bool{}
 
 	for i, w := range f.Weapons {
 		k := key(w.Name)
@@ -156,12 +190,22 @@ func parse(data []byte) (*Table, error) {
 			return nil, fmt.Errorf("%w: weapon %d has the name %q, which is empty or taken", ErrData, i, w.Name)
 		}
 
-		places, err := f.places(w)
+		drops, err := f.drops(w)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %w", ErrData, w.Name, err)
 		}
 
-		t.drops[k] = places
+		for _, d := range drops {
+			used[d.Place] = true
+		}
+
+		t.drops[k] = drops
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(f.Places)) {
+		if !used[name] {
+			return nil, fmt.Errorf("%w: place %q: no weapon drops there", ErrData, name)
+		}
 	}
 
 	activities, err := f.activities()
@@ -172,6 +216,23 @@ func parse(data []byte) (*Table, error) {
 	t.activities = activities
 
 	return t, nil
+}
+
+// checkPlace checks the red border note of one place.
+func (f *file) checkPlace(p place) error {
+	switch {
+	case p.RedBorders == "":
+		return errors.New("the place has no red border note")
+	case p.Checked == "":
+		return errors.New("the place names no game update of its last check")
+	}
+
+	err := f.checkSources(p.Sources)
+	if err != nil {
+		return fmt.Errorf("the place %w", err)
+	}
+
+	return nil
 }
 
 // activities checks the activities of the file and returns them, ordered
@@ -208,9 +269,9 @@ func (f *file) activities() ([]activity, error) {
 	return activities, nil
 }
 
-// places checks the drops of one weapon and returns the place of each
-// drop, in the order of the data.
-func (f *file) places(w weapon) ([]string, error) {
+// drops checks the drops of one weapon and returns them in the order of
+// the data, each with the red border note of its place.
+func (f *file) drops(w weapon) ([]Drop, error) {
 	if w.Checked == "" {
 		return nil, errors.New("the weapon names no game update of its last check")
 	}
@@ -219,25 +280,43 @@ func (f *file) places(w weapon) ([]string, error) {
 		return nil, errors.New("the weapon has no drop")
 	}
 
-	places := make([]string, 0, len(w.Drops))
+	drops := make([]Drop, 0, len(w.Drops))
 
 	for _, d := range w.Drops {
-		if d.From == "" || slices.Contains(places, d.From) {
+		repeats := slices.ContainsFunc(drops, func(o Drop) bool { return o.Place == d.From })
+		if d.From == "" || repeats {
 			return nil, fmt.Errorf("the drop from %q is empty or repeats", d.From)
 		}
 
-		if len(d.Sources) == 0 {
-			return nil, fmt.Errorf("the drop from %q names no source", d.From)
+		p, ok := f.Places[d.From]
+		if !ok {
+			return nil, fmt.Errorf("the drop from %q names a place that the file does not describe", d.From)
 		}
 
-		for _, s := range d.Sources {
-			if _, ok := f.Sources[s]; !ok {
-				return nil, fmt.Errorf("the drop from %q names %q, which is not a source of the file", d.From, s)
-			}
+		err := f.checkSources(d.Sources)
+		if err != nil {
+			return nil, fmt.Errorf("the drop from %q %w", d.From, err)
 		}
 
-		places = append(places, d.From)
+		drops = append(drops, Drop{Place: d.From, RedBorders: p.RedBorders})
 	}
 
-	return places, nil
+	return drops, nil
+}
+
+// checkSources checks that names holds at least one source and that each
+// entry keys a source of the file. The text of its error opens with a
+// verb, so the caller puts the subject before it.
+func (f *file) checkSources(names []string) error {
+	if len(names) == 0 {
+		return errors.New("names no source")
+	}
+
+	for _, s := range names {
+		if _, ok := f.Sources[s]; !ok {
+			return fmt.Errorf("names %q, which is not a source of the file", s)
+		}
+	}
+
+	return nil
 }
