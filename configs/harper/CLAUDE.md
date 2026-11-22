@@ -555,13 +555,13 @@ on a set of files.
     paragraph after it takes a line under it.
   - A delimiter row left of the text of the item or four columns past
     it, and one without the `>` of a quoted paragraph. GFM reads each
-    row as more text of the paragraph and opens no table there.
+    row as more text of the paragraph and does not open a table there.
   - A line under a delimiter row with fewer cells than the row above
-    it. The line sits four columns past the text of the item. GFM opens
-    no table there, so it reads the line as more text of the paragraph.
-    lib/markdown.awk reads the row as a table. But it skips indented
-    code in an item only after a blank line or after more code, so the
-    line stays prose.
+    it. The line sits four columns past the text of the item. GFM does
+    not open a table there, so it reads the line as more text of the
+    paragraph. lib/markdown.awk reads the row as a table. But it skips
+    indented code in an item only after a blank line or after more
+    code, so the line stays prose.
 
   GFM ends the list in each of the last two items, so it reads their
   paragraphs four columns in as code. The test expects no finding on
