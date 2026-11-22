@@ -44,7 +44,11 @@
 # text or as indented code (`> The pod holds the cache.`, `    > > It
 # runs on the node.`). After a marker, the edge sits after the marker
 # and the space after it. The first marker counts from the text of the
-# innermost list item that `item_depth` counts, or from the margin.
+# innermost list item that the line reaches, or from the margin. A line
+# of the item's paragraph left of its text keeps the item open, but its
+# first marker counts from the edge left of the item. So GFM reads a
+# `>` four columns past the margin there as more text of the paragraph
+# (`10.  The pod holds the cache and`, `    > It runs on the node.`).
 #
 # A list item can open a blockquote after its list marker (`- > The pod
 # holds the cache.`). The block then holds the markers of that quote
@@ -63,11 +67,10 @@
 # line ends this way only in an item that `item_depth` counts, so not in
 # a blockquote.
 #
-# The check does not track a list item in a blockquote, nor an item
-# that `item_depth` misses. It therefore misses a blockquote four or
-# more columns past the edge that it uses but within three columns of
-# the text of such an item (`> - The pod holds the cache.`, `>      >
-# It runs on the node.`).
+# The check does not track a list item in a blockquote. It therefore
+# misses a blockquote four or more columns past the edge that it uses
+# but within three columns of the text of such an item (`> - The pod
+# holds the cache.`, `>      > It runs on the node.`).
 #
 # GFM opens an HTML block of types 1 to 6 at a line that opens with one
 # of the tags that cmark-gfm, the parser that GitHub uses, lists for
@@ -148,10 +151,9 @@
 # with `|` or `<` read the list item that holds the paragraph. They
 # place a paragraph in a list item when the paragraph reaches the text
 # of an open item. Outside a blockquote, the check reads the open items
-# that lib/markdown.awk counts. lib/markdown.awk misses some items that
-# GFM keeps open, such as an item with a line of text at the margin
-# (`- The pod holds the cache and`, `serves the reads.`). So the check
-# also tracks the outermost item of each list itself.
+# that lib/markdown.awk counts. As in GFM, lib/markdown.awk keeps an
+# item open at a line of its paragraph at the margin (`- The pod holds
+# the cache and`, `serves the reads.`).
 #
 # A paragraph indented fewer columns than the text of the item above it
 # therefore sits outside the list, as in GFM. A delimiter row or an
@@ -159,14 +161,14 @@
 # only one tag continues it (`1. The pod holds the cache.`, a blank
 # line, `  It may help`, `  | a | to |`, `| - | - |`).
 #
-# lib/markdown.awk opens a list at a line such as `    - first`, even
-# when that line continues a paragraph. It also passes the indented code
-# of a list to the check. The check therefore skips indented code below
-# a paragraph that holds a line indented four or more columns. Only
-# blank lines and lines that lib/markdown.awk skips can sit between the
-# paragraph and the code. A line there is code when its indent, counted
-# as for the lines of the paragraph, reaches four columns (`It may
-# help`, `    - first`, a blank line, `    make build`).
+# lib/markdown.awk passes indented code in a list item to the check,
+# unless a heading or a table row sits above the code in the item. The
+# check therefore skips indented code below a paragraph that holds a
+# line indented four or more columns. Only blank lines and lines that
+# lib/markdown.awk skips can sit between the paragraph and the code. A
+# line there is code when its indent, counted as for the lines of the
+# paragraph, reaches four columns (`  It may help`, `      - first`, a
+# blank line, `      make build` in a `-` item).
 #
 # GFM reads such a line as code too, because the check never counts
 # more columns than GFM does. The code ends at the first line with a
@@ -174,13 +176,6 @@
 # skips a link reference definition within three columns of the margin.
 # A line right under such a definition is not code, because GFM reads it
 # as more text of the paragraph that the definition opens.
-#
-# A paragraph outside a list can hold a line of rule marks (` It may
-# help to restart the pod`, `     - first`, `     * * *`). Under that
-# line, the check counts the indent of the code from the start of the
-# line, as after a rule (a blank line, `    make build`). Only blank
-# lines can sit between the two. Outside a list, GFM counts from there
-# too.
 #
 # A heading opens with one to six `#` marks. CommonMark reads a line
 # with seven or more marks as text, and so do the check and
@@ -236,13 +231,13 @@
 # The first line that is not indented opens a paragraph.
 #
 # A rule with no indent cannot sit in a list item, so lib/markdown.awk
-# ends the list there. It keeps the list open at an indented rule right
-# under a paragraph of a list item. The check therefore counts a rule
-# as part of a list only when a list is open above the rule and the
-# rule is indented. A rule outside a list closes the list for the lines
-# after it, until a list item opens one. lib/markdown.awk can keep the
-# list open there, such as after a line of a paragraph that opens like
-# a list item (`    - first`).
+# ends the list there. It keeps the list open at a rule that reaches
+# the text of the item. The check therefore counts a rule as part of a
+# list only when a list is open above the rule and the rule is
+# indented. A rule outside a list closes the list for the lines after
+# it, until a list item opens one. lib/markdown.awk reads rule marks
+# with an HTML comment after them as a list item, so it can keep the
+# list open there (`* * * <!-- note -->`).
 #
 # Code under `- - -` or `  - - -` outside a list therefore passes, and
 # so does code under a `***` that ends a list. Code under a later
@@ -409,11 +404,11 @@
 # rule (`     ***` under `   It may help`), the line after it opens a
 # paragraph of its own. That paragraph can draw a finding.
 #
-# lib/markdown.awk can pass indented code under such a paragraph to the
-# check, such as after a line of `- first`, at which it opens a list.
-# The check reads that code as a paragraph when it sits fewer than four
-# columns past the text of the paragraph (`   It may help to restart the
-# pod`, `       - first`, a blank line, `    It runs on the node.`).
+# lib/markdown.awk can pass indented code in a list item under such a
+# paragraph to the check. The check reads that code as a paragraph when
+# it sits fewer than four columns past the text of the paragraph
+# (`     It may help to restart the pod`, `         - first`, a blank
+# line, `      It runs on the node.` in a `-` item).
 #
 # A `>` marker can sit up to three columns past the edge of its block.
 # So a line can still continue the blockquote when its marker sits left
@@ -454,17 +449,6 @@
 # paragraph, so the guards miss the words after it (`   It may help`,
 # `  <br>`, `   to restart the pod.`).
 #
-# The test for a delimiter row reads the text of the innermost item
-# that lib/markdown.awk counts, or else the outermost item that the
-# check tracks itself. lib/markdown.awk misses some nested items, such
-# as an item right under a line of inline HTML. In such an item, a row
-# can sit left of the text of the item but reach the text of the outer
-# item. The check reads that row as the delimiter row of a table, but
-# GFM reads it as more text of the paragraph. The guards then miss the
-# words of the header row (`- The pod holds the cache.`,
-# `  <span>x</span>`, `  - The sub item.`, a blank line, `    It may
-# help`, `    | a | to restart |`, `   | --- | --- |`).
-#
 # lib/markdown.awk does not count the items of a list in a blockquote.
 # There the test for a delimiter row needs the row to reach the text of
 # the paragraph. Left of that column, it reads a row at the text of the
@@ -478,66 +462,6 @@
 # the pod.``). lib/markdown.awk reads the backtick that closes the span
 # as one that opens a span, and it blanks the words after it. The
 # guards then miss those words.
-#
-# lib/markdown.awk ends a list item at a line of its paragraph that sits
-# left of the text of the item (`1. The pod holds the cache,` above
-# `and more.`). GFM keeps the item open there. After such a line,
-# lib/markdown.awk ends the list at a heading or a table row in the
-# item. The check then reads each later paragraph of the item as a
-# paragraph outside a list, and it can miss the pronoun that opens one:
-#
-# - Under a line of rule marks, the check counts the indent of code from
-#   the start of the line, as after a rule. It can therefore skip a
-#   paragraph that sits fewer than four columns past the text of the
-#   item (`   ## Setup`, a blank line, `   It may help to restart the
-#   pod`, `       - - -`, a blank line, `    It runs on the node.`).
-# - The check reads a line of `-` or `=` marks left of the text of the
-#   paragraph as an underline and drops the finding (`   ## Setup`, a
-#   blank line, `   The pod runs.`, a blank line, `   It may help`,
-#   `  ---`). GFM reads `  ---` there as a rule that ends the item, and
-#   `  ===` as more text of the paragraph.
-#
-# lib/markdown.awk does not count some list items that GFM keeps open,
-# such as an item right under a line of inline HTML. It also ends the
-# list at a heading or a table row in such an item, so no test sees the
-# item. The check then reads a later paragraph of the item as a
-# paragraph outside a list (`<span>x</span>`, `- The pod holds the
-# cache.`, `  ## Setup`, a blank line, `  The pod runs.`, a blank line,
-# `  It may help`).
-#
-# In that paragraph, a line that holds only one tag at the margin
-# continues the paragraph, so the guards read the words after it
-# (`<br>`, `  to restart the pod.`). A line of `---` at the margin reads
-# as an underline and drops the finding. GFM ends the item at both
-# lines.
-#
-# For the tests that read `list_col`, an item that `item_depth` does
-# not count stays open until `in_list` turns off. So does an item that
-# `item_depth` dropped at a line of its text at the margin. GFM ends
-# such an item at an HTML block or a blockquote at the margin. The
-# check still places a later paragraph at the text of the item in the
-# item (`<span>x</span>`, `- The pod holds the cache.`, `<div>x</div>`,
-# a blank line, `  It may help.`). It then reads a `---` under the
-# paragraph as a rule and reports the paragraph, which GFM reads as a
-# heading.
-#
-# The check also keeps a list item open at each link reference
-# definition that lib/markdown.awk skips right under a line that
-# reached prose(). GFM reads two kinds of such a definition another
-# way. A definition at the text of the item stays in the item, so
-# `item_depth` still counts the item there. The check then does not end
-# the item at a later HTML block or blockquote at the margin, where GFM
-# ends it (`- The pod holds the cache.`, `  [a]: x`, `> The pod runs.`,
-# a blank line, `  It may help.`).
-#
-# Under a line that opens an HTML block, or under a setext underline in
-# a list item, GFM reads a definition at the margin as a definition of
-# its own. That definition ends the list, but the check still keeps the
-# item (`- The pod holds the cache.`, `  <div>`, `[a]: x`, a blank line,
-# `  It may help.`). After either definition, the check places the later
-# paragraph in the item. It then reads a `---` at the margin under the
-# paragraph as a rule and reports a paragraph that GFM reads as a
-# heading.
 #
 # lib/markdown.awk skips indented code in a list item only after a
 # heading or a table row in the item. It passes other indented code in
@@ -560,17 +484,16 @@
 # the line as code, and the check can still report it there.
 # lib/markdown.awk skips indented code in a blockquote, so the check
 # does not see such a line after a rule there (`> ***`, `>     This is
-# some code.`). The check also counts an indented rule left of the
-# text of a list item as part of the list. GFM ends the list at that
-# rule and reads an indented line under it as code. The check can report
-# that line (`  The pod holds the cache.` in a list item, ` ***`,
-# `    This is some code.`).
+# some code.`).
 #
 # A rule in a blockquote counts as indented for that test, because the
-# check blanks its `>` markers. So the check can also report an
-# indented line under a rule in a quoted list (`> - The pod holds the
-# cache.`, `>`, `>   The pod holds the cache.`, `> ***`, `    This is
-# some code.`).
+# check blanks its `>` markers. lib/markdown.awk keeps a list in a
+# blockquote open at a rule one to three columns past the `>`. So it
+# passes the quoted code under that rule to the check. GFM ends the
+# item at such a rule left of its text and reads the line under it as
+# code. The check can report that line (`> - The pod holds the cache.`,
+# `>`, `>   The pod holds the cache.`, `>  ***`, `>     This is some
+# code.`).
 #
 # Among the lines that the check skips after a block, a line with fewer
 # `>` markers than the block sets the depth that a later blockquote
@@ -673,19 +596,6 @@
 # three columns of the margin, and it passes every other one to
 # prose().
 #
-# A definition cannot interrupt a paragraph. Right under a line of
-# paragraph text, GFM therefore reads a definition as more text of the
-# paragraph, also at the margin under a list item (`- The pod holds the
-# cache.`, `[a]: x`). lib/markdown.awk drops the item at that
-# definition and skips the line. The block clears `list_depth` there,
-# so prose() keeps `list_col`, as it does for a line of text at the
-# margin.
-#
-# The block clears `list_depth` at each definition that
-# lib/markdown.awk skips right under a line that reached prose(),
-# whatever the indent of the definition and whatever that line holds.
-# False Positives names the definitions that GFM reads another way.
-#
 # The block also ends the HTML block that `skip_html` marks at a line
 # with fewer `>` markers than the block, as prose() explains. After a
 # list item, a line left of the text of the item ends the block too.
@@ -693,11 +603,12 @@
 # prose() does not see them. `html_end` names that line.
 #
 # A block of types 1 to 5 ends at the first line that holds the pattern
-# in `skip_end`. The block above `@include` tests each line, also a
-# line that lib/markdown.awk skips. `close_line` names that line, which
-# still sits in the block, and the block ends for the line after it. A
-# line with fewer `>` markers right under it ends the blockquote that
-# held the block, so the test for such a line runs first.
+# in `skip_end`, which html_end_of() in lib/markdown.awk returns. The
+# block above `@include` tests each line, also a line that
+# lib/markdown.awk skips. `close_line` names that line, which still
+# sits in the block, and the block ends for the line after it. A line
+# with fewer `>` markers right under it ends the blockquote that held
+# the block, so the test for such a line runs first.
 {
   if (FNR == 1) {
     prev_nb = 0
@@ -709,7 +620,6 @@
     heading_broken = 0
     last_blank = 0
     def_line = 0
-    rule_line = 0
     head_line = 0
     html_end = 0
     close_line = 0
@@ -741,9 +651,6 @@
   if ($0 ~ /^([ \t]*>)*[ \t]*\[[^]^][^]]*\]:/) {
     def_line = FNR
   }
-  if ($0 ~ /^ {0,3}\[[^]^][^]]*\]:[ \t]*[^ \t]+[ \t]*("[^"]*")?[ \t]*$/ && FILENAME == last_file && last_line == FNR - 1) {
-    list_depth = 0
-  }
 }
 
 @include "markdown.awk"
@@ -755,17 +662,6 @@ function BEGIN_CHECK() {
   consequence = "^(means|meant|ensures|happens|prevents|causes|keeps|works|matters|leads|led|results|resulted|makes|allows|lets|gives)$"
   hrule = "^[ \t]*((-[ \t]*){3,}|(\\*[ \t]*){3,}|(_[ \t]*){3,})$"
   delimiter = "^[ \t]*\\|?[ \t]*:?-+:?[ \t]*(\\|[ \t]*:?-+:?[ \t]*)*\\|?[ \t]*$"
-  # `html_start` holds the starts of the HTML blocks of types 1, 2, 3, 5,
-  # and 6, which html_block() reads in lowercase. `html_tags` holds the
-  # tags of type 6. cmark-gfm, the parser that GitHub uses, lists these
-  # tags. html_block() tests type 4 on its own, because type 4 needs a
-  # capital letter after `<!`.
-  html_tags = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul"
-  html_start = "^[ \t]*<((script|pre|textarea|style)([ \t>]|$)|!--|[?]|!\\[cdata\\[|/?(" html_tags ")([ \t>]|/>|$))"
-  # `html_lone` matches a line in lowercase that holds one complete open
-  # or closing tag and only whitespace after it (`<br>`, `<a href="x">`,
-  # `</span>`). Such a line can open an HTML block of type 7.
-  html_lone = "^[ \t]*(<[a-z][a-z0-9-]*([ \t]+[a-z_:][a-z0-9_.:-]*([ \t]*=[ \t]*([^ \t\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*[ \t]*/?>|</[a-z][a-z0-9-]*[ \t]*>)[ \t]*$"
   last_file = ""
   last_line = 0
   gap = 1
@@ -776,8 +672,6 @@ function BEGIN_CHECK() {
   rule_above = 0
   rule_list = 0
   list_seen = 0
-  list_col = 0
-  list_tracked = 0
   list_depth = 0
   skip_quote = 0
   skip_inner = 0
@@ -925,12 +819,16 @@ function marks_hold(   n, i, k) {
 # must sit fewer than four columns past the edge that the marker before
 # it leaves, after that marker and the space after it. Further right,
 # GFM reads the rest of the line as more text or as indented code. The
-# first marker counts from the text of the innermost list item that
-# `item_depth` counts, or from the margin.
+# first marker counts from the text of the innermost list item that the
+# line reaches, which `item_match` in lib/markdown.awk counts, or from
+# the margin. A line of the item's paragraph left of its text keeps the
+# item open, but its first marker counts from the edge left of the
+# item, as in GFM (`10.  The pod holds the cache and`, `    > It runs on
+# the node.`).
 function deeper_quote(q,   n, i, k, edge) {
   match($0, /^([ \t]*>)*/)
   n = RLENGTH
-  edge = item_depth ? item_cols[item_depth] : 0
+  edge = item_match ? item_cols[item_match] : 0
   k = 0
   for (i = 1; i <= n; i++) {
     if (substr($0, i, 1) != ">") {
@@ -1061,56 +959,6 @@ function skip_underline(line) {
   return skip_text && line ~ /^[ \t]*(=+|-+)[ \t]*$/ && quote_depth() == skip_quote + skip_inner && skip_holds() && inset() - (skip_inner ? 0 : skip_reach) < 4
 }
 
-# Returns the number of cells in the table row s, as GFM counts them. A
-# `|` after a backslash is text of its cell. A `|` that opens the row
-# does not end a cell. The text after the last `|` counts as a cell only
-# when it is not blank.
-function cells(s,   n) {
-  gsub(/\\\|/, "", s)
-  sub(/^[ \t]*\|/, "", s)
-  n = gsub(/\|/, "|", s)
-  sub(/^.*\|/, "", s)
-  return n + (s ~ /[^ \t]/)
-}
-
-# Returns 1 when the line s opens an HTML block of types 1 to 6
-# (`<div>`, `</td>`, `<pre class="x">`, `<!--`). Such a block can
-# interrupt a paragraph. A line that opens with any other tag holds
-# inline HTML or opens a block of type 7, and neither one interrupts a
-# paragraph (`<span>x</span>`). prose() tests a block of type 7 only on
-# a line outside the blockquote or the list item that holds the
-# paragraph. The tag names ignore case. Type 4 needs a capital letter
-# after `<!`, as in cmark-gfm (`<!DOCTYPE html>`).
-function html_block(s) {
-  return s ~ /^[ \t]*<![A-Z]/ || tolower(s) ~ html_start
-}
-
-# Returns the pattern, in lowercase, that ends the HTML block of types 1
-# to 5 that the line s opens. GFM ends such a block at the first line
-# that holds the pattern, the line that opens the block included. A
-# block of type 1 ends at the closing tag of any of its four tags, so
-# `</style>` also ends a `<pre>` block. The function returns an empty
-# string for a block of type 6 or 7, which runs to the next blank line.
-function end_token(s,   t) {
-  t = tolower(s)
-  if (t ~ /^[ \t]*<(script|pre|textarea|style)([ \t>]|$)/) {
-    return "</(script|pre|textarea|style)>"
-  }
-  if (t ~ /^[ \t]*<!--/) {
-    return "-->"
-  }
-  if (t ~ /^[ \t]*<[?]/) {
-    return "[?]>"
-  }
-  if (t ~ /^[ \t]*<!\[cdata\[/) {
-    return "]]>"
-  }
-  if (s ~ /^[ \t]*<![A-Z]/) {
-    return ">"
-  }
-  return ""
-}
-
 # Prints the finding that the paragraph holds back until it ends, unless
 # its first sentence passes a guard. A newline in `first` marks the end
 # of each line of the paragraph.
@@ -1143,29 +991,22 @@ function finish() {
 #
 # A delimiter row must reach the column where the text of the item
 # starts, which `para_reach` holds. Outside a blockquote, that is the
-# text column of the innermost item that `item_depth` counts, or else
-# `list_col`. In a blockquote, `para_reach` holds `para_text`.
+# text column of the innermost item that `item_depth` counts. In a
+# blockquote, `para_reach` holds `para_text`.
 #
-# `item` follows `in_list` from lib/markdown.awk. `in_list` stays on for
-# a paragraph indented fewer columns than the text of the item above it,
-# which GFM reads outside the list (`1. The pod holds the cache.`, a
-# blank line, `  It may help`). It also stays on at a heading or a table
-# row in an item that `item_depth` counts. It turns off at a heading or
-# a table row where `item_depth` holds 0, such as after a line of the
-# item's paragraph left of the text of the item. `item_depth` in
-# lib/markdown.awk counts the open items outside a blockquote that
-# lib/markdown.awk tracks. It drops each item that the line, or its
-# first `>` marker, sits left of. It keeps an item that holds a heading
-# or a table row. So `para_list` holds when `item_depth` counts an item
-# (`- The pod holds the cache.`, `  | a |`, a blank line, `  It may
-# help`).
+# `item_depth` in lib/markdown.awk counts the open list items outside a
+# blockquote. It drops each item that the line, or its first `>`
+# marker, sits left of, unless the line is more text of the paragraph
+# of the item. It keeps an item that holds a heading or a table row. So
+# `para_list` holds when `item_depth` counts an item (`- The pod holds
+# the cache.`, `  | a |`, a blank line, `  It may help`). A paragraph
+# indented fewer columns than the text of the item above it sits
+# outside the list (`1. The pod holds the cache.`, a blank line, `  It
+# may help`).
 #
 # lib/markdown.awk does not count the items of a list in a blockquote.
-# In such a list, `para_list` follows `item`. Outside a blockquote,
-# `para_list` also holds when `item` holds and the text of the
-# paragraph reaches `list_col`. That test finds the items that GFM
-# keeps open and `item_depth` misses, which the comment above
-# `list_col` in prose() names.
+# In such a list, `para_list` follows `item`, which follows `in_list`
+# from lib/markdown.awk.
 #
 # For every paragraph, `para_text` holds the column where its text
 # starts. `para_mark[k]` holds the column of the `>` marker after the
@@ -1182,9 +1023,9 @@ function open_para(item,   n, i, k) {
   n = RLENGTH
   para_inset = inset()
   para_text = cols(n)
-  para_list = item_depth > 0 || (item && (para_quote || (list_col && para_text >= list_col)))
+  para_list = item_depth > 0 || (item && para_quote)
   para_item = para_list ? n : 0
-  para_reach = para_quote ? para_text : item_depth ? item_cols[item_depth] : list_col
+  para_reach = para_quote ? para_text : item_cols[item_depth]
   k = 0
   for (i = 1; i <= n; i++) {
     if (substr($0, i, 1) == ">") {
@@ -1223,8 +1064,10 @@ function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, aft
   # marker of the line sits four or more columns past the edge before
   # it. The same holds when its text sits that far past the edge, and
   # `start` then stays off (`> > <div>`, `    > x`). The first marker
-  # counts from the text of the innermost list item that `item_depth`
-  # counts, as in deeper_quote().
+  # and the text count from the text of the innermost list item that the
+  # line reaches, as in deeper_quote(). So on a line left of the text of
+  # the item, they count from the margin or from the text of an outer
+  # item.
   #
   # After a list item, skip_depth() also counts the `>` markers after
   # the list marker, which `skip_inner` holds. So `  > It runs on the
@@ -1238,7 +1081,7 @@ function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, aft
   if (FILENAME != last_file || last_blank > last_line) {
     skip_html = 0
   }
-  if (html_end == FNR && deeper_quote(-1) && text_col() - (quote_depth() ? quote_edge() : (item_depth ? item_cols[item_depth] : 0)) < 4) {
+  if (html_end == FNR && deeper_quote(-1) && text_col() - (quote_depth() ? quote_edge() : (item_match ? item_cols[item_match] : 0)) < 4) {
     start = 1
   }
   if (start && skip_html && !in_para && !gap) {
@@ -1271,24 +1114,16 @@ function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, aft
   if (more) {
     para_more = 1
   }
-  # `rule_line` names a line that `more` marks and that holds the marks
-  # of a horizontal rule, when no list is open above it (`    * * *`).
-  if (more && line ~ hrule && !list_before) {
-    rule_line = FNR
-  }
   # `start` and `in_para` together mark a line below the paragraph, or
   # below code under it. Only blank lines and lines that
-  # lib/markdown.awk skips sit between the two. lib/markdown.awk opens a
-  # list at a line such as `    - first`, and it passes the code of a
-  # list to the check. So the check skips that code itself.
+  # lib/markdown.awk skips sit between the two. lib/markdown.awk passes
+  # the indented code of a list item to the check, so the check skips
+  # that code itself.
   #
   # Below a paragraph that `para_more` marks, such a line with an
   # indent() of four or more columns is code. GFM counts at least as
-  # many columns there. When `rule_line` names the last line above that
-  # is not blank, a line indented four or more columns from its start is
-  # code too, as after a rule. `rule_line` then names the code line, so
-  # the code under it skips as well. Take a link reference definition
-  # that lib/markdown.awk skips. The line right under it is more text of
+  # many columns there. Take a link reference definition that
+  # lib/markdown.awk skips. The line right under it is more text of
   # the paragraph that the definition opens, so it is not code. A line
   # that only looks like a definition, such as a line of the code,
   # reaches prose() and sets `last_line`. The line under it can still be
@@ -1297,14 +1132,34 @@ function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, aft
   # The paragraph stays open across the code, and each later line of the
   # code skips too. The first line with a smaller indent opens a
   # paragraph.
-  if (start && in_para && para_more && FILENAME == last_file && (def_line != FNR - 1 || last_line == FNR - 1) && (indent() >= 4 || (rule_line == prev_nb && $0 ~ /^(    |\t)/))) {
-    if (rule_line == prev_nb) {
-      rule_line = FNR
-    }
+  if (start && in_para && para_more && FILENAME == last_file && (def_line != FNR - 1 || last_line == FNR - 1) && indent() >= 4) {
     gap = 1
     last_line = FNR
     return
   }
+  # A blockquote that ends a list item also ends the list above it. So
+  # does the line at `html_end`, which ends an HTML block of the item and
+  # the item with it. `list_depth` holds the `item_depth` of the last
+  # line that reached prose(), so `item_depth` drops from that count to 0
+  # at such a line. `list_before` then turns off.
+  #
+  # The test for a rule reads `list_before`. The check blanks an HTML
+  # comment before that test, so it reads rule marks with a comment after
+  # them as a rule, where lib/markdown.awk reads text. That rule sits
+  # outside the list, so the check skips the indented line under it,
+  # which GFM reads as more text of the quote (`- The pod holds the
+  # cache.`, `> *** <!-- c -->`, `    It runs on the node.`).
+  #
+  # The blockquote can open a list of its own (`- The pod holds the
+  # cache.`, `> - The pod runs.`). lib/markdown.awk keeps `in_list` on
+  # for that list, and its list item turns `list_seen` on below. A
+  # paragraph of that list then sits in a list. So a `---` under it left
+  # of the text of the item is a rule and not an underline, as in GFM
+  # (`>`, `>   It runs on the node.`, `> ---`).
+  if (list_depth && !item_depth && (quote_depth() || html_end == FNR)) {
+    list_before = 0
+  }
+  list_depth = item_depth
   # `list_seen` follows `in_list`, but a rule outside a list, and the
   # code under such a rule, close the list for the lines after them.
   # lib/markdown.awk can keep `in_list` on there. Only a list item opens
@@ -1313,59 +1168,6 @@ function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, aft
   # a list item does not open the list either. open_para() reads
   # `list_seen` as `item`.
   list_seen = in_list && (list_before || (!more && text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ && line !~ hrule))
-  # `list_col` holds the text column of the outermost list item outside
-  # a blockquote that opened while `list_seen` held. A list item with
-  # its marker at or right of that column sits inside the outermost
-  # item, so it keeps the column.
-  #
-  # lib/markdown.awk drops an item from `item_depth` at any line left of
-  # its text. GFM keeps the item open when that line is more text of
-  # its paragraph (`- The pod holds the cache and`, `serves the
-  # reads.`). lib/markdown.awk also does not count an item right under a
-  # line of inline HTML, nor an item that opens with a number other than
-  # 1 right under a heading or a fence. GFM opens each of those items,
-  # and `list_col` still marks them.
-  #
-  # Under an open paragraph outside a blockquote, only a bullet or a
-  # `1.` with text after it opens a list item, which `item_opens` in
-  # lib/markdown.awk marks. Any other list marker there is more text of
-  # the paragraph (`The pod runs.`, `2. x`), so it leaves `list_col` as
-  # it is.
-  #
-  # `list_tracked` marks an outermost item that `item_depth` counts.
-  # When `item_depth` drops to 0 below such an item, the item ends in
-  # GFM too, unless the line is more text of its paragraph. A line after
-  # a blank line or a fence is never such text. Neither is a line that
-  # opens a blockquote or an HTML block. `list_depth` holds the
-  # `item_depth` of the last line that reached prose(). A link reference
-  # definition right under a line of paragraph text is more text of the
-  # paragraph. The block above `@include` clears `list_depth` at each
-  # definition that lib/markdown.awk skips right under a line that
-  # reached prose(). So the reset does not fire below such a definition.
-  # An item that `item_depth` does not count keeps `list_col` while
-  # `list_seen` holds.
-  #
-  # A blockquote that ends the item also ends the list for `list_seen`
-  # and `list_before`. A paragraph or a rule in the quote then sits
-  # outside the list (`- The pod holds the cache.`, `> It runs on the
-  # node.`, `>---`). So does a line at `html_end`, which ends an HTML
-  # block of the item and the item with it. lib/markdown.awk keeps the
-  # list open there (`- <div>`, `x`, `> ---`).
-  if (!list_seen) {
-    list_col = 0
-  } else if (!more && quote_depth() == 0 && text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ && line !~ hrule && (start || !in_para || para_quote || item_opens)) {
-    if (!list_col || text_col() < list_col) {
-      list_col = item_column($0)
-      list_tracked = item_depth > 0
-    }
-  } else if (list_tracked && list_depth && !item_depth && (start || quote_depth() || html_block(raw) || tolower(raw) ~ html_lone)) {
-    list_col = 0
-    if (quote_depth() || html_end == FNR) {
-      list_seen = 0
-      list_before = 0
-    }
-  }
-  list_depth = item_depth
   if (FILENAME != last_file) {
     paras = 0
   }
@@ -1425,8 +1227,8 @@ function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, aft
     gap = 1
     rule_above = 1
     # A rule with no indent cannot sit in a list item, and
-    # lib/markdown.awk ends the list there. It keeps `in_list` for an
-    # indented rule right under a paragraph of a list item. `rule_list`
+    # lib/markdown.awk ends the list there. It keeps `in_list` for a rule
+    # that reaches the text of the item. `rule_list`
     # therefore marks a rule in a list only when a list is open above
     # the rule and the rule is indented. `line` has its `>` markers
     # blanked to spaces, so a rule in a quoted list counts as indented.
@@ -1490,9 +1292,11 @@ function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, aft
   # Headings, HTML blocks, and list items are not paragraphs, so each one
   # ends the paragraph before it. The lines that continue a list item
   # are not paragraphs either. `block` marks those lines and every other
-  # line that opens with `|` or `<`. html_block() reads `raw`, because
-  # lib/markdown.awk blanks an HTML comment or a `pre` element that
-  # closes on its line (`<!-- note --> to restart the pod.`).
+  # line that opens with `|` or `<`. html_block() in lib/markdown.awk
+  # reads `raw`, because lib/markdown.awk blanks an HTML comment or a
+  # `pre` element that closes on its line (`<!-- note --> to restart
+  # the pod.`). `html_lone` in lib/markdown.awk matches a line that holds
+  # only one tag.
   #
   # A line with fewer `>` markers than the paragraph, or a line left of
   # the text of a list item, does not reach the paragraph in GFM. When
@@ -1578,7 +1382,7 @@ function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, aft
         skip_reach = quote_depth() ? (list_seen ? inset() : 0) : item_reach()
         skip_item = html && item_reach() && text_col() >= skip_reach
       }
-      skip_end = skip_html ? end_token(rest) : ""
+      skip_end = skip_html ? html_end_of(rest) : ""
       close_line = skip_end != "" && tolower(rest) ~ skip_end ? FNR : 0
       skip_cells = cells(rest)
     }

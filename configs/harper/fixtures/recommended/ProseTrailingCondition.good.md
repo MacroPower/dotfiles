@@ -198,6 +198,26 @@ Restart the agent if [[needed
     <div>x]].
 <!-- prettier-ignore-end -->
 
+<!-- prettier-ignore-start -->
+- The pod runs.
+  <div>
+  text
+x
+
+    Restart the agent if the port is taken.
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+- The pod runs,
+
+  | a | b |
+  | - | - |
+  c
+x
+
+    Restart the agent if the port is taken.
+<!-- prettier-ignore-end -->
+
 Restart the agent if [[needed]] `a|b`.
 
 Retry the request if [[possible]] values change.

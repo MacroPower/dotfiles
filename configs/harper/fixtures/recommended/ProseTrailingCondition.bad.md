@@ -232,6 +232,14 @@ and the worker if [[needed
     <!-- c --> x]]. <!-- same finding -->
 <!-- prettier-ignore-end -->
 
+<!-- prettier-ignore-start -->
+   ## Three <!-- same finding -->
+      code six <!-- same finding -->
+2026. Then it stops. <!-- same finding -->
+
+      Restart the agent if the port is taken.
+<!-- prettier-ignore-end -->
+
 Restart the agent if [[needed now.
 
 Restart the agent if [[needed [x] now.

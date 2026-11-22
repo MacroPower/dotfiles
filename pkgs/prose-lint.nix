@@ -3890,10 +3890,11 @@ in
         #   the item, after a heading too.
         # - A blank line closes an empty item (`-`), so a `>` under the
         #   paragraph after it is paragraph text.
-        # - A lazy line ends the list item that holds a blockquote, so
-        #   lib/markdown.awk cannot place the `>` of the next line of that
-        #   blockquote. An empty item after such a `>` (`    > -`) still
-        #   opens a list in the blockquote.
+        # - A lazy line keeps the list item that holds a blockquote open
+        #   (`- > > The job runs,` above `and lazily,`). So
+        #   lib/markdown.awk places the `>` of the next line in that item.
+        #   An empty item after that `>` (`    > -`) opens a list in the
+        #   outer blockquote of the item.
         # - A line without `>` ends a blockquote that holds indented code.
         #   After code that opens with a fence marker (`>     ```sh`), a
         #   fence marker indented four columns is indented code too, so it
@@ -4057,10 +4058,7 @@ in
         # - A delimiter row with fewer cells than the row above it is
         #   more text of the paragraph, and a table does not open there.
         #   A line under that row four columns past the text of the item
-        #   is more text of the paragraph too. lib/markdown.awk reads the
-        #   row as a table. But it skips indented code in an item only
-        #   after a blank line or after more code, so that line stays
-        #   prose.
+        #   is more text of the paragraph too.
         #
         # GFM ends the list in each of the last two items, and it reads
         # the paragraph four columns in as code. The test expects no
@@ -4363,6 +4361,284 @@ in
           touch "$out"
         '';
 
+        # Lints list items that lib/markdown.awk opens or keeps open as
+        # GFM does, and that the fixtures of ProseLatinAbbreviation cannot
+        # hold. Each item ends in a paragraph four columns in, which
+        # lib/markdown.awk skips as code when it ends the list too early.
+        # GFM reads each line of the file that holds `e.g.` as prose,
+        # except the last one, and the test expects a
+        # ProseLatinAbbreviation finding on each:
+        #
+        # - The first line of an item holds only its marker, `-` or `1.`,
+        #   with no space after it. The line under it sits at the text of
+        #   the item.
+        # - A link reference definition sits at the margin right under an
+        #   item. GFM reads it as more text of the paragraph of the item,
+        #   so the heading under it sits in the item.
+        # - A lone `2.` sits at the text of an item under its paragraph. An
+        #   empty item cannot interrupt a paragraph, so GFM reads the line
+        #   as more text of the paragraph, and the lazy line under it keeps
+        #   the item open.
+        # - A line that holds only `<br>` sits right under a paragraph, and
+        #   an item sits under it. Lines that hold only one tag cannot
+        #   interrupt a paragraph. So GFM reads the line as more text of
+        #   the paragraph, and the item opens.
+        # - An item sits right under the delimiter row of a table, and a
+        #   lazy line and a heading follow it. The item ends the table. So
+        #   GFM reads the lazy line as more text of the paragraph of the
+        #   item, and the heading sits in the item.
+        # - An HTML comment or a fence marker sits four columns past the
+        #   text of an item, under its paragraph. GFM reads the block as
+        #   more text of the paragraph. So it reads the line at the margin
+        #   in the block as a lazy line, and the item stays open.
+        # - The first line of an item holds an HTML comment, or `<div>`
+        #   five columns past its marker. The comment ends on its line, and
+        #   GFM reads the `<div>` as indented code. So neither opens an
+        #   HTML block that holds the line under it. That line opens a
+        #   paragraph, and the lazy line under it keeps the item open.
+        # - The first line of an item opens a nested item, and an HTML
+        #   comment follows both markers. The line under it sits at the
+        #   text of the nested item. GFM reads that line as a paragraph of
+        #   the nested item, and not as indented code of the outer one.
+        # - An HTML comment with a blank line in it sits in an HTML block
+        #   that `<div>` opens. The blank line ends the HTML block, so GFM
+        #   reads the end of the comment as a paragraph, and an item under
+        #   it opens.
+        # - An item opens an HTML block with `<div>`, and an HTML comment
+        #   in the block ends at the margin. That line ends the item and
+        #   the block with it, so the item under the line opens.
+        # - A line that holds only `<br>` sits under a paragraph whose last
+        #   line opens with a `>` four columns in, and an item sits under
+        #   it. GFM reads that `>` as more text of the paragraph and not as
+        #   a blockquote. So the `<br>` line is more text of the paragraph
+        #   too, and the item opens.
+        # - A line that holds only `<br>` sits under a delimiter row with
+        #   more cells than the line above it, and an item sits under the
+        #   `<br>` line. GFM does not open a table there. So it reads the
+        #   row and the `<br>` line as more text of the paragraph, and the
+        #   item opens.
+        # - An item that starts at `2.` sits right under a footnote
+        #   definition, and `<br>` and a lazy line sit under its
+        #   paragraph. The item leaves the definition, so it interrupts no
+        #   paragraph. GFM reads the `<br>` line as more text of the
+        #   paragraph of the item, and the lazy line under it keeps the
+        #   item open.
+        # - A nested item whose text holds only delimiter marks
+        #   (`  - | - |`) sits under the paragraph of an item, and a lazy
+        #   line of marks (`-|-`) sits under it. GFM reads a list item
+        #   before a table, so the line opens the nested item and no
+        #   table. The lazy line keeps the nested item open, and the
+        #   paragraph under the blank line sits at its text.
+        #
+        # A line of fenced code at the margin ends the list in the last
+        # item, because fenced code does not take a lazy line. GFM reads
+        # the paragraph four columns in under it as code, and the test
+        # expects no finding there. GFM reads the closing marker of the
+        # fence as the opener of a new fence. That fence runs to the end of
+        # the file, so the last item ends the file.
+        #
+        # Empty items, definitions, HTML comments, fence markers, and
+        # indented code do not hold text for a finding, so the fixtures
+        # cannot hold these lines. Each `<br>` line must hold only one tag,
+        # and each line of delimiter marks only its marks. So none of these
+        # lines can hold a finding or the `same finding` comment that a bad
+        # fixture needs in its place. The command in configs/harper/CLAUDE.md
+        # builds this test too.
+        tests.list-items = runCommand "prose-lint-list-items" { } ''
+          printf '%s\n' \
+            '-' \
+            '  The job runs, e.g. nightly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '1.' \
+            '   The job runs, e.g. nightly.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs, e.g. nightly.' \
+            '[ref]: https://example.com' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs, e.g. nightly,' \
+            '  2.' \
+            'and lazily, e.g. hourly.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            '<br>' \
+            '- The job runs.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '| a | b |' \
+            '| - | - |' \
+            '- The job runs,' \
+            'and lazily.' \
+            "" \
+            '  ## Steps' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs' \
+            '      <!-- a' \
+            'note -->' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs' \
+            '      ```' \
+            'more' \
+            '      ```' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '-     <div>' \
+            '  The job runs,' \
+            'and lazily.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- <!-- note -->' \
+            '  The job runs,' \
+            'and lazily.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- - <!-- note -->' \
+            '      The job runs,' \
+            'and lazily.' \
+            "" \
+            '      It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '<div>' \
+            '<!-- a' \
+            "" \
+            'note -->' \
+            '- The job runs.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- <div>' \
+            '  <!-- a' \
+            'note -->' \
+            '- The job runs.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            'Run the command' \
+            '    > make build' \
+            '<br>' \
+            '- The job runs.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            'The job runs | daily' \
+            '| - | - | - |' \
+            '<br>' \
+            '- The job runs.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '[^1]: The note.' \
+            '2. The job runs,' \
+            '   <br>' \
+            'and lazily.' \
+            "" \
+            '    It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            '  - | - |' \
+            '-|-' \
+            "" \
+            '      It reruns, e.g. hourly.' \
+            "" \
+            'The job runs.' \
+            "" \
+            '- The job runs.' \
+            "" \
+            '  ```sh' \
+            '  make build' \
+            '```' \
+            "" \
+            '    It reruns, e.g. hourly.' >list.md
+
+          cat >want <<'EOF'
+          list.md:2:17
+          list.md:4:16
+          list.md:9:18
+          list.md:11:16
+          list.md:15:17
+          list.md:20:16
+          list.md:24:17
+          list.md:26:13
+          list.md:30:16
+          list.md:36:16
+          list.md:47:16
+          list.md:55:16
+          list.md:64:16
+          list.md:72:16
+          list.md:80:16
+          list.md:88:18
+          list.md:98:16
+          list.md:107:16
+          list.md:116:16
+          list.md:125:16
+          list.md:134:16
+          list.md:142:18
+          EOF
+
+          rc=0
+          found=$(${lib.getExe finalAttrs.finalPackage} list.md) || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "list.md: prose-lint exited $rc" >&2
+            exit 1
+          fi
+          printf '%s\n' "$found" |
+            sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::ProseLatinAbbreviation: .*,\1,p' >got
+          if ! diff want got; then
+            echo "list.md draws other ProseLatinAbbreviation findings than want lists" >&2
+            exit 1
+          fi
+          touch "$out"
+        '';
+
         # Lints paragraphs that ProseOpeningPronoun reports and that its
         # fixtures cannot hold, and expects the findings that want lists:
         #
@@ -4397,25 +4673,21 @@ in
         #   the list item of the paragraph. The tag is `<br>` or an
         #   `<img>` tag with an attribute. It opens an HTML block there,
         #   and the block ends the paragraph. One such list item holds a
-        #   table row above the paragraph. Another sits right under a line
-        #   of inline HTML, where lib/markdown.awk does not open an item. A
-        #   `same finding` comment after the tag makes the line more text
-        #   of the paragraph.
+        #   table row above the paragraph, and another sits right under a
+        #   line of inline HTML. A `same finding` comment after the tag
+        #   makes the line more text of the paragraph.
         # - In a list item after a heading, a line of `---` left of the
         #   text of a later paragraph is a rule that ends the item. It is
         #   not an underline, and it does not hold a finding.
-        # - lib/markdown.awk does not count some list items that GFM
-        #   keeps open. It drops one item, right under a paragraph, at a
-        #   line of its text at the margin. It does not open an item that
-        #   starts with `2.` right under a heading, a blockquote, or a
-        #   fence, nor an item with a nested item right under a line of
-        #   inline HTML. It also drops an item at a link reference
-        #   definition at the margin right under the item. GFM reads that
-        #   definition as more text of the item. In each such item, a
-        #   later paragraph sits at the text of the item. A line of `---`
-        #   or `<br>` at the margin under that paragraph ends the item.
-        #   So the line is neither an underline nor more text of the
-        #   paragraph.
+        # - A later paragraph sits at the text of a list item, and a line
+        #   of `---` or `<br>` at the margin under it ends the item. So the
+        #   line is neither an underline nor more text of the paragraph.
+        #   One item holds a line of its paragraph at the margin, and
+        #   another holds a link reference definition there. GFM reads
+        #   each such line as more text of the paragraph, so the item
+        #   stays open. Other items start with `2.` right under a heading,
+        #   a blockquote, or a fence, or sit right under a line of inline
+        #   HTML. Some of the items hold a heading above the paragraph.
         # - A line that opens a blockquote sits right under a table, at
         #   the margin and in a blockquote. One table has its header row
         #   right under a paragraph. The blockquote ends the table and
@@ -4735,7 +5007,44 @@ in
             '```' \
             '    <div>' \
             '<!-- c -->' \
-            'It runs on the node.' >pronoun.md
+            'It runs on the node.' \
+            "" \
+            '<span>x</span>' \
+            '- The pod holds the cache.' \
+            '  ## Setup' \
+            "" \
+            '  The pod runs.' \
+            "" \
+            '  It may help' \
+            '<br>' \
+            '  to restart the pod.' \
+            "" \
+            '<span>x</span>' \
+            '- The pod holds the cache.' \
+            '  ## Setup' \
+            "" \
+            '  The pod runs.' \
+            "" \
+            '  It may help.' \
+            '---' \
+            "" \
+            '- The pod holds the cache and' \
+            'serves the reads.' \
+            '  ## Setup' \
+            "" \
+            '  The pod runs.' \
+            "" \
+            '  It may help.' \
+            '---' \
+            "" \
+            '## Setup' \
+            '2. The pod holds the cache.' \
+            '   ## Steps' \
+            "" \
+            '   The pod runs.' \
+            "" \
+            '   It may help.' \
+            '---' >pronoun.md
 
           cat >want <<'EOF'
           pronoun.md:3:3
@@ -4787,6 +5096,10 @@ in
           pronoun.md:270:1
           pronoun.md:276:1
           pronoun.md:283:1
+          pronoun.md:291:3
+          pronoun.md:301:3
+          pronoun.md:310:3
+          pronoun.md:319:4
           EOF
 
           rc=0

@@ -18,6 +18,15 @@
 # lines under it, because ProseEmoji's shortcode pattern matches an
 # option such as `:class: tip`.
 #
+# lib/markdown.awk tracks the open list items outside a blockquote as
+# GFM does. A line that sits left of the text of an item ends the item,
+# unless the line is a lazy line, more text of the paragraph of the item
+# (`- The pod runs,` above `and more.`). A list marker that cannot
+# interrupt the open paragraph does not open an item (`The pod runs`
+# above `2026. Then it stops.`). Before each call to prose(),
+# lib/markdown.awk sets `in_list` to 1 when an item stays open or a
+# blockquote holds an open list, and to 0 otherwise.
+#
 # In a blockquote, indented code is a line indented four or more
 # columns past the space after its last `>`, such as
 # `>     make build`. lib/markdown.awk skips that line too. A line that
@@ -92,15 +101,33 @@ BEGIN {
   myst_options = 0
   span_open = 0
   quote_para = 0
+  quote_loose = 0
   quote_closed = 0
   quote_code = 0
   item_depth = 0
   item_empty = 0
-  block_col = 0
-  list_para = 0
+  item_block = 0
+  block_para = 0
   list_code = 0
   table_open = 0
+  cells_now = 0
+  foot_open = 0
   html_open = 0
+  html_level = 0
+  html_stop = ""
+  html_shut = 0
+  block_text = 0
+  # `html_start` holds the starts of the HTML blocks of types 1, 2, 3, 5,
+  # and 6, which html_block() reads in lowercase. `html_tags` holds the
+  # tags of type 6. cmark-gfm, the parser that GitHub uses, lists these
+  # tags. html_block() tests type 4 on its own, because type 4 needs a
+  # capital letter after `<!`.
+  html_tags = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul"
+  html_start = "^[ \t]*<((script|pre|textarea|style)([ \t>]|$)|!--|[?]|!\\[cdata\\[|/?(" html_tags ")([ \t>]|/>|$))"
+  # `html_lone` matches a line in lowercase that holds one complete open
+  # or closing tag and only whitespace after it (`<br>`, `<a href="x">`,
+  # `</span>`). Such a line can open an HTML block of type 7.
+  html_lone = "^[ \t]*(<[a-z][a-z0-9-]*([ \t]+[a-z_:][a-z0-9_.:-]*([ \t]*=[ \t]*([^ \t\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*[ \t]*/?>|</[a-z][a-z0-9-]*[ \t]*>)[ \t]*$"
   raw_mode = ENVIRON["RAW"] != ""
   shadow_mode = ENVIRON["SHADOW"] != ""
   # The destination of an inline link with the `]` before it, which
@@ -448,27 +475,101 @@ front_matter {
   next
 }
 
-# Reports whether the line holds text left of the column that
-# `block_col` holds. After a heading or a table row in a list item, such
-# a line can end the list, as the `in_list` block of the main rule
-# explains.
-function left_of_block() {
+# Returns the column of the first character of the line that is not a
+# space or a tab, with tabs expanded.
+function text_column() {
   match($0, /^[ \t]*/)
-  return block_col && RLENGTH < length($0) && length(expand_tabs(substr($0, 1, RLENGTH))) < block_col
+  return length(expand_tabs(substr($0, 1, RLENGTH)))
 }
 
-# Fenced code and an HTML comment do not take a lazy line. GFM
-# therefore ends a list at a line of either block that sits left of the
-# text of the item. The rules for fenced code and for comments skip such
-# a line before the main rule reads it. After a heading or a table row
-# in the item, each of the two rules therefore ends the list at that
-# line. lib/markdown.awk keeps the fence or the comment open up to its
-# closing marker.
-fence_char != "" {
-  if (left_of_block()) {
-    in_list = 0
-    item_depth = 0
+# Returns the number of cells in the table row s, as GFM counts them. A
+# `|` after a backslash is text of its cell. A `|` that opens the row
+# does not end a cell. The text after the last `|` counts as a cell only
+# when it is not blank.
+function cells(s,   n) {
+  gsub(/\\\|/, "", s)
+  sub(/^[ \t]*\|/, "", s)
+  n = gsub(/\|/, "|", s)
+  sub(/^.*\|/, "", s)
+  return n + (s ~ /[^ \t]/)
+}
+
+# Reports whether the line opens an HTML block of types 1 to 6 (`<div>`,
+# `</td>`, `<pre class="x">`, `<!--`). Such a block can interrupt a
+# paragraph. A line that opens with any other tag holds inline HTML or
+# opens a block of type 7, and neither one interrupts a paragraph
+# (`<span>x</span>`). The tag names ignore case. Type 4 needs a capital
+# letter after `<!`, as in cmark-gfm (`<!DOCTYPE html>`).
+function html_block(s) {
+  return s ~ /^[ \t]*<![A-Z]/ || tolower(s) ~ html_start
+}
+
+# Returns a pattern for the end marker of the HTML block that the line
+# opens, which matches a line in lowercase. GFM ends a block of type 1
+# (`<pre>`, `<script>`, `<style>`, `<textarea>`) at the line that holds
+# the closing tag of any of these four. It ends a block of type 2
+# (`<!--`) at `-->`, a block of type 3 (`<?`) at `?>`, a block of type 4
+# (`<!DOCTYPE`) at `>`, and a block of type 5 (`<![CDATA[`) at `]]>`.
+# The opening line can hold the end marker too (`<pre>x</pre>`). The
+# function returns an empty string for a block of type 6 or 7, which
+# ends at a blank line. The main rule skips an HTML comment with a rule
+# of its own, so it reads the pattern only for the other types.
+function html_end_of(s,   t) {
+  t = tolower(s)
+  if (t ~ /^[ \t]*<(script|pre|textarea|style)([ \t>]|$)/) {
+    return "</(script|pre|textarea|style)>"
   }
+  if (t ~ /^[ \t]*<!--/) {
+    return "-->"
+  }
+  if (t ~ /^[ \t]*<[?]/) {
+    return "[?]>"
+  }
+  if (t ~ /^[ \t]*<!\[cdata\[/) {
+    return "]]>"
+  }
+  if (s ~ /^[ \t]*<![A-Z]/) {
+    return ">"
+  }
+  return ""
+}
+
+# Ends each open list item whose text sits right of the line. Fenced
+# code and an HTML comment do not take a lazy line. So GFM ends an item
+# at each line of either block that sits left of the text of the item.
+# The rules for fenced code and for comments call this function, because
+# they skip each line before the main rule reads it. A blank line keeps
+# every item open. lib/markdown.awk keeps the fence or the comment open
+# up to its closing marker.
+#
+# lib/markdown.awk opens a fence or a comment at any indent. Under an
+# open paragraph, GFM reads some fence markers and comments as more text
+# of that paragraph. Each of them sits four or more columns past the
+# text of the innermost open item, or past the margin. `block_text`
+# holds 1 for such a block.
+# The paragraph takes lazy lines, so the function keeps every item open.
+# A blank line in the block ends the paragraph, and the function then
+# clears `block_text`. A blank line also ends the HTML block that
+# `html_open` marks, as it does outside a fence or a comment. So does
+# the end of the item that holds the block.
+function leave_items(   c) {
+  if ($0 ~ /^[ \t]*$/) {
+    block_text = 0
+    html_open = 0
+    return
+  }
+  if (block_text) {
+    return
+  }
+  c = text_column()
+  while (item_depth && c < item_cols[item_depth]) {
+    item_depth--
+    html_open = 0
+  }
+}
+
+fence_char != "" {
+  leave_items()
   line = $0
   sub(/^[ \t>]*/, "", line)
   if (substr(line, 1, 1) == fence_char) {
@@ -486,10 +587,7 @@ fence_char != "" {
 }
 
 in_comment {
-  if (left_of_block()) {
-    in_list = 0
-    item_depth = 0
-  }
+  leave_items()
   if ($0 ~ /-->/) {
     in_comment = 0
   }
@@ -505,36 +603,29 @@ in_comment {
   quote_para = 0
   delete quote_lists
   html_open = 0
-  # A blank line also ends the paragraph and the table that the `in_list`
-  # block below tracks.
-  list_para = 0
+  # A blank line also ends the paragraph and the table that the main
+  # rule below tracks.
+  block_para = 0
   table_open = 0
+  foot_open = 0
   # As in CommonMark, a blank line right after the first line of a list
   # item closes the item when that first line holds only the list
   # marker. A blank line that holds whitespace up to the text column of
-  # the item keeps the item open. After a heading or a table row in a
-  # list item, the list ends when the closed item sits at or left of the
-  # column that `block_col` holds, as the `in_list` block below explains.
+  # the item keeps the item open.
   if (item_empty && length(expand_tabs($0)) < item_cols[item_depth]) {
-    if (block_col && item_cols[item_depth] <= block_col) {
-      in_list = 0
-    }
     item_depth--
     item_empty = 0
   }
   next
 }
 
-# After a heading or a table row in a list item, a line left of the
-# column that `block_col` holds can end the list, as the `in_list` block
-# of the next rule explains. After a blank line, such a line ends the
-# list. A line there four or more columns in is therefore indented code
-# too, and each line of that code sits outside the list.
-!shadow_mode && /^(    |\t)/ && (in_indent || (prev_blank && (!in_list || left_of_block()))) {
-  if (left_of_block()) {
-    in_list = 0
-    item_depth = 0
-  }
+# After a blank line, a line left of the text of every open list item
+# ends the list. No paragraph stays open across a blank line, so the
+# line is not a lazy line. A line there four or more columns in is
+# therefore indented code, and so is each line of that code.
+!shadow_mode && /^(    |\t)/ && (in_indent || (prev_blank && (!item_depth || text_column() < item_cols[1]))) {
+  item_depth = 0
+  item_block = 0
   in_indent = 1
   prev_blank = 0
   next
@@ -562,31 +653,74 @@ in_comment {
   # between them (`* * *`). CommonMark reads such a line as a break and
   # not as a list item.
   quote_break = raw ~ /^[ \t]*((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})$/
-  # `para_above` holds 1 when the line above leaves a paragraph of a
-  # list open, and `table_above` holds 1 when it leaves a table open, as
-  # the `in_list` block below explains. `list_para` and `table_open` hold
-  # the same for the current line. Each branch below that skips the rest
-  # of the block leaves neither open, except the branches for a MyST
-  # directive and a link reference definition.
-  para_above = list_para
-  list_para = 0
+  # `para_above` holds 1 when the line above leaves a paragraph open, and
+  # `table_above` holds 1 when it leaves a table open. `block_para` and
+  # `table_open` hold the same for the current line. Each branch below
+  # that skips the rest of the block leaves neither open, except the
+  # branches for a MyST directive and a link reference definition.
+  para_above = block_para
+  block_para = 0
   table_above = table_open
   table_open = 0
   code_above = list_code
   list_code = 0
-  # After a heading or a table row in a list item, a line left of the
-  # column that `block_col` holds can end the list. The `in_list` block
-  # below explains when. The test runs here, so that a line that a
-  # branch below skips can end the list too. A fence, quoted code, a
-  # MyST directive, and a link reference definition are such lines. The
-  # rules for fenced code and for comments run the test on each line
-  # inside a fence or a comment.
-  if (block_col && line_col < block_col && (quote_break || quote_first >= 0 || (raw !~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])([ \t]|$)/ && (!para_above || raw ~ /^[ \t]*(<|```|~~~)/)))) {
-    in_list = 0
+  # `cells_above` holds the number of cells of the line above, which the
+  # delimiter-row test below reads. The list-item branch counts the
+  # cells of a line that opens an item from the text after its markers.
+  cells_above = cells_now
+  cells_now = cells(raw)
+  # `foot_above` holds 1 when the line above leaves the paragraph of a
+  # footnote definition open (`[^1]: text`). `foot_open` holds the same
+  # for the current line.
+  foot_above = foot_open
+  foot_open = 0
+  # `html_level` holds the number of `>` markers of the blockquote that
+  # holds the open HTML block, or 0 outside a blockquote. A line with
+  # fewer markers ends that blockquote, because an HTML block does not
+  # take a lazy line. So does a line of only `>` marks, which is a blank
+  # line of the blockquote. No paragraph stays open there, so
+  # `quote_para` drops to 0.
+  #
+  # `html_stop` holds the pattern that html_end_of() returns for the open
+  # block. `html_shut` holds 1 after the line that holds that end marker.
+  # That line is the last line of the block, so the block ends at the
+  # next line, and no paragraph stays open there either.
+  if (html_open && (html_shut || (html_level && (quote_level < html_level || quote_indent < 0)))) {
+    html_open = 0
+    quote_para = 0
   }
-  last_item_col = item_depth ? item_cols[item_depth] : -1
-  while (item_depth && line_col < item_cols[item_depth]) {
-    item_depth--
+  html_shut = html_open && html_stop != "" && tolower(raw) ~ html_stop
+  # As in GFM, a line ends each open list item whose text sits right of
+  # `line_col`. `item_match` counts the items that stay open, and
+  # `item_rel` holds the columns between the text of the innermost of
+  # them, or the margin, and `line_col`.
+  #
+  # A lazy line keeps every item open (`- The pod runs,` above `and
+  # more.`). A lazy line continues the open paragraph. It does not open
+  # a block within three columns of the text of the innermost item that
+  # stays open, or of the margin. A `>` marker, a heading, a fence, a
+  # list item, a thematic break, and a footnote definition each open a
+  # block. So do an HTML block and a line that holds only one tag
+  # (`<br>`), which opens an HTML block of type 7. A line of text, a
+  # delimiter row, a link reference definition, and a line of inline
+  # HTML continue the paragraph instead.
+  #
+  # `item_left` holds 1 for a line that ends an item. The HTML block or
+  # the table that the item holds ends with it.
+  item_match = item_depth
+  while (item_match && line_col < item_cols[item_match]) {
+    item_match--
+  }
+  item_rel = line_col - (item_match ? item_cols[item_match] : 0)
+  item_lazy = para_above && item_match < item_depth && !(item_rel < 4 && (quote_level || quote_break || raw ~ /^[ \t]*(#{1,6}([ \t]|$)|```|~~~|([-*+]|[0-9]{1,9}[.)])([ \t]|$)|\[\^[^] \t]+\]:)/ || html_block(raw) || tolower(raw) ~ html_lone))
+  item_left = !item_lazy && item_match < item_depth
+  if (item_left) {
+    item_depth = item_match
+    html_open = 0
+    table_above = 0
+  }
+  if (!item_depth) {
+    item_block = 0
   }
   # `item_empty` holds 1 after the first line of an item with no text,
   # until the next line.
@@ -605,8 +739,9 @@ in_comment {
   # the open paragraph. Outside any blockquote, `item_nested` holds 1 for
   # a line within three columns of the text of the innermost open list
   # item. A list item or a block there opens inside that item, so it
-  # counts too.
-  item_nested = quote_level == 0 && item_depth && quote_indent < item_cols[item_depth] + 4
+  # counts too. A lazy line does not open a block, so it never sets
+  # `item_nested`.
+  item_nested = quote_level == 0 && !item_lazy && item_depth && quote_indent < item_cols[item_depth] + 4
   # `quote_block` holds 1 for an ATX heading of one to six `#`, a fence,
   # an HTML comment, or a thematic break (`quote_break`). Each of these
   # opens a block.
@@ -626,26 +761,22 @@ in_comment {
       delete quote_lists[quote_n]
     }
   }
-  # `item_code` holds 1 for indented code in a list item, a line four or
-  # more columns past the text of the item that does not continue a
-  # paragraph. In an HTML block, such a line is text of the block.
+  # `item_code` holds 1 for indented code, a line four or more columns
+  # past the text of the innermost open list item, or past the margin
+  # outside a list, that does not continue a paragraph. In an HTML block,
+  # such a line is text of the block.
   #
-  # After a heading or a table row in the item, lib/markdown.awk skips
-  # indented code in the item, as it skips indented code outside a list.
-  # A fence marker or a list marker on such a line therefore does not
-  # open a block. The code must open after a blank line, and each line
-  # of it under that line is code too. `code_above` holds 1 when the
-  # line above is such code. lib/markdown.awk can misread a block above
-  # the code without a blank line between, such as a fence that GFM
-  # reads as more text of a paragraph. So it does not skip that code.
-  #
-  # The `item_depth` loop ends an item at a line of its paragraph that
-  # sits left of its text (`and more.` under `  The pod runs,`), but
-  # the list stays open there. When that loop has ended every item of a
-  # list that stays open after such a heading or table row, `item_code`
-  # counts from the column that `block_col` holds.
-  item_code = !para_above && quote_level == 0 && (item_depth ? quote_indent >= item_cols[item_depth] + 4 : in_list && block_col && quote_indent >= block_col + 4)
-  if (!shadow_mode && block_col && item_code && !html_open && (prev_blank || code_above)) {
+  # After a heading or a table row in the item, `item_block` holds 1.
+  # lib/markdown.awk then skips indented code in the item, as it skips
+  # indented code outside a list. A fence marker or a list marker on such
+  # a line therefore does not open a block. The code must open after a
+  # blank line, and each line of it under that line is code too.
+  # `code_above` holds 1 when the line above is such code.
+  # lib/markdown.awk can misread a block above the code without a blank
+  # line between, such as a fence that GFM reads as more text of a
+  # paragraph. So it does not skip that code.
+  item_code = !para_above && quote_level == 0 && !html_open && quote_indent >= (item_depth ? item_cols[item_depth] : 0) + 4
+  if (!shadow_mode && item_block && item_code && (prev_blank || code_above)) {
     list_code = 1
     quote_para = 0
     quote_closed = 1
@@ -654,16 +785,38 @@ in_comment {
     myst_options = 0
     next
   }
-  # A line that opens with `<` can start an HTML block, such as
-  # `<div>`. Such a block runs to the next blank line, and a list marker
-  # inside it is text. `html_open` therefore holds 1 from each line
-  # outside any blockquote that opens with `<` to the next blank line,
-  # and no list item opens in that span. A lone HTML comment ends on its
-  # own line, so it does not set `html_open`. Inline HTML and an HTML
-  # block that ends before a blank line set it too, so a list item after
-  # one goes untracked.
-  if (quote_level == 0 && raw ~ /^[ \t]*</ && raw !~ /^[ \t]*<!--/) {
+  # `item_free` holds 1 for a line that interrupts no paragraph. No
+  # paragraph is open above it, the line ends the list item that holds
+  # the paragraph, or the paragraph sits in a blockquote that the line
+  # leaves. The blockquote case does not count a `>` that GFM reads as
+  # text of the paragraph, which `quote_loose` marks. A footnote
+  # definition holds its paragraph as a list item does. So a line that
+  # opens a block leaves the definition, and it interrupts no paragraph
+  # (`[^1]: The note.` above `2. Then it stops.`). The line must sit
+  # within three columns of the margin, or of the text of the list item
+  # that holds the definition, as the tests that read `item_free` check.
+  #
+  # A line that opens an HTML block, such as `<div>`, sets `html_open`,
+  # and so does the first line of a list item that opens one after its
+  # markers (`- <div>`). A list marker inside the block is text, so no
+  # list item opens there.
+  # A line that holds only one tag opens a block of type 7 (`<br>`), but
+  # only where `item_free` holds 1. A line of inline HTML does not open
+  # a block (`<span>x</span>`). A lone HTML comment ends on its own
+  # line, so it does not set `html_open`. A line inside an open block is
+  # text of the block, so it does not open another one.
+  #
+  # A block of types 1 to 5 ends after the line that holds its end
+  # marker, which can be the opening line (`<pre>x</pre>`).
+  # lib/markdown.awk also ends every block at the next blank line. GFM
+  # keeps a block of types 1 to 5 open across a blank line instead, up
+  # to its end marker.
+  item_free = !para_above || item_left || (quote_para > 0 && !quote_loose) || foot_above
+  if (!html_open && quote_level == 0 && (quote_indent < 4 || item_nested) && raw !~ /^[ \t]*<!--/ && (html_block(raw) || (item_free && tolower(raw) ~ html_lone))) {
     html_open = 1
+    html_level = 0
+    html_stop = html_end_of(raw)
+    html_shut = html_stop != "" && tolower(raw) ~ html_stop
   }
   # A bare `>` line or a `quote_block` line ends the paragraph. A lazy
   # line continues it. CommonMark caps an ordered list marker at nine
@@ -673,6 +826,8 @@ in_comment {
   # `1.` with text after it, which can interrupt a paragraph. Outside a
   # blockquote, a line such as `2026. It runs` or a lone `*` after a
   # line of text therefore continues the paragraph and pushes no item.
+  # Where `item_free` holds 1, every list marker opens an item, such as
+  # `2.` right under a heading.
   # In a blockquote, every list marker opens a list. Such a line opens
   # the next item when the open paragraph sits in an item of a list of
   # that blockquote. It opens a new blockquote when its first `>` sits
@@ -680,24 +835,31 @@ in_comment {
   # lib/markdown.awk tracks neither case, and a list that it opens by
   # mistake keeps the lines of the blockquote prose.
   item_opens = raw ~ /^[ \t]*([-*+]|0*1[.)])[ \t]+[^ \t]/
+  item_pushed = 0
+  item_head = 0
   if (quote_indent < 0 || quote_block) {
     quote_para = 0
   } else if ((quote_indent < 4 || item_nested) && raw ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])([ \t]|$)/) {
-    # The item ends each blockquote deeper than its markers.
+    # Outside a blockquote, an item opens when `item_opens` holds 1 or
+    # when `item_free` holds 1. No item opens inside an HTML block.
+    # `item_pushed` holds 1 for a line that opens an item.
+    if (quote_level == 0 && !html_open && (item_opens || item_free)) {
+      item_cols[++item_depth] = item_column($0)
+      item_empty = raw ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])[ \t]*$/
+      item_pushed = 1
+    }
+    # The item ends each blockquote deeper than its markers. When the
+    # line does not open an item, a `>` after its markers is text of the
+    # paragraph (`2. > make build` under a line of text). So the line
+    # sets `quote_loose`.
     quote_para = quote_level
+    quote_loose = !item_pushed
     for (quote_n in quote_lists) {
       if (quote_n + 0 > quote_level) {
         delete quote_lists[quote_n]
       }
     }
     quote_lists[quote_level] = 1
-    # Outside a blockquote, an item opens when `item_opens` holds 1,
-    # after a blank line, or left of the text of the last item. No item
-    # opens inside an HTML block.
-    if (quote_level == 0 && !html_open && (item_opens || prev_blank || quote_indent < last_item_col)) {
-      item_cols[++item_depth] = item_column($0)
-      item_empty = raw ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])[ \t]*$/
-    }
     # Each `>` after the list marker opens a blockquote in the item
     # (`- > text`, `- - > text`), and the paragraph sits inside the last
     # one. A list marker after a `>` opens a list in that blockquote
@@ -705,31 +867,97 @@ in_comment {
     # loop reads the line with tabs expanded, as read_quote() does. A tab
     # between two `>` marks (`1. > <tab>> text`) then counts as the
     # spaces up to its tab stop.
+    #
+    # Outside a blockquote, a list marker right after the marker of an
+    # item that the line opens, before any `>`, opens an item inside that
+    # item (`- - The pod runs.`). The loop pushes that item too, unless
+    # the item above it holds indented code. A thematic break after the
+    # markers ends the loop (`- * * *`), because GFM reads the break as a
+    # block of the item and not as more list markers.
     quote_item = blank(expand_tabs($0), "^([ \t]*>)+")
+    item_width = length(quote_item)
+    match(quote_item, /^ *([-*+]|[0-9]{1,9}[.)]) */)
+    item_head = item_pushed && RLENGTH >= item_cols[item_depth] + 4
     sub(/^[ \t]*([-*+]|[0-9]{1,9}[.)])([ \t]+|$)/, "", quote_item)
     while (match(quote_item, /^ {0,3}(>[ \t]?|([-*+]|[0-9]{1,9}[.)])([ \t]+|$))/)) {
-      if (index(substr(quote_item, 1, RLENGTH), ">")) {
+      item_skip = RLENGTH
+      if (index(substr(quote_item, 1, item_skip), ">")) {
         quote_para++
+      } else if (quote_item ~ /^ {0,3}((\*[ \t]*){3,}|(-[ \t]*){3,})$/) {
+        break
       } else {
         quote_lists[quote_para] = 1
+        if (item_pushed && !item_head && !quote_para) {
+          item_at = item_width - length(quote_item)
+          item_cols[++item_depth] = item_column(spaces(item_at) quote_item)
+          item_empty = item_skip == length(quote_item)
+          match(quote_item, /^ *([-*+]|[0-9]{1,9}[.)]) */)
+          item_head = !item_empty && item_at + RLENGTH >= item_cols[item_depth] + 4
+        }
       }
-      quote_item = substr(quote_item, RLENGTH + 1)
+      quote_item = substr(quote_item, item_skip + 1)
+    }
+    # The text after the markers can be the header row of a table in the
+    # item (`- | a | b |`). The markers do not count as a cell there.
+    if (item_pushed) {
+      cells_now = cells(quote_item)
+    }
+    # GFM does not open a paragraph in an item whose first line holds
+    # indented code after its marker (`-     make build`) or after a `>`
+    # of the item (`- >     make build`). Nor does it open one when the
+    # line holds only markers, or when a heading, a thematic break, a
+    # fence, an HTML block, or only one tag follows them (`- # Setup`,
+    # `- ***`, `- ```sh`, `- <!-- note -->`, `- <br>`).
+    #
+    # `item_html` holds 1 for the HTML block or the tag. Unless the block
+    # is a comment, it sets `html_open`, so the lines of the item under
+    # it are text of the block, up to the end marker of the block
+    # (`- <pre>x</pre>`). A block in a blockquote of the item
+    # (`- > <div>`) also sets `html_level`, so the next line without a
+    # `>` ends the block.
+    item_html = !item_head && item_pushed && quote_item ~ /^ {0,3}</ && (html_block(quote_item) || tolower(quote_item) ~ html_lone)
+    item_head = item_head || item_html || item_pushed && quote_item ~ /^[ \t]*$|^ {4}|^ {0,3}(#{1,6}([ \t]|$)|```|~~~|((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})$)/
+    if (item_html && quote_item !~ /^ {0,3}<!--/) {
+      html_open = 1
+      html_level = quote_para
+      html_stop = html_end_of(quote_item)
+      html_shut = html_stop != "" && tolower(quote_item) ~ html_stop
+    }
+    # A line that `item_head` marks does not open a paragraph in a
+    # blockquote of the item either (`- > # Setup`).
+    if (item_head) {
+      quote_para = 0
     }
   } else if (quote_level > quote_para) {
     quote_para = quote_level
   }
   # read_quote() places a `>` only within three columns of the margin
   # or of the text of an open list item. A `>` further right can still
-  # open a blockquote, such as in an item that lib/markdown.awk did not
+  # open a blockquote in a list item that lib/markdown.awk does not
   # track, and its paragraph can stay open. Each later line with that
   # many markers or fewer therefore stays prose until the paragraph
   # ends. A list marker after those markers opens a list in that
   # blockquote, so the lines of its item stay prose too.
+  #
+  # Under a paragraph, GFM reads such a `>` as text of the paragraph
+  # (`    > make build`). When no blockquote holds the paragraph, the
+  # count that this block raises therefore sets `quote_loose`. Under a
+  # paragraph in a blockquote, the line is a lazy line of that
+  # paragraph, and the blockquote still holds it (`> A quote,` above
+  # `    >> more`). The block then leaves the flag as it is. A line in a
+  # blockquote clears the flag, because GFM reads the `>` at the start
+  # of that line as a blockquote.
+  if (quote_level > 0) {
+    quote_loose = 0
+  }
   if (quote_level == 0 && match($0, /^([ \t]*>)+/)) {
     quote_item = substr($0, 1, RLENGTH)
     quote_rest = substr($0, RLENGTH + 1)
     quote_n = gsub(/>/, "", quote_item)
     if (quote_n > quote_para) {
+      if (!quote_para) {
+        quote_loose = 1
+      }
       quote_para = quote_n
     }
     if (quote_rest ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])([ \t]|$)/) {
@@ -748,41 +976,39 @@ in_comment {
   # that marker opens a fence, and the lines after it stay skipped until
   # the next fence marker. The guard needs a fence marker in the skipped
   # code. After other code, the line can open a real fence in a list
-  # item that lib/markdown.awk does not track, such as an item after a
-  # line of inline HTML.
+  # item that lib/markdown.awk does not track.
   quote_code = quote_code && (quote_indent < 0 || (quote_level == 0 && quote_indent >= 4 && !item_nested))
   if (raw ~ /^[ \t]*(```|~~~)/ && !quote_code) {
     line = raw
     sub(/^[ \t]*/, "", line)
     span_open = 0
+    # leave_items() describes `block_text`.
+    block_text = para_above && !(quote_indent < 4 || item_nested)
     fence_char = substr(line, 1, 1)
     fence_len = 0
     while (substr(line, fence_len + 1, 1) == fence_char) {
       fence_len++
-    }
-    # A fence without an indent ends the list, as the `in_list` block
-    # below explains.
-    if (raw !~ /^[ \t]/) {
-      in_list = 0
     }
     prev_blank = 0
     next
   }
   # GFM reads a line of a MyST directive as text of a paragraph. In a
   # table, it reads the line as a row of the table, and in an HTML
-  # block as text of the block. The `in_list` block below reads
-  # `list_para` and `table_open`.
+  # block as text of the block. The next line reads `block_para`,
+  # `table_open`, and `foot_open`.
   if (raw ~ /^[ \t]*:::+[ \t]*\{[^}]*\}/) {
     myst_options = 1
     prev_blank = 0
-    list_para = in_list && !table_above && !html_open
+    block_para = !table_above && !html_open
     table_open = table_above
+    foot_open = foot_above
     next
   }
   if (myst_options && raw ~ /^[ \t]*:[A-Za-z][A-Za-z0-9_-]*:([ \t]|$)/) {
     prev_blank = 0
-    list_para = in_list && para_above
+    block_para = para_above
     table_open = table_above
+    foot_open = foot_above
     next
   }
   myst_options = 0
@@ -794,119 +1020,76 @@ in_comment {
   # it is text of the block.
   if (raw ~ /^ {0,3}\[[^]^][^]]*\]:[ \t]*[^ \t]+[ \t]*("[^"]*")?[ \t]*$/) {
     prev_blank = 0
-    list_para = in_list && !table_above && !html_open
+    block_para = !table_above && !html_open
     table_open = table_above
+    foot_open = foot_above
     next
   }
   if (raw ~ /^[ \t]*<!--/ && raw !~ /-->/) {
+    block_text = para_above && !(quote_indent < 4 || item_nested)
     in_comment = 1
     next
   }
-  # A list runs from its first item to the next line without an indent
-  # that follows a blank line. A heading or a table row outside every
-  # list item also ends it. A heading opens with one to six `#` marks.
-  # CommonMark reads a line with seven or more marks as text, so that
-  # line continues the list item or the code span above it.
+  # `item_block` holds 1 after a heading or a table row zero to three
+  # columns from the margin in an open list item, up to the next list
+  # item with text (`- An item.`, a blank line, `  ## Setup`). An empty
+  # list item keeps it. The `item_code` test above then skips indented
+  # code in the item. A later paragraph of the item stays prose when it
+  # sits fewer than four columns past the text of the item
+  # (`    It runs.`).
   #
-  # A heading or a table row that reaches the text of an open list item
-  # sits in that item (`- An item.`, a blank line, `  ## Setup`). The
-  # list therefore stays open. A later paragraph of the item stays prose
-  # when it sits fewer than four columns past the text of the item
-  # (`    It runs.`). The `item_depth` loop at the top of this block has
-  # already ended each item whose text sits right of the line. That loop
-  # also ends an item at a line of its paragraph that sits left of its
-  # text (`- An item,` above `and more.`). CommonMark keeps the item
-  # open there, but a heading or a table row after that line still ends
-  # the list.
-  #
-  # After such a heading or table row, `block_col` holds the text column
-  # of the outermost item until the next list item. A line left of that
-  # column ends the list unless it continues a paragraph of the item or
-  # opens a list item. The test at the top of this block ends the list
-  # there. The rules for fenced code and for comments end it at such a
-  # line inside a fence or a comment. The rule for indented code above
-  # ends it at such a line after a blank line. CommonMark reads indented
-  # code after the line that ends the list as code outside the list
-  # (`The pod runs.`, a blank line, `    make build`). Indented code in
-  # the item after the heading or the table row is code too, and the
-  # `item_code` test above skips it.
-  #
-  # `para_above` holds 1 when the line above leaves a paragraph of the
-  # list open. A blank line, a heading, a table, a thematic break, and a
-  # setext underline (`===` under a line of text) leave none open. A
-  # fence, an HTML block or comment, a line of only `>`, an empty list
-  # item, and indented code leave none open either. So does a heading,
-  # a table, or a thematic break in a blockquote.
-  #
-  # Under a paragraph of the item, a line left of that column still ends
-  # the list when it opens a block. Such a line holds a thematic break
-  # or a fence, or it opens with `>` or `<`. A line of the paragraph
-  # that opens with inline HTML or an autolink (`<b>`,
-  # `<https://example.com>`) therefore ends the list too.
-  #
-  # A list item left of that column opens the next item of the list or
-  # a new list. A list item with text clears `block_col`. An empty list
-  # item (`-` with no text, or `-` and trailing whitespace) moves
-  # `block_col` to its own text column. When a blank line closes that
-  # item, the list ends, because no item stays open (`-`, a blank line,
-  # `    make build`). The empty item also ends an HTML block that the
-  # item above it holds, so `html_open` drops to 0 there.
-  #
-  # The `item_depth` loop ends the item at a line of its paragraph that
-  # sits left of its text, but `block_col` keeps its column. A later
-  # paragraph at that column therefore keeps the list open.
-  #
-  # A thematic break or a fence without an indent also ends the list,
-  # with or without a blank line above it (`- An item.` above `***`).
-  # CommonMark lets a line left of the text of a list item continue the
-  # item only when the line holds more text of its paragraph. A break or
-  # a fence opens a block instead. The fence branch above ends the list
-  # at a fence. A thematic break is not an item, even with spaces
-  # between its marks (`* * *`, `- - -`).
+  # A heading opens with one to six `#` marks. CommonMark reads a line
+  # with seven or more marks as text, so that line continues the list
+  # item or the code span above it.
   block_line = raw ~ /^ {0,3}(#{1,6}([ \t]|$)|\|)/
-  if (in_list && block_col && line_col < block_col && raw ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])[ \t]*$/) {
-    if (!item_empty) {
-      item_cols[++item_depth] = item_column(raw)
-      item_empty = 1
-    }
-    block_col = item_cols[item_depth]
-    html_open = 0
-  } else if (raw ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/ && !quote_break) {
-    in_list = 1
-    block_col = 0
-  } else if ((prev_blank || quote_break) && raw !~ /^[ \t]/) {
-    in_list = 0
-  } else if (block_line) {
-    if (item_depth) {
-      block_col = item_cols[1]
-    } else {
-      in_list = 0
-    }
+  if (item_pushed && !item_empty) {
+    item_block = 0
+  } else if (block_line && item_depth) {
+    item_block = 1
   }
   # `table_open` holds 1 from the delimiter row of a table (`| - | - |`
   # under a line of text) up to the next block. A blank line, a heading,
-  # a thematic break, a fence, and an HTML comment each end the table. So
-  # do indented code (`item_code`) and a line with other blockquote
-  # markers. A line without a `|` in that span (`  more`) is a row of the
-  # table, not a paragraph. A `|` line with no delimiter row under it is
-  # text of a paragraph. A table does not open on a lazy line. So a
-  # delimiter row left of the column that `block_col` holds is more text
-  # of the paragraph (`  It runs | daily` over `--|--`). So is a
-  # delimiter row with fewer blockquote markers than the paragraph.
-  if (para_above && line_col >= block_col && !quote_lazy && (quote_indent < 4 || item_nested) && raw ~ /\|/ && raw ~ /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/) {
+  # a thematic break, a fence, an HTML block, and a list item each end
+  # the table. So do indented code (`item_code`) and a line with other
+  # blockquote markers. A line without a `|` in that span (`  more`) is a
+  # row of the table, not a paragraph. A `|` line with no delimiter row
+  # under it is text of a paragraph. A table does not open on a lazy
+  # line. So a delimiter row left of the text of the list item that holds
+  # the paragraph is more text of the paragraph (`  It runs | daily` over
+  # `--|--`). So is a delimiter row with fewer blockquote markers than
+  # the paragraph. GFM opens a table only when the delimiter row holds
+  # as many cells as the line above it, its header row. So a row with
+  # another number of cells is more text of the paragraph too
+  # (`It runs | daily` over `| - | - | - |`). GFM reads a list item
+  # before a table. So a line whose text opens with a `-` and whitespace
+  # opens a list item and is not a delimiter row (`  - | - |` under
+  # `- The job runs.`). `raw` holds spaces in place of the `>` markers,
+  # so the test also covers a quoted line.
+  if (para_above && !item_lazy && !quote_lazy && (quote_indent < 4 || item_nested) && raw ~ /\|/ && raw !~ /^[ \t]*-[ \t]/ && raw ~ /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/ && cells_now == cells_above) {
     table_open = 1
     table_level = quote_level
   } else {
-    table_open = table_above && !quote_block && !item_code && quote_level == table_level
+    table_open = table_above && !quote_block && !item_code && !item_pushed && !html_open && quote_level == table_level
   }
   # `para_end` holds 1 for an empty list item and for a setext underline
-  # under a paragraph of the list. GFM reads a lone `*` or `1.` at the
-  # text of the item under a paragraph as more text of the paragraph. It
-  # also reads a line of `=` or `-` marks as more text when the line
-  # sits left of the text, or when the paragraph sits in a blockquote
-  # that the line leaves (`  > A quote.` above `  ===`).
-  para_end = (raw ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])[ \t]*$/ && (!para_above || line_col < block_col || quote_lazy)) || (para_above && line_col >= block_col && !quote_lazy && raw ~ /^[ \t]*(=+|-+)[ \t]*$/)
-  list_para = in_list && quote_indent >= 0 && !quote_block && !html_open && !table_open && !item_code && !para_end
+  # under a paragraph. GFM reads a lone `*` or `1.` at the text of the
+  # item under a paragraph as more text of the paragraph. It also reads a
+  # line of `=` or `-` marks as more text when the line is a lazy line or
+  # sits four or more columns past the text of its block. The same holds
+  # for a line that leaves the blockquote of the paragraph (`  > A
+  # quote.` above `  ===`).
+  para_end = (raw ~ /^[ \t]*([-*+]|[0-9]{1,9}[.)])[ \t]*$/ && (!para_above || item_left || quote_lazy)) || (para_above && !item_lazy && !quote_lazy && (quote_indent < 4 || item_nested) && raw ~ /^[ \t]*(=+|-+)[ \t]*$/)
+  # `block_para` holds 1 for a line that leaves a paragraph open. A
+  # heading, a table, a thematic break, and a setext underline leave none
+  # open. A fence, an HTML block or comment, a line of only `>`, an empty
+  # list item, and indented code leave none open either. Nor does a list
+  # item that `item_head` marks.
+  block_para = quote_indent >= 0 && !quote_block && !html_open && !table_open && !item_code && !para_end && !item_head
+  # A footnote definition opens a paragraph, and it can interrupt an
+  # open paragraph. The later lines of the new paragraph keep
+  # `foot_open` at 1, lazy lines included. A line that opens a list item
+  # leaves the definition.
+  foot_open = block_para && !item_pushed && (((quote_indent < 4 || item_nested) && raw ~ /^[ \t]*\[\^[^] \t]+\]:/) || foot_above)
   # A thematic break closes the open paragraph, as a blank line does. So
   # `prev_blank` holds 1 after a `quote_block` break, and the next line
   # takes the tests of a line after a blank line. Outside a list, an
@@ -915,14 +1098,21 @@ in_comment {
   # the block, so it does not count. In a list item, a line under the
   # break that reaches four columns past the margin can still be
   # paragraph text of the item. So a break that `item_depth` places in
-  # an item does not count either. A break without an indent has
-  # already ended every item in the `item_depth` loop above, so it
-  # still counts.
+  # an item does not count either. A break left of the text of every
+  # open item has already ended the list, so it still counts.
   prev_blank = quote_break && quote_block && !html_open && !item_depth
   # A list item, heading, table row, or HTML line starts a new block,
   # so a code span open on the line before ends there.
   if (raw ~ /^[ \t]*(([-*+]|[0-9]+[.)])[ \t]|#{1,6}([ \t]|$)|[|<])/) {
     span_open = 0
+  }
+  # `in_list` holds 1 when a list item outside a blockquote stays open,
+  # or when a blockquote holds an open list.
+  in_list = item_depth > 0
+  for (quote_n in quote_lists) {
+    if (quote_n + 0 > 0) {
+      in_list = 1
+    }
   }
   bare_line = blank(raw, "<!--([^-]|-[^-])*-->|<pre([ \t][^>]*)?>([^<]|<[^/])*</pre>") ~ /^[ \t]*$/
   prose(clean(raw))

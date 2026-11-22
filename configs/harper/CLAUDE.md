@@ -932,10 +932,8 @@ on a set of files.
     row as more text of the paragraph and does not open a table there.
   - A line under a delimiter row with fewer cells than the row above
     it. The line sits four columns past the text of the item. GFM does
-    not open a table there, so it reads the line as more text of the
-    paragraph. lib/markdown.awk reads the row as a table. But it skips
-    indented code in an item only after a blank line or after more
-    code, so the line stays prose.
+    not open a table there, so it reads the row and the line as more
+    text of the paragraph.
 
   GFM ends the list in each of the last two items, so it reads their
   paragraphs four columns in as code. The test expects no finding on
@@ -953,6 +951,78 @@ on a set of files.
   closing marker of the fence in the last item as the opener of a new
   fence. That fence runs to the end of the file, so the last item ends
   the file.
+
+- `list-items` lints list items that lib/markdown.awk opens or keeps
+  open as GFM does. Each item ends in a paragraph four columns in, which
+  lib/markdown.awk skips as code when it ends the list too early. The
+  test expects a ProseLatinAbbreviation finding on each line that holds
+  `e.g.`, except the last. The file holds these items:
+  - An item whose first line holds only its marker, `-` or `1.`, with
+    no space after it.
+  - An item with a link reference definition at the margin right under
+    it. GFM reads the definition as more text of the paragraph of the
+    item, so the heading under it sits in the item.
+  - An item with a lone `2.` at its text under its paragraph. An empty
+    item cannot interrupt a paragraph, so GFM reads the line as more
+    text of the paragraph, and the lazy line under it keeps the item
+    open.
+  - An item under a line that holds only `<br>`, which sits right under
+    a paragraph. Lines that hold only one tag cannot interrupt a
+    paragraph. So GFM reads the line as more text of the paragraph, and
+    the item opens.
+  - An item right under the delimiter row of a table, with a lazy line
+    and a heading under it. The item ends the table. So GFM reads the
+    lazy line as more text of the paragraph of the item, and the heading
+    sits in the item.
+  - An item with an HTML comment or a fence marker four columns past its
+    text, under its paragraph. GFM reads the block as more text of the
+    paragraph. So it reads the line at the margin in the block as a lazy
+    line, and the item stays open.
+  - An item whose first line holds an HTML comment, or `<div>` five
+    columns past its marker. The comment ends on its line, and GFM reads
+    the `<div>` as indented code. So neither opens an HTML block that
+    holds the line under it. That line opens a paragraph, and the lazy
+    line under it keeps the item open.
+  - An item whose first line opens a nested item, with an HTML comment
+    after both markers. GFM reads the line under it, at the text of the
+    nested item, as a paragraph of the nested item, and not as indented
+    code of the outer one.
+  - An item under an HTML comment with a blank line in it, in an HTML
+    block that `<div>` opens. The blank line ends the HTML block, so GFM
+    reads the end of the comment as a paragraph, and the item opens.
+  - An item under an item that opens an HTML block with `<div>`, where
+    an HTML comment in the block ends at the margin. That line ends the
+    item above and the block with it, so the item under the line opens.
+  - An item under a line that holds only `<br>`, under a paragraph whose
+    last line opens with a `>` four columns in. GFM reads that `>` as
+    more text of the paragraph and not as a blockquote. So the `<br>`
+    line is more text of the paragraph too, and the item opens.
+  - An item under a line that holds only `<br>`, under a delimiter row
+    with more cells than the line above it. GFM does not open a table
+    there. So it reads the row and the `<br>` line as more text of the
+    paragraph, and the item opens.
+  - An item that starts at `2.` right under a footnote definition, with
+    `<br>` and a lazy line under its paragraph. The item leaves the
+    definition, so it interrupts no paragraph. GFM reads the `<br>`
+    line as more text of the paragraph of the item, and the lazy line
+    under it keeps the item open.
+  - A nested item whose text holds only delimiter marks (`  - | - |`)
+    under the paragraph of an item, with a lazy line of marks (`-|-`)
+    under it. GFM reads a list item before a table, so the line opens
+    the nested item and no table. The lazy line keeps the nested item
+    open, and the paragraph under the blank line sits at its text.
+  - A last item that holds a line of fenced code at the margin. Fenced
+    code does not take a lazy line, so that line ends the list, and GFM
+    reads the paragraph under it as code.
+
+  Empty items, definitions, HTML comments, fence markers, and indented
+  code do not hold text for a finding, so the fixtures cannot hold these
+  lines. Each `<br>` line must hold only one tag, and each line of
+  delimiter marks only its marks. So none of these lines can hold a
+  finding or the `same finding` comment that a bad fixture needs in its
+  place. GFM reads the closing marker of the fence in the last item as
+  the opener of a new fence. That fence runs to the end of the file, so
+  the last item ends the file.
 
 - `opening-pronoun` lints paragraphs that ProseOpeningPronoun reports
   and that its fixtures cannot hold. The test expects the findings that
@@ -982,23 +1052,22 @@ on a set of files.
   - A line that holds only one tag, such as `<br>` or an `<img>` tag
     with an attribute, outside the blockquote or the list item of the
     paragraph. GFM opens an HTML block there, and the block ends the
-    paragraph. One such list item holds a table row above the paragraph.
-    Another sits right under a line of inline HTML, where
-    lib/markdown.awk does not open an item. A `same finding` comment
-    after the tag makes the line more text of the paragraph.
+    paragraph. One such list item holds a table row above the paragraph,
+    and another sits right under a line of inline HTML. A
+    `same finding` comment after the tag makes the line more text of the
+    paragraph.
   - A line of `---` left of the text of a paragraph in a list item after
     a heading. GFM reads the line as a rule that ends the item and not
     as an underline, and the line does not hold a finding.
-  - A paragraph at the text of a list item that lib/markdown.awk does
-    not count, with a line of `---` or `<br>` at the margin under it.
-    lib/markdown.awk drops one item, right under a paragraph, at a line
-    of its text at the margin. It does not open an item that starts with
-    `2.` right under a heading, a blockquote, or a fence, nor an item
-    with a nested item right under a line of inline HTML. It also drops
-    an item at a link reference definition at the margin right under
-    the item. GFM reads that definition as more text of the item. GFM
-    ends each item at the line under the paragraph, and the line does
-    not hold a finding.
+  - A paragraph at the text of a list item, with a line of `---` or
+    `<br>` at the margin under it. One item holds a line of its
+    paragraph at the margin, and another holds a link reference
+    definition there. GFM reads each such line as more text of the
+    paragraph and keeps the item open. Other items start with `2.` right
+    under a heading, a blockquote, or a fence, or sit right under a line
+    of inline HTML. Some of the items hold a heading above the
+    paragraph. GFM ends each item at the line under the paragraph, and
+    the line does not hold a finding.
   - A line that opens a blockquote right under a table, at the margin
     and in a blockquote. The header row of one table sits right under a
     paragraph. The blockquote ends the table and opens a paragraph in
