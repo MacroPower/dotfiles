@@ -239,6 +239,23 @@ def utf8_locale() -> str:
     raise RuntimeError("gawk found no UTF-8 locale")
 
 
+def awk_env(lib: Path, mode: str = "") -> dict[str, str]:
+    """Return the environment of an awk check that reads a file in `mode`.
+
+    lib/markdown.awk reads each line whole when RAW is set, and as a
+    comment shadow when SHADOW is set. With neither set, it reads the
+    file as markdown. The environment sets `mode`, RAW or SHADOW, to 1
+    and leaves out the other. An empty `mode` leaves out both. The
+    caller's RAW and SHADOW therefore never reach the check, as in
+    prose-lint.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in ("RAW", "SHADOW")}
+    env["AWKPATH"] = str(lib)
+    if mode:
+        env[mode] = "1"
+    return env
+
+
 def awk_lines(awk: Path, lib: Path, target: Path, raw: bool = False) -> set[int]:
     return {line for line, _ in awk_findings(awk, lib, target, raw)}
 
@@ -248,14 +265,14 @@ def awk_report(
 ) -> list[str]:
     """Return each finding the check prints, without the file name before its line.
 
-    The check runs under `locale`, or under utf8_locale() when `locale`
-    is None. LC_ALL overrides each locale variable of the environment,
-    such as the LC_CTYPE that Python sets when it starts under the C
-    locale.
+    The check reads `target` with RAW=1 when `raw` is true, and as
+    markdown otherwise, whatever RAW and SHADOW the caller exports. It
+    runs under `locale`, or under utf8_locale() when `locale` is None.
+    LC_ALL overrides each locale variable of the environment, such as
+    the LC_CTYPE that Python sets when it starts under the C locale.
     """
-    env = {**os.environ, "AWKPATH": str(lib), "LC_ALL": locale or utf8_locale()}
-    if raw:
-        env["RAW"] = "1"
+    env = awk_env(lib, "RAW" if raw else "")
+    env["LC_ALL"] = locale or utf8_locale()
     # A finding can quote a `\r` from the line, so the output splits at
     # `\n` alone. Text mode and splitlines() also split at `\r`.
     proc = subprocess.run(

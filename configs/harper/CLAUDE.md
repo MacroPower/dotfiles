@@ -386,7 +386,9 @@ cover the comment check, the CRLF check, the locale check, and the
 lines that `check.py` expects a bad fixture to lint. Every rule file
 follows the layout, and every awk rule prints the same findings for
 CRLF line endings and under the C locale. Only these tests therefore
-show that a breach or a misread fails the build.
+show that a breach or a misread fails the build. The tests also export
+`RAW` and `SHADOW` and expect each awk check of `check.py` and
+`measure.py` to keep the mode that the script chose.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; in pkgs.callPackage ./pkgs/prose-weirpack.nix { }'
@@ -663,6 +665,16 @@ on a set of files.
   environment of each command that it starts. The test expects exit
   status 1 and a ProseMayPossibility and a ProseLatinAbbreviation
   finding on each line of prose.
+- `exported-modes` lints a markdown file, the same file as a commit
+  message, and a shell file, first with `RAW` and `SHADOW` unset and
+  then with both exported. lib/markdown.awk takes its mode from these
+  variables, and with `RAW` set it reads each line whole, code included.
+  So the wrapper sets both for each awk check that it starts. Each file
+  holds an `e.g.` in prose and one in code, in a fence or in a code span
+  of a comment. The markdown file also holds an ellipsis character in
+  prose and in the fence. The test expects the ProseLatinAbbreviation
+  and ProseTypography findings that it lists from both runs, messages
+  included.
 
 This command builds every test.
 

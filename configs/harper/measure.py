@@ -68,7 +68,7 @@ from pathlib import Path
 # flag is set, and git shows the directory as untracked.
 sys.dont_write_bytecode = True
 
-from check import TIERS, Rule, collect_rules  # noqa: E402
+from check import TIERS, Rule, awk_env, collect_rules  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 RULES = HERE / "rules"
@@ -483,10 +483,12 @@ def drop_transcript_opinions(hits: list[Hit], root: Path) -> list[Hit]:
 
 
 def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]], mode: str = "") -> list[Hit]:
-    """Run each check on each doc, with mode SHADOW or RAW set to 1."""
-    env = {**os.environ, "AWKPATH": str(LIB)}
-    if mode:
-        env[mode] = "1"
+    """Run each check on each doc, with mode SHADOW or RAW set to 1.
+
+    An empty mode reads each doc as markdown. The caller's RAW and
+    SHADOW never reach a check, as in prose-lint.
+    """
+    env = awk_env(LIB, mode)
 
     def one(item: tuple[Doc, tuple[str, Path]]) -> list[Hit]:
         doc, (internal, script) = item

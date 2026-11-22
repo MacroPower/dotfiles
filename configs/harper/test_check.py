@@ -1,5 +1,7 @@
 """Tests for the comment check, the CRLF check, and the locale check in
-check.py, and for the lines that check.py expects a bad fixture to lint.
+check.py, for the lines that check.py expects a bad fixture to lint, and
+for the RAW and SHADOW that check.py and measure.py set for each awk
+check.
 
 Run with: python3 test_check.py. The weirpack build runs the tests
 before check.py reads the rule files. Every rule file follows the
@@ -245,6 +247,58 @@ class LocaleTest(unittest.TestCase):
         for label, (code, want) in cases.items():
             with self.subTest(label):
                 self.assertEqual(self.failures(code), want)
+
+
+# A markdown file with an `e.g.` in prose, in a fence, and in indented
+# code. With RAW set, lib/markdown.awk reads the fence and the indented
+# code as prose. With SHADOW set, it reads the indented code as prose.
+MODES_FILE = "Build it, e.g. with make.\n\n```sh\nmake e.g.\n```\n\nThen run it.\n\n    run e.g.\n"
+# An awk check that reports the first `e.g.` of each line that reaches
+# prose().
+EG_CHECK = (
+    '@include "markdown.awk"\n'
+    "function BEGIN_CHECK() {}\n"
+    'function prose(text) { if (index(text, "e.g.")) printf "%s:%d:%d: Style::ProseEg: E.g.\\n",'
+    ' FILENAME, FNR, index(text, "e.g.") }\n'
+)
+
+
+class ModeTest(unittest.TestCase):
+    def report(self, exported: dict[str, str], raw: bool) -> list[str]:
+        """Return the findings of EG_CHECK on MODES_FILE with `exported` in the environment."""
+        lib = Path(check.__file__).resolve().parent / "lib"
+        with mock.patch.dict(os.environ), tempfile.TemporaryDirectory() as tmp:
+            for name in ("RAW", "SHADOW"):
+                os.environ.pop(name, None)
+            os.environ.update(exported)
+            script = Path(tmp) / "ProseEg.awk"
+            script.write_text(EG_CHECK)
+            target = Path(tmp) / "modes.md"
+            target.write_text(MODES_FILE)
+            return check.awk_report(script, lib, target, raw)
+
+    def test_modes(self):
+        markdown = ["1:11: Style::ProseEg: E.g."]
+        whole = markdown + ["4:6: Style::ProseEg: E.g.", "9:9: Style::ProseEg: E.g."]
+        for exported in ({}, {"RAW": "1"}, {"SHADOW": "1"}, {"RAW": "1", "SHADOW": "1"}):
+            with self.subTest(exported=exported):
+                self.assertEqual(self.report(exported, raw=False), markdown)
+                self.assertEqual(self.report(exported, raw=True), whole)
+
+    def test_env(self):
+        with mock.patch.dict(os.environ, {"RAW": "1", "SHADOW": "1", "KEEP": "1"}):
+            cases = {
+                "": {},
+                "RAW": {"RAW": "1"},
+                "SHADOW": {"SHADOW": "1"},
+            }
+            for mode, want in cases.items():
+                with self.subTest(mode=mode):
+                    env = check.awk_env(Path("/lib"), mode)
+                    self.assertEqual(
+                        {k: v for k, v in env.items() if k in ("RAW", "SHADOW")}, want
+                    )
+                    self.assertEqual((env["AWKPATH"], env["KEEP"]), ("/lib", "1"))
 
 
 class ExpectedLinesTest(unittest.TestCase):

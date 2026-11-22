@@ -1093,14 +1093,16 @@ in
     }
 
     # Starts one awk check in the background with SHADOW set to the
-    # fifth argument. Its findings go under their internal name into a
-    # file of their own in the directory the first argument names. The
-    # checks share no state, so they all run at once. The PID goes
-    # into check_pids for collect_checks.
+    # fifth argument and RAW empty. With RAW set, lib/markdown.awk reads
+    # each line whole, code included. The empty RAW keeps a value that
+    # the caller exports out of the check. Its findings go under their
+    # internal name into a file of their own in the directory the first
+    # argument names. The checks share no state, so they all run at
+    # once. The PID goes into check_pids for collect_checks.
     check_pids=()
     start_check() {
       local name=''${2%_*}
-      SHADOW="$5" AWKPATH="$awk_lib" awk -f "$3" "$4" |
+      RAW="" SHADOW="$5" AWKPATH="$awk_lib" awk -f "$3" "$4" |
         sed "s/::$name:/::$2:/" >"$1/$2" &
       check_pids+=("$!")
     }
@@ -1347,11 +1349,13 @@ in
       pids+=("$!")
     elif [ "$shadow_kind" != hash ]; then
       # ProseTypography also reads source files, where RAW=1 checks
-      # every line whole, string literals included. A Weir rule or an
-      # awk check holds the characters it reports, so neither is read.
+      # every line whole, string literals included. The empty SHADOW
+      # keeps a value that the caller exports out of the check, as the
+      # empty RAW does in start_check. A Weir rule or an awk check
+      # holds the characters it reports, so neither is read.
       while IFS='=' read -r internal script; do
         [ "''${internal%_*}" = ProseTypography ] || continue
-        RAW=1 AWKPATH="$awk_lib" awk -f "$script" "$file" |
+        RAW=1 SHADOW="" AWKPATH="$awk_lib" awk -f "$script" "$file" |
           sed "s/::ProseTypography:/::$internal:/" >"$tmp_dir/checks_found" &
         pids+=("$!")
       done <<< "$awk_checks"
@@ -3218,6 +3222,67 @@ in
 
           expect many.md
           expect --commit
+          touch "$out"
+        '';
+
+        # Lints a markdown file, the same file as a commit message, and a
+        # shell file. Each runs first with RAW and SHADOW unset and then
+        # with both exported. lib/markdown.awk takes its mode from these
+        # two variables, and with RAW set it reads each line whole, code
+        # included. Each file holds an `e.g.` in prose and one in code,
+        # in a fence of the markdown file and in a code span of a comment
+        # of the shell file. The markdown file also holds an ellipsis
+        # character in prose and in the fence. The run with both unset
+        # must report the findings that the test lists. The run with both
+        # exported must print the same findings and messages. The command
+        # in configs/harper/CLAUDE.md builds this test too.
+        tests.exported-modes = runCommand "prose-lint-exported-modes" { } ''
+          printf '# Title\n\nThe build failed, e.g. on a cache miss.\nIt stalled \342\200\246 twice.\n\n```sh\necho "fast, e.g. really \342\200\246 and more"\n```\n' >fence.md
+          printf '#!/bin/sh\n# The build failed, e.g. on a cache miss.\n# Run `make e.g.` to build it.\necho "done \342\200\246 now"\n' >span.sh
+          unset RAW SHADOW
+
+          # Lints the file that the first argument names, as a commit
+          # message when the second argument is --commit, and prints each
+          # finding without its path.
+          findings() {
+            local rc=0
+            if [ "''${2:-}" = --commit ]; then
+              ${lib.getExe finalAttrs.finalPackage} --commit <"$1" >found || rc=$?
+            else
+              ${lib.getExe finalAttrs.finalPackage} "$PWD/$1" >found || rc=$?
+            fi
+            if [ "$rc" -ge 2 ]; then
+              echo "prose-lint $*: exited $rc" >&2
+              exit 1
+            fi
+            sed 's/^[^:]*://' found
+          }
+
+          # Fails unless the findings of the arguments after the first
+          # name the lines, the columns, and the rules in the first
+          # argument. A run with RAW and SHADOW exported must also print
+          # the same findings.
+          expect() {
+            local want=$1 got
+            shift
+            findings "$@" >unset
+            if ! (export RAW=1 SHADOW=1; findings "$@") >exported; then
+              exit 1
+            fi
+            got=$(sed 's/^\([0-9]*:[0-9]*\): [^ ]* [A-Za-z]*::\([A-Za-z]*\):.*/\1 \2/' unset | sort | paste -sd ' ' -)
+            if [ "$got" != "$want" ]; then
+              echo "prose-lint $*: reported '$got', expected '$want'" >&2
+              exit 1
+            fi
+            if ! diff unset exported >&2; then
+              echo "prose-lint $*: the findings changed with RAW and SHADOW exported" >&2
+              exit 1
+            fi
+          }
+
+          expect "3:19 ProseLatinAbbreviation 4:12 ProseTypography" fence.md
+          expect "3:19 ProseLatinAbbreviation 4:12 ProseTypography" fence.md --commit
+          expect "2:21 ProseLatinAbbreviation 4:12 ProseTypography" span.sh
           touch "$out"
         '';
       };
