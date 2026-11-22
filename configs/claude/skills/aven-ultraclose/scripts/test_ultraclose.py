@@ -827,6 +827,31 @@ class IsolationTest(unittest.TestCase):
                     self.assertEqual(read, (1, ""))
 
 
+class FailedCommandTest(unittest.TestCase):
+    """A command that must pass ends the script when it fails.
+
+    The message of the script names the command.
+    """
+
+    def test_message_quotes_command_for_shell(self):
+        # The argument of the command holds a space, a quote, and a command
+        # substitution. A shell that runs the command of the message after
+        # the caller repairs the cause still passes it as one argument.
+        script = load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp, "a b'$(c)")
+            target = str(parent / "d")
+            with self.assertRaises(SystemExit) as ended:
+                script.sh("mkdir", target, cwd=tmp)
+            message = str(ended.exception.code)
+            command = re.match(r"ultraclose: (.*) failed in ", message)
+            self.assertEqual(command[1], shlex.join(("mkdir", target)))
+            parent.mkdir()
+            subprocess.run(["sh", "-c", command[1]], cwd=tmp, check=True)
+            self.assertEqual(sorted(os.listdir(tmp)), [parent.name])
+            self.assertTrue(Path(parent, "d").is_dir())
+
+
 class InitTest(unittest.TestCase):
     def test_shared(self):
         cases = {
@@ -1778,7 +1803,12 @@ class TakeOverTest(unittest.TestCase):
                 self.assert_unchanged(repo, env, first, before)
 
     def test_config_that_init_cannot_set_back(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as top:
+            # The path of the earlier run holds a space, a quote, and a
+            # command substitution, and the git command of the message
+            # still sets the path in a shell.
+            tmp = Path(top, "a b'$(c)")
+            tmp.mkdir()
             repo, env, first, _ = self.earlier_run(tmp)
             before = state_of(first)
             env = in_session(env, "second")
@@ -1790,9 +1820,10 @@ class TakeOverTest(unittest.TestCase):
             wrapper = Path(tmp, "wrapper")
             wrapper.mkdir()
             real = shutil.which("git", path=env["PATH"])
+            refused_args = shlex.quote(f"config --local ultraclose.run {first}")
             (wrapper / "git").write_text(
                 "#!/bin/sh\n"
-                f'if [ "$1 $2 $3 $4" = "config --local ultraclose.run {first}" ]; then\n'
+                f'if [ "$1 $2 $3 $4" = {refused_args} ]; then\n'
                 '  echo "error: could not lock config file" >&2\n'
                 "  exit 1\n"
                 "fi\n"
@@ -1807,9 +1838,12 @@ class TakeOverTest(unittest.TestCase):
             )
             self.assertIn("state.json.tmp", message)
             self.assertIn("Those tasks stay in that run.", message)
+            restore = shlex.join(
+                ("git", "config", "--local", "ultraclose.run", str(first))
+            )
             fix = (
                 "Git also cannot set ultraclose.run back to that run, so run"
-                f" git config --local ultraclose.run {first} before init."
+                f" {restore} before init."
             )
             self.assertIn(fix, message)
             # The git config names the new run directory, which init
@@ -1829,7 +1863,7 @@ class TakeOverTest(unittest.TestCase):
             for ref in (self.INFLIGHT, self.APPROVED):
                 self.assertTrue((first / "tasks" / ref / "task.md").is_file(), ref)
             command = re.search(r"so run (git config .+?) before init", message)
-            subprocess.run(command[1].split(), cwd=repo, env=env, check=True)
+            subprocess.run(["sh", "-c", command[1]], cwd=repo, env=env, check=True)
             self.assert_unchanged(repo, env, first, before)
             # After the caller removes the cause, init moves the tasks.
             (first / "state.json.tmp").rmdir()
@@ -8440,8 +8474,14 @@ class PullRequestTest(LandCase):
     def test_proposes_task_whose_worktree_git_does_not_remove(self):
         # git does not remove a locked worktree. The branch has the name
         # of the pull request by then, so the landing proposes the task.
-        # The second task, which waits for the slot, can then start.
-        with tempfile.TemporaryDirectory() as tmp:
+        # The second task, which waits for the slot, can then start. The
+        # path of the worktree holds a space, a quote, and a command
+        # substitution. The landing and the merged command give the same
+        # git command for the worktree, and a shell still removes the
+        # worktree with it.
+        with tempfile.TemporaryDirectory() as top:
+            tmp = Path(top, "a b'$(c)")
+            tmp.mkdir()
             repo, env = self.start_task(tmp, "--target", "pr", "--limit", "1")
             self.add_other(tmp, repo, env)
             wt = self.worktree(repo).resolve()
@@ -8450,12 +8490,14 @@ class PullRequestTest(LandCase):
             # The failure status sends the caller to the report.
             self.assertEqual(status, 1, lines)
             # The report comes before the RESULT line. It names the git
-            # command, it holds the error of git, and it says what the
-            # command left.
+            # command quoted for a shell, it holds the error of git, and it
+            # says what the command left.
             reports, rest = self.failed_commands(lines)
             self.assertEqual(len(reports), 1, lines)
             [(command, error, left)] = reports
-            self.assertEqual(command, f"git worktree remove --force {wt}")
+            self.assertEqual(
+                command, shlex.join(("git", "worktree", "remove", "--force", str(wt)))
+            )
             self.assertIn("locked", error)
             self.assertEqual(
                 left,
@@ -8487,21 +8529,21 @@ class PullRequestTest(LandCase):
             self.assertIn(f"{REF} is proposed", refused("land", REF, cwd=repo, env=env))
             # After the merge, the worktree keeps the branch, so the merged
             # command changes nothing. Its error names the worktree of the
-            # task and the command that removes it.
+            # task and the command that removes it, quoted for a shell.
             self.merge(repo, env)
             before = self.task(tmp)
             message = refused("merged", REF, cwd=repo, env=env)
             self.assertIn(f"git cannot delete the branch {HEAD}", message)
             self.assertIn(f"did not remove its worktree {wt}", message)
-            self.assertIn(command, message)
+            self.assertIn(f"Remove the worktree with {command} in the", message)
             self.assertNotIn("Check out another branch there", message)
             self.assertEqual(self.task(tmp), before)
             self.assertNotIn(f"{REF} --status done", aven_edits(env))
             # After the caller unlocks the worktree, the command of the
-            # report removes it. The merged command can then delete the
-            # branch.
+            # report removes it in a shell. The merged command can then
+            # delete the branch.
             git("worktree", "unlock", wt, cwd=repo, env=env)
-            git(*command.split()[1:], cwd=repo, env=env)
+            subprocess.run(["sh", "-c", command], cwd=repo, env=env, check=True)
             self.assertFalse(wt.exists())
             ultraclose("merged", REF, cwd=repo, env=env)
             self.assertEqual(self.task(tmp)["state"], "landed")

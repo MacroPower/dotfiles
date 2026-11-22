@@ -1211,6 +1211,9 @@ The task landed, but its branch still exists. Repair the cause of the error, and
 TIMES check=1m22s (median 1m24s) commit=18s (median 18s)
 ```
 
+The output quotes each argument of a failed command for a shell, so you
+can paste the command into a shell to run it again.
+
 The `ACTION` line of such a landing gives the repair of each failed
 command, in the order of the output, with the command that you run.
 

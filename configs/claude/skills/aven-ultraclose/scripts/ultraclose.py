@@ -881,9 +881,14 @@ def die(msg):
 
 
 def sh(*cmd, cwd, check=True):
+    """Run a command, and return its process.
+
+    With check, a failed command ends the script. The message gives the
+    command quoted for a shell, so a caller can paste it to run it again.
+    """
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
     if check and p.returncode:
-        die(f"{' '.join(cmd)} failed in {cwd}:\n{p.stdout}{p.stderr}")
+        die(f"{shlex.join(cmd)} failed in {cwd}:\n{p.stdout}{p.stderr}")
     return p
 
 
@@ -902,7 +907,7 @@ def aven_note(repo, ref, text):
         cmd, cwd=repo, input=text, capture_output=True, text=True, check=False
     )
     if p.returncode:
-        die(f"{' '.join(cmd)} failed in {repo}:\n{p.stdout}{p.stderr}")
+        die(f"{shlex.join(cmd)} failed in {repo}:\n{p.stdout}{p.stderr}")
 
 
 def uncommitted(cwd):
@@ -2051,9 +2056,10 @@ def take_over(repo, old, run, new, rejected, fresh):
         if named:
             p = sh("git", "config", "--local", KEY, str(old), cwd=repo, check=False)
             if p.returncode:
+                restore = shlex.join(("git", "config", "--local", KEY, str(old)))
                 lost = (
-                    f" Git also cannot set {KEY} back to that run, so run git"
-                    f" config --local {KEY} {old} before init."
+                    f" Git also cannot set {KEY} back to that run, so run"
+                    f" {restore} before init."
                 )
         die(
             f"init cannot move the unfinished tasks of the run at {old} to a"
@@ -4846,16 +4852,17 @@ def cmd_land(a):
 
         The base branch holds the commit of the task by then, or the task
         branch has the name of its pull request. So the landing does not
-        stop at a failed command. It prints the command and the output of
-        the command. Then it prints the text that the left function
-        returns, which says what the command left and what the caller does
-        about it. The function runs after the command, so the text can
-        depend on what the command left. The command runs in the main
-        checkout of the repository of the run, unless cwd names another.
+        stop at a failed command. It prints the command, quoted for a
+        shell, and the output of the command. Then it prints the text that
+        the left function returns, which says what the command left and
+        what the caller does about it. The function runs after the
+        command, so the text can depend on what the command left. The
+        command runs in the main checkout of the repository of the run,
+        unless cwd names another.
         """
         p = sh(*cmd, cwd=cwd, check=False)
         if p.returncode:
-            print(f"{' '.join(cmd)} failed:\n{p.stdout}{p.stderr}".rstrip())
+            print(f"{shlex.join(cmd)} failed:\n{p.stdout}{p.stderr}".rstrip())
             print(left())
         return not p.returncode
 
@@ -5553,15 +5560,17 @@ def cmd_merged(a):
                 # directory that git no longer lists as a worktree keeps no
                 # branch, and neither does a worktree on another branch.
                 # git acts on the worktrees of the checkout that it runs in,
-                # so the hint names the main checkout of the repository.
+                # so the hint names the main checkout of the repository. The
+                # command of the hint quotes the worktree for a shell.
                 listed = listed_worktrees(path) or {}
                 if listed.get(os.path.realpath(wt)) == name:
+                    remove = shlex.join(("git", "worktree", "remove", "--force", wt))
                     hint = (
                         f"The landing that proposed {a.ref} did not remove its"
                         f" worktree {wt}, which keeps the branch. Remove the"
-                        f" worktree with git worktree remove --force {wt} in the"
-                        f" main checkout {path}, and repair the cause that git"
-                        " names when it fails. Then run the command again"
+                        f" worktree with {remove} in the main checkout {path},"
+                        " and repair the cause that git names when it fails."
+                        " Then run the command again"
                     )
                 else:
                     hint = (
