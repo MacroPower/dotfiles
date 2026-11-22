@@ -446,13 +446,6 @@ in
     # class. Without one, the scan reads the rest of the line as code.
     # A `//` line inside a block comment still counts.
     #
-    # The per-line parser strips trailing `-`, `#`, `/`, `*`, and `!`
-    # along with the marker, which would hide a `--` that ends a line,
-    # so a comment line with text that ends in one of them gains ` x`.
-    # The copy that merge_comments prints keeps the ` x` only after a `-`
-    # when the next comment line holds text other than those marks and
-    # the line is not a banner such as `# --- Section ---`.
-    #
     # The file's license header prints as `x` too, because its text
     # must stay verbatim (see license_lines).
     #
@@ -655,13 +648,7 @@ in
           if (kind == "hcl" && match($0, /^[ \t]*\/\//)) {
             $0 = substr($0, 1, RLENGTH - 2) "# " substr($0, RLENGTH + 1)
           }
-          text = $0
-          sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)
-          if (text ~ /[^-#\/*! \t]/ && text ~ /[-#\/*!][ \t]*$/) {
-            print $0 " x"
-          } else {
-            print
-          }
+          print
         }
       ' "$2"
     }
@@ -759,67 +746,6 @@ in
       '
     }
 
-    # Blanks each line of a fenced code block in a comment down to its
-    # marker, the two fence lines included.
-    #
-    # Harper misreads fences in comments. Its parsers for JavaScript,
-    # TypeScript, Solidity, and Lua read the code of every fence as
-    # prose. So does its Java parser, which reads each comment as HTML.
-    # Its other parsers read the code of a fence in tildes as prose. They
-    # toggle a code block at each line whose text opens with three
-    # backticks, after the marker and any `-`, `*`, `/`, `!`, or `#`
-    # marks. So the line of three backticks in a fence of four ends the
-    # block, and a fence after `>` or `2.` does not open one. Harper then
-    # reads the code and takes the closing line for an opener.
-    #
-    # lib/markdown.awk does not open a fence after a list marker either.
-    # Neither reader finds prose on a blank comment line, and a blank line
-    # ends the paragraph before it, as a fence does.
-    #
-    # A fence opens at a run of three or more backticks or tildes at the
-    # start of the comment text. Any indent, `>` marks, and list markers
-    # can come before the run. A run of backticks with another backtick
-    # after it on the line does not open a fence, as in CommonMark. The
-    # fence closes at a line that holds only a run of the same mark at
-    # least as long, after any indent and `>` marks. A line that is not a
-    # comment closes the fence too. CommonMark also ends a fence at the
-    # end of the blockquote or the list item that holds it. It reads a
-    # fence after a marker such as `2.` that continues a paragraph as
-    # paragraph text. In both cases, blank_fences blanks the comment up
-    # to the closing line or to the end of the comment.
-    blank_fences() {
-      awk '
-        {
-          if ($0 == "x") {
-            fence = ""
-            print
-            next
-          }
-          match($0, /^[ \t]*(\/\/[\/!]?|#|--)/)
-          mark = substr($0, 1, RLENGTH)
-          text = substr($0, RLENGTH + 1)
-          if (fence != "") {
-            sub(/^[ \t>]*/, "", text)
-            match(text, fence == "`" ? "^`+" : "^~+")
-            if (RLENGTH >= fence_len && substr(text, RLENGTH + 1) ~ /^[ \t]*$/) {
-              fence = ""
-            }
-            print mark
-            next
-          }
-          match(text, /^[ \t]*(>[ \t]*|([-*+]|[0-9]{1,9}[.)])[ \t]+)*/)
-          text = substr(text, RLENGTH + 1)
-          if (match(text, /^(`{3,}|~{3,})/) && (text ~ /^~/ || substr(text, RLENGTH + 1) !~ /`/)) {
-            fence = substr(text, 1, 1)
-            fence_len = RLENGTH
-            print mark
-            next
-          }
-          print
-        }
-      '
-    }
-
     # Closes each inline code span that wraps from one comment line to
     # the next, and reopens it on each later line of the span. Harper
     # reads the code spans of each comment line on their own. So the
@@ -828,26 +754,126 @@ in
     # HTML, so it reads every code span there as prose, wrapped or not.
     #
     # The backtick runs pair as in CommonMark. A run opens a span that
-    # closes at the next run of the same length in the paragraph. A run
-    # with no such closer is literal text. Outside a span, a backslash
-    # escapes the backtick after it. A paragraph ends at a line that is
-    # not a comment and at a comment line that holds only blanks and `>`
-    # marks. A line that opens a list item starts a new paragraph. So
-    # does a line with more `>` marks than the first line of the
-    # paragraph, but a line with fewer of them continues it. Each heading
-    # (`# Panics` after the marker) forms a block of its own. So does
-    # each thematic break (`***`, `___`) and each line of `-` or `=`
-    # marks. A run on such a line pairs only with the runs on that line.
-    # CommonMark ends a paragraph at most of these lines too. A line that
-    # opens an ordered item that does not start at 1 is an exception, and
-    # so is an empty item in `*`, `+`, or a number. CommonMark reads such
-    # a line as more text of the paragraph before it, unless the line
-    # ends a list item or a quote that holds the paragraph. It reads a
-    # line of `=` marks, or of two `-` marks, as more text of the
-    # paragraph when the line lacks the indent of the paragraph's list
-    # item or the `>` of its quote. And it reads each comment line whose
-    # text its block indents by 4 or more columns as more text of the
-    # paragraph before it.
+    # closes at the next run of the same length in the paragraph. Outside
+    # a span, a backslash escapes the backtick after it. These lines end
+    # a paragraph:
+    # - A line that is not a comment, a blank comment line, and a line
+    #   of only `>` marks.
+    # - A thematic break (`***`, `___`, `---`), and a setext underline
+    #   (`-`, `===`) under a paragraph. A line of `=` marks or of two `-`
+    #   marks under no paragraph opens a paragraph, as in CommonMark.
+    # - The line before a list item, a heading, a fence, or a line with
+    #   more `>` marks than the first line of the paragraph. A line with
+    #   fewer of them continues the paragraph.
+    # - A heading (`# Panics` after the marker), which holds a paragraph
+    #   of its own. A heading can open the text of a list item, after
+    #   one or more list markers.
+    #
+    # A list marker starts an item on the first line of a paragraph.
+    # On a later line, a bullet or a `1.` with text after it starts
+    # one. Any other marker starts one only on a line with another
+    # count of `>` marks than the first line, or left of the text of
+    # the innermost list item that is still open. Elsewhere, such as at
+    # the `2)` of a line that a sentence wraps onto, the marker is text
+    # of the paragraph, as in CommonMark.
+    #
+    # close_spans tracks the list items that are still open. An item
+    # opens at the first line of a paragraph and at a fence after its
+    # marker. Each list marker that opens the text of such a line opens
+    # an item, so `- - b` opens two items. A lone `-` under no paragraph
+    # opens an empty item. A list marker on a line of indented code does
+    # not open an item. The text of an empty item sits one column past
+    # its marker. An item stays open until a line that starts a block
+    # sits left of its text or has fewer `>` marks than the line that
+    # opened the item. A `>` at or right of the text of an item opens a
+    # quote inside the item, and a `>` left of that text ends the item.
+    # A blank line right under an empty item also ends the item.
+    # close_spans counts each tab as the columns up to the next multiple
+    # of four.
+    #
+    # CommonMark opens no block on a later line of a paragraph whose
+    # text sits four or more columns right of the edge of the block that
+    # holds the paragraph. That line holds more text of the paragraph,
+    # such as `#     - b` under a line of prose. close_spans counts
+    # those columns from the edge of the paragraph's block. That edge
+    # sits at the text of the innermost list item that was open before
+    # the first line, or after the `>` marks and their space, whichever
+    # sits further right. A first line one to three columns right of
+    # that edge does not move it. When the first line opens items and
+    # the line reaches the text of one of them, close_spans counts from
+    # the text of the innermost item that the line reaches. On a line
+    # with fewer `>` marks than the first line, it counts from the column
+    # after the marks of the line and the space after them.
+    #
+    # A line of `=` marks, or of two `-` marks, ends the paragraph above
+    # it, even when it lacks the indent of the paragraph's list item or
+    # the `>` of its quote. CommonMark reads such a line as more text
+    # there.
+    #
+    # CommonMark reads the first line of a paragraph as indented code
+    # when its text sits four or more columns right of the edge of its
+    # block. close_spans puts that edge at the text of the innermost open
+    # list item or at the column after the `>` marks and the space after
+    # them, whichever sits further right. So a quote inside an item takes
+    # its own edge. The code takes each later line with the same count of
+    # `>` marks whose text sits as far right, and any other line ends it.
+    # close_spans skips the block tests on each line that the code takes.
+    # It reads the line that ends the code as the first line of a new
+    # paragraph.
+    #
+    # Harper's comment parser strips the `-`, `#`, `/`, `*`, and `!`
+    # marks at the end of a comment line along with its marker. Harper
+    # then misses a `--` that ends a line. So close_spans adds ` x` to
+    # each comment line whose text ends in one of those marks and holds
+    # another character. It reads the line before it adds the ` x`, so
+    # `> ***` reads as a thematic break, and `> * x` keeps its text.
+    #
+    # A run that no run closes is literal text, and each of its
+    # backticks becomes a `%`. lib/markdown.awk reads each line of the
+    # shadow and looks only one line ahead for the closer of a run. It
+    # skips the rest of a line after a literal run. When the next line
+    # holds a run of the same length, it skips that line up to the run
+    # too. Harper reads a `%` as punctuation, as it reads a literal
+    # backtick. A space would join the words on each side of the run.
+    # Harper would then report the same word on both sides as a repeated
+    # word.
+    #
+    # close_spans blanks each line of a fenced code block down to its
+    # marker, the two fence lines included. Harper misreads fences in
+    # comments. Its parsers for JavaScript, TypeScript, Solidity, and Lua
+    # read the code of every fence as prose. So does its Java parser,
+    # which reads each comment as HTML. Its other parsers read the code
+    # of a fence in tildes as prose. They toggle a code block at each
+    # line whose text opens with three backticks, after the marker and
+    # any `-`, `*`, `/`, `!`, or `#` marks. So the line of three
+    # backticks in a fence of four ends the block, and a fence after `>`
+    # or `2.` does not open one. Harper then reads the code and takes the
+    # closing line for an opener. lib/markdown.awk does not open a fence
+    # after a list marker either. Neither reader finds prose on a blank
+    # comment line, and a blank line ends the paragraph before it, as a
+    # fence does.
+    #
+    # A fence opens at a run of three or more backticks or tildes at the
+    # start of the comment text, where a block can start. Any indent, `>`
+    # marks, and list markers can come before the run. After a list
+    # marker that starts no item, the run is text of the paragraph. So
+    # is a run on a later line of a paragraph whose text sits four or
+    # more columns right of the edge of the paragraph. A run of
+    # backticks with another backtick after it on the line does not open
+    # a fence, as in CommonMark. The fence closes at a line that holds
+    # only a run of the same mark at least as long, after any indent and
+    # `>` marks. A line that is not a comment closes the fence too.
+    #
+    # As in CommonMark, a fence also ends at the end of the blockquote or
+    # the list item that holds it. A line with fewer `>` marks than the
+    # opener ends it. A line that is not blank and leaves a list item
+    # that holds the fence ends it too. A run on the first line of
+    # indented code opens a fence as well, but CommonMark reads its lines
+    # as code. So that fence ends at the first line that is not blank
+    # and whose text sits less than four columns right of the edge of
+    # the code. close_spans does not blank a line that ends a fence this
+    # way. It reads that line as the first line of a paragraph, so a run
+    # of three backticks there opens a fence of its own.
     #
     # A line that a span leaves open gains a run of the span's length at
     # its end. Each later line of the span gains one right after its
@@ -856,20 +882,192 @@ in
     # added run apart from a backtick next to it.
     close_spans() {
       SHIFTS="$1" awk '
-        # Returns the length of the run of backticks at column i of s.
-        function run(s, i,   m) {
+        # Returns the length of the run of the character c that starts at
+        # column i of s.
+        function run(s, i, c,   m) {
           m = 0
-          while (substr(s, i + m, 1) == "`") {
+          while (substr(s, i + m, 1) == c) {
             m++
           }
           return m
         }
 
-        # Returns a run of m backticks.
-        function ticks(m,   s) {
+        # Returns a run of m copies of the character c.
+        function repeat(c, m,   s) {
           s = sprintf("%*s", m, "")
-          gsub(/ /, "`", s)
+          gsub(/ /, c, s)
           return s
+        }
+
+        # Returns the column of the text of the list item that opens s, or
+        # 0 when s opens with no list marker. s starts at column col of
+        # the line, and the text starts after the marker and the spaces
+        # after it.
+        function item_text(s, col) {
+          if (!match(s, /^([-*+]|[0-9]{1,9}[.)])([ \t]+|$)/)) {
+            return 0
+          }
+          return col + RLENGTH
+        }
+
+        # Returns the column of the text after each list marker that
+        # opens s, as item_text() reads them one after another, or col
+        # when s opens with no list marker.
+        function inner_text(s, col,   t) {
+          while ((t = item_text(s, col))) {
+            s = substr(s, t - col + 1)
+            col = t
+          }
+          return col
+        }
+
+        # Returns the column after the first n `>` markers of the comment
+        # text and the space or tab after them. With n at 0, it returns
+        # the column where the comment text starts.
+        function quote_base(n,   p) {
+          p = mark + 1
+          if (n == 0) {
+            return p
+          }
+          for (; n > 0; n--) {
+            match(substr($0, p), /^[ \t]*>/)
+            p += RLENGTH
+          }
+          return substr($0, p, 1) ~ /[ \t]/ ? p + 1 : p
+        }
+
+        # Returns the number of columns from the start of the comment text
+        # to column p of the line. Each tab reaches the next multiple of
+        # four columns.
+        function width(p,   s, i, w) {
+          s = substr($0, mark + 1, p - mark - 1)
+          w = 0
+          for (i = 1; i <= length(s); i++) {
+            w += substr(s, i, 1) == "\t" ? 4 - w % 4 : 1
+          }
+          return w
+        }
+
+        # Closes each open list item that the line leaves, as a line that
+        # starts a block does. The line leaves an item when it has fewer
+        # `>` marks than the line that opened the item. It also leaves the
+        # item when its text sits left of the text of the item. On a line
+        # with more `>` marks, the first `>` past the marks of the item
+        # stands in for the text. So a `>` at or right of the text of an
+        # item opens a quote inside the item. A `>` left of that text
+        # leaves the item. Leaving an item also leaves each item inside it.
+        function close_items(   k, p) {
+          for (k = 1; k <= items; k++) {
+            if (item_depth[k] > depth) {
+              break
+            }
+            if (item_depth[k] < depth) {
+              p = quote_base(item_depth[k])
+              match(substr($0, p), /^[ \t]*/)
+              if (width(p + RLENGTH) < item_col[k]) {
+                break
+              }
+            } else if (item_col[k] > width(col)) {
+              break
+            }
+          }
+          items = k - 1
+        }
+
+        # Opens a list item whose text sits at column c of the comment
+        # text, and records the count of `>` marks of its line. An empty
+        # item records its line, because a blank line right under that
+        # line ends the item.
+        function open_item(c, empty) {
+          item_col[++items] = c
+          item_depth[items] = depth
+          item_empty[items] = empty ? NR : 0
+        }
+
+        # Returns the column of the edge of the block that holds the line
+        # after close_items(). The edge sits at the text of the innermost
+        # open list item, or at the column after the `>` marks of the line
+        # and the space after them, whichever sits further right.
+        function block_edge(   b) {
+          b = width(quote_base(depth))
+          return items && item_col[items] > b ? item_col[items] : b
+        }
+
+        # Opens a list item for each list marker that opens the text of
+        # the line, so `- - b` opens two items. The text of an empty item
+        # sits one column past its marker.
+        function open_items(   s, c, t) {
+          s = body
+          c = col
+          while ((t = item_text(s, c))) {
+            match(s, /^([-*+]|[0-9]{1,9}[.)])/)
+            s = substr(s, t - c + 1)
+            if (s == "") {
+              open_item(width(c) + RLENGTH + 1, 1)
+              return
+            }
+            open_item(width(t), 0)
+            c = t
+          }
+        }
+
+        # Reports whether the line ends the open fence, as the end of the
+        # blockquote, the list item, or the indented code that holds the
+        # fence does. A line with fewer `>` marks than the line of the
+        # opener ends it. So does a line that leaves a list item that
+        # holds the fence. A line whose text after those marks sits left
+        # of the column in fence_edge ends it too. Only the `>` test
+        # applies to a blank line.
+        function fence_ends(   p) {
+          if (depth < fence_depth) {
+            return 1
+          }
+          p = quote_base(fence_depth)
+          match(substr($0, p), /^[ \t]*/)
+          if (p + RLENGTH > length($0)) {
+            return 0
+          }
+          if (width(p + RLENGTH) < fence_edge) {
+            return 1
+          }
+          close_items()
+          return items < fence_items
+        }
+
+        # Reports whether the text of a later line of the paragraph sits
+        # four or more columns right of the edge of the block that holds
+        # the paragraph. The count starts after as many `>` markers of
+        # the line as the paragraph has, and after the space after them.
+        # On a line with fewer markers, the edge sits there. Otherwise,
+        # the edge sits at the edge of the first line (para_edge). That
+        # edge sits at the text of the innermost item that was open
+        # before the first line, or at the column after the markers,
+        # whichever sits further right. When the first line opens items
+        # and the line reaches the text of one of them, the edge sits at
+        # the text of the innermost item that it reaches. The edge moves
+        # with the markers of the line. The count expands each tab, as
+        # width() does.
+        function deep_text(   n, base, t, edge, shift, k) {
+          n = depth < para_depth ? depth : para_depth
+          base = quote_base(n)
+          match(substr($0, base), /^[ \t]*/)
+          t = base + RLENGTH
+          if (t > length($0)) {
+            return 0
+          }
+          t = width(t)
+          edge = width(base)
+          if (depth >= para_depth) {
+            shift = edge - para_wbase
+            edge = para_edge + shift
+            for (k = items; k > para_items; k--) {
+              if (t >= item_col[k] + shift) {
+                edge = item_col[k] + shift
+                break
+              }
+            }
+          }
+          return t - edge >= 4
         }
 
         # Finds the next run of exactly m backticks in the paragraph, from
@@ -883,7 +1081,7 @@ in
                 i++
                 continue
               }
-              r = run(line[k], i)
+              r = run(line[k], i, "`")
               if (r == m) {
                 ck = k
                 ci = i
@@ -898,7 +1096,8 @@ in
 
         # Pairs the backtick runs of the buffered paragraph, prints its
         # lines with the runs that close and reopen each wrapped span,
-        # and empties the buffer. No marker holds a backtick or a
+        # and empties the buffer. Each backtick of a run that no run
+        # closes becomes a `%`. No marker holds a backtick or a
         # backslash, so the scan reads each line whole.
         function flush(   k, i, c, m, j, s, add) {
           delete lead
@@ -920,8 +1119,9 @@ in
               i++
               continue
             }
-            m = run(line[k], i)
+            m = run(line[k], i, "`")
             if (!closer(k, i + m, m)) {
+              line[k] = substr(line[k], 1, i - 1) repeat("%", m) substr(line[k], i + m)
               i += m
               continue
             }
@@ -935,7 +1135,7 @@ in
           for (k = 1; k <= count; k++) {
             s = line[k]
             if (k in lead) {
-              add = ticks(lead[k])
+              add = repeat("`", lead[k])
               if (substr(s, cut[k] + 1, 1) == "`") {
                 add = add " "
               }
@@ -948,7 +1148,7 @@ in
               if (s ~ /`$/) {
                 s = s " "
               }
-              s = s ticks(trail[k])
+              s = s repeat("`", trail[k])
             }
             print s
           }
@@ -958,41 +1158,126 @@ in
         {
           if ($0 == "x" || !match($0, /^[ \t]*(\/\/[\/!]?|#|--)[ \t]?/)) {
             flush()
+            fence = ""
+            items = 0
             print
             next
           }
           mark = RLENGTH
-          text = substr($0, mark + 1)
-          match(text, /^[ \t]*(>[ \t]*)*/)
-          quote = substr(text, 1, RLENGTH)
-          if (RLENGTH == length(text)) {
-            flush()
-            print
+          rest = substr($0, mark + 1)
+          match($0, /^[ \t]*(\/\/[\/!]?|#|--)/)
+          bare = substr($0, 1, RLENGTH)
+          # Adds ` x` after text that ends in a mark that Harper strips.
+          own = substr($0, RLENGTH + 1)
+          shown = $0
+          if (own ~ /[^-#\/*! \t]/ && own ~ /[-#\/*!][ \t]*$/) {
+            shown = $0 " x"
+          }
+          # Reads the text after the quote markers, and counts them.
+          body = rest
+          sub(/^[ \t]+/, "", body)
+          depth = 0
+          while (sub(/^>[ \t]*/, "", body)) {
+            depth++
+          }
+          col = length($0) - length(body) + 1
+          text = item_text(body, col)
+          # A line that ends the fence opens a paragraph or a block.
+          if (fence != "" && fence_ends()) {
+            fence = ""
+          }
+          if (fence != "") {
+            match(rest, /^[ \t>]*/)
+            i = mark + RLENGTH + 1
+            m = run($0, i, fence)
+            if (m >= fence_len && substr($0, i + m) ~ /^[ \t]*$/) {
+              fence = ""
+            }
+            print bare
             next
           }
-          depth = gsub(/>/, "", quote)
-          if (count && depth > quoted) {
-            flush()
+          # Indented code takes a later line as deep as its first line,
+          # and any other line ends it.
+          code = 0
+          if (count && para_code) {
+            code = body != "" && depth == para_depth && width(col) - para_edge >= 4
+            if (!code) {
+              flush()
+            }
           }
-          if (text ~ /^[ \t]*(>[ \t]*)*(#{1,6}([ \t]|$)|(-[ \t]*)+$|(\*[ \t]*){3,}$|(_[ \t]*){3,}$|=+[ \t]*$)/) {
-            flush()
-            count = 1
-            line[1] = $0
-            cut[1] = mark
-            num[1] = NR
-            flush()
-            next
+          # A later line of the paragraph with deep text opens no block,
+          # as in CommonMark, so it holds more text of the paragraph.
+          heading = 0
+          if (!code && (count == 0 || !deep_text())) {
+            # Checks whether a list marker that opens the text starts an
+            # item. The item ends the paragraph.
+            opens = text && (count == 0 || depth != para_depth || (items && width(col) < item_col[items]) || body ~ /^([-*+]|0*1[.)])[ \t]+[^ \t]/)
+            # Looks for a fence after the quote and list markers.
+            match(rest, /^[ \t]*(>[ \t]*|([-*+]|[0-9]{1,9}[.)])[ \t]+)*/)
+            i = mark + RLENGTH + 1
+            c = substr($0, i, 1)
+            m = c == "`" || c == "~" ? run($0, i, c) : 0
+            if (m >= 3 && (c == "~" || substr($0, i + m) !~ /`/) && (!text || opens)) {
+              flush()
+              close_items()
+              edge = block_edge()
+              # The list markers before the fence open items, unless the
+              # line is indented code.
+              if (text && width(col) - edge < 4) {
+                open_items()
+              }
+              fence = c
+              fence_len = m
+              fence_depth = depth
+              fence_items = items
+              # On a line of indented code, the fence ends where the code
+              # ends.
+              fence_edge = width(col) - edge >= 4 ? edge + 4 : 0
+              print bare
+              next
+            }
+            if (body == "" || body ~ /^((-[ \t]*){3,}|(\*[ \t]*){3,}|(_[ \t]*){3,})$/ || ((count || body ~ /^-[ \t]*$/) && body ~ /^(-+|=+)[ \t]*$/)) {
+              under = count
+              flush()
+              if (body == "") {
+                if (items && item_empty[items] == NR - 1) {
+                  items--
+                }
+              } else {
+                close_items()
+                # A lone `-` under no paragraph opens an empty item.
+                if (!under && body ~ /^-[ \t]*$/) {
+                  open_item(width(col) + 2, 1)
+                }
+              }
+              print shown
+              next
+            }
+            heading = (opens ? substr(body, inner_text(body, col) - col + 1) : body) ~ /^#{1,6}([ \t]|$)/
+            if (heading || depth > para_depth || opens) {
+              flush()
+            }
           }
-          if (text ~ /^[ \t]*(>[ \t]*)*([-*+]|[0-9]{1,9}[.)])([ \t]|$)/) {
-            flush()
-          }
-          if (!count) {
-            quoted = depth
+          if (count == 0) {
+            close_items()
+            para_depth = depth
+            para_wbase = width(quote_base(depth))
+            para_wcol = width(col)
+            para_edge = block_edge()
+            para_code = para_wcol - para_edge >= 4
+            # The items above para_items open on the first line.
+            para_items = items
+            if (text && !para_code) {
+              open_items()
+            }
           }
           count++
-          line[count] = $0
+          line[count] = shown
           cut[count] = mark
           num[count] = NR
+          if (heading) {
+            flush()
+          }
         }
 
         END {
@@ -1001,27 +1286,29 @@ in
       '
     }
 
-    # Keeps Harper from toggling a code block at a comment line of the
-    # shadow whose text opens with three backticks. After blank_fences,
-    # none of those lines opens a fence. A run of backticks with another
-    # backtick after it on the line opens a code span instead
-    # (```` ```x `y ````), as in CommonMark. close_spans also opens a
-    # line with a run of three or more backticks when a span in such a
-    # run wraps onto it.
+    # Keeps Harper and lib/markdown.awk from opening a code block at a
+    # comment line of the shadow whose text opens with three backticks.
+    # After close_spans, none of those lines opens a fence. A run of
+    # backticks with another backtick after it on the line opens a code
+    # span instead (```` ```x `y ````), as in CommonMark. close_spans
+    # also opens a line with a run of three or more backticks when a
+    # span in such a run wraps onto it.
     #
     # Before its test, Harper strips the whitespace and the `#`, `-`,
-    # `/`, `*`, and `!` marks that open the line. The last of those
-    # characters becomes a `%`, so Harper reads the line as text, and
-    # the columns stay put. Harper reads a `%` as punctuation.
-    # lib/markdown.awk opens a fence at such a line of a markdown file,
-    # and the `%` keeps it from opening one in the shadow. A line whose
-    # run follows its marker directly stays as it is.
+    # `/`, `*`, and `!` marks that open the line. lib/markdown.awk opens
+    # a fence at such a line of a markdown file, after `>` marks too
+    # (```` > ```make``` runs ````). The last of those characters before
+    # the run becomes a `%`, so both read the line as text, and the
+    # columns stay put. Harper reads a `%` as punctuation. When a `>`
+    # comes right before the run, the `%` takes its place, so the line
+    # loses that quote marker. A line whose run follows its marker
+    # directly stays as it is.
     break_fence_runs() {
       awk '
         {
           if ($0 != "x" && match($0, /^[ \t]*(\/\/[\/!]?|#|--)/)) {
             mark = RLENGTH
-            match($0, /^[ \t#\/*!-]*/)
+            match($0, /^[ \t#\/*!>-]*/)
             if (RLENGTH > mark && substr($0, RLENGTH + 1, 3) == "```") {
               $0 = substr($0, 1, RLENGTH - 1) "%" substr($0, RLENGTH + 1)
             }
@@ -1042,12 +1329,12 @@ in
     # JavaScript or TypeScript template literal. In the other languages,
     # a string can end on a line that it keeps, such as a Rust raw string
     # that ends on a `// end"#;` line. A fence that opens in the lines of
-    # that string runs on into the comments after it. blank_fences then
+    # that string runs on into the comments after it. close_spans then
     # blanks the end of the string and those comments, up to the next
     # line of code. Harper then does not lint those comments. Without the
     # end of the string, its parser can also miss comments further down.
     #
-    # comment_lines adds ` x` after text that ends in `-`. The copy keeps
+    # close_spans adds ` x` after text that ends in `-`. The copy keeps
     # that ` x` when the next line of the shadow holds comment text other
     # than the marks `-`, `#`, `/`, `*`, and `!`. Harper then reads the
     # `--` that ends the line, and ProseDash reports it, as in a markdown
@@ -1313,7 +1600,7 @@ in
     # its own, except in Java, where it reads each comment as HTML. It
     # would read the words of a code span that wraps onto the next
     # comment line as prose, and it misreads fenced code (see
-    # blank_fences). So Harper lints a copy of the file whose comment
+    # close_spans). So Harper lints a copy of the file whose comment
     # lines come from the shadow (see merge_comments).
     case "$ext" in
       nix|sh|bash|rb|toml|ex|exs|ps1) comment_kind="hash" ;;
@@ -1344,7 +1631,7 @@ in
         echo "prose-lint: $file has no comment shadow" >&2
         exit 2
       fi
-      comment_lines "$comment_kind" "$source" /dev/null | end_list_leads | blank_fences |
+      comment_lines "$comment_kind" "$source" /dev/null | end_list_leads |
         close_spans /dev/null | break_fence_runs | straighten
       exit 0
     fi
@@ -1403,7 +1690,7 @@ in
       span_shifts=$tmp_dir/span_shifts
       : >"$shifts"
       : >"$span_shifts"
-      comment_lines "$comment_kind" "$source" "$shifts" | end_list_leads | blank_fences |
+      comment_lines "$comment_kind" "$source" "$shifts" | end_list_leads |
         close_spans "$span_shifts" | break_fence_runs | straighten >"$shadow"
     fi
 
@@ -1663,7 +1950,7 @@ in
         #
         # The second-to-last line ends in `--`, and its sentence goes on in
         # the last line. Harper strips the marks at the end of a comment
-        # line, so the shadow adds ` x` after them (see comment_lines). The
+        # line, so the shadow adds ` x` after them (see close_spans). The
         # copy that merge_comments prints keeps that ` x` after a `-` when
         # the next comment line holds text. So the test expects a ProseDash
         # finding on the `--` from every file, as a markdown file with the
@@ -3078,6 +3365,1014 @@ in
             positions "$locale" >got || exit 1
             if ! diff want got; then
               echo "the $locale locale reports columns that do not count characters" >&2
+              exit 1
+            fi
+          done
+          touch "$out"
+        '';
+
+        # Lints comments with code spans and fenced code blocks in an awk
+        # file, a Go file, and a shell file. Each file reaches Harper on
+        # another path. Harper lints the shadow of spans.awk as a shell
+        # file and the shadow of spans.go as a Rust file. It lints a copy
+        # of spans.sh whose comment lines come from the shadow, and the
+        # awk checks read the shadow of all three. The test expects the
+        # same findings from each file, one column further right in
+        # spans.go. It expects no finding inside a code span, and it
+        # expects the findings after each span at their source columns.
+        # The comments hold these spans and runs:
+        # - A span in a run of two or more backticks that holds a shorter
+        #   run.
+        # - A lone backtick above a blank comment line, a list item, or a
+        #   heading, and a lone backtick in a heading. One heading opens
+        #   the text of a list item.
+        # - An escaped backtick, a lone run of two backticks, and a run
+        #   of three backticks with a backtick after it. Each of them sits
+        #   before a span.
+        # - Spans in one, two, and three backticks that wrap onto later
+        #   lines, with backticks in their code. One span opens at the
+        #   end of its line, and a span in two backticks follows it on
+        #   the next line.
+        # - A lone backtick above a line that opens with seven `#` marks.
+        #   That line is text of the paragraph, so a span wraps onto it.
+        # - A lone run of two backticks above a thematic break or a
+        #   blockquote, and a span in two backticks after it.
+        # - A lone backtick before a span in two backticks that wraps, on
+        #   the line that opens the span and on the line above it.
+        # - A span in three or more backticks that closes on its own line,
+        #   at the start of the text and after a quote marker.
+        #
+        # The shadow writes each backtick of a lone run as a `%`. So the
+        # test expects the findings after a lone run, on its line and on
+        # the next line. Two lone runs sit between two copies of one
+        # word, and the test expects no repeated word there.
+        #
+        # Other comments wrap a span or a lone backtick onto a line that
+        # opens with `2)` or `2.`:
+        # - The marker after a line of prose, and in the text of an item.
+        #   The marker is text of the paragraph there.
+        # - The marker after a line that opens a bullet item or a
+        #   blockquote. The marker opens an item there.
+        # - A block in backticks after `2.`, after a line of prose and at
+        #   the start of a paragraph. Only the second one opens a block.
+        #
+        # Other comments wrap a span onto a line deep in a paragraph. Its
+        # text sits four or more columns right of the edge of the
+        # paragraph, or of the text of the item that the paragraph opens.
+        # That line opens with `- 2)`, `# 2)`, `> 2)`, `***`, or `- and`,
+        # and it holds more text of the paragraph. The first line of the
+        # `- and` paragraph sits one column right of the edge. Some of
+        # these comments sit in a blockquote, and one wraps onto a line
+        # with fewer `>` marks. A lazy line with no indent continues a
+        # quoted paragraph too.
+        #
+        # Other comments open a paragraph with a line of `===` or `--`
+        # under a blank line, under a line of code, or under a lone `-`.
+        # With no paragraph above it, that line is not a setext underline.
+        # So the line four columns in under it holds more text of the
+        # paragraph, and a span wraps from that line onto the next one.
+        #
+        # Other comments put a lone backtick above a line that opens an
+        # item with a span in it. The item opens at these markers:
+        # - At `1.`, and at a bullet three columns in.
+        # - At a bullet two columns past the text of an item, and past the
+        #   text of a later paragraph of an item.
+        # - At a bullet three columns past a `>` with no space after it,
+        #   and at the same bullet under a nested blockquote.
+        #
+        # Other comments put a lone run of two backticks above a thematic
+        # break, a setext underline, or a quoted line of spaces, with a
+        # span in two backticks after it. One of them puts the run above
+        # a thematic break in a blockquote. That break ends in `*`, so
+        # the shadow adds ` x` to its line. A ten-digit number and a
+        # period open no item, so a span wraps past them, and a fence
+        # after them is text.
+        #
+        # Other comments hold a line whose own text is `* x` or `--- x`,
+        # with and without a `>` in front. The shadow does not add ` x`
+        # to those lines. So each `* x` line opens an item under a lone
+        # backtick, and a span wraps across each `--- x` line.
+        #
+        # Other comments put a line of indented code under a blank line.
+        # The code holds a lone backtick, and the line under it ends the
+        # code with less indent. That line opens with `2.` or with prose,
+        # and it holds a span. A tab indents the code of one comment. In
+        # another comment, a line of three backticks as deep as the code
+        # is more code. The line of prose under it ends the code.
+        #
+        # A list item moves the edge of indented code to the text of the
+        # item. One comment puts code four columns past the text of an
+        # item. In another comment, a later paragraph of a nested item
+        # sits four columns in, and a lazy line continues it. Other
+        # comments close an item before the code with a paragraph at the
+        # margin, a line of code, a thematic break, a fence, or a `>`.
+        #
+        # Other comments open an empty item at a lone `-` or `*`. The text
+        # of the item sits one column past its marker, so a line four
+        # columns in is paragraph text of the item. A lazy line continues
+        # that paragraph, but a `2)` line opens an item. A blank line under
+        # the `*` ends the item, so a line four columns in is code there. A
+        # fence in tildes three columns past the text of the `*` item opens
+        # in the item.
+        #
+        # In one more comment, a tab indents a line four columns under a
+        # `>` line. That line holds more text of the quote, and a span wraps
+        # onto it.
+        #
+        # A `>` at or right of the text of a list item opens a blockquote
+        # in the item, and the item stays open after the quote. Other
+        # comments hold these cases:
+        # - A later paragraph of the item sits two columns past the text
+        #   of the item, and a span wraps in it. One comment nests the
+        #   item and the quote in a blockquote.
+        # - A `2)` left of the text of the item opens an item under a lone
+        #   backtick.
+        # - A later paragraph of a nested item sits four columns in, at
+        #   the text of the item, and a `1.` line under it opens an item.
+        # - The quote holds a paragraph two columns past its `>`, and a
+        #   span wraps in it. That paragraph is text of the quote.
+        # - A line without a `>` leaves an item that opened in a
+        #   blockquote, so a line four columns in is code there.
+        #
+        # A fence after a list marker opens the item of that marker. One
+        # comment puts a later paragraph of such an item four columns in,
+        # and a lazy line continues it. In another comment, a `2.` line
+        # under a later paragraph of such an item opens an item under a
+        # lone backtick. A list marker on a line of indented code does
+        # not open an item. So in a third comment, a line at the text
+        # after such a marker is code too.
+        #
+        # Each list marker that opens a line opens an item, so `- - `
+        # opens an item inside an item. Other comments hold these cases
+        # under `- - `:
+        # - A later paragraph two columns past the text of the inner item,
+        #   after a line of text and after a fence, with a lazy line under
+        #   it.
+        # - A heading after the markers, which ends its paragraph.
+        # - A `2)` left of the text of the inner item and a bullet two
+        #   columns past it. Each opens an item under a lone backtick.
+        # In one more comment, a bullet sits two columns past the text of
+        # an item and left of the text of a `10.` item inside it. The
+        # bullet opens an item under a lone backtick.
+        #
+        # Other comments put a lone backtick above a line with a span in
+        # these cases:
+        # - A line of indented code holds the backtick, and a quoted line
+        #   whose text sits four columns in ends the code.
+        # - A lone `-` under a paragraph is a setext underline and does
+        #   not open an item. So a line four columns in under it is code.
+        # - A list marker on the first line of indented code does not
+        #   open an item. So a later line at the text after the marker is
+        #   code too.
+        # - The text of an empty `10.` item sits one column past its
+        #   marker. So a line two columns past that text is paragraph text
+        #   of the item, and a bullet under that line opens an item.
+        #
+        # Other comments hold fenced code blocks in backticks and in
+        # tildes, after a list marker, and after a quote marker. The info
+        # string of one block in tildes holds a backtick. The test
+        # expects no finding inside a block and the findings after it.
+        # A line of four backticks and a word leaves a block of four
+        # open, but a line of four backticks closes a block of three. One
+        # block sits four columns in, where markdown reads its lines as
+        # indented code. One block opens right under a line of prose. One
+        # block has no closing line, and a line of code ends it. A span
+        # wraps across a line that opens with three backticks four
+        # columns right of a line of prose, which markdown reads as more
+        # text of the paragraph.
+        #
+        # Other comments end a block without a closing line, where
+        # markdown ends the code, the list item, or the blockquote that
+        # holds the block. In three of them, a line of three backticks
+        # sits four or more columns right of a line of prose. That line
+        # is text, so a later line of backticks opens the block.
+        # - A line with less indent ends a block that sits four columns
+        #   in, or four columns past the text of an item. In one comment,
+        #   that line opens a block of its own, so the test expects no
+        #   finding after it.
+        # - A line left of the text of an item ends a block in the item,
+        #   but a blank line in the block does not.
+        # - A line without a `>` ends a block in a blockquote.
+        #
+        # The command in configs/harper/CLAUDE.md builds this test too.
+        tests.code-spans = runCommand "prose-lint-code-spans" { } ''
+          printf '%s\n' \
+            '# The marks sit under a fence (`` ` ``) here.' \
+            '#' \
+            '# A quoted word (`It may help, e.g. to restart the pod`) passes.' \
+            'x = 1' \
+            '# The fence opens with ```` ``` ```` here.' \
+            '#' \
+            '# A quoted word (`It may help, e.g. to restart the pod`) passes.' \
+            'x = 1' \
+            '# The \` mark is literal, and the job' \
+            '# restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# The job reads ``a `b' \
+            '# c`` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# The job reads ``' \
+            '# `c`` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# The job reads `a' \
+            '# ` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# It reads ``it may stop, e.g. `' \
+            '# c`` here.' \
+            'x = 1' \
+            '# A lone `` marks it, and it may stop at `' \
+            '# x` here.' \
+            'x = 1' \
+            '# A span wraps over ``three' \
+            '# lines of ` it may stop, e.g. as here,' \
+            '# end`` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# The span here, ```a wrapped' \
+            '# span``` ends, and then it may, e.g. stop.' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# An empty value prints as `` in the log.' \
+            '# The job restarts, e.g. later, and may stop.' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The ` mark opens nothing here.' \
+            '#' \
+            '# A quoted word (`It may help, e.g. to restart the pod`) passes.' \
+            'x = 1' \
+            '# The ` mark is literal:' \
+            '# - A quoted word (`It may help, e.g. to restart the pod`) passes.' \
+            'x = 1' \
+            '# A lone ` mark, and it may stop, e.g. later.' \
+            '# ## The ` heading' \
+            '# The job restarts, e.g. later, and may stop, as `x` says.' \
+            'x = 1' \
+            '# ```x `y' \
+            '# z``` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# Set it to `` to clear it.' \
+            '# ---' \
+            '# The job restarts, e.g. later, and may stop, so run ``x``.' \
+            'x = 1' \
+            '# Set it to `` to clear it.' \
+            '# > The job restarts, e.g. later, and may stop, so run ``x``.' \
+            'x = 1' \
+            '# ```sh' \
+            '# make build' \
+            '# ```' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# ```sh' \
+            '# echo ``' \
+            '# ```' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# ````md' \
+            '# ```' \
+            '# It may help, e.g. now.' \
+            '# ```' \
+            '# ````' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# ~~~' \
+            '# It may help, e.g. now.' \
+            '#' \
+            '# ~~~' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# ~~~sh' \
+            '# echo ``' \
+            '# ~~~' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            '# - ```sh' \
+            '#   echo ` it may stop, e.g. now' \
+            '#   ```' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            '# > ```sh' \
+            '# > make build' \
+            '# > ```' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The ` mark, and ``it may stop, e.g. as' \
+            '# here`` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# The ` mark is literal here.' \
+            '# The job reads ``a' \
+            '# b`` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            '# ```sh' \
+            '# make build' \
+            '# ```' \
+            'x = 1' \
+            '# The call `max(1,' \
+            '# 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# 1. The call `max(1,' \
+            '#    2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# - The ` mark is literal, and the job' \
+            '# 2. restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# > The ` mark is literal, and the job' \
+            '# 2. restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# The steps run in order, and' \
+            '# 2. ```sh is the second step.' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            '# 2. ```sh' \
+            '#    echo ` it may stop, e.g. now' \
+            '#    ```' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# ```` ``` ```` opens a fence in markdown.' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# > ```make``` and then it may stop, e.g. now.' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The call `max(1,' \
+            '#     - 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# The call `max(1,' \
+            '#     # 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# The call `max(1,' \
+            '#     > 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# The call `max(1,' \
+            '#     ***' \
+            '# it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# - The call `max(1,' \
+            '#       - 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# > The call `max(1,' \
+            '# >     - 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# > - The call `max(1,' \
+            '#     - 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# > The call `max(1,' \
+            '# it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# > > The call `max(1,' \
+            '# >     - 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# 100. The call `max(1,' \
+            '#     - 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# The ` mark is literal, and the job' \
+            '#    - restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# - The ` mark is literal, and the job' \
+            '#     - restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# - The step runs.' \
+            '#' \
+            '#   The ` mark is literal, and the job' \
+            '#     - restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# >The ` mark is literal, and the job' \
+            '# >    - restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# > > The ` mark is literal, and the job' \
+            '# >    - restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# > Set it to `` to clear it.' \
+            '# >     ' \
+            '# > The job restarts, e.g. later, and may stop, so run ``x``.' \
+            'x = 1' \
+            '# Run it like this:' \
+            '#' \
+            '#     ```sh' \
+            '#     make build' \
+            '#     ```' \
+            '#' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The ` mark is literal, and the job' \
+            '# 1. restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# ````md' \
+            '# ```` foo' \
+            '# It may help, e.g. now.' \
+            '# ````' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# ```sh' \
+            '# make build' \
+            '# ````' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# Set it to `` to clear it.' \
+            '# ***' \
+            '# The job restarts, e.g. later, and may stop, so run ``x``.' \
+            'x = 1' \
+            '# Set it to `` to clear it.' \
+            '# ___' \
+            '# The job restarts, e.g. later, and may stop, so run ``x``.' \
+            'x = 1' \
+            '# Set it to `` to clear it.' \
+            '# - - -' \
+            '# The call `max(1,' \
+            '#     - 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# Set it to `` to clear it.' \
+            '# ===' \
+            '# The job restarts, e.g. later, and may stop, so run ``x``.' \
+            'x = 1' \
+            '# 1234567890. The call `max(1,' \
+            '# 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# 1234567890. ```sh' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# > Set it to `` to clear it.' \
+            '# > ***' \
+            '# > The job restarts, e.g. later, and may stop, so run ``x``.' \
+            'x = 1' \
+            '# - ## The ` heading' \
+            '#   The job restarts, e.g. later, and may stop, as `x` says.' \
+            'x = 1' \
+            '# The job reads it, and it may stop at `' \
+            '# x` here, and ``y`` may stop, e.g. now.' \
+            'x = 1' \
+            '# ~~~ `sh`' \
+            '# It may help, e.g. now.' \
+            '# ~~~' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The ` mark is literal, and the job' \
+            '# ####### restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# ```sh' \
+            '# make build' \
+            'x = 1' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# The ` mark is literal, and the job' \
+            '# * x' \
+            '# restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# Run `it may stop, e.g. now' \
+            '# --- x' \
+            '# here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# The job reads `a' \
+            '#     ```sh' \
+            '# b` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# > Run `it may stop, e.g. now' \
+            '# > --- x' \
+            '# > here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# > The ` mark is literal, and the job' \
+            '# > * x' \
+            '# > restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            '#     tr -d "`"' \
+            '# 2. Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            $'# \ttr -d "`"' \
+            '# 2. Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            '#     tr -d "`"' \
+            '# Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            '#     tr -d "`"' \
+            '#     ```' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# - Item:' \
+            '#' \
+            '#   - Sub item.' \
+            '#' \
+            '#     A later paragraph `it may stop, e.g. now' \
+            '#   here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# - Item:' \
+            '#' \
+            '# Steps:' \
+            '#' \
+            '#     tr -d "`"' \
+            '# Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# - Item:' \
+            'x = 1' \
+            '#     tr -d "`"' \
+            '# Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# - Item:' \
+            '# ***' \
+            '#     tr -d "`"' \
+            '# Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# - Item:' \
+            '# ~~~' \
+            '# ~~~' \
+            '#     tr -d "`"' \
+            '# Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# - Item:' \
+            '#' \
+            '#       tr -d "`"' \
+            '#     Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# 10. Item:' \
+            '# >     tr -d "`"' \
+            '# > Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# -' \
+            '#     The call `max(1,' \
+            '# it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# -' \
+            '#     The call `max(1,' \
+            '# 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# > The call `max(1,' \
+            $'# \t- 2) it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# *' \
+            '#' \
+            '#     tr -d "`"' \
+            '# Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# *' \
+            '#      ~~~' \
+            '#      it may stop, e.g. now' \
+            '#      ~~~' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# - Item:' \
+            '#' \
+            '#   > A quote.' \
+            '#' \
+            '#     A later paragraph `it may stop, e.g. now' \
+            '#   here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# - Item:' \
+            '#' \
+            '#   > A quote.' \
+            '#' \
+            '#   The ` mark is literal, and the job' \
+            '# 2) restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# - Steps:' \
+            '#   - First:' \
+            '#' \
+            '#     > A quote.' \
+            '#' \
+            '#     The ` mark is literal, and the job' \
+            '#     1. restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# - Item:' \
+            '#' \
+            '#   >   A later paragraph `it may stop, e.g. now' \
+            '#   > here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# > - Item:' \
+            '# >' \
+            '# >   > A quote.' \
+            '# >' \
+            '# >     A later paragraph `it may stop, e.g. now' \
+            '# >   here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# > - Item:' \
+            '# >' \
+            '#     tr -d "`"' \
+            '# Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '#  The job reads it' \
+            '#     - and `it may stop, e.g. now' \
+            '# here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# Intro.' \
+            '#' \
+            '# ===' \
+            '#     The call `max(1,' \
+            '# it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# --' \
+            '#     The call `max(1,' \
+            '# it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# -' \
+            '# ===' \
+            '#     The call `max(1,' \
+            '# it may stop, e.g. now` returns, and it may stop, e.g. later.' \
+            'x = 1' \
+            '# - ```sh' \
+            '#   ls' \
+            '#   ```' \
+            '#' \
+            '#     A later paragraph `it may stop, e.g. now' \
+            '#   here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# 1. ```sh' \
+            '#    make' \
+            '#    ```' \
+            '#' \
+            '#    The ` mark is literal, and the job' \
+            '# 2. restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '#     - ```sh' \
+            '#     ls' \
+            '#     ```' \
+            '#       The ` mark is literal, and the job' \
+            '# restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# - - Item:' \
+            '#' \
+            '#       A later paragraph `it may stop, e.g. now' \
+            '# here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# - - ```sh' \
+            '#     ls' \
+            '#     ```' \
+            '#' \
+            '#       A later paragraph `it may stop, e.g. now' \
+            '# here` and then, e.g. later, it may stop.' \
+            'x = 1' \
+            '# - - ## The ` heading' \
+            '#     The job restarts, e.g. later, and may stop, as `x` says.' \
+            'x = 1' \
+            '# - 10. The ` mark is literal, and the job' \
+            '#     - restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# - - The ` mark is literal, and the job' \
+            '#   2) restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# - - The ` mark is literal, and the job' \
+            '#       - restarts, e.g. later, and may stop, as `make` says.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            '#     tr -d "`"' \
+            '# >   The job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# Steps.' \
+            '# -' \
+            '#     tr -d "`"' \
+            '# Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# Steps:' \
+            '#' \
+            '#     - item' \
+            '#' \
+            '#       tr -d "`"' \
+            '#   Then the job may stop, e.g. later, as `make` says.' \
+            'x = 1' \
+            '# 10.' \
+            '#       The call `max(1,' \
+            '#       - 2) it may stop, e.g. now` returns.' \
+            'x = 1' \
+            '# Example:' \
+            '#     ```sh' \
+            '#     make' \
+            '#' \
+            '#     ```' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# - Item:' \
+            '#         ```sh' \
+            '#         make' \
+            '#   ```' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# Example:' \
+            '#     ```sh' \
+            '# > ```' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# - Build it:' \
+            '#' \
+            '#       ```sh' \
+            '#       make' \
+            '#     The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# - Steps:' \
+            '#' \
+            '#   ```sh' \
+            '#   it may stop, e.g. now' \
+            '#' \
+            '#   it may stop, e.g. now' \
+            '#   ```' \
+            '#' \
+            '#   The job restarts, e.g. later, and may stop.' \
+            'x = 1' \
+            '# Run it like this:' \
+            '#' \
+            '#     ```sh' \
+            '# ```' \
+            '# The job restarts, e.g. later, and may stop.' \
+            'x = 1' >spans.awk
+          cp spans.awk spans.sh
+          sed -e 's,^#,//,' -e 's/^x = 1/var x = 1/' spans.awk >spans.go
+
+          cat >hash <<'EOF'
+          10:13 ProseLatinAbbreviation
+          10:29 ProseMayPossibility
+          13:17 ProseLatinAbbreviation
+          13:32 ProseMayPossibility
+          16:18 ProseLatinAbbreviation
+          16:33 ProseMayPossibility
+          19:15 ProseLatinAbbreviation
+          19:30 ProseMayPossibility
+          24:30 ProseMayPossibility
+          29:19 ProseLatinAbbreviation
+          29:34 ProseMayPossibility
+          32:34 ProseLatinAbbreviation
+          34:21 ProseLatinAbbreviation
+          34:37 ProseMayPossibility
+          36:21 ProseLatinAbbreviation
+          36:37 ProseMayPossibility
+          39:21 ProseLatinAbbreviation
+          39:37 ProseMayPossibility
+          41:21 ProseLatinAbbreviation
+          41:37 ProseMayPossibility
+          50:25 ProseMayPossibility
+          50:35 ProseLatinAbbreviation
+          52:21 ProseLatinAbbreviation
+          52:37 ProseMayPossibility
+          55:18 ProseLatinAbbreviation
+          55:33 ProseMayPossibility
+          59:21 ProseLatinAbbreviation
+          59:37 ProseMayPossibility
+          62:23 ProseLatinAbbreviation
+          62:39 ProseMayPossibility
+          68:21 ProseLatinAbbreviation
+          68:37 ProseMayPossibility
+          74:21 ProseLatinAbbreviation
+          74:37 ProseMayPossibility
+          76:21 ProseLatinAbbreviation
+          76:37 ProseMayPossibility
+          83:21 ProseLatinAbbreviation
+          83:37 ProseMayPossibility
+          89:21 ProseLatinAbbreviation
+          89:37 ProseMayPossibility
+          95:21 ProseLatinAbbreviation
+          95:37 ProseMayPossibility
+          97:21 ProseLatinAbbreviation
+          97:37 ProseMayPossibility
+          105:21 ProseLatinAbbreviation
+          105:37 ProseMayPossibility
+          107:21 ProseLatinAbbreviation
+          107:37 ProseMayPossibility
+          115:21 ProseLatinAbbreviation
+          115:37 ProseMayPossibility
+          117:21 ProseLatinAbbreviation
+          117:37 ProseMayPossibility
+          120:20 ProseLatinAbbreviation
+          120:35 ProseMayPossibility
+          124:17 ProseLatinAbbreviation
+          124:32 ProseMayPossibility
+          126:21 ProseLatinAbbreviation
+          126:37 ProseMayPossibility
+          132:45 ProseMayPossibility
+          132:55 ProseLatinAbbreviation
+          135:48 ProseMayPossibility
+          135:58 ProseLatinAbbreviation
+          138:16 ProseLatinAbbreviation
+          138:32 ProseMayPossibility
+          141:16 ProseLatinAbbreviation
+          141:32 ProseMayPossibility
+          145:21 ProseLatinAbbreviation
+          145:37 ProseMayPossibility
+          153:21 ProseLatinAbbreviation
+          153:37 ProseMayPossibility
+          155:21 ProseLatinAbbreviation
+          155:37 ProseMayPossibility
+          159:21 ProseLatinAbbreviation
+          159:37 ProseMayPossibility
+          161:21 ProseLatinAbbreviation
+          161:37 ProseMayPossibility
+          163:28 ProseMayPossibility
+          163:38 ProseLatinAbbreviation
+          164:21 ProseLatinAbbreviation
+          164:37 ProseMayPossibility
+          167:51 ProseMayPossibility
+          167:61 ProseLatinAbbreviation
+          170:51 ProseMayPossibility
+          170:61 ProseLatinAbbreviation
+          173:51 ProseMayPossibility
+          173:61 ProseLatinAbbreviation
+          177:42 ProseMayPossibility
+          177:52 ProseLatinAbbreviation
+          180:53 ProseMayPossibility
+          180:63 ProseLatinAbbreviation
+          183:53 ProseMayPossibility
+          183:63 ProseLatinAbbreviation
+          186:51 ProseMayPossibility
+          186:61 ProseLatinAbbreviation
+          189:42 ProseMayPossibility
+          189:52 ProseLatinAbbreviation
+          192:53 ProseMayPossibility
+          192:63 ProseLatinAbbreviation
+          195:51 ProseMayPossibility
+          195:61 ProseLatinAbbreviation
+          198:18 ProseLatinAbbreviation
+          198:34 ProseMayPossibility
+          201:19 ProseLatinAbbreviation
+          201:35 ProseMayPossibility
+          206:19 ProseLatinAbbreviation
+          206:35 ProseMayPossibility
+          209:20 ProseLatinAbbreviation
+          209:36 ProseMayPossibility
+          212:20 ProseLatinAbbreviation
+          212:36 ProseMayPossibility
+          216:23 ProseLatinAbbreviation
+          216:39 ProseMayPossibility
+          224:21 ProseLatinAbbreviation
+          224:37 ProseMayPossibility
+          227:16 ProseLatinAbbreviation
+          227:32 ProseMayPossibility
+          233:21 ProseLatinAbbreviation
+          233:37 ProseMayPossibility
+          238:21 ProseLatinAbbreviation
+          238:37 ProseMayPossibility
+          242:21 ProseLatinAbbreviation
+          242:37 ProseMayPossibility
+          246:21 ProseLatinAbbreviation
+          246:37 ProseMayPossibility
+          251:51 ProseMayPossibility
+          251:61 ProseLatinAbbreviation
+          255:21 ProseLatinAbbreviation
+          255:37 ProseMayPossibility
+          258:45 ProseMayPossibility
+          258:55 ProseLatinAbbreviation
+          261:21 ProseLatinAbbreviation
+          261:37 ProseMayPossibility
+          265:23 ProseLatinAbbreviation
+          265:39 ProseMayPossibility
+          268:23 ProseLatinAbbreviation
+          268:39 ProseMayPossibility
+          270:28 ProseMayPossibility
+          271:22 ProseMayPossibility
+          271:32 ProseLatinAbbreviation
+          276:21 ProseLatinAbbreviation
+          276:37 ProseMayPossibility
+          284:21 ProseLatinAbbreviation
+          284:37 ProseMayPossibility
+          288:13 ProseLatinAbbreviation
+          288:29 ProseMayPossibility
+          292:19 ProseLatinAbbreviation
+          292:34 ProseMayPossibility
+          296:16 ProseLatinAbbreviation
+          296:31 ProseMayPossibility
+          300:21 ProseLatinAbbreviation
+          300:36 ProseMayPossibility
+          304:15 ProseLatinAbbreviation
+          304:31 ProseMayPossibility
+          309:19 ProseMayPossibility
+          309:29 ProseLatinAbbreviation
+          314:19 ProseMayPossibility
+          314:29 ProseLatinAbbreviation
+          319:16 ProseMayPossibility
+          319:26 ProseLatinAbbreviation
+          325:21 ProseLatinAbbreviation
+          325:37 ProseMayPossibility
+          332:21 ProseLatinAbbreviation
+          332:36 ProseMayPossibility
+          339:16 ProseMayPossibility
+          339:26 ProseLatinAbbreviation
+          344:16 ProseMayPossibility
+          344:26 ProseLatinAbbreviation
+          349:16 ProseMayPossibility
+          349:26 ProseLatinAbbreviation
+          355:16 ProseMayPossibility
+          355:26 ProseLatinAbbreviation
+          360:20 ProseMayPossibility
+          360:30 ProseLatinAbbreviation
+          364:18 ProseMayPossibility
+          364:28 ProseLatinAbbreviation
+          368:42 ProseMayPossibility
+          368:52 ProseLatinAbbreviation
+          372:9 ProseMayPossibility
+          372:19 ProseLatinAbbreviation
+          372:45 ProseMayPossibility
+          372:55 ProseLatinAbbreviation
+          375:48 ProseMayPossibility
+          375:58 ProseLatinAbbreviation
+          380:16 ProseMayPossibility
+          380:26 ProseLatinAbbreviation
+          386:21 ProseLatinAbbreviation
+          386:37 ProseMayPossibility
+          393:21 ProseLatinAbbreviation
+          393:36 ProseMayPossibility
+          400:16 ProseLatinAbbreviation
+          400:32 ProseMayPossibility
+          408:20 ProseLatinAbbreviation
+          408:36 ProseMayPossibility
+          413:23 ProseLatinAbbreviation
+          413:38 ProseMayPossibility
+          420:23 ProseLatinAbbreviation
+          420:38 ProseMayPossibility
+          425:16 ProseMayPossibility
+          425:26 ProseLatinAbbreviation
+          429:19 ProseLatinAbbreviation
+          429:34 ProseMayPossibility
+          435:42 ProseMayPossibility
+          435:52 ProseLatinAbbreviation
+          439:42 ProseMayPossibility
+          439:52 ProseLatinAbbreviation
+          444:42 ProseMayPossibility
+          444:52 ProseLatinAbbreviation
+          451:21 ProseLatinAbbreviation
+          451:36 ProseMayPossibility
+          458:16 ProseLatinAbbreviation
+          458:32 ProseMayPossibility
+          464:13 ProseLatinAbbreviation
+          464:29 ProseMayPossibility
+          469:19 ProseLatinAbbreviation
+          469:34 ProseMayPossibility
+          476:19 ProseLatinAbbreviation
+          476:34 ProseMayPossibility
+          479:25 ProseLatinAbbreviation
+          479:41 ProseMayPossibility
+          482:19 ProseLatinAbbreviation
+          482:35 ProseMayPossibility
+          485:18 ProseLatinAbbreviation
+          485:34 ProseMayPossibility
+          488:21 ProseLatinAbbreviation
+          488:37 ProseMayPossibility
+          493:15 ProseMayPossibility
+          493:25 ProseLatinAbbreviation
+          498:16 ProseMayPossibility
+          498:26 ProseLatinAbbreviation
+          505:18 ProseMayPossibility
+          505:28 ProseLatinAbbreviation
+          509:17 ProseMayPossibility
+          509:27 ProseLatinAbbreviation
+          516:21 ProseLatinAbbreviation
+          516:37 ProseMayPossibility
+          522:21 ProseLatinAbbreviation
+          522:37 ProseMayPossibility
+          527:21 ProseLatinAbbreviation
+          527:37 ProseMayPossibility
+          533:25 ProseLatinAbbreviation
+          533:41 ProseMayPossibility
+          543:23 ProseLatinAbbreviation
+          543:39 ProseMayPossibility
+          EOF
+          awk '{ split($1, pos, ":"); print pos[1] ":" pos[2] + 1 " " $2 }' hash >wide
+
+          for f in spans.awk spans.go spans.sh; do
+            case "$f" in
+              *.go) want=wide ;;
+              *) want=hash ;;
+            esac
+            rc=0
+            found=$(${lib.getExe finalAttrs.finalPackage} "$f") || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "$f: prose-lint exited $rc" >&2
+              exit 1
+            fi
+            printf '%s\n' "$found" |
+              sed -nE 's,^[^:]+:([0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::([A-Za-z]+): .*,\1 \2,p' |
+              sort -t: -k1,1n -k2,2n >got
+            if ! diff "$want" got; then
+              echo "$f draws other findings than $want lists" >&2
               exit 1
             fi
           done

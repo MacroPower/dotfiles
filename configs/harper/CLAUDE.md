@@ -674,6 +674,200 @@ on a set of files.
   its column in the copy with CRLF line endings and with its column
   under the C locale. Only this test checks a column against the
   character that holds the finding.
+- `code-spans` lints the comments of an awk file, a Go file, and a
+  shell file. Harper lints the comment shadow of the first two files,
+  and a copy of the shell file whose comment lines come from the
+  shadow. The awk checks read the shadow of all three. The test
+  expects the same findings from each file, one column further right
+  in the Go file. It expects no finding inside a code span, and it
+  expects the findings after each span at their source columns. The
+  comments hold these spans and runs:
+  - A span that opens and closes with a run of two or more backticks
+    and holds a shorter run (``` `` ` `` ```).
+  - A lone backtick above a blank comment line, a list item, or a
+    heading, and a lone backtick in a heading. One heading opens the
+    text of a list item. CommonMark reads a run that nothing in its
+    paragraph closes as literal text.
+  - An escaped backtick, a lone run of two backticks, and a run of
+    three backticks with a backtick after it. Each of them sits before
+    a span.
+  - Spans in one, two, and three backticks that wrap onto later lines,
+    with backticks in their code. One span opens at the end of its
+    line, and a span in two backticks follows it on the next line.
+  - A lone backtick above a line that opens with seven `#` marks.
+    CommonMark reads that line as text of the paragraph, so a span
+    wraps onto it.
+  - A lone run of two backticks above a thematic break or a
+    blockquote, and a span in two backticks after it.
+  - A lone backtick before a span in two backticks that wraps, on the
+    line that opens the span and on the line above it.
+  - A span in three or more backticks that closes on its own line, at
+    the start of the text and after a quote marker. Harper and
+    lib/markdown.awk read a line whose text opens with three backticks
+    as a fence, so the shadow puts a `%` in front of the run.
+
+  The comment shadow turns each backtick of a run that nothing in its
+  paragraph closes into a `%`. lib/markdown.awk then does not skip the
+  text after that run. So the test expects the findings after a lone
+  run, on its line and on the next line. Two lone runs sit between two
+  copies of one word, and the test expects no repeated word there.
+
+  Other comments wrap a span or a lone backtick onto a line that opens
+  with `2)` or `2.`. CommonMark lets only a bullet or a `1.` interrupt
+  a paragraph. Another marker opens an item only on a line that leaves
+  the item or the blockquote that holds the paragraph. The test holds
+  these cases:
+  - The marker after a line of prose, and in the text of an item. The
+    marker is text of the paragraph there.
+  - The marker after a line that opens a bullet item or a blockquote.
+    The marker opens an item there.
+  - A block in backticks after `2.`, after a line of prose and at the
+    start of a paragraph. Only the second one opens a block.
+
+  CommonMark does not open a block on a later line of a paragraph
+  whose text sits four or more columns right of the edge of the block
+  that holds the paragraph. The comment shadow puts that edge at the
+  text of the innermost list item that was open before the first line
+  of the paragraph, or after the `>` marks, whichever sits further
+  right. When the line reaches the text of an item that the first line
+  opens, the shadow counts from that text.
+
+  Other comments wrap a span onto such a line, which opens with
+  `- 2)`, `# 2)`, `> 2)`, `***`, or `- and`. The first line of the
+  `- and` paragraph sits one column right of the edge. Some of them sit
+  in a blockquote, and one wraps onto a line with fewer `>` marks. A
+  lazy line with no indent continues a quoted paragraph too.
+
+  A line of `===` or `--` with no paragraph above it opens a paragraph
+  in CommonMark, and it is not a setext underline. Other comments put
+  such a line under a blank line, a line of code, or a lone `-`. A span
+  wraps from a line four columns in under it onto the next line.
+
+  Other comments put a lone backtick above a line that opens an item
+  with a span in it. The item opens at these markers:
+  - At `1.`, and at a bullet three columns in.
+  - At a bullet two columns past the text of an item, and past the
+    text of a later paragraph of an item.
+  - At a bullet three columns past a `>` with no space after it, and at
+    the same bullet under a nested blockquote.
+
+  Other comments put a lone run of two backticks above a thematic
+  break, a setext underline, or a quoted line of spaces, with a span in
+  two backticks after it. One of them puts the run above a thematic
+  break in a blockquote. That break ends in `*`, so the comment shadow
+  adds ` x` to its line. A ten-digit number and a period open no item,
+  so a span wraps past them, and a fence after them is text.
+
+  Other comments hold a line whose own text is `* x` or `--- x`, with
+  and without a `>` in front. The comment shadow does not add ` x` to
+  those lines. So each `* x` line opens an item under a lone backtick,
+  and a span wraps across each `--- x` line.
+
+  CommonMark reads the first line of a paragraph as indented code when
+  its text sits four or more columns right of the edge of its block.
+  Each later line with less indent ends the code.
+
+  Other comments put a line of indented code with a lone backtick under
+  a blank line. The line under the code opens with `2.` or with prose,
+  and it holds a span. A tab indents the code of one comment. In
+  another comment, a line of three backticks as deep as the code is
+  more code. The line of prose under it ends the code.
+
+  A list item moves the edge of indented code to the text of the item.
+  One comment puts code four columns past the text of an item. In
+  another comment, a later paragraph of a nested item sits four columns
+  in, and a lazy line continues it. Other comments close an item before
+  the code with a paragraph at the margin, a line of code, a thematic
+  break, a fence, or a `>`.
+
+  Other comments open an empty item at a lone `-` or `*`. The text of
+  the item sits one column past its marker, so a line four columns in
+  is paragraph text of the item. A lazy line continues that paragraph,
+  but a `2)` line opens an item. A blank line under the `*` ends the
+  item, so a line four columns in is code there. A fence in tildes three
+  columns past the text of the `*` item opens in the item.
+
+  In one more comment, a tab indents a line four columns under a `>`
+  line. That line holds more text of the quote, and a span wraps onto
+  it.
+
+  A `>` at or right of the text of a list item opens a blockquote in
+  the item, and the item stays open after the quote. Other comments
+  hold these cases:
+  - A later paragraph of the item sits two columns past the text of
+    the item, and a span wraps in it. One comment nests the item and
+    the quote in a blockquote.
+  - A `2)` left of the text of the item opens an item under a lone
+    backtick.
+  - A later paragraph of a nested item sits four columns in, at the
+    text of the item, and a `1.` line under it opens an item.
+  - The quote holds a paragraph two columns past its `>`, and a span
+    wraps in it. That paragraph is text of the quote.
+  - A line without a `>` leaves an item that opened in a blockquote, so
+    a line four columns in is code there.
+
+  A fence after a list marker opens the item of that marker. One
+  comment puts a later paragraph of such an item four columns in, and a
+  lazy line continues it. In another comment, a `2.` line under a later
+  paragraph of such an item opens an item under a lone backtick.
+  CommonMark reads a list marker on a line of indented code as code, so
+  the marker does not open an item. In a third comment, a line at the
+  text after such a marker is code too.
+
+  Each list marker that opens a line opens an item, so `- - ` opens an
+  item inside an item. Other comments hold these cases under `- - `:
+  - A later paragraph two columns past the text of the inner item,
+    after a line of text and after a fence, with a lazy line under it.
+  - A heading after the markers, which ends its paragraph.
+  - A `2)` left of the text of the inner item and a bullet two columns
+    past it. Each opens an item under a lone backtick.
+
+  In one more comment, a bullet sits two columns past the text of an
+  item and left of the text of a `10.` item inside it. The bullet opens
+  an item under a lone backtick.
+
+  Other comments put a lone backtick above a line with a span in these
+  cases:
+  - A line of indented code holds the backtick, and a quoted line whose
+    text sits four columns in ends the code.
+  - A lone `-` under a paragraph is a setext underline, and CommonMark
+    does not open an item there. So a line four columns in under it is
+    code.
+  - CommonMark reads a list marker on the first line of indented code
+    as code, so the marker does not open an item. A later line at the
+    text after the marker is code too.
+  - The text of an empty `10.` item sits one column past its marker.
+    So a line two columns past that text is paragraph text of the item,
+    and a bullet under that line opens an item.
+
+  Other comments hold fenced code blocks in backticks and in tildes,
+  after a list marker, and after a quote marker. The info string of
+  one block in tildes holds a backtick. The test expects no finding
+  inside a block and the findings after it. The blocks include these
+  cases:
+  - A line of four backticks and a word leaves a block of four open,
+    but a line of four backticks closes a block of three.
+  - A block sits four columns in, where CommonMark reads its lines as
+    indented code.
+  - A block opens right under a line of prose.
+  - A block has no closing line, and a line of code ends it.
+
+  A span also wraps across a line that opens with three backticks four
+  columns right of a line of prose, which CommonMark reads as more text
+  of the paragraph.
+
+  Other comments end a block without a closing line, where CommonMark
+  ends the indented code, the list item, or the blockquote that holds
+  the block. In three of them, a line of three backticks sits four or
+  more columns right of a line of prose. That line is text, so a later
+  line of backticks opens the block.
+  - A line with less indent ends a block that sits four columns in, or
+    four columns past the text of an item. In one comment, that line
+    opens a block of its own, so the test expects no finding after it.
+  - A line left of the text of an item ends a block in the item, but a
+    blank line in the block does not.
+  - A line without a `>` ends a block in a blockquote.
+
 - `sentence-ends` lints its file under the C locale and under a UTF-8
   locale. It expects the same ProseSentenceLength findings from both,
   and no ProseTrailingCondition finding from either. The file holds
