@@ -488,13 +488,13 @@ on a set of files.
   - `{-|`, `{- |`, and `{--|` blocks
   - a `--  |` comment and a `--- |` comment
 
-  In the copy that Harper lints, prose-lint keeps the `{-` of a Haddock
-  block and puts a space in place of each character after it through the
-  Haddock marker. So the `--` of the `{--|` block does not draw a
-  ProseDash finding. The last `-- |` comment sits between two
-  quasiquotes, and the first one ends in `-- |]`. The file ends in the
-  operator `--|`, after code and at the start of a line, and the test
-  expects no finding there.
+  In the copy that Harper lints, prose-lint keeps the `{-` of each block
+  comment. It puts a space in place of each character after the `{-`
+  through the Haddock marker or the last dash. So the `--` of the `{--|`
+  block does not draw a ProseDash finding. The last `-- |` comment sits
+  between two quasiquotes, and the first one ends in `-- |]`. The file
+  ends in the operator `--|`, after code and at the start of a line, and
+  the test expects no finding there.
 
   The test also expects the shadow to hold each full-line `--` comment
   without its Haddock marker. The shadow takes a `--` marker only before
@@ -503,12 +503,99 @@ on a set of files.
   on an unreadable copy of the file, as on the file of any other
   language.
 
+  The test also lints a second Haskell file, which holds Haddock code
+  examples and block comments that open with `{--`. prose-lint puts
+  spaces in place of the code of each Haddock code example, in `--`
+  comments and in block comments. It cuts bird tracks (`> f x`),
+  examples (`>>> f x`) and their result lines, and properties
+  (`prop> f x`). It keeps each `{-`, `-}`, and `|]` at its column, so
+  the comments and quasiquotes of the copy close where they do in the
+  file.
+
+  The code holds `Just`, `Maybe`, and a `--` comment. The test expects a
+  ProseMayPossibility finding only on the lines of prose. The shadow
+  holds text only on those lines and on the cut lines that keep a `-}`
+  or a `|]`. The file holds these cases:
+
+  - an indented bird track, and a bird track in a `---` comment
+  - a line of prose right under a bird track and right under a property
+  - result lines that end at an empty comment line or at a line of
+    code, with a line of prose under each
+  - an example that opens a `-- |` comment
+  - a block that opens with `{--` and a block that opens with a banner
+    of dashes, with no ProseDash finding on either opener
+  - a `{---}` block above a string that holds prose, which prose-lint
+    rewrites as `{- -}`, so the block still closes
+  - a `{-|` block that holds each form of code example, with a result
+    line that ends in the `-}` of the block, above a string that holds
+    prose
+  - a bird track that opens a nested block, inside a block of prose
+  - a block whose last line is `-- > lookup 1 m -}`, above a string that
+    holds prose
+  - a quasiquote whose last line is `-- > lookup 1 m |]`, above a
+    comment
+  - a quasiquote that closes on a bird track, with code and a comment of
+    prose after its `|]`
+  - a quasiquote that closes on the line of an example, right above a
+    `--` comment of prose
+  - a `{-` in a string after the character literal `'"'`, in a line
+    comment, and in a quasiquote. Other cases put a `{-` in a string
+    after the string `"\""`, in a string after the character literal
+    `'\"'`, in the quasiquote `[Q.r|{-|]`, and in a string after
+    `i' '"'`. The `'` of the name `i'` does not open a character
+    literal. Each `{-` sits on lines of its own, above a line of code
+    that opens with `>` and ends in a comment.
+  - blocks that open after the operators `<--` and `-->` and after
+    `{-}`, each closed on a `--` line with a bird track, with code and a
+    comment of prose after the `-}`
+  - a block that holds a nested block of prose and then two bird
+    tracks, one with a `--` comment and one with a nested block, above a
+    string that holds prose
+  - a block that opens after code and closes on the line of an example,
+    with code and a comment of prose after its `-}`
+  - a block that closes on a `--` line with an example, with code and a
+    block comment of prose after its `-}`
+  - a `{-|` block whose last result line ends in the `-}` of the block,
+    right above a `--` comment of prose
+  - a `{-` in a string after the character literals `'é'` and `'"'`,
+    above a line of code that opens with `>` and ends in a comment
+  - a block that closes on a bird track that holds `café`, with code and
+    a comment of prose after its `-}`
+
+  The test expects the same shadow and findings from a copy of the
+  second file with CRLF line endings. In both copies, a trailing space
+  ends the empty comment line under the first result lines, and
+  editorconfig trims that space from a fixture. In the CRLF copy, a
+  `\r` follows the space, and prose-lint must not read it as text of a
+  result line.
+
+  The test reads the shadows of the second file and of its CRLF copy
+  under the C locale and under a UTF-8 locale. It lints each copy under
+  each locale too. gawk reads `é` as two characters under the C locale.
+  So under that locale, a cut that puts a space in place of each byte
+  moves the comment after the `-}` of `café` to the right.
+
+  A third Haskell file puts a `{-` in strings that run on past the end
+  of a line or hold a `\` and whitespace. One multiline string, which
+  `"""` opens, holds a `{-`, a `--` line with a bird track, and a `{-`
+  after a `"`. One string gap runs from the end of a line to the next
+  line, and another opens and closes inside one line. The file ends in
+  a `{-|` block whose last result line ends in the `-}` of the block,
+  above a `--` comment of prose. prose-lint keeps the `--` line of the
+  multiline string whole. The test expects the shadow of the file, and
+  of its copy with CRLF line endings, to hold that line and the comment.
+
+  tree-sitter-haskell 0.24.1 reads the `{-` of a multiline string as the
+  opener of a block comment. It reads the `{-` after a gap inside one
+  line the same way, and the `{-` after each gap of a file with CRLF
+  line endings. So the test checks only the shadows of the third file.
+
   harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that holds
-  a comment. With that harper-cli, the test checks only the shadow and
+  a comment. With that harper-cli, the test checks only the shadows and
   the exit status. The command that builds the `haddock` test from a
   home configuration of the flake uses the patched harper of
-  harperOverlay in `lib/default.nix`. Only that command lints the
-  Haskell file of the test end to end.
+  harperOverlay in `lib/default.nix`. Only that command lints the first
+  two Haskell files of the test end to end.
 
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).
@@ -937,11 +1024,12 @@ nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); p
 ```
 
 The command that builds every test uses harper-cli from nixpkgs, so
-the `haddock` test checks only the shadow and the exit status there.
+the `haddock` test checks only the shadows and the exit status there.
 On a Linux host, this command builds the `haddock` test from the `dev`
 home configuration of the flake for the system of the host. The harper
 of that configuration carries the patches of harperOverlay in
-`lib/default.nix`, so the test also lints its Haskell file end to end.
+`lib/default.nix`, so the test also lints its first two Haskell files end
+to end.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); in f.homeConfigurations."dev@${builtins.currentSystem}".pkgs.prose-lint.passthru.tests.haddock'
