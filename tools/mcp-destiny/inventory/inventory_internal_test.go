@@ -293,6 +293,40 @@ func TestSlotsUsed(t *testing.T) {
 	}
 }
 
+func TestHeld(t *testing.T) {
+	t.Parallel()
+
+	s := &Snapshot{byID: map[string]*Item{}}
+	for _, item := range []*Item{
+		{Hash: 1, Quantity: 2, Owner: OwnerAccount},
+		{Hash: 1, Quantity: 3, Owner: OwnerAccount},
+		{Hash: 1, Quantity: 1, Owner: bungietest.HunterID, Postmaster: true},
+		{Hash: 2, Quantity: 40, Owner: OwnerAccount},
+	} {
+		s.Add(item)
+	}
+
+	tests := map[string]struct {
+		hash           uint32
+		wantHeld       int
+		wantPostmaster int
+	}{
+		"stacks outside and at the Postmaster": {hash: 1, wantHeld: 5, wantPostmaster: 1},
+		"stack outside the Postmaster":         {hash: 2, wantHeld: 40},
+		"item that the account lacks":          {hash: 3},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			held, postmaster := s.Held(tc.hash)
+			assert.Equal(t, tc.wantHeld, held, "held")
+			assert.Equal(t, tc.wantPostmaster, postmaster, "postmaster")
+		})
+	}
+}
+
 func TestAnnotate(t *testing.T) {
 	t.Parallel()
 

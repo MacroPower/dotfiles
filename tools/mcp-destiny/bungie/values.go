@@ -67,6 +67,15 @@ const (
 	PlugCategoryHarmonizer uint32 = 3520412733
 )
 
+// Item hashes of the materials that a Deepsight activation spends. A
+// Deepsight Harmonizer gives a weapon Deepsight Resonance, and the
+// activation of a raid weapon also spends Spoils of Conquest. Stacks of
+// both materials sit in [BucketConsumables].
+const (
+	ItemDeepsightHarmonizer uint32 = 2228452164
+	ItemSpoilsOfConquest    uint32 = 3702027555
+)
+
 // RecordObjectiveNotCompleted is the ObjectiveNotCompleted bit of the
 // Bungie DestinyRecordState enum. A record whose state carries the bit
 // still has an objective to complete.

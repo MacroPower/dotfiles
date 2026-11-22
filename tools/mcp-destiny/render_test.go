@@ -810,6 +810,35 @@ func TestPatternLabel(t *testing.T) {
 	}
 }
 
+func TestActivationCost(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		item inventory.Item
+		want string
+	}{
+		"weapon outside the raids": {
+			item: inventory.Item{SourceKnown: true},
+			want: "1 harmonizer",
+		},
+		"raid weapon": {
+			item: inventory.Item{Raid: true, SourceKnown: true},
+			want: "1 harmonizer + 15 Spoils",
+		},
+		"weapon without source tags": {
+			want: "1 harmonizer + 15 Spoils if a raid weapon",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, activationCost(&tc.item))
+		})
+	}
+}
+
 func TestMoveFailure(t *testing.T) {
 	t.Parallel()
 

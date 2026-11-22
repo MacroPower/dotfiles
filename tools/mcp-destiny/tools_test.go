@@ -113,6 +113,9 @@ func TestServerListsTools(t *testing.T) {
 			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
 			assert.Contains(t, tool.Description, "The harmonizable column lists the copies "+
 				"that a Deepsight Harmonizer can give Deepsight Resonance.")
+			assert.Contains(t, tool.Description, "'1 harmonizer + 15 Spoils' for a raid weapon")
+			assert.Contains(t, tool.Description, "the Deepsight Harmonizers and the Spoils of Conquest "+
+				"that the account holds")
 			assert.Contains(t, tool.Description, "with the fewest extractions left first")
 			assert.Contains(t, tool.Description, "The copies of a pattern include the Adept, Timelost, "+
 				"and Harrowed copies of its weapon")
@@ -120,6 +123,7 @@ func TestServerListsTools(t *testing.T) {
 		case toolListItems:
 			assert.Contains(t, tool.Description, "with 'deepsight'")
 			assert.Contains(t, tool.Description, "with 'harmonizable'")
+			assert.Contains(t, tool.Description, "'harmonizable (1 harmonizer + 15 Spoils)'")
 
 		case toolListVendors:
 			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
@@ -3330,13 +3334,16 @@ func TestCompareDuplicatesLimit(t *testing.T) {
 }
 
 // patternProfileBody is a Bungie profile response body with the copies
-// of two craftable weapons. Fatebringer 2001 in the vault has Deepsight
+// of three craftable weapons. Fatebringer 2001 in the vault has Deepsight
 // Resonance, and a Deepsight Harmonizer can give it to Fatebringer 2002,
 // which the Hunter holds. A Deepsight Harmonizer can also give it to
-// Fatebringer (Timelost) 2004 in the vault. Midnight Coup 2003 in the
-// vault shows a visible harmonizer socket, but its pattern is complete.
-// The profile records hold the patterns of Fatebringer at 3 of 5, of
-// Midnight Coup, and of Austringer at 1 of 2.
+// Fatebringer (Timelost) 2004 in the vault and to Austringer 2005, which
+// the Hunter holds. Midnight Coup 2003 in the vault shows a visible
+// harmonizer socket, but its pattern is complete. The profile records
+// hold the patterns of Fatebringer at 3 of 5, of Midnight Coup, and of
+// Austringer at 1 of 2. The Consumables bucket holds 2 Deepsight
+// Harmonizers and 45 Spoils of Conquest, and the Postmaster of the Hunter
+// holds 1 more Deepsight Harmonizer.
 const patternProfileBody = `{"ErrorCode": 1, "Response": {
 	"characters": {"data": {
 		"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
@@ -3344,16 +3351,21 @@ const patternProfileBody = `{"ErrorCode": 1, "Response": {
 	"profileInventory": {"data": {"items": [
 		{"itemHash": 100, "itemInstanceId": "2001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
 		{"itemHash": 102, "itemInstanceId": "2003", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
-		{"itemHash": 105, "itemInstanceId": "2004", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802}
+		{"itemHash": 105, "itemInstanceId": "2004", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
+		{"itemHash": 2228452164, "quantity": 2, "location": 2, "bucketHash": 1469714392},
+		{"itemHash": 3702027555, "quantity": 45, "location": 2, "bucketHash": 1469714392}
 	]}},
 	"characterInventories": {"data": {"c1": {"items": [
-		{"itemHash": 100, "itemInstanceId": "2002", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634}
+		{"itemHash": 100, "itemInstanceId": "2002", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634},
+		{"itemHash": 104, "itemInstanceId": "2005", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634},
+		{"itemHash": 2228452164, "quantity": 1, "location": 4, "bucketHash": 215593132}
 	]}}},
 	"itemComponents": {"sockets": {"data": {
 		"2001": {"sockets": [{"plugHash": 900, "isVisible": true}, {"plugHash": 910, "isVisible": true}]},
 		"2002": {"sockets": [{"plugHash": 900, "isVisible": true}, {"plugHash": 911, "isVisible": true}]},
 		"2003": {"sockets": [{"plugHash": 911, "isVisible": true}]},
-		"2004": {"sockets": [{"plugHash": 911, "isVisible": true}]}
+		"2004": {"sockets": [{"plugHash": 911, "isVisible": true}]},
+		"2005": {"sockets": [{"plugHash": 911, "isVisible": true}]}
 	}}},
 	"profileRecords": {"data": {"records": {
 		"5001": {"state": 4, "objectives": [{"objectiveHash": 1, "progress": 3, "completionValue": 5}]},
@@ -3364,9 +3376,10 @@ const patternProfileBody = `{"ErrorCode": 1, "Response": {
 
 // patternFakes returns fakes whose profile is [patternProfileBody]. The
 // definitions name the plugs of the two crafting sockets that Deepsight
-// reads and four pattern records. Fatebringer and Midnight Coup name a
-// recipe item, and the profile lacks the record of Hawkmoon. Item 105 is
-// Fatebringer (Timelost), which names no recipe item.
+// reads and four pattern records. Fatebringer, Midnight Coup, and
+// Austringer (104) name a recipe item, and the profile lacks the record
+// of Hawkmoon. Item 105 is Fatebringer (Timelost), which does not name a
+// recipe item. The source tags put both versions of Fatebringer in a raid.
 func patternFakes(t *testing.T) *fakes {
 	t.Helper()
 
@@ -3381,6 +3394,9 @@ func patternFakes(t *testing.T) *fakes {
 	}
 	f.defs.PatternsListed = true
 
+	f.defs.RaidItems = []uint32{100, 105}
+	f.defs.SourcesListed = true
+
 	for _, hash := range []uint32{100, 102} {
 		def := f.defs.Items[hash]
 		def.Craftable = true
@@ -3392,6 +3408,16 @@ func patternFakes(t *testing.T) *fakes {
 	timelost.Craftable = false
 	f.defs.Items[105] = timelost
 
+	austringer := f.defs.Items[100]
+	austringer.Name = "Austringer"
+	f.defs.Items[104] = austringer
+
+	material := definitions.ItemDef{TypeName: "Material", Bucket: bungie.BucketConsumables, ClassType: bungie.ClassAny}
+	material.Name = "Deepsight Harmonizer"
+	f.defs.Items[bungie.ItemDeepsightHarmonizer] = material
+	material.Name = "Spoils of Conquest"
+	f.defs.Items[bungie.ItemSpoilsOfConquest] = material
+
 	return f
 }
 
@@ -3399,10 +3425,16 @@ func TestListPatterns(t *testing.T) {
 	t.Parallel()
 
 	const (
-		header      = "\n\nweapon | progress | copies | deepsight | harmonizable\n"
-		austringer  = "Austringer | 1 of 2 | 0 |  | "
-		fatebringer = "Fatebringer | 3 of 5 | 3 | 2001 | 2002, 2004"
+		held = "\nThe account holds 2 Deepsight Harmonizers and 45 Spoils of Conquest. " +
+			"The Postmaster also holds 1 Deepsight Harmonizer."
+		table       = "\n\nweapon | progress | copies | deepsight | harmonizable\n"
+		header      = held + table
+		austringer  = "Austringer | 1 of 2 | 1 |  | 2005 (1 harmonizer)"
+		fatebringer = "Fatebringer | 3 of 5 | 3 | 2001 | 2002 (1 harmonizer + 15 Spoils), 2004 (1 harmonizer + 15 Spoils)"
 		coup        = "Midnight Coup | complete | 1 |  | "
+
+		// lostHarmonizer is the stack of the Postmaster of the Hunter.
+		lostHarmonizer = `{"itemHash": 2228452164, "quantity": 1, "location": 4, "bucketHash": 215593132}`
 	)
 
 	tests := map[string]struct {
@@ -3426,7 +3458,43 @@ func TestListPatterns(t *testing.T) {
 		// its pattern is complete.
 		"patterns with a harmonizable copy": {
 			in:   ListPatternsInput{Status: "all", Harmonizable: true},
-			want: "Patterns 1-1 of 1." + header + fatebringer,
+			want: "Patterns 1-2 of 2." + header + austringer + "\n" + fatebringer,
+		},
+		// Without the source tags, the server cannot tell whether a
+		// weapon drops in a raid.
+		"service without source tags": {
+			edit: func(f *fakes) { f.defs.SourcesListed = false },
+			in:   ListPatternsInput{Query: "fatebringer"},
+			want: "Patterns 1-1 of 1." + header + "Fatebringer | 3 of 5 | 3 | 2001 | " +
+				"2002 (1 harmonizer + 15 Spoils if a raid weapon), 2004 (1 harmonizer + 15 Spoils if a raid weapon)",
+		},
+		"account with one Deepsight Harmonizer and no Spoils of Conquest": {
+			edit: func(f *fakes) {
+				body := strings.Replace(patternProfileBody, `"itemHash": 2228452164, "quantity": 2`,
+					`"itemHash": 2228452164, "quantity": 1`, 1)
+				f.bungie.ProfileBody = strings.Replace(body, `"itemHash": 3702027555`, `"itemHash": 300`, 1)
+			},
+			in: ListPatternsInput{Query: "austringer"},
+			want: "Patterns 1-1 of 1.\nThe account holds 1 Deepsight Harmonizer and 0 Spoils of Conquest. " +
+				"The Postmaster also holds 1 Deepsight Harmonizer." + table + austringer,
+		},
+		"Postmaster with both materials": {
+			edit: func(f *fakes) {
+				f.bungie.ProfileBody = strings.Replace(patternProfileBody, lostHarmonizer,
+					`{"itemHash": 2228452164, "quantity": 3, "location": 4, "bucketHash": 215593132},
+					{"itemHash": 3702027555, "quantity": 20, "location": 4, "bucketHash": 215593132}`, 1)
+			},
+			in: ListPatternsInput{Query: "austringer"},
+			want: "Patterns 1-1 of 1.\nThe account holds 2 Deepsight Harmonizers and 45 Spoils of Conquest. " +
+				"The Postmaster also holds 3 Deepsight Harmonizers and 20 Spoils of Conquest." + table + austringer,
+		},
+		"Postmaster without materials": {
+			edit: func(f *fakes) {
+				f.bungie.ProfileBody = strings.Replace(patternProfileBody, ",\n\t\t"+lostHarmonizer, "", 1)
+			},
+			in: ListPatternsInput{Query: "austringer"},
+			want: "Patterns 1-1 of 1.\nThe account holds 2 Deepsight Harmonizers and 45 Spoils of Conquest." +
+				table + austringer,
 		},
 		"query in another letter case": {
 			in:   ListPatternsInput{Query: "FATE"},
@@ -3509,11 +3577,21 @@ func TestDeepsightFlags(t *testing.T) {
 	got, isError := call(t, f.h.handleListItems, ListItemsInput{})
 	require.False(t, isError)
 	assert.Contains(t, got, "\n2001 | Fatebringer | Kinetic Hand Cannon | Legendary |  |  | Vault |  | deepsight\n")
-	assert.Contains(t, got, "\n2002 | Fatebringer | Kinetic Hand Cannon | Legendary |  |  | Hunter |  | harmonizable\n")
 	assert.Contains(
 		t,
 		got,
-		"\n2004 | Fatebringer (Timelost) | Kinetic Hand Cannon | Legendary |  |  | Vault |  | harmonizable\n",
+		"\n2002 | Fatebringer | Kinetic Hand Cannon | Legendary |  |  | Hunter |  | harmonizable (1 harmonizer + 15 Spoils)\n",
+	)
+	assert.Contains(
+		t,
+		got,
+		"\n2004 | Fatebringer (Timelost) | Kinetic Hand Cannon | Legendary |  |  | Vault |  | "+
+			"harmonizable (1 harmonizer + 15 Spoils)\n",
+	)
+	assert.Contains(
+		t,
+		got,
+		"\n2005 | Austringer | Kinetic Hand Cannon | Legendary |  |  | Hunter |  | harmonizable (1 harmonizer)\n",
 	)
 	assert.True(
 		t,
@@ -3529,9 +3607,13 @@ func TestDeepsightFlags(t *testing.T) {
 			id:   "2001",
 			want: "Location: Vault\nFlags: deepsight\nPattern: 3 of 5\n",
 		},
-		"copy that a Deepsight Harmonizer can give Deepsight Resonance": {
+		"raid weapon that a Deepsight Harmonizer can give Deepsight Resonance": {
 			id:   "2002",
-			want: "Location: Hunter\nFlags: harmonizable\nPattern: 3 of 5\n",
+			want: "Location: Hunter\nFlags: harmonizable (1 harmonizer + 15 Spoils)\nPattern: 3 of 5\n",
+		},
+		"weapon outside the raids that a Deepsight Harmonizer can give Deepsight Resonance": {
+			id:   "2005",
+			want: "Location: Hunter\nFlags: harmonizable (1 harmonizer)\nPattern: 1 of 2\n",
 		},
 		"copy of a weapon with a complete pattern": {
 			id:   "2003",
@@ -3539,7 +3621,7 @@ func TestDeepsightFlags(t *testing.T) {
 		},
 		"Timelost copy of a weapon with an incomplete pattern": {
 			id:   "2004",
-			want: "Location: Vault\nFlags: harmonizable\nPattern: 3 of 5\n",
+			want: "Location: Vault\nFlags: harmonizable (1 harmonizer + 15 Spoils)\nPattern: 3 of 5\n",
 		},
 	}
 

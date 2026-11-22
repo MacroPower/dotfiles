@@ -217,6 +217,10 @@ type Character struct {
 // game. Harmonizable marks a copy with an incomplete pattern that a
 // Deepsight Harmonizer can give Deepsight Resonance. DIM reads both flags
 // from the crafting sockets of the copy, and so does the server.
+//
+// Raid marks a weapon or an armor piece that drops in a raid, as the
+// source tags of DIM tell. SourceKnown records whether the definitions
+// hold the source tags. Without them, Raid stays false for every item.
 type Item struct {
 	Categories     []int64
 	InstanceID     string
@@ -258,6 +262,8 @@ type Item struct {
 	SetKnown       bool
 	Deepsight      bool
 	Harmonizable   bool
+	Raid           bool
+	SourceKnown    bool
 }
 
 // StatTotal returns the sum of the stat values of an armor piece. It reports
@@ -476,6 +482,25 @@ func occupies(item *Item, bucket Bucket, owner string) bool {
 	return item.Owner == owner && !item.Postmaster && item.Bucket == bucket.Hash
 }
 
+// Held returns the quantity of the item hash that the account holds
+// outside the Postmaster, and the quantity at the Postmaster. The game
+// spends a material only from the stacks outside the Postmaster.
+func (s *Snapshot) Held(hash uint32) (int, int) {
+	var held, postmaster int
+
+	for _, item := range s.Items {
+		switch {
+		case item.Hash != hash:
+		case item.Postmaster:
+			postmaster += item.Quantity
+		default:
+			held += item.Quantity
+		}
+	}
+
+	return held, postmaster
+}
+
 // Add appends item to Items. When item has an instance id,
 // [*Snapshot.Find] then finds it by that id.
 func (s *Snapshot) Add(item *Item) {
@@ -557,6 +582,8 @@ func NewItem(
 		TransferStatus: pi.TransferStatus,
 		Equippable:     def.Equippable,
 		Lockable:       pi.Lockable,
+		Raid:           defs.FromRaid(pi.Hash),
+		SourceKnown:    defs.SourcesListed,
 	}
 
 	if def.ClassType != bungie.ClassAny {

@@ -232,6 +232,47 @@ func TestNewItemDeepsight(t *testing.T) {
 	}
 }
 
+func TestNewItemRaid(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		raid      []uint32
+		listed    bool
+		wantRaid  bool
+		wantKnown bool
+	}{
+		"weapon that the source tags put in a raid": {
+			raid:      []uint32{100},
+			listed:    true,
+			wantRaid:  true,
+			wantKnown: true,
+		},
+		"weapon that the source tags put elsewhere": {
+			raid:      []uint32{101},
+			listed:    true,
+			wantKnown: true,
+		},
+		"index without source tags": {},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			defs := patternDefs()
+			defs.RaidItems = tc.raid
+			defs.SourcesListed = tc.listed
+
+			s := NewSnapshot(patternProfile(t, 100, `[]`, 0), defs, bungietest.Now)
+
+			item, ok := s.Find("1")
+			require.True(t, ok)
+			assert.Equal(t, tc.wantRaid, item.Raid, "raid")
+			assert.Equal(t, tc.wantKnown, item.SourceKnown, "source known")
+		})
+	}
+}
+
 func TestNewItemPattern(t *testing.T) {
 	t.Parallel()
 

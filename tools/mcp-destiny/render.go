@@ -1310,7 +1310,7 @@ func flagsOf(item *inventory.Item) []string {
 	}
 
 	if item.Harmonizable {
-		flags = append(flags, "harmonizable")
+		flags = append(flags, fmt.Sprintf("harmonizable (%s)", activationCost(item)))
 	}
 
 	if item.Note != "" {
@@ -1322,6 +1322,56 @@ func flagsOf(item *inventory.Item) []string {
 	}
 
 	return flags
+}
+
+// activationCost names the materials that a Deepsight Harmonizer
+// activation of item spends, such as "1 harmonizer" for a seasonal weapon
+// or "1 harmonizer + 15 Spoils" for a raid weapon. Without the source tags,
+// the label says that a raid weapon also spends the Spoils of Conquest.
+func activationCost(item *inventory.Item) string {
+	switch {
+	case !item.SourceKnown:
+		return fmt.Sprintf("1 harmonizer + %d Spoils if a raid weapon", inventory.RaidSpoils)
+	case item.Raid:
+		return fmt.Sprintf("1 harmonizer + %d Spoils", inventory.RaidSpoils)
+	default:
+		return "1 harmonizer"
+	}
+}
+
+// heldLabel says how many Deepsight Harmonizers and Spoils of Conquest
+// the account holds, and how many more wait at the Postmaster.
+func heldLabel(s *inventory.Snapshot) string {
+	harmonizers, lostHarmonizers := s.Held(bungie.ItemDeepsightHarmonizer)
+	spoils, lostSpoils := s.Held(bungie.ItemSpoilsOfConquest)
+
+	label := fmt.Sprintf("The account holds %s and %d Spoils of Conquest.", harmonizerCount(harmonizers), spoils)
+
+	var lost []string
+
+	if lostHarmonizers > 0 {
+		lost = append(lost, harmonizerCount(lostHarmonizers))
+	}
+
+	if lostSpoils > 0 {
+		lost = append(lost, fmt.Sprintf("%d Spoils of Conquest", lostSpoils))
+	}
+
+	if len(lost) > 0 {
+		label += fmt.Sprintf(" The Postmaster also holds %s.", strings.Join(lost, " and "))
+	}
+
+	return label
+}
+
+// harmonizerCount writes n with the noun "Deepsight Harmonizer", such as
+// "1 Deepsight Harmonizer" or "3 Deepsight Harmonizers".
+func harmonizerCount(n int) string {
+	if n == 1 {
+		return "1 Deepsight Harmonizer"
+	}
+
+	return fmt.Sprintf("%d Deepsight Harmonizers", n)
 }
 
 // patternLabel describes the progress of a pattern, such as "3 of 5"
@@ -1353,15 +1403,16 @@ const noPatternsRefusal = "the service publishes no record definitions, " +
 	"so the server cannot tell which records of the profile track weapon patterns"
 
 // renderPatterns renders one page of patterns as a table. Offset and
-// total count patterns, and tracked is the number of patterns that the
-// profile tracks before any filter. Each row gives the progress of the
-// pattern as [patternLabel] writes it and the number of owned copies of
-// the weapon. It also lists the instance ids of the copies with Deepsight
-// Resonance and of the copies that a Deepsight Harmonizer can give
-// Deepsight Resonance.
-func renderPatterns(rows []inventory.PatternRow, offset, total, tracked int) string {
+// total count patterns. A line before the table says how many Deepsight
+// Harmonizers and Spoils of Conquest the account holds. Each row gives
+// the progress of the pattern as [patternLabel] writes it and the number
+// of owned copies of the weapon. It also lists the instance ids of the
+// copies with Deepsight Resonance and of the copies that a Deepsight
+// Harmonizer can give Deepsight Resonance. Each harmonizable copy carries
+// the cost of its activation, as [activationCost] names it.
+func renderPatterns(s *inventory.Snapshot, rows []inventory.PatternRow, offset, total int) string {
 	switch {
-	case tracked == 0:
+	case len(s.Patterns) == 0:
 		return "The profile tracks no weapon pattern."
 	case total == 0:
 		return "No patterns match."
@@ -1377,6 +1428,7 @@ func renderPatterns(rows []inventory.PatternRow, offset, total, tracked int) str
 		fmt.Fprintf(&b, " Pass offset=%d for the next page.", offset+len(rows))
 	}
 
+	b.WriteString("\n" + heldLabel(s))
 	b.WriteString("\n\nweapon | progress | copies | deepsight | harmonizable\n")
 
 	for _, row := range rows {
@@ -1388,7 +1440,7 @@ func renderPatterns(rows []inventory.PatternRow, offset, total, tracked int) str
 			}
 
 			if item.Harmonizable {
-				harmonizable = append(harmonizable, item.InstanceID)
+				harmonizable = append(harmonizable, fmt.Sprintf("%s (%s)", item.InstanceID, activationCost(item)))
 			}
 		}
 

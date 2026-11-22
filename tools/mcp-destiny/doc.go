@@ -433,6 +433,25 @@
 // each copy as incomplete, as DIM counts the pattern of a copy without a
 // pattern record.
 //
+// Each harmonizable copy also shows the materials that its activation
+// spends, both in the flag and in the harmonizable column of
+// list_patterns. An activation spends one Deepsight Harmonizer. The
+// activation of a raid weapon also spends 15 Spoils of Conquest, so a
+// copy reads "1 harmonizer" or "1 harmonizer + 15 Spoils". Bungie
+// announced both costs in This Week at Bungie of 2023-05-04. The
+// material requirement of the Deepsight Resonance plug leaves the count
+// of Spoils of Conquest to the game. The profile therefore does not give
+// the cost of one copy. The server tells a raid weapon by the source tags
+// of DIM instead, which the ItemSource artifact of the service holds. On a
+// deployment whose artifact index lacks that artifact, a copy reads
+// "1 harmonizer + 15 Spoils if a raid weapon".
+//
+// A line before the table of list_patterns gives the Deepsight
+// Harmonizers and the Spoils of Conquest that the account holds. Both
+// materials stack in the Consumables bucket. The line also gives the
+// stacks at the Postmaster, which the game does not spend until the user
+// pulls them.
+//
 // # Game Data
 //
 // Destiny 2 is frozen, so the game data that the server embeds does not

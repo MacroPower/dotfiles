@@ -658,7 +658,7 @@ func (h *handler) handleListPatterns(
 
 	page, offset, _ := paginate(rows, in.Limit, in.Offset, defaultItemLimit, maxItemLimit)
 
-	return textResult(renderPatterns(page, offset, len(rows), len(s.Patterns))), nil, nil
+	return textResult(renderPatterns(s, page, offset, len(rows))), nil, nil
 }
 
 func (h *handler) handleListActivityHistory(

@@ -381,7 +381,10 @@ func newServer(h *handler) *mcp.Server {
 			"When the mode has none, the call returns the reason as an error result, never an empty list. " +
 			"get_item explains a rating column by column. " +
 			"The flags column marks a copy with Deepsight Resonance, the red border of the game, with 'deepsight'. " +
-			"It marks a copy that a Deepsight Harmonizer can give Deepsight Resonance with 'harmonizable'. " +
+			"It marks a copy that a Deepsight Harmonizer can give Deepsight Resonance with 'harmonizable' " +
+			"and the materials that the activation spends, such as 'harmonizable (1 harmonizer)'. " +
+			"A raid weapon reads 'harmonizable (1 harmonizer + 15 Spoils)', " +
+			"because its activation also spends 15 Spoils of Conquest. " +
 			"list_patterns gives the pattern progress of each craftable weapon.",
 		Annotations: readOnly,
 	}, h.handleListItems)
@@ -510,7 +513,11 @@ func newServer(h *handler) *mcp.Server {
 			"The deepsight column lists the copies with Deepsight Resonance, the red border of the game. " +
 			"For an incomplete pattern, the user can extract the progress of such a copy in the game. " +
 			"The harmonizable column lists the copies that a Deepsight Harmonizer can give Deepsight Resonance. " +
+			"Each copy carries the materials that its activation spends, such as '1 harmonizer', " +
+			"or '1 harmonizer + 15 Spoils' for a raid weapon, whose activation also spends 15 Spoils of Conquest. " +
 			"Only a copy of a weapon whose pattern is incomplete is harmonizable. " +
+			"The line before the table gives the Deepsight Harmonizers and the Spoils of Conquest " +
+			"that the account holds, and the stacks at the Postmaster, which the game does not spend. " +
 			"The status input selects the incomplete patterns (the default), the complete patterns, or all of them. " +
 			"The harmonizable input keeps only the patterns with a harmonizable copy, " +
 			"for example to choose the weapons to spend Deepsight Harmonizers on. " +

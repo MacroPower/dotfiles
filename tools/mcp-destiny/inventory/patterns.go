@@ -18,6 +18,16 @@ const (
 	PatternAll        = "all"
 )
 
+// RaidSpoils is the number of Spoils of Conquest that the Deepsight
+// activation of a raid weapon spends beside its one Deepsight Harmonizer.
+// The activation of every other weapon spends only the Deepsight
+// Harmonizer. Bungie announced both costs in This Week at Bungie of
+// 2023-05-04, and they hold through Update 9.7.0.6. The Deepsight
+// Resonance plugs share one material requirement. It fixes the count of
+// Deepsight Harmonizers but leaves the count of Spoils of Conquest to the
+// game. The profile therefore does not give the cost of one copy.
+const RaidSpoils = 15
+
 // Pattern is the crafting pattern of one weapon, as the record of the
 // pattern in the Bungie profile tracks it. Name is the name of the record,
 // which is the name of the weapon, and Hash is the hash of the record

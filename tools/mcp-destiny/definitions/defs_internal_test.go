@@ -38,6 +38,7 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 			artifactVendorItems:     {"vendor-items-0.json", "vendor-items-1.json"},
 			artifactItemSets:        {"item-sets.json"},
 			artifactRecords:         {"records.json"},
+			artifactItemSources:     {"item-sources-0.json", "item-sources-1.json"},
 			artifactWithheld:        {"withheld-0.json", "withheld-1.json"},
 		},
 		Files: map[string]string{
@@ -206,6 +207,18 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				"5004": {"hash": 5004, "displayProperties": {"name": "Lore"}},
 				"5005": {"hash": 5005, "displayProperties": {"name": ""}, "completionInfo": {"toastStyle": 8}}
 			}`,
+			// The service build splits the array of source tags across
+			// files. Fatebringer and Iron Truage Helm drop in a raid, and
+			// the loader sorts their hashes and keeps each one once.
+			// Hawkmoon drops elsewhere.
+			"item-sources-0.json": `[
+				{"hash": 405, "keys": ["raid"]},
+				{"hash": 400, "keys": ["exoticengram", "xur"]}
+			]`,
+			"item-sources-1.json": `[
+				{"hash": 100, "keys": ["vaultofglass", "raid"]},
+				{"hash": 405, "keys": ["raid"]}
+			]`,
 			// The service build splits the array of withheld hashes across
 			// files. The loader sorts the hashes and keeps each one once.
 			"withheld-0.json": `[3708253562, 502, 373750294]`,
@@ -229,10 +242,10 @@ func TestLoader(t *testing.T) {
 	clock := WithClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
-	// layout without the pattern records has the prefix defs-v11-. Its
+	// layout without the source tags has the prefix defs-v12-. Its
 	// file holds the manifest version of the service, and the loader does
 	// not read it.
-	stale := filepath.Join(dir, "defs-v11-245114.26_1.json")
+	stale := filepath.Join(dir, "defs-v12-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
 	loader := NewLoader(source, dir, clock)
@@ -383,12 +396,14 @@ func TestLoader(t *testing.T) {
 		DamageEnums:    map[uint32]int{3373582085: 1, 2303181850: 2},
 		DamageTypes:    map[int]string{1: "Kinetic", 2: "Arc"},
 		Classes:        map[int]string{1: "Hunter"},
+		RaidItems:      []uint32{100, 405},
 		Withheld:       []uint32{502, 600, 373750294, 3708253562},
 		ItemSetsListed: true,
 		WithheldListed: true,
 		PatternsListed: true,
+		SourcesListed:  true,
 	}, got)
-	assert.Len(t, source.Fetched, 23)
+	assert.Len(t, source.Fetched, 25)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
@@ -416,7 +431,7 @@ func TestLoader(t *testing.T) {
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.Fetched, 23)
+	assert.Len(t, source.Fetched, 25)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
@@ -516,6 +531,18 @@ func TestLoaderWithoutOptionalArtifacts(t *testing.T) {
 
 				assert.False(t, got.PatternsListed)
 				assert.True(t, got.Items[100].Craftable)
+			},
+		},
+		// The build records that the index does not list the source tags.
+		"item sources": {
+			artifact: artifactItemSources,
+			files:    []string{"item-sources-0.json", "item-sources-1.json"},
+			field:    func(d *Defs) any { return d.RaidItems },
+			check: func(t *testing.T, got *Defs, _ []string) {
+				t.Helper()
+
+				assert.False(t, got.SourcesListed)
+				assert.False(t, got.FromRaid(100))
 			},
 		},
 		"plug sets": {
@@ -632,6 +659,14 @@ func TestLoaderErrors(t *testing.T) {
 			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "withheld-1.json") },
 			err:    dvm.ErrService,
 		},
+		"second item source file is not an array": {
+			break_: func(f *dvmtest.Artifacts) { f.Files["item-sources-1.json"] = `{"hash": 100}` },
+			err:    ErrDefs,
+		},
+		"item source fetch fails": {
+			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "item-sources-1.json") },
+			err:    dvm.ErrService,
+		},
 		"second plug set file is not an array": {
 			break_: func(f *dvmtest.Artifacts) { f.Files["plugsets-1.json"] = `{"hash": 45}` },
 			err:    ErrDefs,
@@ -704,7 +739,7 @@ func TestWithLoaded(t *testing.T) {
 		"after the recheck window the loader replaces a seed of another version": {
 			version:     "245000.1",
 			elapsed:     defsRecheck,
-			wantFetched: 23,
+			wantFetched: 25,
 		},
 	}
 
@@ -899,6 +934,43 @@ func TestWithholds(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, tc.want, tc.defs.Withholds(tc.hash))
+		})
+	}
+}
+
+func TestFromRaid(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		defs *Defs
+		hash uint32
+		want bool
+	}{
+		"first raid item": {
+			defs: &Defs{RaidItems: []uint32{5, 12, 700}, SourcesListed: true},
+			hash: 5,
+			want: true,
+		},
+		"last raid item": {
+			defs: &Defs{RaidItems: []uint32{5, 12, 700}, SourcesListed: true},
+			hash: 700,
+			want: true,
+		},
+		"hash between two raid items": {
+			defs: &Defs{RaidItems: []uint32{5, 12, 700}, SourcesListed: true},
+			hash: 13,
+		},
+		"index without source tags": {
+			defs: &Defs{},
+			hash: 5,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, tc.defs.FromRaid(tc.hash))
 		})
 	}
 }

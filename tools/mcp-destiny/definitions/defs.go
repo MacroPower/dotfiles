@@ -29,7 +29,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v12-"
+	defsCachePrefix = "defs-v13-"
 
 	artifactCore            = "core"
 	artifactDetail          = "detail"
@@ -47,8 +47,13 @@ const (
 	artifactVendorItems     = "VendorItem"
 	artifactItemSets        = "EquipableItemSet"
 	artifactRecords         = "Record"
+	artifactItemSources     = "ItemSource"
 	artifactWithheld        = "hidden"
 )
+
+// sourceRaid is the source tag of Destiny Item Manager (DIM) that every
+// raid gives the weapons and the armor that drop in it.
+const sourceRaid = "raid"
 
 // ErrDefs reports definition artifacts that are missing from the service
 // index or that do not decode.
@@ -166,6 +171,13 @@ type VendorDef struct {
 // higher hash, as DIM does. PatternsListed records whether the service
 // index lists the Record artifact.
 //
+// RaidItems lists in ascending order the item hashes of the weapons and
+// the armor that drop in a raid. The ItemSource artifact gives each
+// weapon and each armor piece the source tags of Destiny Item Manager
+// (DIM). RaidItems keeps each item whose tags hold the tag raid.
+// SourcesListed records whether the service index lists the ItemSource
+// artifact.
+//
 // Withheld lists in ascending order the item hashes whose definitions the
 // service withholds. The service withholds dummy items, classified items,
 // and items without a name, so Items lacks them. Items and Withheld
@@ -175,9 +187,9 @@ type VendorDef struct {
 //
 // Activities, ActivityTypes, Destinations, Places, ActivityRewards,
 // Vendors, VendorItems, Sockets, PlugSets, PlugCategories, ItemSets,
-// Patterns, and Withheld are empty when the service index lists no
-// artifact for them. PlugSets is also empty when the index lists no
-// artifact for Sockets.
+// Patterns, RaidItems, and Withheld are empty when the service index does
+// not list an artifact for them. PlugSets is also empty when the index
+// does not list an artifact for Sockets.
 //
 // Lookups holds the outcome of each lookup in the live manifest of Bungie
 // that a [*NameStore] made for one call, keyed by the item hash. Only the
@@ -204,10 +216,12 @@ type Defs struct {
 	Classes         map[int]string         `json:"classes"`
 	Version         string                 `json:"version"`
 	Lookups         map[uint32]Lookup      `json:"-"`
+	RaidItems       []uint32               `json:"raidItems"`
 	Withheld        []uint32               `json:"withheld"`
 	ItemSetsListed  bool                   `json:"itemSetsListed"`
 	WithheldListed  bool                   `json:"withheldListed"`
 	PatternsListed  bool                   `json:"patternsListed"`
+	SourcesListed   bool                   `json:"sourcesListed"`
 }
 
 // ItemName returns the name of an item hash. It reads the item definitions
@@ -226,6 +240,16 @@ func (d *Defs) ItemName(hash uint32) string {
 // no artifact of the withheld hashes, as WithheldListed records.
 func (d *Defs) Withholds(hash uint32) bool {
 	_, found := slices.BinarySearch(d.Withheld, hash)
+
+	return found
+}
+
+// FromRaid reports whether the item hash names a weapon or an armor piece
+// that drops in a raid, as RaidItems lists them. It reports false for
+// every hash when the service index does not list the ItemSource
+// artifact, as SourcesListed records.
+func (d *Defs) FromRaid(hash uint32) bool {
+	_, found := slices.BinarySearch(d.RaidItems, hash)
 
 	return found
 }
@@ -588,6 +612,23 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 
 	defs.Withheld = slices.Compact(defs.Withheld)
 
+	// Only the cost of a Deepsight activation reads the source tags, so
+	// the other tools keep working without them.
+	defs.SourcesListed = len(index.Files[artifactItemSources]) > 0
+
+	err = readRecords(ctx, l, index.Files[artifactItemSources], func(row itemSourceRow) {
+		if slices.Contains(row.Keys, sourceRaid) {
+			defs.RaidItems = append(defs.RaidItems, row.Hash)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	slices.Sort(defs.RaidItems)
+
+	defs.RaidItems = slices.Compact(defs.RaidItems)
+
 	return defs, nil
 }
 
@@ -903,6 +944,14 @@ func (row itemSetRow) perks() []uint32 {
 	}
 
 	return perks
+}
+
+// itemSourceRow is a record of the ItemSource artifact. The service build
+// gives each weapon and each armor piece with a known source the source
+// tags of Destiny Item Manager (DIM), the narrowest tag first.
+type itemSourceRow struct {
+	Keys []string `json:"keys"`
+	Hash uint32   `json:"hash"`
 }
 
 // recordRow is the subset of a record of the Record artifact that the

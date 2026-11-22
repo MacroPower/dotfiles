@@ -96,6 +96,13 @@
 // border of the game. The other marks a copy with an incomplete pattern
 // that a Deepsight Harmonizer can give Deepsight Resonance.
 //
+// The Deepsight activation of a raid weapon spends Spoils of Conquest
+// beside the Deepsight Harmonizer. Each item therefore records whether
+// the source tags of DIM put it in a raid. A snapshot also gives the
+// quantity of a material that the account holds, apart from the stacks at
+// the Postmaster. A caller can then tell how many activations the account
+// can pay for.
+//
 // A pattern filter selects patterns with the owned copies of each weapon.
 // Its query matches a part of the weapon name after [fold.Lookalike]
 // folds both. The incomplete patterns come first, with the fewest
