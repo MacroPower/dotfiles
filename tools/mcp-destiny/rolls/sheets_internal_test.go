@@ -453,6 +453,68 @@ func TestTierRank(t *testing.T) {
 	}
 }
 
+func TestSheetBestRow(t *testing.T) {
+	t.Parallel()
+
+	sheet := &Sheet{Rows: map[uint32]SheetRow{
+		1: {Tier: "B", Category: "HCs"},
+		2: {Tier: "A", Category: "HCs"},
+		3: {Tier: "A", Category: "Legacy HCs"},
+		4: {Category: "Unranked"},
+	}}
+
+	tests := map[string]struct {
+		want   SheetRow
+		hashes []uint32
+		found  bool
+	}{
+		"one hash": {
+			hashes: []uint32{1},
+			want:   SheetRow{Tier: "B", Category: "HCs"},
+			found:  true,
+		},
+		"best tier of two hashes": {
+			hashes: []uint32{1, 2},
+			want:   SheetRow{Tier: "A", Category: "HCs"},
+			found:  true,
+		},
+		"earlier of two hashes with equal tiers": {
+			hashes: []uint32{3, 2},
+			want:   SheetRow{Tier: "A", Category: "Legacy HCs"},
+			found:  true,
+		},
+		"row with a tier beats a row without one": {
+			hashes: []uint32{4, 1},
+			want:   SheetRow{Tier: "B", Category: "HCs"},
+			found:  true,
+		},
+		"row without a tier": {
+			hashes: []uint32{4},
+			want:   SheetRow{Category: "Unranked"},
+			found:  true,
+		},
+		"hash that the sheet does not list": {
+			hashes: []uint32{5, 1},
+			want:   SheetRow{Tier: "B", Category: "HCs"},
+			found:  true,
+		},
+		"no listed hash": {
+			hashes: []uint32{5},
+		},
+		"no hash": {},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, found := sheet.BestRow(tc.hashes)
+			assert.Equal(t, tc.found, found)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 // fakeSheets is the artifact source of the store tests. It wraps
 // [dvmtest.Artifacts] and counts the Config calls. A set configErr makes
 // Config return that error.

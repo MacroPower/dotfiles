@@ -104,9 +104,14 @@
 // can pay for.
 //
 // A pattern filter selects patterns with the owned copies of each weapon.
-// Its query matches a part of the weapon name after [fold.Lookalike]
-// folds both. The incomplete patterns come first, with the fewest
-// extractions left first, and the complete patterns follow.
+// Each pattern that it selects also lists the item hashes of the
+// craftable definitions with the name of the pattern. A caller can then
+// find the weapon on a roll sheet. A version that the pattern does not
+// craft, such as the Onslaught version of a raid weapon, is not one of
+// those definitions. The query of the filter matches a part of the weapon
+// name after [fold.Lookalike] folds both. The incomplete patterns come
+// first, with the fewest extractions left first, and the complete
+// patterns follow.
 //
 // # Weapon Groups
 //

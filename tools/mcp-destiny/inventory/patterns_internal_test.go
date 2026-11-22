@@ -385,6 +385,36 @@ func TestPatternRowsOfTimelostCopy(t *testing.T) {
 	assert.True(t, rows[0].Copies[0].Deepsight)
 }
 
+func TestPatternRowsItemHashes(t *testing.T) {
+	t.Parallel()
+
+	// Item 99 is a second definition of Fatebringer that names a recipe
+	// item. Item 98 is a version of Fatebringer that names none, as the
+	// Onslaught version of a raid weapon does. The Timelost version names
+	// none either, and so does Midnight Coup.
+	defs := patternDefs()
+	defs.Items[99] = defs.Items[100]
+
+	version := defs.Items[100]
+	version.Craftable = false
+	defs.Items[98] = version
+
+	rows, err := NewSnapshot(patternProfile(t, 100, `[]`, 0), defs, bungietest.Now).
+		PatternRows(PatternFilter{Status: PatternAll})
+	require.NoError(t, err)
+
+	got := map[string][]uint32{}
+	for _, row := range rows {
+		got[row.Name] = row.ItemHashes
+	}
+
+	assert.Equal(t, map[string][]uint32{
+		"Fatebringer":   {99, 100},
+		"Gjallarhorn":   {101},
+		"Midnight Coup": nil,
+	}, got)
+}
+
 func TestNewSnapshotPatterns(t *testing.T) {
 	t.Parallel()
 

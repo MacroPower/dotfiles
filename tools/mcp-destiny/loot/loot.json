@@ -1,0 +1,1225 @@
+{
+  "patch": "9.7.0.2",
+  "sources": {
+    "blueberries": {
+      "title": "Blueberries.gg: Legendary Weapons Sources: Monument of Triumph, the Source column of each row that the Craftable? column marks Yes, read on the date of this source",
+      "url": "https://www.blueberries.gg/weapons/legendary-weapons-sources/",
+      "date": "2026-11-22",
+      "patch": "9.7.0.2"
+    },
+    "sax": {
+      "title": "Sax: ALL Monument of Triumph Legendary Loot Sources, each row of the Craftable Weapon Sources tab and each row of the Vendors, Destinations, Legacy Exotic Mission Gear, Raids, and Dungeons tabs that the Craftable? column marks Yes, read on the date of this source",
+      "url": "https://docs.google.com/spreadsheets/d/1WDj-vExf9c982PVc1nRRfjadhkcZFqa7nv14cCMI8C8/",
+      "date": "2026-11-22",
+      "patch": "9.7.0.2"
+    },
+    "9.7.0.2": {
+      "title": "Destiny 2 Update 9.7.0.2",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_7_0_2",
+      "date": "2026-06-23",
+      "patch": "9.7.0.2"
+    }
+  },
+  "weapons": [
+    {
+      "name": "A Distant Pull",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Aberrant Action",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Abyss Defiant",
+      "drops": [
+        { "from": "Crota's End raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Acasia's Dejection",
+      "drops": [
+        { "from": "Root of Nightmares raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Accrued Redemption",
+      "drops": [
+        {
+          "from": "Garden of Salvation raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Adhortative",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Age-Old Bond",
+      "drops": [
+        { "from": "Last Wish raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Ammit AR2",
+      "drops": [
+        { "from": "Banshee-44", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Ancient Gospel",
+      "drops": [
+        {
+          "from": "Garden of Salvation raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Apex Predator",
+      "drops": [
+        { "from": "Last Wish raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Appetence",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Austringer",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Axial Lacuna",
+      "drops": [
+        { "from": "The Pale Heart", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Beloved",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Bequest",
+      "drops": [
+        { "from": "Deep Stone Crypt raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Blood Feud",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Bold Endings",
+      "drops": [
+        { "from": "The Pale Heart", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Briar's Contempt",
+      "drops": [
+        { "from": "Root of Nightmares raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Brigand's Law",
+      "note": "The Vendors tab of the sax source lists the weapon under Xûr and marks it not craftable. Its Craftable Weapon Sources tab names Xûr, and the blueberries source names Xûr and marks the weapon craftable. The Destiny definitions hold one weapon with this name, and that weapon names a recipe item, so Xûr sells the craftable version.",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Brya's Love",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Bump in the Night",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "BxR-55 Battler",
+      "drops": [
+        { "from": "Dares of Eternity", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "CALUS Mini-Tool",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Caretaker",
+      "drops": [
+        { "from": "Avalon mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Cataclysmic",
+      "drops": [
+        {
+          "from": "Vow of the Disciple raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Chattering Bone",
+      "drops": [
+        { "from": "Last Wish raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Chronophage",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Come to Pass",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Commemoration",
+      "drops": [
+        { "from": "Deep Stone Crypt raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Corrasion",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Corrective Measure",
+      "drops": [
+        { "from": "Vault of Glass raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Critical Anomaly",
+      "drops": [
+        { "from": "Salvation's Edge raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Death's Razor",
+      "drops": [
+        { "from": "Xûr", "sources": ["9.7.0.2", "blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Defiance of Yasmin",
+      "drops": [
+        { "from": "King's Fall raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Deliverance",
+      "drops": [
+        {
+          "from": "Vow of the Disciple raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Different Times",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Dimensional Hypotrochoid",
+      "drops": [{ "from": "Neomuna", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Disparity",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Doom of Chelchis",
+      "drops": [
+        { "from": "King's Fall raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Doomed Petitioner",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Drang (Baroque)",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Eleatic Principle",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Embraced Identity",
+      "drops": [
+        { "from": "The Pale Heart", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Empirical Evidence",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Explosive Personality",
+      "drops": [
+        { "from": "Vox Obscura mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Faith-Keeper",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "False Idols",
+      "drops": [
+        { "from": "The Pale Heart", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Fang of Ir Yût",
+      "drops": [
+        { "from": "Crota's End raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Fatebringer",
+      "drops": [
+        { "from": "Vault of Glass raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Father's Sins",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Fel Taradiddle",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Fire and Forget",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Firefright",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Fixed Odds",
+      "drops": [
+        { "from": "Duality dungeon", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Forbearance",
+      "drops": [
+        {
+          "from": "Vow of the Disciple raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Forensic Nightmare",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Forthcoming Deviance",
+      "drops": [
+        { "from": "Salvation's Edge raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Found Verdict",
+      "drops": [
+        { "from": "Vault of Glass raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Goldtusk",
+      "drops": [
+        { "from": "Xûr", "sources": ["9.7.0.2", "blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Half-Truths",
+      "drops": [
+        { "from": "Dares of Eternity", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Heritage",
+      "drops": [
+        { "from": "Deep Stone Crypt raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Hezen Vengeance",
+      "drops": [
+        { "from": "Vault of Glass raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Hollow Denial",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "IKELOS_HC_v1.0.3",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "IKELOS_SG_v1.0.3",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "IKELOS_SMG_v1.0.3",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "IKELOS_SR_v1.0.3",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Ill Omen",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Imminence",
+      "drops": [
+        { "from": "Salvation's Edge raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Imperative",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Imperial Decree",
+      "drops": [
+        { "from": "Xûr", "sources": ["9.7.0.2", "blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Insidious",
+      "drops": [
+        {
+          "from": "Vow of the Disciple raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Iterative Loop",
+      "drops": [{ "from": "Neomuna", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Judgment of Kelgorath",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Kept Confidence",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Koraxis's Distress",
+      "drops": [
+        { "from": "Root of Nightmares raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Lethophobia",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Likely Suspect",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Locus Locutus",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Lost Signal",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Lubrae's Ruin",
+      "drops": [
+        {
+          "from": "Vow of the Disciple raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Midha's Reckoning",
+      "drops": [
+        { "from": "King's Fall raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Mykel's Reverence",
+      "drops": [
+        { "from": "Root of Nightmares raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Nation of Beasts",
+      "drops": [
+        { "from": "Last Wish raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Nessa's Oblation",
+      "drops": [
+        { "from": "Root of Nightmares raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Nezarec's Whisper",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "No Hesitation",
+      "drops": [
+        { "from": "The Pale Heart", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "No Reprieve",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Non-Denouement",
+      "drops": [
+        { "from": "Salvation's Edge raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Nullify",
+      "drops": [
+        { "from": "Salvation's Edge raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Omniscient Eye",
+      "drops": [
+        {
+          "from": "Garden of Salvation raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Optative",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Oversoul Edict",
+      "drops": [
+        { "from": "Crota's End raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Palmyra-B",
+      "note": "The Craftable Weapon Sources tab of the sax source names Savathûn's Throne World. Its Vendors tab names Banshee-44, and its Destinations tab does not list the weapon on Savathûn's Throne World. The blueberries source names Banshee-44.",
+      "drops": [{ "from": "Banshee-44", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Pardon Our Dust",
+      "drops": [
+        { "from": "Dares of Eternity", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Path of Least Resistance",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Perpetualis",
+      "drops": [
+        { "from": "Avalon mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Phyllotactic Spiral",
+      "drops": [{ "from": "Neomuna", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Piece of Mind",
+      "drops": [
+        { "from": "Vox Obscura mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Planck's Stride",
+      "note": "The Vendors tab of the sax source lists the weapon under Xûr and marks it not craftable. Its Craftable Weapon Sources tab names Xûr, and the blueberries source names Xûr and marks the weapon craftable. The Destiny definitions hold one weapon with this name, and that weapon names a recipe item, so Xûr sells the craftable version.",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Pointed Inquiry",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Posterity",
+      "drops": [
+        { "from": "Deep Stone Crypt raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Praedyth's Revenge",
+      "drops": [
+        { "from": "Vault of Glass raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Pro Memoria",
+      "drops": [
+        { "from": "The Pale Heart", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Prodigal Return",
+      "drops": [
+        { "from": "Avalon mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Prophet of Doom",
+      "drops": [
+        {
+          "from": "Garden of Salvation raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Qullim's Terminus",
+      "drops": [
+        { "from": "King's Fall raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Raconteur",
+      "drops": [
+        { "from": "Avalon mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Ragnhild-D",
+      "drops": [{ "from": "Banshee-44", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Rapacious Appetite",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Reckless Oracle",
+      "drops": [
+        {
+          "from": "Garden of Salvation raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Recurrent Impact",
+      "drops": [
+        { "from": "Vox Obscura mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Red Herring",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Regnant",
+      "drops": [
+        { "from": "Avalon mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Retraced Path",
+      "drops": [
+        { "from": "Dares of Eternity", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Retrofit Escapade",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Round Robin",
+      "drops": [{ "from": "Neomuna", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Royal Executioner",
+      "drops": [
+        { "from": "Avalon mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Rufus's Fury",
+      "drops": [
+        { "from": "Root of Nightmares raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Sacred Provenance",
+      "drops": [
+        {
+          "from": "Garden of Salvation raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Sailspy Pitchglass",
+      "note": "The Vendors tab of the sax source lists the weapon under Xûr and marks it not craftable. Its Craftable Weapon Sources tab names Xûr, and the blueberries source names Xûr and marks the weapon craftable. The Destiny definitions hold one weapon with this name, and that weapon names a recipe item, so Xûr sells the craftable version.",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Scalar Potential",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Scatter Signal",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Semiotician",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Sightline Survey",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Smite of Merain",
+      "drops": [
+        { "from": "King's Fall raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Someday",
+      "drops": [
+        { "from": "The Pale Heart", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Song of Ir Yût",
+      "drops": [
+        { "from": "Crota's End raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Speleologist",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Subjunctive",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Submission",
+      "drops": [
+        {
+          "from": "Vow of the Disciple raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Succession",
+      "drops": [
+        { "from": "Deep Stone Crypt raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Summum Bonum",
+      "drops": [
+        { "from": "Salvation's Edge raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Supercluster",
+      "drops": [
+        { "from": "Starcrossed mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Sweet Sorrow",
+      "drops": [
+        { "from": "Vox Obscura mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Swordbreaker",
+      "drops": [
+        { "from": "Crota's End raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Syncopation-53",
+      "note": "The Craftable Weapon Sources tab of the sax source names Savathûn's Throne World. Its Vendors tab names Banshee-44, and its Destinations tab does not list the weapon on Savathûn's Throne World. The blueberries source names Banshee-44.",
+      "drops": [{ "from": "Banshee-44", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Taipan-4fr",
+      "drops": [{ "from": "Banshee-44", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Targeted Redaction",
+      "note": "The Vendors tab of the sax source lists the weapon under Xûr and marks it not craftable. Its Craftable Weapon Sources tab names Xûr, and the blueberries source names Xûr and marks the weapon craftable. The Destiny definitions hold one weapon with this name, and that weapon names a recipe item, so Xûr sells the craftable version.",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Tarnation",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Tarnished Mettle",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Tears of Contrition",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Techeun Force",
+      "drops": [
+        { "from": "Last Wish raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "The Call",
+      "drops": [
+        { "from": "The Pale Heart", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "The Enigma",
+      "drops": [
+        { "from": "Savathûn's Throne World", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "The Epicurean",
+      "drops": [
+        { "from": "Duality dungeon", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "The Eremite",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "The Other Half",
+      "drops": [
+        { "from": "Dares of Eternity", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "The Supremacy",
+      "drops": [
+        { "from": "Last Wish raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Thin Precipice",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Thoughtless",
+      "drops": [
+        { "from": "Vox Obscura mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Throne-Cleaver",
+      "drops": [
+        { "from": "Xûr", "sources": ["9.7.0.2", "blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Timeworn Wayfarer",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Transfiguration",
+      "drops": [
+        { "from": "Last Wish raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Tripwire Canary",
+      "drops": [
+        {
+          "from": "Operation: Seraph's Shield mission",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Trustee",
+      "drops": [
+        { "from": "Deep Stone Crypt raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Tyranny of Heaven",
+      "drops": [
+        { "from": "Last Wish raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Under Your Skin",
+      "drops": [
+        { "from": "Vox Obscura mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Until Its Return",
+      "drops": [{ "from": "Xûr", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Veiled Threat",
+      "drops": [
+        { "from": "Encore mission", "sources": ["blueberries", "sax"] },
+        { "from": "Xûr", "sources": ["sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Vision of Confluence",
+      "drops": [
+        { "from": "Vault of Glass raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Volta Bracket",
+      "drops": [{ "from": "Neomuna", "sources": ["blueberries", "sax"] }],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Wastelander M5",
+      "drops": [
+        { "from": "Dares of Eternity", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Without Remorse",
+      "drops": [
+        { "from": "Presage mission", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Word of Crota",
+      "drops": [
+        { "from": "Crota's End raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Zaouli's Bane",
+      "drops": [
+        { "from": "King's Fall raid", "sources": ["blueberries", "sax"] }
+      ],
+      "checked": "9.7.0.6"
+    },
+    {
+      "name": "Zealot's Reward",
+      "drops": [
+        {
+          "from": "Garden of Salvation raid",
+          "sources": ["blueberries", "sax"]
+        }
+      ],
+      "checked": "9.7.0.6"
+    }
+  ]
+}

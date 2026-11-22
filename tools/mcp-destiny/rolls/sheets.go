@@ -87,6 +87,26 @@ type Sheet struct {
 	SetBonuses map[uint32]SetBonus
 }
 
+// BestRow returns the row with the best tier among the rows of the given
+// item hashes. A row without a tier ranks after F. Of two rows with
+// equal tiers, the row of the earlier hash wins. BestRow reports false
+// when the sheet lists none of the hashes.
+func (s *Sheet) BestRow(hashes []uint32) (SheetRow, bool) {
+	var (
+		best  SheetRow
+		found bool
+	)
+
+	for _, hash := range hashes {
+		row, ok := s.Rows[hash]
+		if ok && (!found || tierRank(row.Tier) < tierRank(best.Tier)) {
+			best, found = row, true
+		}
+	}
+
+	return best, found
+}
+
 // SheetState is the sheet of one game mode, or the reason that the
 // server has none. Exactly one field is set.
 type SheetState struct {

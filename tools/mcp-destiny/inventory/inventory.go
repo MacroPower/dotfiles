@@ -342,6 +342,7 @@ type Currency struct {
 type Snapshot struct {
 	Fetched        time.Time
 	byID           map[string]*Item
+	patternItems   map[uint32][]uint32
 	LoadoutSlots   map[string]int
 	Characters     []Character
 	Items          []*Item
@@ -360,6 +361,7 @@ func NewSnapshot(profile *bungie.Profile, defs *definitions.Defs, fetched time.T
 		byID:           map[string]*Item{},
 		Buckets:        slotBuckets(defs),
 		Patterns:       patternsOf(profile, defs),
+		patternItems:   patternItemsOf(defs),
 		ItemSetsListed: defs.ItemSetsListed,
 		PatternsListed: defs.PatternsListed,
 	}

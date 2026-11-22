@@ -509,6 +509,11 @@ func newServer(h *handler) *mcp.Server {
 		Description: "List the crafting pattern of each craftable weapon with its progress from the Bungie profile records, " +
 			"such as '3 of 5' for a pattern that needs two more extractions. " +
 			"A complete pattern reads 'complete'. " +
+			"The source column names the places that drop the craftable version of the weapon, " +
+			"such as a raid, a destination, or X\u00fbr, joined with commas when several places drop it. " +
+			"The places come from community sources that describe the game after Update 9.7.0. " +
+			"That update made the collectible text of the game out of date, so the server does not read the text. " +
+			"The source column is empty for a weapon that those sources do not list, such as an exotic weapon. " +
 			"Each row also counts the owned copies of the weapon and gives the instance ids of some of them. " +
 			"The deepsight column lists the copies with Deepsight Resonance, the red border of the game. " +
 			"For an incomplete pattern, the user can extract the progress of such a copy in the game. " +
@@ -516,7 +521,7 @@ func newServer(h *handler) *mcp.Server {
 			"Each copy carries the materials that its activation spends, such as '1 harmonizer', " +
 			"or '1 harmonizer + 15 Spoils' for a raid weapon, whose activation also spends 15 Spoils of Conquest. " +
 			"Only a copy of a weapon whose pattern is incomplete is harmonizable. " +
-			"The line before the table gives the Deepsight Harmonizers and the Spoils of Conquest " +
+			"A line before the table gives the Deepsight Harmonizers and the Spoils of Conquest " +
 			"that the account holds, and the stacks at the Postmaster, which the game does not spend. " +
 			"The status input selects the incomplete patterns (the default), the complete patterns, or all of them. " +
 			"The harmonizable input keeps only the patterns with a harmonizable copy, " +
@@ -524,7 +529,15 @@ func newServer(h *handler) *mcp.Server {
 			"The incomplete patterns come first, with the fewest extractions left first, and the complete patterns follow. " +
 			"The copies of a pattern include the Adept, Timelost, and Harrowed copies of its weapon, " +
 			"because the game counts their extractions toward the pattern of the base weapon. " +
-			"Pass the instance id of a copy to get_item or compare_duplicates to read its roll rating.",
+			"The include_ratings input adds the columns 'pve rating' and 'pvp rating' with the tier of the weapon " +
+			"on the Aegis sheet and on the PvP sheet, such as 'S', so one call can rank the patterns by weapon quality. " +
+			"The tier belongs to the craftable version of the weapon and not to a copy. " +
+			"A version that the pattern does not craft, such as the Onslaught version of a raid weapon, " +
+			"does not lend the weapon its tier. " +
+			"A cell reads 'not listed' when the sheet does not list the weapon, 'no tier' when its row has no tier, " +
+			"and 'unavailable' when the server has no sheet for the game mode. " +
+			"One more line before the table gives the reason for each unavailable game mode. " +
+			"Pass the instance id of a copy to get_item or compare_duplicates to read the roll rating of the copy.",
 		Annotations: readOnly,
 	}, h.handleListPatterns)
 

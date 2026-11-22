@@ -260,6 +260,14 @@
 // the sheet when the two tiers differ. The get_item tool explains a
 // rating column by column.
 //
+// The list_patterns tool gives the tier of the weapon of each pattern on
+// each sheet when the caller sets include_ratings. The tier belongs to
+// the weapon and not to a copy, so the tool reads only the sheets and not
+// the perk preferences. The tier is the tier of the craftable definition
+// with the name of the pattern. A version that the pattern does not
+// craft, such as the Onslaught version of a raid weapon, does not lend
+// the weapon its tier.
+//
 // The list_items tool also filters by the same rating. The inputs
 // min_pve_rating and min_pvp_rating each take the lowest tier to include
 // for one game mode. A copy must reach each minimum that the caller
@@ -412,6 +420,13 @@
 // row of the base weapon. The get_item tool shows the progress of the
 // pattern of each copy on its Pattern line.
 //
+// Each row of the list_patterns tool also names the places where the
+// weapon drops, as the Weapon Sources section describes. With
+// include_ratings, the row gives the tier of the weapon on the Aegis sheet
+// and on the PvP sheet, as the Roll Ratings section describes. One call
+// can therefore rank the patterns by the quality of the weapon and by the
+// place that drops its copies.
+//
 // Two flags of list_items, get_item, and compare_duplicates give the
 // Deepsight state of a copy. The server reads both from the crafting
 // sockets of the copy, as DIM does:
@@ -528,6 +543,25 @@
 //     of a shotgun can cover one shell or a full reload.
 //   - A game update changed the value after the last measurement, or
 //     its patch notes do not say whether a change reaches the weapon.
+//
+// # Weapon Sources
+//
+// The list_patterns tool names the places where each craftable legendary
+// weapon drops, such as a raid, a destination, or Xûr. A weapon can drop
+// from several places, and the source cell joins them with commas. The
+// Destiny definitions give each weapon the source text of its
+// collectible. Update 9.7.0 moved the drops of many weapons but left the
+// text as it stood, so the server holds a table of its own.
+//
+// The table comes from the Legendary Weapons Sources database of
+// Blueberries.gg and from the Monument of Triumph Legendary Loot Sources
+// sheet of Sax. Both sources describe the game after Update 9.7.0. The
+// table lists each legendary weapon that both sources call craftable,
+// and it follows the patch notes of Bungie up to the last hotfix. It
+// names only the places that drop the version of the weapon that the
+// pattern crafts. The source cell of a weapon that the table does not
+// list, such as an exotic weapon, is empty. The table is part of the
+// server, so the tools do not send any request for it.
 //
 // # Time to Kill and Damage
 //

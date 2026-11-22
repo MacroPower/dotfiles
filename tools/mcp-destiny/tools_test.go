@@ -3378,8 +3378,10 @@ const patternProfileBody = `{"ErrorCode": 1, "Response": {
 // definitions name the plugs of the two crafting sockets that Deepsight
 // reads and four pattern records. Fatebringer, Midnight Coup, and
 // Austringer (104) name a recipe item, and the profile lacks the record
-// of Hawkmoon. Item 105 is Fatebringer (Timelost), which does not name a
-// recipe item. The source tags put both versions of Fatebringer in a raid.
+// of Hawkmoon. Item 105 is Fatebringer (Timelost). Item 106 is a version
+// of Fatebringer with the name of the weapon, as the Onslaught version of
+// a raid weapon has. Neither names a recipe item. The source tags put
+// Fatebringer (100) and its Timelost version in a raid.
 func patternFakes(t *testing.T) *fakes {
 	t.Helper()
 
@@ -3408,6 +3410,10 @@ func patternFakes(t *testing.T) *fakes {
 	timelost.Craftable = false
 	f.defs.Items[105] = timelost
 
+	version := f.defs.Items[100]
+	version.Craftable = false
+	f.defs.Items[106] = version
+
 	austringer := f.defs.Items[100]
 	austringer.Name = "Austringer"
 	f.defs.Items[104] = austringer
@@ -3427,15 +3433,58 @@ func TestListPatterns(t *testing.T) {
 	const (
 		held = "\nThe account holds 2 Deepsight Harmonizers and 45 Spoils of Conquest. " +
 			"The Postmaster also holds 1 Deepsight Harmonizer."
-		table       = "\n\nweapon | progress | copies | deepsight | harmonizable\n"
+		table       = "\n\nweapon | source | progress | copies | deepsight | harmonizable\n"
 		header      = held + table
-		austringer  = "Austringer | 1 of 2 | 1 |  | 2005 (1 harmonizer)"
-		fatebringer = "Fatebringer | 3 of 5 | 3 | 2001 | 2002 (1 harmonizer + 15 Spoils), 2004 (1 harmonizer + 15 Spoils)"
-		coup        = "Midnight Coup | complete | 1 |  | "
+		austringer  = "Austringer | Presage mission | 1 of 2 | 1 |  | 2005 (1 harmonizer)"
+		fatebringer = "Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " +
+			"2002 (1 harmonizer + 15 Spoils), 2004 (1 harmonizer + 15 Spoils)"
+		coup = "Midnight Coup |  | complete | 1 |  | "
 
 		// lostHarmonizer is the stack of the Postmaster of the Hunter.
 		lostHarmonizer = `{"itemHash": 2228452164, "quantity": 1, "location": 4, "bucketHash": 215593132}`
+
+		// The Aegis sheet lists Fatebringer (100) with the tier B. It
+		// lists the Timelost version (105) and the Onslaught version
+		// (106) of Fatebringer with the tier S. Neither version names a
+		// recipe item, so neither lends Fatebringer its tier. The sheet
+		// lists Midnight Coup (102) without a tier. The PvP sheet lists
+		// only Fatebringer, with the tier C. Neither sheet lists
+		// Austringer (104).
+		aegisSheet = `{"rolls": [` +
+			`{"category": "HCs", "tier": "B", "hashes": [100], "slots": [[900]]}, ` +
+			`{"category": "HCs", "tier": "S", "hashes": [105], "slots": []}, ` +
+			`{"category": "HCs", "tier": "S", "hashes": [106], "slots": []}, ` +
+			`{"category": "HCs", "hashes": [102], "slots": []}]}`
+		pvpSheet = `{"rolls": [{"category": "Hand Cannon", "tier": "C", "hashes": [100], "slots": [[903]]}]}`
+
+		ratedTable = "\n\nweapon | source | progress | copies | deepsight | harmonizable | pve rating | pvp rating\n"
+		noAegis    = "\nPvE: rating unavailable: the service publishes no Aegis sheet"
+		noPvP      = "\nPvP: rating unavailable: the service publishes no PvP sheet"
 	)
+
+	// aegisOnly makes the service publish only the Aegis sheet.
+	aegisOnly := func(f *fakes) {
+		f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+		f.service.Data["/artifacts/rolls.a.json"] = aegisSheet
+	}
+
+	// bothSheets makes the service publish the Aegis sheet and the PvP
+	// sheet.
+	bothSheets := func(f *fakes) {
+		aegisOnly(f)
+
+		f.service.ArtifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
+		f.service.Data["/artifacts/pvprolls.a.json"] = pvpSheet
+	}
+
+	// rated is the output of a call with status all and include_ratings
+	// whose reason lines are reasons.
+	rated := func(reasons, austringerCells, fatebringerCells, coupCells string) string {
+		return "Patterns 1-3 of 3." + held + reasons + ratedTable +
+			austringer + " | " + austringerCells + "\n" +
+			fatebringer + " | " + fatebringerCells + "\n" +
+			coup + " | " + coupCells
+	}
 
 	tests := map[string]struct {
 		edit    func(f *fakes)
@@ -3443,6 +3492,41 @@ func TestListPatterns(t *testing.T) {
 		in      ListPatternsInput
 		isError bool
 	}{
+		"ratings of both sheets": {
+			edit: bothSheets,
+			in:   ListPatternsInput{Status: "all", IncludeRatings: true},
+			want: rated("", "not listed | not listed", "B | C", "no tier | not listed"),
+		},
+		// The tier of a weapon does not depend on the perk preferences.
+		"ratings without the perk preferences": {
+			edit: func(f *fakes) {
+				bothSheets(f)
+				delete(f.service.Data, pathPrefs)
+			},
+			in:   ListPatternsInput{Status: "all", IncludeRatings: true},
+			want: rated("", "not listed | not listed", "B | C", "no tier | not listed"),
+		},
+		"ratings of the one sheet that the service publishes": {
+			edit: aegisOnly,
+			in:   ListPatternsInput{Status: "all", IncludeRatings: true},
+			want: rated(noPvP, "not listed | unavailable", "B | unavailable", "no tier | unavailable"),
+		},
+		"ratings without a sheet": {
+			in: ListPatternsInput{Status: "all", IncludeRatings: true},
+			want: rated(
+				noAegis+noPvP,
+				"unavailable | unavailable", "unavailable | unavailable", "unavailable | unavailable",
+			),
+		},
+		"rating reasons follow the paging hint and the held materials": {
+			in: ListPatternsInput{Limit: 1, IncludeRatings: true},
+			want: "Patterns 1-1 of 2. Pass offset=1 for the next page." + held + noAegis + noPvP + ratedTable +
+				austringer + " | unavailable | unavailable",
+		},
+		"no match with ratings": {
+			in:   ListPatternsInput{Query: "thorn", IncludeRatings: true},
+			want: "No patterns match.",
+		},
 		"incomplete patterns by default, the fewest extractions left first": {
 			want: "Patterns 1-2 of 2." + header + austringer + "\n" + fatebringer,
 		},
@@ -3465,7 +3549,7 @@ func TestListPatterns(t *testing.T) {
 		"service without source tags": {
 			edit: func(f *fakes) { f.defs.SourcesListed = false },
 			in:   ListPatternsInput{Query: "fatebringer"},
-			want: "Patterns 1-1 of 1." + header + "Fatebringer | 3 of 5 | 3 | 2001 | " +
+			want: "Patterns 1-1 of 1." + header + "Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " +
 				"2002 (1 harmonizer + 15 Spoils if a raid weapon), 2004 (1 harmonizer + 15 Spoils if a raid weapon)",
 		},
 		"account with one Deepsight Harmonizer and no Spoils of Conquest": {
@@ -3550,6 +3634,83 @@ func TestListPatterns(t *testing.T) {
 	}
 }
 
+// TestListPatternsRatingRequests pins the requests that the rating
+// columns of list_patterns cost. The include_ratings input alone decides
+// them. A call without it does not read any sheet, and a call with it
+// reads the sheets also for an empty result. No call reads the perk
+// preferences, because the tier of a weapon does not depend on the perks
+// of a copy. The filter runs first, so a call with an invalid filter
+// does not read any sheet.
+func TestListPatternsRatingRequests(t *testing.T) {
+	t.Parallel()
+
+	const sheet = `{"rolls": [{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900]]}]}`
+
+	sheets := []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"}
+
+	// step is one call on the fakes of a case. The counts and the paths
+	// cover every request since the start of the case.
+	type step struct {
+		// fetched lists the artifact paths that the service received.
+		fetched []string
+		in      ListPatternsInput
+		// configs counts the requests for /api/config. The first tool
+		// call reads the Bungie API key from it, and each sheet load
+		// reads the artifact index from it.
+		configs int
+		isError bool
+	}
+
+	tests := map[string]struct {
+		steps []step
+	}{
+		"only a call with ratings reads the sheets": {
+			steps: []step{
+				{in: ListPatternsInput{Status: "all"}, configs: 1},
+				{in: ListPatternsInput{Status: "all", IncludeRatings: true}, configs: 2, fetched: sheets},
+			},
+		},
+		"invalid filter reads no sheet": {
+			steps: []step{
+				{in: ListPatternsInput{Status: "done", IncludeRatings: true}, configs: 1, isError: true},
+			},
+		},
+		"empty result reads the sheets": {
+			steps: []step{
+				{in: ListPatternsInput{Query: "thorn", IncludeRatings: true}, configs: 2, fetched: sheets},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := patternFakes(t)
+			f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}}
+			f.service.Data["/artifacts/rolls.a.json"] = sheet
+			f.service.Data["/artifacts/pvprolls.a.json"] = sheet
+
+			for i, step := range tc.steps {
+				_, isError := call(t, f.h.handleListPatterns, step.in)
+				assert.Equalf(t, step.isError, isError, "call %d", i+1)
+
+				var fetched []string
+
+				for _, req := range f.service.All() {
+					if strings.HasPrefix(req.Path, "/artifacts/") {
+						fetched = append(fetched, req.Path)
+					}
+				}
+
+				assert.Equalf(t, step.fetched, fetched, "call %d", i+1)
+				assert.Lenf(t, f.service.Calls(http.MethodGet, "/api/config"), step.configs, "call %d", i+1)
+				assert.Emptyf(t, f.service.Calls(http.MethodGet, pathPrefs), "call %d", i+1)
+			}
+		})
+	}
+}
+
 func TestListPatternsRefresh(t *testing.T) {
 	t.Parallel()
 
@@ -3563,10 +3724,10 @@ func TestListPatternsRefresh(t *testing.T) {
 	f.bungie.ProfileBody = strings.Replace(patternProfileBody, `"progress": 3`, `"progress": 4`, 1)
 
 	got, _ := call(t, f.h.handleListPatterns, ListPatternsInput{Query: "fatebringer"})
-	assert.Contains(t, got, "Fatebringer | 3 of 5 |")
+	assert.Contains(t, got, "Fatebringer | Vault of Glass raid | 3 of 5 |")
 
 	got, _ = call(t, f.h.handleListPatterns, ListPatternsInput{Query: "fatebringer", Refresh: true})
-	assert.Contains(t, got, "Fatebringer | 4 of 5 |")
+	assert.Contains(t, got, "Fatebringer | Vault of Glass raid | 4 of 5 |")
 }
 
 func TestDeepsightFlags(t *testing.T) {

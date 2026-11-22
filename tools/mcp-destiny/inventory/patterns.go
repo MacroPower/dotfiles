@@ -95,6 +95,29 @@ func patternsOf(profile *bungie.Profile, defs *definitions.Defs) []Pattern {
 	return patterns
 }
 
+// patternItemsOf maps the record hash of each pattern that the
+// definitions name to the item hashes of the craftable definitions with
+// the name of the pattern, in ascending order. A pattern without such a
+// definition has no entry.
+func patternItemsOf(defs *definitions.Defs) map[uint32][]uint32 {
+	items := map[uint32][]uint32{}
+
+	for hash := range defs.Items {
+		def := defs.Items[hash]
+
+		record, ok := defs.Patterns[def.Name]
+		if ok && def.Craftable {
+			items[record] = append(items[record], hash)
+		}
+	}
+
+	for _, hashes := range items {
+		slices.Sort(hashes)
+	}
+
+	return items
+}
+
 // patternOf returns the pattern of the item of def with the name name, or
 // nil when the item has none. Destiny Item Manager (DIM) looks up the
 // pattern of a definition that names a recipe item, and of a definition
@@ -197,9 +220,15 @@ type PatternFilter struct {
 
 // PatternRow is one pattern of [*Snapshot.PatternRows]. Copies lists the
 // owned copies of the weapon of the pattern, ordered as
-// [ByNameAndID] orders them.
+// [ByNameAndID] orders them. ItemHashes lists in ascending order the item
+// hashes of the craftable definitions with the name of the pattern. It
+// leaves out each definition with that name that does not name a recipe
+// item, such as the Onslaught version of a raid weapon. It is empty when
+// the definitions of the snapshot do not hold a craftable definition with
+// that name.
 type PatternRow struct {
-	Copies []*Item
+	Copies     []*Item
+	ItemHashes []uint32
 
 	Pattern
 }
@@ -233,7 +262,7 @@ func (s *Snapshot) PatternRows(f PatternFilter) ([]PatternRow, error) {
 	var rows []PatternRow
 
 	for _, p := range s.Patterns {
-		row := PatternRow{Pattern: p, Copies: copies[p.Hash]}
+		row := PatternRow{Pattern: p, Copies: copies[p.Hash], ItemHashes: s.patternItems[p.Hash]}
 
 		keep := query.In(p.Name) &&
 			(status == PatternAll || p.Complete == (status == PatternComplete)) &&

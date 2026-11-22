@@ -19,6 +19,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/loot"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
@@ -1405,12 +1406,27 @@ const noPatternsRefusal = "the service publishes no record definitions, " +
 // renderPatterns renders one page of patterns as a table. Offset and
 // total count patterns. A line before the table says how many Deepsight
 // Harmonizers and Spoils of Conquest the account holds. Each row gives
-// the progress of the pattern as [patternLabel] writes it and the number
-// of owned copies of the weapon. It also lists the instance ids of the
-// copies with Deepsight Resonance and of the copies that a Deepsight
-// Harmonizer can give Deepsight Resonance. Each harmonizable copy carries
-// the cost of its activation, as [activationCost] names it.
-func renderPatterns(s *inventory.Snapshot, rows []inventory.PatternRow, offset, total int) string {
+// the places where the weapon drops, as [*loot.Table.Drops] of table
+// returns them, joined with commas. The source cell of a weapon that
+// table does not list is empty. The row then gives the progress of the
+// pattern as [patternLabel] writes it and the number of owned copies of
+// the weapon. It also lists the instance ids of the copies with Deepsight
+// Resonance and of the copies that a Deepsight Harmonizer can give
+// Deepsight Resonance. Each harmonizable copy carries the cost of its
+// activation, as [activationCost] names it.
+//
+// Sheets holds the [rolls.SheetState] of each game mode, and nil leaves
+// the ratings out. With sheets, the table gains one rating column for
+// each game mode, and each cell holds the text of [weaponRatingLabel].
+// One line for each game mode without a sheet gives the reason, between
+// the line of the Deepsight Harmonizers and the table.
+func renderPatterns(
+	s *inventory.Snapshot,
+	rows []inventory.PatternRow,
+	offset, total int,
+	table *loot.Table,
+	sheets map[string]rolls.SheetState,
+) string {
 	switch {
 	case len(s.Patterns) == 0:
 		return "The profile tracks no weapon pattern."
@@ -1429,7 +1445,25 @@ func renderPatterns(s *inventory.Snapshot, rows []inventory.PatternRow, offset, 
 	}
 
 	b.WriteString("\n" + heldLabel(s))
-	b.WriteString("\n\nweapon | progress | copies | deepsight | harmonizable\n")
+
+	if sheets != nil {
+		for _, mode := range rolls.Modes {
+			err := sheets[mode].Err
+			if err != nil {
+				b.WriteString("\n" + rolls.RatingReason(mode, err))
+			}
+		}
+	}
+
+	b.WriteString("\n\nweapon | source | progress | copies | deepsight | harmonizable")
+
+	if sheets != nil {
+		for _, mode := range rolls.Modes {
+			b.WriteString(" | " + mode + " rating")
+		}
+	}
+
+	b.WriteString("\n")
 
 	for _, row := range rows {
 		var deepsight, harmonizable []string
@@ -1446,10 +1480,17 @@ func renderPatterns(s *inventory.Snapshot, rows []inventory.PatternRow, offset, 
 
 		fields := []string{
 			row.Name,
+			strings.Join(table.Drops(row.Name), ", "),
 			patternLabel(&row.Pattern),
 			strconv.Itoa(len(row.Copies)),
 			strings.Join(deepsight, ", "),
 			strings.Join(harmonizable, ", "),
+		}
+
+		if sheets != nil {
+			for _, mode := range rolls.Modes {
+				fields = append(fields, weaponRatingLabel(sheets[mode], row.ItemHashes))
+			}
 		}
 
 		b.WriteString(strings.Join(fields, " | "))
@@ -1457,6 +1498,32 @@ func renderPatterns(s *inventory.Snapshot, rows []inventory.PatternRow, offset, 
 	}
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// weaponRatingLabel returns the text of a rating cell for a weapon with
+// the given item hashes, such as the [inventory.PatternRow.ItemHashes] of
+// a pattern. The text gives the tier of the [*rolls.Sheet.BestRow] of the
+// hashes. The text names the first of these states that holds:
+//
+//   - "unavailable": the game mode has no sheet.
+//   - "not listed": the sheet lists none of the hashes.
+//   - "no tier": the best row has no tier.
+//   - "S": the best row has the tier S.
+func weaponRatingLabel(state rolls.SheetState, hashes []uint32) string {
+	if state.Err != nil {
+		return "unavailable"
+	}
+
+	row, ok := state.Sheet.BestRow(hashes)
+
+	switch {
+	case !ok:
+		return "not listed"
+	case row.Tier == "":
+		return "no tier"
+	default:
+		return row.Tier
+	}
 }
 
 // historyRun is one row of the activity history. Character names the

@@ -24,6 +24,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/loot"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
@@ -185,12 +186,13 @@ type CompareDuplicatesInput struct {
 
 // ListPatternsInput is the input schema of the list_patterns tool.
 type ListPatternsInput struct {
-	Query        string `json:"query,omitzero"        jsonschema:"Substring of the weapon name, in any letter case and with or without accents, such as 'fatebringer'. A digit also matches the letter that it stands for, such as 0 for o"`
-	Status       string `json:"status,omitzero"       jsonschema:"incomplete (the default), complete, or all"`
-	Limit        int    `json:"limit,omitzero"        jsonschema:"Maximum number of patterns to return (default 50, maximum 200)"`
-	Offset       int    `json:"offset,omitzero"       jsonschema:"Number of matching patterns to skip (default 0)"`
-	Harmonizable bool   `json:"harmonizable,omitzero" jsonschema:"Return only the patterns with an owned copy that a Deepsight Harmonizer can give Deepsight Resonance"`
-	Refresh      bool   `json:"refresh,omitzero"      jsonschema:"Fetch the inventory from Bungie again instead of reusing a copy up to 30 seconds old"`
+	Query          string `json:"query,omitzero"           jsonschema:"Substring of the weapon name, in any letter case and with or without accents, such as 'fatebringer'. A digit also matches the letter that it stands for, such as 0 for o"`
+	Status         string `json:"status,omitzero"          jsonschema:"incomplete (the default), complete, or all"`
+	Limit          int    `json:"limit,omitzero"           jsonschema:"Maximum number of patterns to return (default 50, maximum 200)"`
+	Offset         int    `json:"offset,omitzero"          jsonschema:"Number of matching patterns to skip (default 0)"`
+	Harmonizable   bool   `json:"harmonizable,omitzero"    jsonschema:"Return only the patterns with an owned copy that a Deepsight Harmonizer can give Deepsight Resonance"`
+	IncludeRatings bool   `json:"include_ratings,omitzero" jsonschema:"Add the columns 'pve rating' and 'pvp rating' with the tier of each weapon on the Aegis sheet and on the PvP sheet"`
+	Refresh        bool   `json:"refresh,omitzero"         jsonschema:"Fetch the inventory from Bungie again instead of reusing a copy up to 30 seconds old"`
 }
 
 // ListActivityHistoryInput is the input schema of the
@@ -635,6 +637,11 @@ func (h *handler) handleListPatterns(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	table, err := loot.Load()
+	if err != nil {
+		return h.toolError(ctx, toolListPatterns, err)
+	}
+
 	s, err := h.loadSnapshot(ctx, in.Refresh)
 	if err != nil {
 		return h.toolError(ctx, toolListPatterns, err)
@@ -656,9 +663,17 @@ func (h *handler) handleListPatterns(
 		return h.toolError(ctx, toolListPatterns, err)
 	}
 
+	// The tier of a weapon on a sheet does not depend on the perks of a
+	// copy, so the call reads only the sheets and not the perk
+	// preferences. A call without include_ratings reads neither.
+	var sheets map[string]rolls.SheetState
+	if in.IncludeRatings {
+		sheets = h.sheets.Load(ctx)
+	}
+
 	page, offset, _ := paginate(rows, in.Limit, in.Offset, defaultItemLimit, maxItemLimit)
 
-	return textResult(renderPatterns(s, page, offset, len(rows))), nil, nil
+	return textResult(renderPatterns(s, page, offset, len(rows), table, sheets)), nil, nil
 }
 
 func (h *handler) handleListActivityHistory(
