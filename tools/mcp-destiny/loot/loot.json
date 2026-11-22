@@ -20,6 +20,25 @@
       "patch": "9.7.0.2"
     }
   },
+  "activities": {
+    "Avalon mission": "//node.ovrd.AVALON//",
+    "Crota's End raid": "Crota's End",
+    "Dares of Eternity": "Dares of Eternity",
+    "Deep Stone Crypt raid": "Deep Stone Crypt",
+    "Duality dungeon": "Duality",
+    "Encore mission": "Encore",
+    "Garden of Salvation raid": "Garden of Salvation",
+    "King's Fall raid": "King's Fall",
+    "Last Wish raid": "Last Wish",
+    "Operation: Seraph's Shield mission": "Operation: Seraph's Shield",
+    "Presage mission": "Presage",
+    "Root of Nightmares raid": "Root of Nightmares",
+    "Salvation's Edge raid": "Salvation's Edge",
+    "Starcrossed mission": "Starcrossed",
+    "Vault of Glass raid": "Vault of Glass",
+    "Vow of the Disciple raid": "Vow of the Disciple",
+    "Vox Obscura mission": "Vox Obscura"
+  },
   "weapons": [
     {
       "name": "A Distant Pull",

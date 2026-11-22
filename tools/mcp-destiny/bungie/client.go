@@ -501,9 +501,12 @@ type CharacterActivities struct {
 // false when the game hides the activity, and the decoder sets it to true
 // when Bungie leaves the field out. RecommendedLight is zero when the
 // activity has no recommended power. Focused marks an activity in the
-// featured carousel of the Portal.
+// featured carousel of the Portal, and Bungie never sets it on a raid or
+// a dungeon. Challenges lists the challenges that the activity offers
+// this week, such as the weekly challenge of a featured raid.
 type AvailableActivity struct {
 	VisibleRewards   []ActivityRewardMapping `json:"visibleRewards"`
+	Challenges       []ActivityChallenge     `json:"challenges"`
 	RecommendedLight int                     `json:"recommendedLight"`
 	Hash             uint32                  `json:"activityHash"`
 	Visible          bool                    `json:"isVisible"`
@@ -558,6 +561,13 @@ type ActivityRewardItem struct {
 		ItemHash uint32 `json:"itemHash"`
 		Quantity int    `json:"quantity"`
 	} `json:"itemQuantity"`
+}
+
+// ActivityChallenge is the subset of a Bungie DestinyChallengeStatus that
+// the server reads. Objective is the progress of the character toward the
+// challenge.
+type ActivityChallenge struct {
+	Objective ProfileObjective `json:"objective"`
 }
 
 // ItemAction identifies one item for a transfer, an equip, a Postmaster

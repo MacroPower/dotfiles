@@ -541,6 +541,26 @@ func newServer(h *handler) *mcp.Server {
 			"The status input selects the incomplete patterns (the default), the complete patterns, or all of them. " +
 			"The harmonizable input keeps only the patterns with a harmonizable copy, " +
 			"for example to choose the weapons to spend Deepsight Harmonizers on. " +
+			"The this_week input keeps only the patterns whose weapon a vendor of one character sells now " +
+			"or a featured activity of that character drops. " +
+			"It reads the live vendor stock and the activities of the character, as list_vendors and list_activities do, " +
+			"and it adds the columns 'sold by' and 'featured in'. " +
+			"The 'sold by' column names each vendor that sells a copy that advances the pattern now, " +
+			"such as Banshee-44, or Strange Gear Offers, the sub-vendor that sells the legendary weapons of X\u00fbr. " +
+			"An Adept, Timelost, or Harrowed copy counts. " +
+			"When another vendor of the character has the same name, the column adds the vendor hash in parentheses, " +
+			"such as 'Focused Decoding (444807002)', so pass the hash as the vendor input of list_vendors. " +
+			"A vendor label ends with '(unavailable)' when the character cannot buy any such copy from that vendor, " +
+			"and list_vendors gives the reasons. " +
+			"The 'featured in' column names each featured activity that drops the weapon, " +
+			"such as 'Vow of the Disciple: Master'. " +
+			"An activity counts as featured when the Portal shows it in the featured carousel, " +
+			"and a raid or a dungeon also counts when Bungie lists its weekly challenge. " +
+			"The column covers the raids, the dungeons, the exotic missions, and Dares of Eternity " +
+			"that the source column names, " +
+			"but not a destination of that column. " +
+			"A line before the table names every featured activity of the character, also when no pattern matches. " +
+			"Without character, this_week reads the most recently played character. " +
 			"The incomplete patterns come first, with the fewest extractions left first, and the complete patterns follow. " +
 			"The copies of a pattern include the Adept, Timelost, and Harrowed copies of its weapon, " +
 			"because the game counts their extractions toward the pattern of the base weapon. " +
@@ -591,8 +611,9 @@ func newServer(h *handler) *mcp.Server {
 			"with the rewards that each one still offers this week. The game drops a reward from the list after " +
 			"the character claims it. Without character, it reads the most recently played character. " +
 			"Each row gives the activity name, the activity type, the location, the recommended power, " +
-			"the number of bonus drops, the focused reward, the bonus loot, a featured flag for an activity in the " +
-			"featured carousel of the Portal, and the activity hash. The rows follow the reward ranking of the " +
+			"the number of bonus drops, the focused reward, the bonus loot, a featured flag, and the activity hash. " +
+			"The flag marks an activity in the featured carousel of the Portal, " +
+			"and a raid or a dungeon with a weekly challenge. The rows follow the reward ranking of the " +
 			"Activities page of the web client, without its sections, its rule that puts Quickplay rows first, or its " +
 			"power key: the most bonus drops first, then the activities with a focused reward, then those with " +
 			"bonus loot, then the featured ones, then by name. Pass rewards=true to list only the activities that still " +

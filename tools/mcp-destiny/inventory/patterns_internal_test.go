@@ -358,6 +358,62 @@ func TestNewItemPattern(t *testing.T) {
 	}
 }
 
+// TestPatternHash pins the record of each item hash of [patternDefs]. The
+// lookup follows the rules of [TestNewItemPattern], but it does not read
+// a profile.
+func TestPatternHash(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		hash uint32
+		want uint32
+	}{
+		"craftable weapon": {
+			hash: 100,
+			want: recordFatebringer,
+		},
+		"definition without a recipe item": {
+			hash: 102,
+		},
+		"item in the forbidden bucket": {
+			hash: itemForbidden,
+			want: recordForbidden,
+		},
+		"craftable weapon whose pattern record the profile might lack": {
+			hash: 103,
+			want: recordWithoutRecord,
+		},
+		"craftable weapon whose name no pattern record has": {
+			hash: 104,
+		},
+		"Timelost version of a weapon with a pattern": {
+			hash: itemTimelost,
+			want: recordFatebringer,
+		},
+		"Adept version of a weapon whose name no pattern record has": {
+			hash: itemAdeptNoPattern,
+		},
+		"version suffix outside the weapon buckets": {
+			hash: itemHarrowedHelmet,
+		},
+		"hash that the definitions do not hold": {
+			hash: 9999,
+		},
+	}
+
+	defs := patternDefs()
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := PatternHash(defs, tc.hash)
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.want != 0, ok)
+		})
+	}
+}
+
 func TestNewItemPatternOfForbiddenBucket(t *testing.T) {
 	t.Parallel()
 

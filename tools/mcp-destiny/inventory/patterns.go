@@ -95,6 +95,35 @@ func patternsOf(profile *bungie.Profile, defs *definitions.Defs) []Pattern {
 	return patterns
 }
 
+// patternRecord returns the name and the record hash of the pattern of
+// the item of def with the name name. It reports false when the item has
+// no pattern. Destiny Item Manager (DIM) looks up the pattern of a
+// definition that names a recipe item, and of a definition in
+// [bungie.BucketForbidden]. It finds the record of the pattern by the
+// name of the item.
+//
+// The game also counts the extractions of an Adept, Timelost, or Harrowed
+// copy toward the pattern of the base weapon. The definitions of those
+// versions do not name a recipe item. The rules of DIM then do not find a
+// pattern for such an item. For an item in a weapon bucket without a
+// pattern, patternRecord therefore looks up the pattern of the name
+// without its version suffix, as [baseName] gives it.
+func patternRecord(defs *definitions.Defs, def definitions.ItemDef, name string) (string, uint32, bool) {
+	hash, ok := defs.Patterns[name]
+	ok = ok && (def.Craftable || def.Bucket == bungie.BucketForbidden)
+
+	if base := baseName(name); !ok && base != name && inWeaponBucket(def) {
+		name = base
+		hash, ok = defs.Patterns[name]
+	}
+
+	if !ok {
+		return "", 0, false
+	}
+
+	return name, hash, true
+}
+
 // patternItemsOf maps the record hash of each pattern that the
 // definitions name to the item hashes of the craftable definitions with
 // the name of the pattern, in ascending order. A pattern without such a
@@ -118,26 +147,24 @@ func patternItemsOf(defs *definitions.Defs) map[uint32][]uint32 {
 	return items
 }
 
+// PatternHash returns the hash of the pattern record that a copy of the
+// item with the given hash advances, such as the item of a vendor sale. A
+// copy advances the pattern that [patternOf] gives it. The hash of an
+// Adept, Timelost, or Harrowed version therefore returns the record of the
+// base weapon. PatternHash reports false for an item that does not advance
+// a pattern, such as the Onslaught version of a raid weapon. It does not
+// read a profile, so it also returns a record that the profile lacks.
+func PatternHash(defs *definitions.Defs, hash uint32) (uint32, bool) {
+	_, record, ok := patternRecord(defs, defs.Items[hash], defs.ItemName(hash))
+
+	return record, ok
+}
+
 // patternOf returns the pattern of the item of def with the name name, or
-// nil when the item has none. Destiny Item Manager (DIM) looks up the
-// pattern of a definition that names a recipe item, and of a definition
-// in [bungie.BucketForbidden]. It finds the record of the pattern by the
-// name of the item.
-//
-// The game also counts the extractions of an Adept, Timelost, or Harrowed
-// copy toward the pattern of the base weapon. The definitions of those
-// versions name no recipe item. So when the rules of DIM find no pattern
-// for an item in a weapon bucket, patternOf looks up the pattern of the
-// name without its version suffix, as [baseName] gives it.
+// nil when the item has none. It finds the record of the pattern by the
+// rules of [patternRecord].
 func patternOf(profile *bungie.Profile, defs *definitions.Defs, def definitions.ItemDef, name string) *Pattern {
-	hash, ok := defs.Patterns[name]
-	ok = ok && (def.Craftable || def.Bucket == bungie.BucketForbidden)
-
-	if base := baseName(name); !ok && base != name && inWeaponBucket(def) {
-		name = base
-		hash, ok = defs.Patterns[name]
-	}
-
+	name, hash, ok := patternRecord(defs, def, name)
 	if !ok {
 		return nil
 	}

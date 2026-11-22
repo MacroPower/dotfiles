@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -32,9 +33,19 @@ var (
 )
 
 // Table maps each weapon of the loot data to the places where the weapon
-// drops. [Load] returns the table of the embedded data.
+// drops. It also maps each activity of the loot data to its place.
+// [Load] returns the table of the embedded data.
 type Table struct {
-	drops map[string][]string
+	drops      map[string][]string
+	activities []activity
+}
+
+// activity is the activity of one place, such as the Vault of Glass raid.
+// Name is the name that the Destiny definitions give the activity, as
+// key folds it.
+type activity struct {
+	place string
+	name  string
 }
 
 // Load returns the [*Table] of the embedded loot data. It decodes and
@@ -52,17 +63,46 @@ func (t *Table) Drops(name string) []string {
 	return t.drops[key(name)]
 }
 
-// key folds a weapon name for a lookup.
+// Place returns the place of the table that holds the activity with the
+// given name. An activity belongs to a place when its name equals the
+// activity name of the place, or when it continues that name with ": " or
+// " (". The activity "Vault of Glass: Master" therefore belongs to the
+// place "Vault of Glass raid". The comparison folds both names as
+// [*Table.Drops] folds a weapon name. When the names of several places
+// match, the longest name wins. Place reports false when no place
+// matches, as for a strike or a vendor.
+func (t *Table) Place(name string) (string, bool) {
+	name = key(name)
+
+	var (
+		best  activity
+		found bool
+	)
+
+	for _, a := range t.activities {
+		match := name == a.name || strings.HasPrefix(name, a.name+": ") || strings.HasPrefix(name, a.name+" (")
+		if match && len(a.name) > len(best.name) {
+			best, found = a, true
+		}
+	}
+
+	return best.place, found
+}
+
+// key folds a weapon name or an activity name for a lookup.
 func key(name string) string {
 	return apostrophes.Replace(fold.Name(name))
 }
 
 // file is the loot data as loot.json stores it. Patch names the last game
-// update that changed a drop of the data.
+// update that changed a drop of the data. Activities maps each place that
+// is an activity to the name that the Destiny definitions give the
+// activity.
 type file struct {
-	Sources map[string]source `json:"sources"`
-	Patch   string            `json:"patch"`
-	Weapons []weapon          `json:"weapons"`
+	Sources    map[string]source `json:"sources"`
+	Activities map[string]string `json:"activities"`
+	Patch      string            `json:"patch"`
+	Weapons    []weapon          `json:"weapons"`
 }
 
 // source is one origin of the drops. Patch is the game update that the
@@ -95,7 +135,8 @@ type drop struct {
 // parse decodes the loot data and checks it. Each weapon must have a name
 // of its own, at least one drop, and the update of its last check. Each drop
 // must name a place that the weapon does not repeat. It must also name at
-// least one source of the file.
+// least one source of the file. Each activity must belong to a place that
+// a drop names, and it must have a name that no other activity has.
 func parse(data []byte) (*Table, error) {
 	var f file
 
@@ -123,7 +164,48 @@ func parse(data []byte) (*Table, error) {
 		t.drops[k] = places
 	}
 
+	activities, err := f.activities()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrData, err)
+	}
+
+	t.activities = activities
+
 	return t, nil
+}
+
+// activities checks the activities of the file and returns them, ordered
+// by place.
+func (f *file) activities() ([]activity, error) {
+	places := map[string]bool{}
+
+	for _, w := range f.Weapons {
+		for _, d := range w.Drops {
+			places[d.From] = true
+		}
+	}
+
+	var activities []activity
+
+	names := map[string]string{}
+
+	for _, place := range slices.Sorted(maps.Keys(f.Activities)) {
+		name := key(f.Activities[place])
+
+		switch other, taken := names[name]; {
+		case !places[place]:
+			return nil, fmt.Errorf("the activity of %q belongs to a place that no drop names", place)
+		case name == "":
+			return nil, fmt.Errorf("the activity of %q has no name", place)
+		case taken:
+			return nil, fmt.Errorf("the activities of %q and %q share the name %q", other, place, f.Activities[place])
+		}
+
+		names[name] = place
+		activities = append(activities, activity{place: place, name: name})
+	}
+
+	return activities, nil
 }
 
 // places checks the drops of one weapon and returns the place of each

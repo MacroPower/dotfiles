@@ -29,6 +29,18 @@ func TestRead(t *testing.T) {
 		}
 	}
 
+	challenged := func(a bungie.AvailableActivity) bungie.AvailableActivity {
+		a.Challenges = []bungie.ActivityChallenge{{Objective: bungie.ProfileObjective{Hash: 950, CompletionValue: 1}}}
+
+		return a
+	}
+
+	focused := func(a bungie.AvailableActivity) bungie.AvailableActivity {
+		a.Focused = true
+
+		return a
+	}
+
 	tests := map[string]struct {
 		defs    func(*definitions.Defs)
 		entries []bungie.AvailableActivity
@@ -93,6 +105,25 @@ func TestRead(t *testing.T) {
 					{Name: "Enhancement Prism", Quantity: 1, Hash: 604},
 				},
 			}},
+		},
+		// Bungie never focuses a raid or a dungeon, so a challenge on one
+		// marks it as featured. A challenge on an activity of another type
+		// does not.
+		"featured activities": {
+			entries: []bungie.AvailableActivity{
+				challenged(entry(3022541210)),
+				entry(4004),
+				challenged(entry(4001)),
+				challenged(entry(4003)),
+				focused(entry(2222)),
+			},
+			want: []Row{
+				{Hash: 2222, Name: "Vanguard Ops", Type: "Strike", Featured: true},
+				{Hash: 3022541210, Name: "Vault of Glass: Master", Type: "Raid", Location: "Venus", Featured: true},
+				{Hash: 4001, Name: "Warlord's Ruin", Type: "Dungeon", Location: "Earth", Featured: true},
+				{Hash: 4003, Name: "Nightfall: Grandmaster", Type: "Strike"},
+				{Hash: 4004, Name: "Pantheon", Type: "Raid"},
+			},
 		},
 		"equal rewards order by name and then by hash": {
 			defs: func(d *definitions.Defs) {

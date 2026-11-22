@@ -184,13 +184,16 @@ type CompareDuplicatesInput struct {
 	Offset     int    `json:"offset,omitzero"      jsonschema:"Without name and instance_id: number of weapons to skip (default 0)"`
 }
 
-// ListPatternsInput is the input schema of the list_patterns tool.
+// ListPatternsInput is the input schema of the list_patterns tool. The
+// character takes effect only with ThisWeek.
 type ListPatternsInput struct {
 	Query          string `json:"query,omitzero"           jsonschema:"Substring of the weapon name, in any letter case and with or without accents, such as 'fatebringer'. A digit also matches the letter that it stands for, such as 0 for o"`
 	Status         string `json:"status,omitzero"          jsonschema:"incomplete (the default), complete, or all"`
+	Character      string `json:"character,omitzero"       jsonschema:"Only with this_week: character id, or a class name that exactly one character has, whose vendors and activities count. Omit to read the most recently played character"`
 	Limit          int    `json:"limit,omitzero"           jsonschema:"Maximum number of patterns to return (default 50, maximum 200)"`
 	Offset         int    `json:"offset,omitzero"          jsonschema:"Number of matching patterns to skip (default 0)"`
 	Harmonizable   bool   `json:"harmonizable,omitzero"    jsonschema:"Return only the patterns with an owned copy that a Deepsight Harmonizer can give Deepsight Resonance"`
+	ThisWeek       bool   `json:"this_week,omitzero"       jsonschema:"Return only the patterns that a vendor sells now or that a featured activity drops, and add the columns 'sold by' and 'featured in' that name those sources. Reads the live vendor stock and the activities of one character"`
 	IncludeRatings bool   `json:"include_ratings,omitzero" jsonschema:"Add the columns 'pve rating' and 'pvp rating' with the tier of each weapon on the Aegis sheet and on the PvP sheet"`
 	Refresh        bool   `json:"refresh,omitzero"         jsonschema:"Fetch the inventory from Bungie again instead of reusing a copy up to 30 seconds old"`
 }
@@ -637,6 +640,11 @@ func (h *handler) handleListPatterns(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if !in.ThisWeek && strings.TrimSpace(in.Character) != "" {
+		return h.toolError(ctx, toolListPatterns,
+			fmt.Errorf("%w: character takes effect only with this_week=true", ErrInvalidInput))
+	}
+
 	table, err := loot.Load()
 	if err != nil {
 		return h.toolError(ctx, toolListPatterns, err)
@@ -663,6 +671,26 @@ func (h *handler) handleListPatterns(
 		return h.toolError(ctx, toolListPatterns, err)
 	}
 
+	// The sources of this week filter the rows, so they apply before the
+	// paging. A call without this_week does not request them. A call
+	// with it sends the requests also when no pattern matches, so the
+	// result can still name the featured activities.
+	var week *weekSources
+
+	if in.ThisWeek {
+		c, err := s.ResolveCharacter(in.Character)
+		if err != nil {
+			return h.toolError(ctx, toolListPatterns, err)
+		}
+
+		week, err = h.readWeekSources(ctx, s.OwnerLabel(c.ID), c.ID, rows, table)
+		if err != nil {
+			return h.toolError(ctx, toolListPatterns, err)
+		}
+
+		rows = slices.DeleteFunc(rows, func(row inventory.PatternRow) bool { return !week.Has(row.Hash) })
+	}
+
 	// The tier of a weapon on a sheet does not depend on the perks of a
 	// copy, so the call reads only the sheets and not the perk
 	// preferences. A call without include_ratings reads neither.
@@ -673,7 +701,67 @@ func (h *handler) handleListPatterns(
 
 	page, offset, _ := paginate(rows, in.Limit, in.Offset, defaultItemLimit, maxItemLimit)
 
-	return textResult(renderPatterns(s, page, offset, len(rows), table, sheets)), nil, nil
+	return textResult(renderPatterns(s, page, offset, len(rows), table, sheets, week)), nil, nil
+}
+
+// readWeekSources fetches the vendors and the activities of the character
+// with the given id, as list_vendors and list_activities fetch them. The
+// two requests run at the same time. It then joins the stock and the
+// activities with rows, as [newWeekSources] describes. Owner names the
+// character.
+func (h *handler) readWeekSources(
+	ctx context.Context,
+	owner, characterID string,
+	rows []inventory.PatternRow,
+	table *loot.Table,
+) (*weekSources, error) {
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defs, err := h.loadDefs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		stock       *bungie.VendorsResponse
+		byCharacter map[string]bungie.CharacterActivities
+	)
+
+	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
+		var (
+			wg                      sync.WaitGroup
+			stockErr, activitiesErr error
+		)
+
+		wg.Go(func() {
+			stock, stockErr = h.bungie.Vendors(ctx, creds, membership, characterID)
+			if stockErr != nil {
+				stockErr = fmt.Errorf("fetching the vendors: %w", stockErr)
+			}
+		})
+
+		wg.Go(func() {
+			byCharacter, activitiesErr = h.bungie.Activities(ctx, creds, membership)
+			if activitiesErr != nil {
+				activitiesErr = fmt.Errorf("fetching the activities: %w", activitiesErr)
+			}
+		})
+
+		wg.Wait()
+
+		return errors.Join(stockErr, activitiesErr)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	listed := vendors.Read(stock, defs)
+	played := activities.Read(byCharacter[characterID].Available, defs)
+
+	return newWeekSources(owner, listed, played, rows, table, defs), nil
 }
 
 func (h *handler) handleListActivityHistory(

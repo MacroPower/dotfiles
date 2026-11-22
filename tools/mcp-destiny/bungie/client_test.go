@@ -425,7 +425,8 @@ func TestBungieActivities(t *testing.T) {
 		httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {
 			"c1": {"dateActivityStarted": "2026-11-10T11:00:00Z", "currentActivityHash": 0, "availableActivities": [
 				{"activityHash": 10, "isVisible": false, "isNew": true, "recommendedLight": 2010,
-				 "isFocusedActivity": true, "challenges": [], "visibleRewards": [
+				 "isFocusedActivity": true, "challenges": [{"objective": {"objectiveHash": 950, "progress": 1,
+				 "completionValue": 3, "complete": false}}], "visibleRewards": [
 					{"displayBehavior": 1, "rewardItems": [
 						{"uiStyle": "extra_engram", "itemQuantity": {"itemHash": 3956025454, "quantity": 2,
 						 "hasConditionalVisibility": false}},
@@ -471,6 +472,9 @@ func TestBungieActivities(t *testing.T) {
 			Hash:             10,
 			RecommendedLight: 2010,
 			Focused:          true,
+			Challenges: []bungie.ActivityChallenge{
+				{Objective: bungie.ProfileObjective{Hash: 950, Progress: 1, CompletionValue: 3}},
+			},
 			VisibleRewards: []bungie.ActivityRewardMapping{
 				{
 					RewardItems: []bungie.ActivityRewardItem{

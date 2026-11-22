@@ -14,7 +14,8 @@ const lastUpdate = "9.7.0.6"
 
 // TestEmbeddedData pins the provenance of the loot data. The data passes
 // the checks of the loader, so each drop names a source. Each weapon also
-// names the last update of the game as the update of its last check.
+// names the last update of the game as the update of its last check. Each
+// place that names a raid, a dungeon, or a mission has an activity.
 func TestEmbeddedData(t *testing.T) {
 	t.Parallel()
 
@@ -36,6 +37,14 @@ func TestEmbeddedData(t *testing.T) {
 
 	for _, w := range f.Weapons {
 		assert.Equal(t, lastUpdate, w.Checked, w.Name)
+
+		for _, d := range w.Drops {
+			for _, kind := range []string{" raid", " dungeon", " mission"} {
+				if strings.HasSuffix(d.From, kind) {
+					assert.Contains(t, f.Activities, d.From, "the activity of the place")
+				}
+			}
+		}
 	}
 }
 
@@ -51,6 +60,12 @@ func TestParse(t *testing.T) {
 		}`
 	}
 
+	// withActivities returns loot data with the given weapons and the
+	// activities of the given JSON object.
+	withActivities := func(activities string, weapons ...string) string {
+		return strings.Replace(doc(weapons...), `"weapons"`, `"activities": `+activities+`, "weapons"`, 1)
+	}
+
 	// weapon returns one weapon with the given name and drops.
 	weapon := func(name, drops string) string {
 		return `{"name": "` + name + `", "drops": [` + drops + `], "checked": "9.7.0.6"}`
@@ -59,9 +74,10 @@ func TestParse(t *testing.T) {
 	const raid = `{"from": "Vault of Glass raid", "sources": ["sax"]}`
 
 	tests := map[string]struct {
-		want map[string][]string
-		data string
-		err  string
+		want       map[string][]string
+		data       string
+		err        string
+		activities []activity
 	}{
 		"valid": {
 			data: doc(
@@ -75,6 +91,37 @@ func TestParse(t *testing.T) {
 				"fatebringer":     {"Vault of Glass raid"},
 				"aberrant action": {"Encore mission", "Xûr"},
 			},
+		},
+		"activities ordered by place": {
+			data: withActivities(
+				`{"Vault of Glass raid": "Vault of Glass", "Encore mission": "Encore"}`,
+				weapon("Fatebringer", raid),
+				weapon("Aberrant Action", `{"from": "Encore mission", "sources": ["sax"]}`),
+			),
+			want: map[string][]string{
+				"fatebringer":     {"Vault of Glass raid"},
+				"aberrant action": {"Encore mission"},
+			},
+			activities: []activity{
+				{place: "Encore mission", name: "encore"},
+				{place: "Vault of Glass raid", name: "vault of glass"},
+			},
+		},
+		"activity of a place that no drop names": {
+			data: withActivities(`{"Encore mission": "Encore"}`, weapon("Fatebringer", raid)),
+			err:  `loot data: the activity of "Encore mission" belongs to a place that no drop names`,
+		},
+		"activity without a name": {
+			data: withActivities(`{"Vault of Glass raid": ""}`, weapon("Fatebringer", raid)),
+			err:  `loot data: the activity of "Vault of Glass raid" has no name`,
+		},
+		"two places with one activity name in another letter case": {
+			data: withActivities(
+				`{"Vault of Glass raid": "Vault of Glass", "Encore mission": "VAULT OF GLASS"}`,
+				weapon("Fatebringer", raid),
+				weapon("Aberrant Action", `{"from": "Encore mission", "sources": ["sax"]}`),
+			),
+			err: `loot data: the activities of "Encore mission" and "Vault of Glass raid" share the name "Vault of Glass"`,
 		},
 		"weapon with a note": {
 			data: doc(
@@ -139,6 +186,77 @@ func TestParse(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got.drops)
+			assert.Equal(t, tc.activities, got.activities)
+		})
+	}
+}
+
+// TestPlaceLongestName pins the place of an activity whose name continues
+// the activity names of two places. The place with the longer activity
+// name wins, in both orders of the places.
+func TestPlaceLongestName(t *testing.T) {
+	t.Parallel()
+
+	// data returns loot data with one weapon from the Encore mission and
+	// one weapon from the Vault of Glass raid. The data holds the
+	// activities of the given JSON object.
+	data := func(activities string) []byte {
+		return []byte(`{
+			"patch": "9.7.0.2",
+			"sources": {"sax": {"title": "Sax", "url": "https://example.com", "date": "2026-11-22", "patch": "9.7.0.2"}},
+			"activities": ` + activities + `,
+			"weapons": [
+				{"name": "Fatebringer", "drops": [{"from": "Vault of Glass raid", "sources": ["sax"]}], "checked": "9.7.0.6"},
+				{"name": "Aberrant Action", "drops": [{"from": "Encore mission", "sources": ["sax"]}], "checked": "9.7.0.6"}
+			]
+		}`)
+	}
+
+	const (
+		// longerFirst gives the longer activity name to the place that
+		// comes first, and longerLast gives it to the place that comes
+		// last.
+		longerFirst = `{"Encore mission": "Vault: Encore", "Vault of Glass raid": "Vault"}`
+		longerLast  = `{"Encore mission": "Vault", "Vault of Glass raid": "Vault: Encore"}`
+	)
+
+	tests := map[string]struct {
+		activities string
+		activity   string
+		want       string
+	}{
+		"longer name on the first place": {
+			activities: longerFirst,
+			activity:   "Vault: Encore: Master",
+			want:       "Encore mission",
+		},
+		"longer name on the last place": {
+			activities: longerLast,
+			activity:   "Vault: Encore: Master",
+			want:       "Vault of Glass raid",
+		},
+		"activity that equals the longer name": {
+			activities: longerLast,
+			activity:   "Vault: Encore",
+			want:       "Vault of Glass raid",
+		},
+		"activity that continues only the shorter name": {
+			activities: longerFirst,
+			activity:   "Vault: Master",
+			want:       "Vault of Glass raid",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			table, err := parse(data(tc.activities))
+			require.NoError(t, err)
+
+			got, ok := table.Place(tc.activity)
+			assert.True(t, ok)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

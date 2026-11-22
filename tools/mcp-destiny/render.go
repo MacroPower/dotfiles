@@ -1415,21 +1415,32 @@ const noPatternsRefusal = "the service publishes no record definitions, " +
 // Deepsight Resonance. Each harmonizable copy carries the cost of its
 // activation, as [activationCost] names it.
 //
+// Week holds the sources of this week, and nil leaves them out. With
+// week, the table gains the columns "sold by" and "featured in". Their
+// cells join the vendors and the featured activities of the pattern with
+// commas. A line after the line of the Deepsight Harmonizers names the
+// featured activities of the character. The result for a filter that no
+// pattern matches also gives that line.
+//
 // Sheets holds the [rolls.SheetState] of each game mode, and nil leaves
 // the ratings out. With sheets, the table gains one rating column for
 // each game mode, and each cell holds the text of [weaponRatingLabel].
-// One line for each game mode without a sheet gives the reason, between
-// the line of the Deepsight Harmonizers and the table.
+// One line for each game mode without a sheet gives the reason, before
+// the table and after the line of the Deepsight Harmonizers and the line
+// of the featured activities.
 func renderPatterns(
 	s *inventory.Snapshot,
 	rows []inventory.PatternRow,
 	offset, total int,
 	table *loot.Table,
 	sheets map[string]rolls.SheetState,
+	week *weekSources,
 ) string {
 	switch {
 	case len(s.Patterns) == 0:
 		return "The profile tracks no weapon pattern."
+	case total == 0 && week != nil:
+		return "No patterns match.\n" + week.featuredLabel()
 	case total == 0:
 		return "No patterns match."
 	case len(rows) == 0:
@@ -1446,6 +1457,10 @@ func renderPatterns(
 
 	b.WriteString("\n" + heldLabel(s))
 
+	if week != nil {
+		b.WriteString("\n" + week.featuredLabel())
+	}
+
 	if sheets != nil {
 		for _, mode := range rolls.Modes {
 			err := sheets[mode].Err
@@ -1456,6 +1471,10 @@ func renderPatterns(
 	}
 
 	b.WriteString("\n\nweapon | source | progress | copies | deepsight | harmonizable")
+
+	if week != nil {
+		b.WriteString(" | sold by | featured in")
+	}
 
 	if sheets != nil {
 		for _, mode := range rolls.Modes {
@@ -1485,6 +1504,13 @@ func renderPatterns(
 			strconv.Itoa(len(row.Copies)),
 			strings.Join(deepsight, ", "),
 			strings.Join(harmonizable, ", "),
+		}
+
+		if week != nil {
+			fields = append(fields,
+				strings.Join(week.Vendors[row.Hash], ", "),
+				strings.Join(week.Activities[row.Hash], ", "),
+			)
 		}
 
 		if sheets != nil {

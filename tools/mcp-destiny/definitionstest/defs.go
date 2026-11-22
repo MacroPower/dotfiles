@@ -10,6 +10,14 @@ import (
 // withholds and whose name no table holds.
 const ItemWithheld uint32 = 78
 
+// TypeRaid and TypeDungeon are the hashes of the Raid and the Dungeon
+// activity types, as the Destiny definitions give them. A raid or a
+// dungeon with a challenge counts as featured only under these hashes.
+const (
+	TypeRaid    uint32 = 2043403989
+	TypeDungeon uint32 = 608898761
+)
+
 // Bucket hashes of the fixture slots that no production code reads.
 const (
 	bucketQuests    uint32 = 1345459588
@@ -119,27 +127,27 @@ func Defs() *definitions.Defs {
 		},
 		Stats: map[uint32]string{1: "Range", 2: "Health", 3: "Grenade"},
 		Activities: map[uint32]definitions.ActivityDef{
-			3022541210: {Name: "Vault of Glass: Master", Mode: 4, Type: 100, Destination: 700, Place: 800},
+			3022541210: {Name: "Vault of Glass: Master", Mode: 4, Type: TypeRaid, Destination: 700, Place: 800},
 			2222:       {Name: "Vanguard Ops", Mode: 18, Type: 103},
 			3334:       {},
 			4444:       {Name: "Control", Mode: 10, Type: 101, Destination: 702, Place: 800},
 			5555:       {Name: "Crucible"},
-			4001:       {Name: "Warlord's Ruin", Mode: 82, Type: 102, Destination: 701, Place: 800},
+			4001:       {Name: "Warlord's Ruin", Mode: 82, Type: TypeDungeon, Destination: 701, Place: 800},
 			4002:       {Name: "The Coil", Mode: 6, Type: 104, Destination: 703},
 			4003:       {Name: "Nightfall: Grandmaster", Mode: 46, Type: 103},
-			4004:       {Name: "Pantheon", Mode: 4, Type: 100},
+			4004:       {Name: "Pantheon", Mode: 4, Type: TypeRaid},
 			4006:       {Name: "The Witness", Mode: 2, Type: 104},
 			4007:       {Name: "Excision: Grandmaster", Type: 1686739444},
 			4008:       {Name: "The Tower", Mode: 40},
 			4009:       {Name: "Battleground: Oracle", Mode: 18, Type: 103},
 		},
 		ActivityTypes: map[uint32]string{
-			100:        "Raid",
-			101:        "The Crucible",
-			102:        "Dungeon",
-			103:        "Strike",
-			104:        "Exotic Mission",
-			1686739444: "Story",
+			TypeRaid:    "Raid",
+			101:         "The Crucible",
+			TypeDungeon: "Dungeon",
+			103:         "Strike",
+			104:         "Exotic Mission",
+			1686739444:  "Story",
 		},
 		Destinations: map[uint32]string{700: "Venus", 702: "The Crucible", 703: "Neptune"},
 		Places:       map[uint32]string{800: "Earth"},

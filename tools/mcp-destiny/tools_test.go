@@ -3730,6 +3730,331 @@ func TestListPatternsRefresh(t *testing.T) {
 	assert.Contains(t, got, "Fatebringer | Vault of Glass raid | 4 of 5 |")
 }
 
+// weekVendorsBody is the GetVendors response body of the Hunter in the
+// tests of this_week. Banshee-44 sells Fatebringer (100) twice, and the
+// Hunter can buy only the second sale. Banshee-44 also sells Midnight
+// Coup (102), which the Hunter cannot buy. Tess Everis sells a version
+// of Fatebringer (106) that does not advance the pattern. Strange Gear
+// Offers, the sub-vendor of Xûr, sells Fatebringer (Timelost) (105),
+// which the Hunter cannot buy. The disabled Xûr sells Austringer (104).
+const weekVendorsBody = `{"ErrorCode": 1, "Response": {
+	"vendors": {"data": {
+		"672118013": {"vendorHash": 672118013, "enabled": true},
+		"3361454721": {"vendorHash": 3361454721, "enabled": true},
+		"2190858386": {"vendorHash": 2190858386, "enabled": false},
+		"3751514131": {"vendorHash": 3751514131, "enabled": true}
+	}},
+	"sales": {"data": {
+		"672118013": {"saleItems": {
+			"0": {"vendorItemIndex": 0, "itemHash": 100, "quantity": 1, "saleStatus": 8},
+			"1": {"vendorItemIndex": 1, "itemHash": 100, "quantity": 1, "saleStatus": 0},
+			"2": {"vendorItemIndex": 2, "itemHash": 102, "quantity": 1, "saleStatus": 8}
+		}},
+		"3361454721": {"saleItems": {
+			"0": {"vendorItemIndex": 0, "itemHash": 106, "quantity": 1, "saleStatus": 0}
+		}},
+		"2190858386": {"saleItems": {
+			"0": {"vendorItemIndex": 0, "itemHash": 104, "quantity": 1, "saleStatus": 0}
+		}},
+		"3751514131": {"saleItems": {
+			"0": {"vendorItemIndex": 0, "itemHash": 105, "quantity": 1, "saleStatus": 8}
+		}}
+	}}
+}}`
+
+// weekActivitiesBody is the response body of the activities request in
+// the tests of this_week. The Hunter has four featured activities. Two of
+// them share the name Vault of Glass: Master, and The Coil does not belong
+// to a place of the loot table. Bungie never focuses a raid, so the raid
+// counts as featured through its weekly challenge. The Portal does not
+// feature Duality: Standard. The Titan has one featured activity.
+const weekActivitiesBody = `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {
+	"c1": {"availableActivities": [
+		{"activityHash": 3022541210, "isVisible": true, "isFocusedActivity": false, "challenges": [` + weekChallenge + `]},
+		{"activityHash": 4013, "isVisible": true, "isFocusedActivity": false, "challenges": [` + weekChallenge + `]},
+		{"activityHash": 4010, "isVisible": true, "isFocusedActivity": true},
+		{"activityHash": 4002, "isVisible": true, "isFocusedActivity": true},
+		{"activityHash": 4011, "isVisible": true, "isFocusedActivity": false}
+	]},
+	"c2": {"availableActivities": [
+		{"activityHash": 3022541210, "isVisible": true, "isFocusedActivity": false, "challenges": [` + weekChallenge + `]}
+	]}
+}}}}`
+
+// weekChallenge is the weekly challenge of a featured raid in
+// [weekActivitiesBody].
+const weekChallenge = `{"objective": {"objectiveHash": 950, "progress": 0, "completionValue": 1, "complete": false}}`
+
+// weekFakes returns the fakes of [patternFakes] with the Titan of the
+// Bungie fixtures, [weekVendorsBody], and [weekActivitiesBody]. The
+// definitions name the activities that weekActivitiesBody adds to the
+// fixtures: Presage: Customize (4010), Duality: Standard (4011), and a
+// second Vault of Glass: Master (4013). As in the Destiny definitions,
+// the sub-vendor of Xûr has the name Strange Gear Offers and no subtitle.
+func weekFakes(t *testing.T) *fakes {
+	t.Helper()
+
+	f := patternFakes(t)
+	f.bungie.ProfileBody = strings.Replace(patternProfileBody,
+		`"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}`,
+		`"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"},
+		"c2": {"characterId": "c2", "classType": 0, "light": 1990, "dateLastPlayed": "2026-11-01T12:00:00Z"}`, 1)
+	f.bungie.Data[bungietest.PathHunterVendors] = weekVendorsBody
+	f.bungie.ActivitiesBody = weekActivitiesBody
+
+	f.defs.Activities[4010] = definitions.ActivityDef{Name: "Presage: Customize", Mode: 3, Type: 104}
+	f.defs.Activities[4011] = definitions.ActivityDef{
+		Name: "Duality: Standard",
+		Mode: 82,
+		Type: definitionstest.TypeDungeon,
+	}
+	f.defs.Activities[4013] = definitions.ActivityDef{Name: "Vault of Glass: Master", Type: definitionstest.TypeRaid}
+	f.defs.Vendors[bungietest.VendorXurOffers] = definitions.VendorDef{Name: "Strange Gear Offers"}
+
+	return f
+}
+
+func TestListPatternsThisWeek(t *testing.T) {
+	t.Parallel()
+
+	const (
+		held = "\nThe account holds 2 Deepsight Harmonizers and 45 Spoils of Conquest. " +
+			"The Postmaster also holds 1 Deepsight Harmonizer."
+		featured = "\nFeatured activities of Hunter: Presage: Customize, The Coil, Vault of Glass: Master."
+		table    = "\n\nweapon | source | progress | copies | deepsight | harmonizable | sold by | featured in\n"
+
+		austringer = "Austringer | Presage mission | 1 of 2 | 1 |  | 2005 (1 harmonizer) |  | Presage: Customize"
+		harmonize  = "2002 (1 harmonizer + 15 Spoils), 2004 (1 harmonizer + 15 Spoils)"
+		// The Hunter can buy Fatebringer from Banshee-44 in the second
+		// sale. The version that Tess Everis sells does not count.
+		fatebringer = "Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
+			" | Banshee-44, Strange Gear Offers (unavailable) | Vault of Glass: Master"
+		coup = "Midnight Coup |  | complete | 1 |  |  | Banshee-44 (unavailable) | "
+
+		// noFeatured is the activities response of a Hunter without a
+		// featured activity.
+		noFeatured = `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {"c1": {"availableActivities": [
+			{"activityHash": 3022541210, "isVisible": true}
+		]}}}}}`
+		// noStock is the GetVendors response of a Hunter whose vendors
+		// sell nothing.
+		noStock = `{"ErrorCode": 1, "Response": {}}`
+		private = `{"ErrorCode": 1665, "ErrorStatus": "DestinyPrivacyRestriction", "Message": "Private."}`
+	)
+
+	tests := map[string]struct {
+		edit    func(f *fakes)
+		in      ListPatternsInput
+		want    string
+		isError bool
+	}{
+		"incomplete patterns with a source this week": {
+			in:   ListPatternsInput{ThisWeek: true},
+			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" + fatebringer,
+		},
+		// The Hunter can buy the first Fatebringer of Banshee-44 and not
+		// the second, so the later sale does not mark Banshee-44 as
+		// unavailable.
+		"vendor that lists an available sale before an unavailable sale of one pattern": {
+			edit: func(f *fakes) {
+				f.bungie.Data[bungietest.PathHunterVendors] = strings.NewReplacer(
+					`"0": {"vendorItemIndex": 0, "itemHash": 100, "quantity": 1, "saleStatus": 8}`,
+					`"0": {"vendorItemIndex": 0, "itemHash": 100, "quantity": 1, "saleStatus": 0}`,
+					`"1": {"vendorItemIndex": 1, "itemHash": 100, "quantity": 1, "saleStatus": 0}`,
+					`"1": {"vendorItemIndex": 1, "itemHash": 100, "quantity": 1, "saleStatus": 8}`,
+				).Replace(weekVendorsBody)
+			},
+			in:   ListPatternsInput{ThisWeek: true},
+			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" + fatebringer,
+		},
+		// Two enabled vendors share the name Xûr, and each sells a copy
+		// that advances Fatebringer. list_vendors selects each of them
+		// only by its hash, so each label gives the hash.
+		"enabled vendors that share a name": {
+			edit: func(f *fakes) {
+				f.defs.Vendors[bungietest.VendorXurOffers] = definitions.VendorDef{Name: "Xûr"}
+				f.bungie.Data[bungietest.PathHunterVendors] = strings.NewReplacer(
+					`"2190858386": {"vendorHash": 2190858386, "enabled": false}`,
+					`"2190858386": {"vendorHash": 2190858386, "enabled": true}`,
+					`"itemHash": 104,`,
+					`"itemHash": 100,`,
+				).Replace(weekVendorsBody)
+			},
+			in: ListPatternsInput{ThisWeek: true},
+			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" +
+				"Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
+				" | Banshee-44, Xûr (2190858386), Xûr (3751514131) (unavailable) | Vault of Glass: Master",
+		},
+		// The disabled Xûr does not count as a source, but list_vendors
+		// still selects the other Xûr only by its hash.
+		"enabled vendor that shares its name with a disabled vendor": {
+			edit: func(f *fakes) {
+				f.defs.Vendors[bungietest.VendorXurOffers] = definitions.VendorDef{Name: "Xûr"}
+			},
+			in: ListPatternsInput{ThisWeek: true},
+			want: "Patterns 1-2 of 2." + held + featured + table + austringer + "\n" +
+				"Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
+				" | Banshee-44, Xûr (3751514131) (unavailable) | Vault of Glass: Master",
+		},
+		// Bungie lists Vault of Glass without its weekly challenge, so the
+		// raid does not count as featured.
+		"raid without a challenge": {
+			edit: func(f *fakes) {
+				f.bungie.ActivitiesBody = strings.ReplaceAll(weekActivitiesBody, `"challenges": [`+weekChallenge+`]`,
+					`"challenges": []`)
+			},
+			in: ListPatternsInput{ThisWeek: true},
+			want: "Patterns 1-2 of 2." + held + "\nFeatured activities of Hunter: Presage: Customize, The Coil." + table +
+				austringer + "\n" + "Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
+				" | Banshee-44, Strange Gear Offers (unavailable) | ",
+		},
+		"pattern whose activity is not featured": {
+			edit: func(f *fakes) {
+				f.bungie.ActivitiesBody = strings.Replace(weekActivitiesBody,
+					`"activityHash": 4010, "isVisible": true, "isFocusedActivity": true`,
+					`"activityHash": 4010, "isVisible": true, "isFocusedActivity": false`, 1)
+			},
+			in: ListPatternsInput{ThisWeek: true},
+			want: "Patterns 1-1 of 1." + held +
+				"\nFeatured activities of Hunter: The Coil, Vault of Glass: Master." + table + fatebringer,
+		},
+		// The disabled Xûr does not count for Austringer.
+		"vendors without a featured activity": {
+			edit: func(f *fakes) { f.bungie.ActivitiesBody = noFeatured },
+			in:   ListPatternsInput{ThisWeek: true},
+			want: "Patterns 1-1 of 1." + held + "\nBungie does not list a featured activity for Hunter." + table +
+				"Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize +
+				" | Banshee-44, Strange Gear Offers (unavailable) | ",
+		},
+		"every pattern": {
+			in:   ListPatternsInput{Status: "all", ThisWeek: true},
+			want: "Patterns 1-3 of 3." + held + featured + table + austringer + "\n" + fatebringer + "\n" + coup,
+		},
+		"query": {
+			in:   ListPatternsInput{Query: "AUSTRINGER", ThisWeek: true},
+			want: "Patterns 1-1 of 1." + held + featured + table + austringer,
+		},
+		"page": {
+			in:   ListPatternsInput{Limit: 1, Offset: 1, ThisWeek: true},
+			want: "Patterns 2-2 of 2." + held + featured + table + fatebringer,
+		},
+		"no pattern with a source this week": {
+			edit: func(f *fakes) {
+				f.bungie.Data[bungietest.PathHunterVendors] = noStock
+				f.bungie.ActivitiesBody = noFeatured
+			},
+			in:   ListPatternsInput{ThisWeek: true},
+			want: "No patterns match.\nBungie does not list a featured activity for Hunter.",
+		},
+		"query that no name contains": {
+			in:   ListPatternsInput{Query: "thorn", ThisWeek: true},
+			want: "No patterns match." + featured,
+		},
+		// The Banshee-44 of the Titan sells Midnight Coup to the Titan.
+		"class name": {
+			in: ListPatternsInput{Status: "all", Character: "TITAN", ThisWeek: true},
+			want: "Patterns 1-2 of 2." + held + "\nFeatured activity of Titan: Vault of Glass: Master." + table +
+				"Fatebringer | Vault of Glass raid | 3 of 5 | 3 | 2001 | " + harmonize + " |  | Vault of Glass: Master\n" +
+				"Midnight Coup |  | complete | 1 |  |  | Banshee-44 | ",
+		},
+		"ratings": {
+			in: ListPatternsInput{Query: "austringer", ThisWeek: true, IncludeRatings: true},
+			want: "Patterns 1-1 of 1." + held + featured +
+				"\nPvE: rating unavailable: the service publishes no Aegis sheet" +
+				"\nPvP: rating unavailable: the service publishes no PvP sheet" +
+				"\n\nweapon | source | progress | copies | deepsight | harmonizable | sold by | featured in | " +
+				"pve rating | pvp rating\n" + austringer + " | unavailable | unavailable",
+		},
+		"character without this_week": {
+			in:      ListPatternsInput{Character: "titan"},
+			want:    "invalid input: character takes effect only with this_week=true",
+			isError: true,
+		},
+		"vault": {
+			in:      ListPatternsInput{Character: "vault", ThisWeek: true},
+			want:    "unknown location: the vault is not a character, so pass a character id or a class name",
+			isError: true,
+		},
+		"Bungie refuses the vendors": {
+			edit:    func(f *fakes) { f.bungie.Data[bungietest.PathHunterVendors] = private },
+			in:      ListPatternsInput{ThisWeek: true},
+			want:    "fetching the vendors: bungie: DestinyPrivacyRestriction: Private.",
+			isError: true,
+		},
+		"Bungie refuses the activities": {
+			edit:    func(f *fakes) { f.bungie.ActivitiesBody = private },
+			in:      ListPatternsInput{ThisWeek: true},
+			want:    "fetching the activities: bungie: DestinyPrivacyRestriction: Private.",
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := weekFakes(t)
+			if tc.edit != nil {
+				tc.edit(f)
+			}
+
+			got, isError := call(t, f.h.handleListPatterns, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestListPatternsThisWeekRequests pins the requests that this_week
+// costs. A call without it does not fetch the vendors or the activities.
+// The filter runs first, so a call with an invalid status fetches
+// neither.
+func TestListPatternsThisWeekRequests(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		in         ListPatternsInput
+		vendors    int
+		activities int
+		isError    bool
+	}{
+		"without this_week": {
+			in: ListPatternsInput{Status: "all"},
+		},
+		"with this_week": {
+			in:         ListPatternsInput{ThisWeek: true},
+			vendors:    1,
+			activities: 1,
+		},
+		"invalid status": {
+			in:      ListPatternsInput{Status: "done", ThisWeek: true},
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := weekFakes(t)
+
+			_, isError := call(t, f.h.handleListPatterns, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathHunterVendors), tc.vendors)
+
+			activities := 0
+
+			for _, req := range f.bungie.Calls(http.MethodGet, bungietest.PathProfile) {
+				if strings.HasPrefix(req.Query, "components=204&") {
+					activities++
+				}
+			}
+
+			assert.Equal(t, tc.activities, activities)
+		})
+	}
+}
+
 func TestDeepsightFlags(t *testing.T) {
 	t.Parallel()
 

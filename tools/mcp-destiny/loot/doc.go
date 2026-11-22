@@ -18,6 +18,26 @@
 // them. A weapon that the table does not list, such as an exotic weapon,
 // does not have any drop.
 //
+// # Activities
+//
+// The table also names the activity of each raid, dungeon, and exotic
+// mission that it lists, and of Dares of Eternity. A lookup by the name of
+// an activity, such as a featured activity of the Portal, returns the
+// place that holds the activity. The name of an activity matches a place
+// when it equals the activity name of the place or continues it with ": "
+// or " (". The activity "Vault of Glass: Master" therefore belongs to the
+// Vault of Glass raid. A name that holds the activity name of a place
+// after its start does not match. For example, the Pantheon activity
+// "Featured Encore: Warpriest: The Pantheon" does not belong to the
+// Encore mission. The Pantheon does not drop the weapons of that mission.
+// A vendor and a destination do not have an activity.
+//
+// The activity names come from the activity definitions of the Destiny
+// manifest version 245114.26.10.13.2000-1-bnet.66137. Most of them are the
+// name of the place without its kind, such as Vault of Glass for the
+// Vault of Glass raid. The definitions name the Avalon mission
+// "//node.ovrd.AVALON//".
+//
 // # Data
 //
 // The file loot.json lists each legendary weapon that both community

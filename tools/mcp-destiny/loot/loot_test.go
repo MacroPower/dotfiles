@@ -69,3 +69,80 @@ func TestDrops(t *testing.T) {
 		})
 	}
 }
+
+func TestPlace(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		activity string
+		want     string
+	}{
+		"raid with a difficulty": {
+			activity: "Vault of Glass: Master",
+			want:     "Vault of Glass raid",
+		},
+		"raid without a difficulty": {
+			activity: "Deep Stone Crypt",
+			want:     "Deep Stone Crypt raid",
+		},
+		"dungeon": {
+			activity: "Duality: Standard",
+			want:     "Duality dungeon",
+		},
+		"difficulty in parentheses": {
+			activity: "Starcrossed (Legend)",
+			want:     "Starcrossed mission",
+		},
+		"mission whose name holds a colon": {
+			activity: "Operation: Seraph's Shield: Customize",
+			want:     "Operation: Seraph's Shield mission",
+		},
+		// The Destiny definitions give the Avalon mission another name.
+		"mission with another name than its place": {
+			activity: "//node.ovrd.AVALON//: Customize",
+			want:     "Avalon mission",
+		},
+		"activity that is not a raid, a dungeon, or a mission": {
+			activity: "Dares of Eternity: Legend",
+			want:     "Dares of Eternity",
+		},
+		"name in another letter case": {
+			activity: "VOW OF THE DISCIPLE: master",
+			want:     "Vow of the Disciple raid",
+		},
+		"name with a curly apostrophe": {
+			activity: "King\u2019s Fall: Standard",
+			want:     "King's Fall raid",
+		},
+		// The Pantheon brings back raid bosses but drops none of the
+		// weapons of the Encore mission.
+		"name that holds the name of a place after its start": {
+			activity: "Featured Encore: Warpriest: The Pantheon",
+		},
+		"name that continues the name of a place without a separator": {
+			activity: "Encores",
+		},
+		"strike": {
+			activity: "Nightfall: Grandmaster",
+		},
+		"destination": {
+			activity: "Neomuna",
+		},
+		"vendor": {
+			activity: "X\u00fbr",
+		},
+	}
+
+	table, err := loot.Load()
+	require.NoError(t, err)
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := table.Place(tc.activity)
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.want != "", ok)
+		})
+	}
+}

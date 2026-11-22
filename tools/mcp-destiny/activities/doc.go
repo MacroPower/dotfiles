@@ -24,6 +24,17 @@
 // with a quantity of 1 or more is bonus loot. The rewards of the bonus loot
 // that share a name merge into one entry.
 //
+// # Featured Activities
+//
+// The list marks a row as featured when Bungie marks its entry as focused.
+// The Portal shows each focused activity in its featured carousel. Bungie
+// never marks a raid or a dungeon as focused. It lists the weekly
+// challenge of a raid or a dungeon on the entry instead. The list
+// therefore also marks a row of the Raid or the Dungeon type as featured
+// when its entry lists a challenge. A challenge on an activity of another
+// type does not make the row featured. The web client marks the same
+// activities as featured.
+//
 // # Dropped Activities
 //
 // The list leaves out each activity that the game hides and each activity

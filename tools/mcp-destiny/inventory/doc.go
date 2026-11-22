@@ -89,7 +89,9 @@
 // carries the pattern whose record has the name of the copy, as in DIM.
 // A copy of an Adept, Timelost, or Harrowed version carries the pattern
 // of the base weapon, because the game counts its extractions toward that
-// pattern.
+// pattern. Without a profile, a caller can also find the pattern that a
+// copy of an item hash advances, such as the pattern of a weapon that a
+// vendor sells. The same rules apply.
 //
 // Each copy also carries two flags that DIM reads from the crafting
 // sockets of a copy. One marks a copy with Deepsight Resonance, the red

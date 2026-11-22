@@ -21,6 +21,12 @@ var (
 	// as "Excision: Grandmaster". The web client therefore leaves them out
 	// by type, and [Read] does the same.
 	droppedTypes = map[uint32]bool{1838596016: true, 1686739444: true, 1299744814: true, 2694988718: true}
+
+	// challengedTypes holds the hashes of the Raid and the Dungeon activity
+	// types. Bungie never marks an activity of these types as focused. The
+	// web client therefore counts a raid or a dungeon as featured when
+	// Bungie lists a challenge on it, and [Read] does the same.
+	challengedTypes = map[uint32]bool{2043403989: true, 608898761: true}
 )
 
 // Row is one activity that a character can play, joined with the
@@ -29,7 +35,8 @@ var (
 // activity, or its place when the destination has no name, and it is
 // empty when it equals Type. Power is the recommended power, and zero
 // means that Bungie recommends none. Featured marks an activity in the
-// featured carousel of the Portal.
+// featured carousel of the Portal, or a raid or a dungeon with a challenge
+// this week.
 //
 // BonusDrops, Focus, and Loot hold the rewards that the activity still
 // offers this week, because Bungie drops a reward after the character
@@ -109,7 +116,7 @@ func newActivityRow(entry bungie.AvailableActivity, def definitions.ActivityDef,
 		Name:     def.Name,
 		Type:     defs.ActivityTypes[def.Type],
 		Power:    entry.RecommendedLight,
-		Featured: entry.Focused,
+		Featured: entry.Focused || (challengedTypes[def.Type] && len(entry.Challenges) > 0),
 		Focus:    focusOf(items, defs),
 		Loot:     lootOf(items, defs),
 	}

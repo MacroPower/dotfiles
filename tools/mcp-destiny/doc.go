@@ -467,7 +467,10 @@
 // include_ratings, the row gives the tier of the weapon on the Aegis sheet
 // and on the PvP sheet, as the Roll Ratings section describes. One call
 // can therefore rank the patterns by the quality of the weapon and by the
-// place that drops its copies.
+// place that drops its copies. With this_week, the tool keeps only the
+// patterns whose weapon a vendor of one character sells now or a featured
+// activity of that character drops, as the Weekly Sources section
+// describes.
 //
 // Two flags of list_items, get_item, and compare_duplicates give the
 // Deepsight state of a copy. The server reads both from the crafting
@@ -604,6 +607,56 @@
 // pattern crafts. The source cell of a weapon that the table does not
 // list, such as an exotic weapon, is empty. The table is part of the
 // server, so the tools do not send any request for it.
+//
+// # Weekly Sources
+//
+// With this_week, the list_patterns tool keeps only the patterns whose
+// weapon a vendor of one character sells now or a featured activity of
+// that character drops. It reads the live vendor stock and the activities
+// of the character, as list_vendors and list_activities read them. It
+// adds two columns that name the sources of each pattern:
+//
+//   - sold by: each vendor that sells a copy that advances the pattern
+//     now, by the name that list_vendors gives it. Xûr keeps his legendary
+//     weapons in the sub-vendor Strange Gear Offers, so the column names
+//     Strange Gear Offers for them. A copy of an Adept, Timelost, or
+//     Harrowed version counts, as an owned copy does. A version that does
+//     not advance the pattern, such as the Onslaught version of a raid
+//     weapon, does not count. When another vendor of the character has
+//     the same name, the column adds the hash of the vendor in
+//     parentheses, such as "Focused Decoding (444807002)". list_vendors
+//     selects such a vendor only by its hash. The label of a vendor ends
+//     with "(unavailable)" when the character cannot buy any such copy
+//     from that vendor. The column skips each vendor that Bungie reports
+//     as not accessible.
+//   - featured in: each featured activity that drops the weapon.
+//
+// The filter also keeps a pattern when the character cannot buy its
+// weapon from any vendor that sells it. With status=complete or
+// status=all, the filter also keeps the complete patterns of those
+// weapons, which no source advances.
+//
+// The featured activities are those that list_activities flags as
+// featured. Bungie puts most of them in the featured carousel of the
+// Portal. It never puts a raid or a dungeon there, and it lists the
+// weekly challenge of a featured raid or dungeon instead. A raid or a
+// dungeon with a weekly challenge therefore counts as featured.
+//
+// The server finds the featured activities that drop a weapon through
+// the table of the Weapon Sources section. The table names the activity
+// of each raid, dungeon, and exotic mission that it lists, as the Destiny
+// definitions name it. It also names the activity of Dares of Eternity. A
+// featured activity belongs to such a place when its name equals the
+// activity name of the place or continues it with a colon or a
+// parenthesis. For example, "Vault of Glass: Master" belongs to the Vault
+// of Glass raid. A destination of the table, such as Neomuna, does not
+// have an activity. The featured in column therefore never names an
+// activity for the weapons of a destination.
+//
+// A line before the table names every featured activity of the
+// character, also when no pattern matches. The user can then tell a week
+// without featured activities from a week whose featured activities do
+// not drop a weapon with an incomplete pattern.
 //
 // # Time to Kill and Damage
 //
