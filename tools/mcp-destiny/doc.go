@@ -24,13 +24,15 @@
 // inventory, the saved loadouts, the activity history, and the live stock
 // of the vendors. It also serves the activities that each character can
 // play, with the rewards that each activity still offers this week. The
-// same API performs transfers, equips, lock changes, perk changes, and
-// the equips, saves, and clears of loadouts. The server joins a Bungie
-// profile with the definitions to give every item a name, a type, perks,
-// and stats. The definitions also name each activity of the history, each
-// vendor, and the items that the vendors sell. For each activity that a
-// character can play, they give the name, the type, the location, and the
-// names of the rewards.
+// Bungie profile also holds the records of the account, and some of them
+// track the progress of the weapon patterns. The same API performs
+// transfers, equips, lock changes, perk changes, and the equips, saves,
+// and clears of loadouts. The server joins a Bungie profile with the
+// definitions to give every item a name, a type, perks, and stats. The
+// definitions also tell which records track a weapon pattern. They name
+// each activity of the history, each vendor, and the items that the
+// vendors sell. For each activity that a character can play, they give
+// the name, the type, the location, and the names of the rewards.
 //
 // The server also downloads the Clarity database, which holds the tested
 // descriptions of the perks, from the site of that project. The Perk
@@ -132,8 +134,9 @@
 // Several tools take a name that the user types, or a part of one. The
 // text names an item, a slot, a perk, a stat, a weapon, a vendor, an
 // activity, a loadout name, or a weapon trait. The tools are list_items,
-// compare_duplicates, list_vendors, list_activities, stage_junk, set_perk,
-// save_loadout, and set_perk_preferences. Each tool folds the name that
+// compare_duplicates, list_patterns, list_vendors, list_activities,
+// stage_junk, set_perk, save_loadout, and set_perk_preferences. Each tool
+// folds the name that
 // it searches and the text before it compares them. The fold removes
 // letter case and diacritics, so the text xur matches the name Xûr.
 //
@@ -149,7 +152,8 @@
 // The fold reads a digit as a letter wherever the digit stands, also in a
 // number. An input that filters a list keeps every name that matches after
 // the fold. Those inputs are the query, the slot, and the perk of
-// list_items and the query of list_activities. The query ooo therefore
+// list_items, the query of list_patterns, and the query of
+// list_activities. The query ooo therefore
 // matches 1000 Yard Stare, and the query 10 matches a name that contains
 // the letters io.
 //
@@ -384,6 +388,50 @@
 // table. A game mode without ratings does not fail the call. The
 // rating cells of the mode read "unavailable", and one line before the
 // first table gives the reason.
+//
+// # Weapon Patterns
+//
+// The list_patterns tool lists the crafting pattern of each craftable
+// weapon with its progress, such as 3 of 5 extractions. The record
+// definitions of the service tell which records track a pattern, as
+// Destiny Item Manager (DIM) tells them. The records of the Bungie
+// profile give the progress of each pattern. The server reads the records
+// of the profile first. For a record that the profile lacks, it reads the
+// records of the character that played last.
+//
+// The definitions name each pattern record after its weapon. The server
+// therefore matches a copy to its pattern by the name of the copy, as DIM
+// does. It looks up the pattern of each copy whose definition names a
+// recipe item, as the definition of each craftable weapon does. The game
+// also counts the extractions of an Adept, Timelost, or Harrowed copy
+// toward the pattern of the base weapon. The definitions of those
+// versions name no recipe item, but the server gives each such copy the
+// pattern of the base weapon. DIM leaves such a copy without a pattern.
+//
+// The list_patterns tool lists an Adept, Timelost, or Harrowed copy on the
+// row of the base weapon. The get_item tool shows the progress of the
+// pattern of each copy on its Pattern line.
+//
+// Two flags of list_items, get_item, and compare_duplicates give the
+// Deepsight state of a copy. The server reads both from the crafting
+// sockets of the copy, as DIM does:
+//
+//   - deepsight: the copy has Deepsight Resonance, the red border of the
+//     game. The first socket of the copy that holds a plug of the
+//     category that DIM names CraftingPlugsWeaponsModsMemories is
+//     visible.
+//   - harmonizable: a Deepsight Harmonizer can give the copy Deepsight
+//     Resonance. A visible socket of the copy holds a plug of the category
+//     that DIM names CraftingPlugsWeaponsModsExtractors, and the pattern
+//     of the copy is incomplete.
+//
+// The list_patterns tool lists the instance ids of the copies with each
+// flag. On a deployment whose artifact index lacks the Record artifact,
+// the server cannot tell which records track a pattern. The list_patterns
+// tool then returns an error result, and get_item shows no Pattern line.
+// The flags still show. The harmonizable flag then counts the pattern of
+// each copy as incomplete, as DIM counts the pattern of a copy without a
+// pattern record.
 //
 // # Game Data
 //

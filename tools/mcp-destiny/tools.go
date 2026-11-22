@@ -40,6 +40,7 @@ const (
 	toolListItems           = "list_items"
 	toolGetItem             = "get_item"
 	toolCompareDuplicates   = "compare_duplicates"
+	toolListPatterns        = "list_patterns"
 	toolMoveItems           = "move_items"
 	toolMoveStack           = "move_stack"
 	toolStageJunk           = "stage_junk"
@@ -180,6 +181,16 @@ type CompareDuplicatesInput struct {
 	InstanceID string `json:"instance_id,omitzero" jsonschema:"Instance id of one copy, from list_items"`
 	Limit      int    `json:"limit,omitzero"       jsonschema:"Without name and instance_id: maximum number of weapons to return (default 10, maximum 50)"`
 	Offset     int    `json:"offset,omitzero"      jsonschema:"Without name and instance_id: number of weapons to skip (default 0)"`
+}
+
+// ListPatternsInput is the input schema of the list_patterns tool.
+type ListPatternsInput struct {
+	Query        string `json:"query,omitzero"        jsonschema:"Substring of the weapon name, in any letter case and with or without accents, such as 'fatebringer'. A digit also matches the letter that it stands for, such as 0 for o"`
+	Status       string `json:"status,omitzero"       jsonschema:"incomplete (the default), complete, or all"`
+	Limit        int    `json:"limit,omitzero"        jsonschema:"Maximum number of patterns to return (default 50, maximum 200)"`
+	Offset       int    `json:"offset,omitzero"       jsonschema:"Number of matching patterns to skip (default 0)"`
+	Harmonizable bool   `json:"harmonizable,omitzero" jsonschema:"Return only the patterns with an owned copy that a Deepsight Harmonizer can give Deepsight Resonance"`
+	Refresh      bool   `json:"refresh,omitzero"      jsonschema:"Fetch the inventory from Bungie again instead of reusing a copy up to 30 seconds old"`
 }
 
 // ListActivityHistoryInput is the input schema of the
@@ -614,6 +625,40 @@ func (h *handler) handleCompareDuplicates(
 	page, offset, _ := paginate(dupes, in.Limit, in.Offset, defaultWeaponLimit, maxWeaponLimit)
 
 	return textResult(renderDuplicates(s, page, offset, len(dupes), sources)), nil, nil
+}
+
+func (h *handler) handleListPatterns(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in ListPatternsInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	s, err := h.loadSnapshot(ctx, in.Refresh)
+	if err != nil {
+		return h.toolError(ctx, toolListPatterns, err)
+	}
+
+	// Without the record definitions, the server cannot tell a pattern
+	// record from another record. A list without rows then reads as an
+	// account without patterns.
+	if !s.PatternsListed {
+		return h.toolRefusal(ctx, toolListPatterns, noPatternsRefusal)
+	}
+
+	rows, err := s.PatternRows(inventory.PatternFilter{
+		Query:        in.Query,
+		Status:       in.Status,
+		Harmonizable: in.Harmonizable,
+	})
+	if err != nil {
+		return h.toolError(ctx, toolListPatterns, err)
+	}
+
+	page, offset, _ := paginate(rows, in.Limit, in.Offset, defaultItemLimit, maxItemLimit)
+
+	return textResult(renderPatterns(page, offset, len(rows), len(s.Patterns))), nil, nil
 }
 
 func (h *handler) handleListActivityHistory(

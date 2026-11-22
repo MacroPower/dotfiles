@@ -209,6 +209,14 @@ type Character struct {
 // for an item without a set. SetKnown marks an item whose set the
 // definitions hold, and SetPerks then holds the sandbox perk hashes of the
 // set bonuses of the set.
+//
+// Pattern is the crafting pattern of a craftable weapon, and nil for an
+// item without a pattern record in the profile. A copy of an Adept,
+// Timelost, or Harrowed version carries the pattern of the base weapon.
+// Deepsight marks a copy with Deepsight Resonance, the red border of the
+// game. Harmonizable marks a copy with an incomplete pattern that a
+// Deepsight Harmonizer can give Deepsight Resonance. DIM reads both flags
+// from the crafting sockets of the copy, and so does the server.
 type Item struct {
 	Categories     []int64
 	InstanceID     string
@@ -223,6 +231,7 @@ type Item struct {
 	Tag            string
 	TagRule        string
 	Note           string
+	Pattern        *Pattern
 	Perks          []Perk
 	Stats          []Stat
 	SetPerks       []uint32
@@ -247,6 +256,8 @@ type Item struct {
 	Lockable       bool
 	Favorite       bool
 	SetKnown       bool
+	Deepsight      bool
+	Harmonizable   bool
 }
 
 // StatTotal returns the sum of the stat values of an armor piece. It reports
@@ -317,6 +328,11 @@ type Currency struct {
 //
 // ItemSetsListed records whether the service index listed the
 // EquipableItemSet artifact for the definitions of the snapshot.
+//
+// Patterns lists the pattern of each pattern record that the definitions
+// name and the profile holds, ordered by name. PatternsListed records
+// whether the service index listed the Record artifact, without which
+// the snapshot has no pattern.
 type Snapshot struct {
 	Fetched        time.Time
 	byID           map[string]*Item
@@ -326,7 +342,9 @@ type Snapshot struct {
 	Buckets        []Bucket
 	Currencies     []Currency
 	Loadouts       []Loadout
+	Patterns       []Pattern
 	ItemSetsListed bool
+	PatternsListed bool
 }
 
 // NewSnapshot resolves a Bungie profile against the definitions.
@@ -335,7 +353,9 @@ func NewSnapshot(profile *bungie.Profile, defs *definitions.Defs, fetched time.T
 		Fetched:        fetched,
 		byID:           map[string]*Item{},
 		Buckets:        slotBuckets(defs),
+		Patterns:       patternsOf(profile, defs),
 		ItemSetsListed: defs.ItemSetsListed,
+		PatternsListed: defs.PatternsListed,
 	}
 
 	for _, c := range profile.Characters.Data {
@@ -479,8 +499,9 @@ func ItemName(defs *definitions.Defs, hash uint32) string {
 }
 
 // NewItem resolves the profile item pi against defs. It reads the
-// instance, the perks, and the stats of pi from the item components of
-// profile. The item belongs to owner, which is a character id,
+// instance, the perks, the stats, and the Deepsight sockets of pi from the
+// item components of profile. It reads the pattern of pi from the records
+// of profile. The item belongs to owner, which is a character id,
 // [OwnerVault], or [OwnerAccount]. The equipped flag marks an item that
 // its character has equipped.
 func NewItem(
@@ -572,6 +593,8 @@ func NewItem(
 
 	item.Perks = perksOf(profile, defs, pi.InstanceID)
 	item.Stats = statsOf(profile, defs, pi.InstanceID)
+	item.Pattern = patternOf(profile, defs, def, def.Name)
+	item.Deepsight, item.Harmonizable = deepsightOf(profile, defs, def, pi.InstanceID, item.Pattern)
 
 	return item
 }

@@ -53,6 +53,30 @@ const (
 	StateCrafted    = 8
 )
 
+// Plug category hashes of the two crafting sockets of a weapon that
+// Destiny Item Manager (DIM) reads for Deepsight. Each value is a
+// PlugCategoryHashes value of DIM. A visible socket that holds a plug of
+// PlugCategoryResonance gives the weapon Deepsight Resonance, the red
+// border of the game. DIM names the category
+// CraftingPlugsWeaponsModsMemories. A visible socket that holds a plug of
+// PlugCategoryHarmonizer takes a Deepsight Harmonizer, which gives the
+// weapon Deepsight Resonance. DIM names the category
+// CraftingPlugsWeaponsModsExtractors.
+const (
+	PlugCategoryResonance  uint32 = 2748073883
+	PlugCategoryHarmonizer uint32 = 3520412733
+)
+
+// RecordObjectiveNotCompleted is the ObjectiveNotCompleted bit of the
+// Bungie DestinyRecordState enum. A record whose state carries the bit
+// still has an objective to complete.
+const RecordObjectiveNotCompleted = 4
+
+// ToastCraftingRecipe is the CraftingRecipeUnlocked value of the Bungie
+// DestinyRecordToastStyle enum. Each record whose completion block has
+// the value tracks the pattern of one craftable weapon.
+const ToastCraftingRecipe = 8
+
 // StackInstanceID is the item id that Bungie expects for an item without
 // an instance.
 const StackInstanceID = "0"

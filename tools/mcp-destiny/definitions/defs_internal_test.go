@@ -37,13 +37,15 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 			artifactVendors:         {"vendors.json"},
 			artifactVendorItems:     {"vendor-items-0.json", "vendor-items-1.json"},
 			artifactItemSets:        {"item-sets.json"},
+			artifactRecords:         {"records.json"},
 			artifactWithheld:        {"withheld-0.json", "withheld-1.json"},
 		},
 		Files: map[string]string{
 			"core-0.json": `[
 				{"hash": 100, "displayProperties": {"name": "Fatebringer", "description": "Fortune favors.", "icon": "/a.png"},
 				 "itemTypeDisplayName": "Hand Cannon", "itemType": 3, "classType": 3, "defaultDamageType": 1,
-				 "inventory": {"tierTypeName": "Legendary", "tierType": 5, "bucketTypeHash": 1498876634},
+				 "inventory": {"tierTypeName": "Legendary", "tierType": 5, "bucketTypeHash": 1498876634,
+				  "recipeItemHash": 2563668388},
 				 "equippingBlock": {"ammoType": 1}, "stats": {"stats": {}}},
 				{"hash": 900, "displayProperties": {"name": "Firefly", "description": "Precision final blows explode."},
 				 "itemTypeDisplayName": "Trait",
@@ -78,7 +80,9 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 			// The loader keeps no socket list for the other records of
 			// the first file. Firefly is a plug, and the core artifact
 			// lacks item 777. The record of Hawkmoon has no sockets, and
-			// Midnight Coup has no socket entry.
+			// Midnight Coup has no socket entry. The second file holds
+			// the plugs of the two crafting sockets that Deepsight reads
+			// and a plug of another category.
 			"detail-0.json": `[
 				{"hash": 100, "sockets": {"socketEntries": [
 					{"socketTypeHash": 1, "randomizedPlugSetHash": 40},
@@ -92,7 +96,12 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				{"hash": 401, "sockets": {"socketEntries": []}}
 			]`,
 			"detail-1.json": `[
-				{"hash": 402, "sockets": {"socketEntries": [{"socketTypeHash": 1, "reusablePlugSetHash": 45}]}}
+				{"hash": 402, "sockets": {"socketEntries": [{"socketTypeHash": 1, "reusablePlugSetHash": 45}]}},
+				{"hash": 910, "plug": {"plugCategoryIdentifier": "crafting.plugs.weapons.mods.memories",
+				 "plugCategoryHash": 2748073883}},
+				{"hash": 911, "plug": {"plugCategoryIdentifier": "crafting.plugs.weapons.mods.extractors",
+				 "plugCategoryHash": 3520412733}},
+				{"hash": 912, "plug": {"plugCategoryIdentifier": "frames", "plugCategoryHash": 7906839}}
 			]`,
 			// The service build splits the plugsets array across files.
 			// Plug set 40 lists Firefly twice and a plug that the core
@@ -183,6 +192,20 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				 ], "index": 0, "redacted": false},
 				"12": {"hash": 12, "setItems": [], "setPerks": [], "index": 1, "redacted": false}
 			}`,
+			// The service build keeps each record definition whole. Three
+			// pattern records share the name Fatebringer, and the loader
+			// keeps the one with the highest hash. The other records
+			// track no pattern, or they have no name.
+			"records.json": `{
+				"4999": {"hash": 4999, "displayProperties": {"name": "Fatebringer"},
+				 "completionInfo": {"toastStyle": 8, "ScoreValue": 0}},
+				"5001": {"hash": 5001, "displayProperties": {"name": "Fatebringer"}, "completionInfo": {"toastStyle": 8}},
+				"5000": {"hash": 5000, "displayProperties": {"name": "Fatebringer"}, "completionInfo": {"toastStyle": 8}},
+				"5002": {"hash": 5002, "displayProperties": {"name": "Hawkmoon"}, "completionInfo": {"toastStyle": 8}},
+				"5003": {"hash": 5003, "displayProperties": {"name": "Raid Triumph"}, "completionInfo": {"toastStyle": 1}},
+				"5004": {"hash": 5004, "displayProperties": {"name": "Lore"}},
+				"5005": {"hash": 5005, "displayProperties": {"name": ""}, "completionInfo": {"toastStyle": 8}}
+			}`,
 			// The service build splits the array of withheld hashes across
 			// files. The loader sorts the hashes and keeps each one once.
 			"withheld-0.json": `[3708253562, 502, 373750294]`,
@@ -206,10 +229,10 @@ func TestLoader(t *testing.T) {
 	clock := WithClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
-	// layout without the withheld hashes has the prefix defs-v10-. Its
+	// layout without the pattern records has the prefix defs-v11-. Its
 	// file holds the manifest version of the service, and the loader does
 	// not read it.
-	stale := filepath.Join(dir, "defs-v10-245114.26_1.json")
+	stale := filepath.Join(dir, "defs-v11-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
 	loader := NewLoader(source, dir, clock)
@@ -230,6 +253,7 @@ func TestLoader(t *testing.T) {
 				DamageType: 1,
 				AmmoType:   bungie.AmmoPrimary,
 				Equippable: true,
+				Craftable:  true,
 			},
 			400: {
 				Name:            "Hawkmoon",
@@ -322,7 +346,12 @@ func TestLoader(t *testing.T) {
 		Stats:    map[uint32]string{1240592695: "Range"},
 		Sockets:  fixtureSockets(),
 		PlugSets: map[uint32][]uint32{40: {900, 12345}, 41: {}, 45: {900}},
+		PlugCategories: map[uint32]uint32{
+			910: bungie.PlugCategoryResonance,
+			911: bungie.PlugCategoryHarmonizer,
+		},
 		ItemSets: map[uint32][]uint32{3727270518: {1360604600, 1360604601}, 12: {}},
+		Patterns: map[string]uint32{"Fatebringer": 5001, "Hawkmoon": 5002},
 		Activities: map[uint32]ActivityDef{
 			3022541210: {
 				Name:        "Vault of Glass: Master",
@@ -357,8 +386,9 @@ func TestLoader(t *testing.T) {
 		Withheld:       []uint32{502, 600, 373750294, 3708253562},
 		ItemSetsListed: true,
 		WithheldListed: true,
+		PatternsListed: true,
 	}, got)
-	assert.Len(t, source.Fetched, 22)
+	assert.Len(t, source.Fetched, 23)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
@@ -386,7 +416,7 @@ func TestLoader(t *testing.T) {
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.Fetched, 22)
+	assert.Len(t, source.Fetched, 23)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
@@ -476,6 +506,18 @@ func TestLoaderWithoutOptionalArtifacts(t *testing.T) {
 				assert.False(t, got.Withholds(502))
 			},
 		},
+		// The build records that the index lists no records.
+		"records": {
+			artifact: artifactRecords,
+			files:    []string{"records.json"},
+			field:    func(d *Defs) any { return d.Patterns },
+			check: func(t *testing.T, got *Defs, _ []string) {
+				t.Helper()
+
+				assert.False(t, got.PatternsListed)
+				assert.True(t, got.Items[100].Craftable)
+			},
+		},
 		"plug sets": {
 			artifact: artifactPlugSets,
 			files:    []string{"plugsets-0.json", "plugsets-1.json"},
@@ -552,6 +594,10 @@ func TestLoaderErrors(t *testing.T) {
 		},
 		"item set table is not an object": {
 			break_: func(f *dvmtest.Artifacts) { f.Files["item-sets.json"] = `[]` },
+			err:    ErrDefs,
+		},
+		"record table is not an object": {
+			break_: func(f *dvmtest.Artifacts) { f.Files["records.json"] = `[]` },
 			err:    ErrDefs,
 		},
 		"vendor table is not an object": {
@@ -658,7 +704,7 @@ func TestWithLoaded(t *testing.T) {
 		"after the recheck window the loader replaces a seed of another version": {
 			version:     "245000.1",
 			elapsed:     defsRecheck,
-			wantFetched: 22,
+			wantFetched: 23,
 		},
 	}
 

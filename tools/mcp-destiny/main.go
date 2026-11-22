@@ -379,7 +379,10 @@ func newServer(h *handler) *mcp.Server {
 			"and a copy whose rating reads 'roll unknown' never match a minimum. " +
 			"Each minimum needs the ratings of its game mode. " +
 			"When the mode has none, the call returns the reason as an error result, never an empty list. " +
-			"get_item explains a rating column by column.",
+			"get_item explains a rating column by column. " +
+			"The flags column marks a copy with Deepsight Resonance, the red border of the game, with 'deepsight'. " +
+			"It marks a copy that a Deepsight Harmonizer can give Deepsight Resonance with 'harmonizable'. " +
+			"list_patterns gives the pattern progress of each craftable weapon.",
 		Annotations: readOnly,
 	}, h.handleListItems)
 
@@ -387,6 +390,8 @@ func newServer(h *handler) *mcp.Server {
 		Name: toolGetItem,
 		Description: "Show one item instance in full: perks with their descriptions and the alternatives each socket can swap to, " +
 			"stats, tag, note, and location. " +
+			"For a craftable weapon, the Pattern line gives the progress of its crafting pattern, " +
+			"such as '3 of 5' extractions, or 'complete'. " +
 			"Under each perk, the in-game text of Bungie comes first. " +
 			"A line that starts with 'Clarity:' then opens the tested description of the Clarity database, " +
 			"for each perk that Clarity covers. " +
@@ -495,6 +500,26 @@ func newServer(h *handler) *mcp.Server {
 			"or it opens with 'Times and falloff' when the reason empties all of them.",
 		Annotations: readOnly,
 	}, h.handleCompareDuplicates)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolListPatterns,
+		Description: "List the crafting pattern of each craftable weapon with its progress from the Bungie profile records, " +
+			"such as '3 of 5' for a pattern that needs two more extractions. " +
+			"A complete pattern reads 'complete'. " +
+			"Each row also counts the owned copies of the weapon and gives the instance ids of some of them. " +
+			"The deepsight column lists the copies with Deepsight Resonance, the red border of the game. " +
+			"For an incomplete pattern, the user can extract the progress of such a copy in the game. " +
+			"The harmonizable column lists the copies that a Deepsight Harmonizer can give Deepsight Resonance. " +
+			"Only a copy of a weapon whose pattern is incomplete is harmonizable. " +
+			"The status input selects the incomplete patterns (the default), the complete patterns, or all of them. " +
+			"The harmonizable input keeps only the patterns with a harmonizable copy, " +
+			"for example to choose the weapons to spend Deepsight Harmonizers on. " +
+			"The incomplete patterns come first, with the fewest extractions left first, and the complete patterns follow. " +
+			"The copies of a pattern include the Adept, Timelost, and Harrowed copies of its weapon, " +
+			"because the game counts their extractions toward the pattern of the base weapon. " +
+			"Pass the instance id of a copy to get_item or compare_duplicates to read its roll rating.",
+		Annotations: readOnly,
+	}, h.handleListPatterns)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolListActivityHistory,

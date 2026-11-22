@@ -4327,6 +4327,7 @@ in
           "mcp__destiny__list_items"
           "mcp__destiny__get_item"
           "mcp__destiny__compare_duplicates"
+          "mcp__destiny__list_patterns"
           "mcp__destiny__list_loadouts"
           "mcp__destiny__list_tags"
           "mcp__destiny__list_notes"

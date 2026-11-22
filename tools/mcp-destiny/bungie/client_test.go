@@ -84,7 +84,7 @@ func TestBungieProfile(t *testing.T) {
 		Profile(t.Context(), bungie.Credentials{APIKey: "key", AccessToken: "access"}, bungie.Membership{ID: "4611", Type: 3})
 	require.NoError(t, err)
 
-	assert.Equal(t, "100,102,103,200,201,205,206,300,304,305,310", components)
+	assert.Equal(t, "100,102,103,200,201,205,206,300,304,305,310,900", components)
 	assert.Equal(t, []bungie.ProfileItem{
 		{Hash: bungietest.ItemGlimmer, Quantity: 250000, Location: 1, BucketHash: 2689798308},
 		{Hash: bungietest.ItemBrightDust, Quantity: 1500, Location: 1, BucketHash: 2689798311},
@@ -270,6 +270,78 @@ func TestProfileItemHashes(t *testing.T) {
 			assert.Equal(t, tc.want, p.ItemHashes())
 		})
 	}
+}
+
+func TestProfileRecord(t *testing.T) {
+	t.Parallel()
+
+	// The profile holds record 1. The Hunter played last, and the Titan
+	// holds record 2 alone. The Warlock and the Hunter share a play
+	// date, and the Hunter has the lower id.
+	const body = `{
+		"characters": {"data": {
+			"c1": {"characterId": "c1", "dateLastPlayed": "2026-11-10T12:00:00Z"},
+			"c2": {"characterId": "c2", "dateLastPlayed": "2026-11-01T12:00:00Z"},
+			"c3": {"characterId": "c3", "dateLastPlayed": "2026-11-10T12:00:00Z"}
+		}},
+		"profileRecords": {"data": {"records": {
+			"1": {"state": 4, "objectives": [
+				{"objectiveHash": 10, "progress": 3, "completionValue": 5, "complete": false, "visible": true}
+			]}
+		}}},
+		"characterRecords": {"data": {
+			"c1": {"records": {
+				"1": {"state": 0},
+				"3": {"state": 0, "objectives": [{"objectiveHash": 11, "progress": 2, "completionValue": 2, "complete": true}]}
+			}},
+			"c2": {"records": {"2": {"state": 4}}},
+			"c3": {"records": {"4": {"state": 4}}}
+		}}
+	}`
+
+	tests := map[string]struct {
+		want bungie.ProfileRecord
+		hash uint32
+		ok   bool
+	}{
+		"record of the profile wins over the record of a character": {
+			hash: 1,
+			want: bungie.ProfileRecord{
+				State:      bungie.RecordObjectiveNotCompleted,
+				Objectives: []bungie.ProfileObjective{{Hash: 10, Progress: 3, CompletionValue: 5}},
+			},
+			ok: true,
+		},
+		"record of the character that played last": {
+			hash: 3,
+			want: bungie.ProfileRecord{
+				Objectives: []bungie.ProfileObjective{{Hash: 11, Progress: 2, CompletionValue: 2, Complete: true}},
+			},
+			ok: true,
+		},
+		"record of a character that played earlier":                           {hash: 2},
+		"record of a character that played at the same time with a higher id": {hash: 4},
+		"record that nobody holds":                                            {hash: 5},
+	}
+
+	var p bungie.Profile
+
+	require.NoError(t, json.Unmarshal([]byte(body), &p))
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := p.Record(tc.hash)
+			assert.Equal(t, tc.ok, ok)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	var empty bungie.Profile
+
+	_, ok := empty.Record(1)
+	assert.False(t, ok, "a profile without records and characters holds no record")
 }
 
 func TestBungieVendors(t *testing.T) {

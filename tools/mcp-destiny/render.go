@@ -495,6 +495,7 @@ func renderItem(
 
 	writeField(&b, "Tag", item.Tag)
 	writeField(&b, "Flags", strings.Join(flagsOf(item), ", "))
+	writeField(&b, "Pattern", patternLabel(item.Pattern))
 	writeField(&b, "Note", item.Note)
 
 	if len(item.Perks) > 0 {
@@ -1304,6 +1305,14 @@ func flagsOf(item *inventory.Item) []string {
 		flags = append(flags, "crafted")
 	}
 
+	if item.Deepsight {
+		flags = append(flags, "deepsight")
+	}
+
+	if item.Harmonizable {
+		flags = append(flags, "harmonizable")
+	}
+
 	if item.Note != "" {
 		flags = append(flags, "note")
 	}
@@ -1313,6 +1322,89 @@ func flagsOf(item *inventory.Item) []string {
 	}
 
 	return flags
+}
+
+// patternLabel describes the progress of a pattern, such as "3 of 5"
+// for a pattern that needs two more extractions. It joins the progress of
+// several objectives with commas. A complete pattern reads "complete",
+// and an incomplete pattern without an objective reads "incomplete". A
+// nil pattern gives an empty label.
+func patternLabel(p *inventory.Pattern) string {
+	switch {
+	case p == nil:
+		return ""
+	case p.Complete:
+		return inventory.PatternComplete
+	case len(p.Objectives) == 0:
+		return inventory.PatternIncomplete
+	}
+
+	parts := make([]string, 0, len(p.Objectives))
+	for _, o := range p.Objectives {
+		parts = append(parts, fmt.Sprintf("%d of %d", o.Progress, o.Completion))
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+// noPatternsRefusal is the text of a list_patterns call on a deployment
+// whose artifact index lists no Record artifact.
+const noPatternsRefusal = "the service publishes no record definitions, " +
+	"so the server cannot tell which records of the profile track weapon patterns"
+
+// renderPatterns renders one page of patterns as a table. Offset and
+// total count patterns, and tracked is the number of patterns that the
+// profile tracks before any filter. Each row gives the progress of the
+// pattern as [patternLabel] writes it and the number of owned copies of
+// the weapon. It also lists the instance ids of the copies with Deepsight
+// Resonance and of the copies that a Deepsight Harmonizer can give
+// Deepsight Resonance.
+func renderPatterns(rows []inventory.PatternRow, offset, total, tracked int) string {
+	switch {
+	case tracked == 0:
+		return "The profile tracks no weapon pattern."
+	case total == 0:
+		return "No patterns match."
+	case len(rows) == 0:
+		return fmt.Sprintf("Offset %d is past the last of %d matching patterns.", offset, total)
+	}
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Patterns %d-%d of %d.", offset+1, offset+len(rows), total)
+
+	if offset+len(rows) < total {
+		fmt.Fprintf(&b, " Pass offset=%d for the next page.", offset+len(rows))
+	}
+
+	b.WriteString("\n\nweapon | progress | copies | deepsight | harmonizable\n")
+
+	for _, row := range rows {
+		var deepsight, harmonizable []string
+
+		for _, item := range row.Copies {
+			if item.Deepsight {
+				deepsight = append(deepsight, item.InstanceID)
+			}
+
+			if item.Harmonizable {
+				harmonizable = append(harmonizable, item.InstanceID)
+			}
+		}
+
+		fields := []string{
+			row.Name,
+			patternLabel(&row.Pattern),
+			strconv.Itoa(len(row.Copies)),
+			strings.Join(deepsight, ", "),
+			strings.Join(harmonizable, ", "),
+		}
+
+		b.WriteString(strings.Join(fields, " | "))
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // historyRun is one row of the activity history. Character names the

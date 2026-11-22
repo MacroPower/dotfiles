@@ -94,7 +94,7 @@ func TestServerListsTools(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{
 		toolStatus, toolLogin, toolCompleteLogin, toolListCharacters, toolListItems, toolGetItem,
-		toolCompareDuplicates, toolMoveItems,
+		toolCompareDuplicates, toolListPatterns, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolPreviewAutotagRule,
 		toolRemoveAutotagRule, toolRunAutotagRules,
@@ -109,6 +109,18 @@ func TestServerListsTools(t *testing.T) {
 		switch tool.Name {
 		case toolListActivities:
 			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
+		case toolListPatterns:
+			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
+			assert.Contains(t, tool.Description, "The harmonizable column lists the copies "+
+				"that a Deepsight Harmonizer can give Deepsight Resonance.")
+			assert.Contains(t, tool.Description, "with the fewest extractions left first")
+			assert.Contains(t, tool.Description, "The copies of a pattern include the Adept, Timelost, "+
+				"and Harrowed copies of its weapon")
+
+		case toolListItems:
+			assert.Contains(t, tool.Description, "with 'deepsight'")
+			assert.Contains(t, tool.Description, "with 'harmonizable'")
+
 		case toolListVendors:
 			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
 			assert.Contains(t, tool.Description, "No group lists the sub-vendors without a name that hold part "+
@@ -3313,6 +3325,231 @@ func TestCompareDuplicatesLimit(t *testing.T) {
 
 			header, _, _ := strings.Cut(got, "\n")
 			assert.Equal(t, tc.want, header)
+		})
+	}
+}
+
+// patternProfileBody is a Bungie profile response body with the copies
+// of two craftable weapons. Fatebringer 2001 in the vault has Deepsight
+// Resonance, and a Deepsight Harmonizer can give it to Fatebringer 2002,
+// which the Hunter holds. A Deepsight Harmonizer can also give it to
+// Fatebringer (Timelost) 2004 in the vault. Midnight Coup 2003 in the
+// vault shows a visible harmonizer socket, but its pattern is complete.
+// The profile records hold the patterns of Fatebringer at 3 of 5, of
+// Midnight Coup, and of Austringer at 1 of 2.
+const patternProfileBody = `{"ErrorCode": 1, "Response": {
+	"characters": {"data": {
+		"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
+	}},
+	"profileInventory": {"data": {"items": [
+		{"itemHash": 100, "itemInstanceId": "2001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
+		{"itemHash": 102, "itemInstanceId": "2003", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
+		{"itemHash": 105, "itemInstanceId": "2004", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802}
+	]}},
+	"characterInventories": {"data": {"c1": {"items": [
+		{"itemHash": 100, "itemInstanceId": "2002", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634}
+	]}}},
+	"itemComponents": {"sockets": {"data": {
+		"2001": {"sockets": [{"plugHash": 900, "isVisible": true}, {"plugHash": 910, "isVisible": true}]},
+		"2002": {"sockets": [{"plugHash": 900, "isVisible": true}, {"plugHash": 911, "isVisible": true}]},
+		"2003": {"sockets": [{"plugHash": 911, "isVisible": true}]},
+		"2004": {"sockets": [{"plugHash": 911, "isVisible": true}]}
+	}}},
+	"profileRecords": {"data": {"records": {
+		"5001": {"state": 4, "objectives": [{"objectiveHash": 1, "progress": 3, "completionValue": 5}]},
+		"5002": {"state": 0, "objectives": [{"objectiveHash": 1, "progress": 4, "completionValue": 4}]},
+		"5003": {"state": 4, "objectives": [{"objectiveHash": 1, "progress": 1, "completionValue": 2}]}
+	}}}
+}}`
+
+// patternFakes returns fakes whose profile is [patternProfileBody]. The
+// definitions name the plugs of the two crafting sockets that Deepsight
+// reads and four pattern records. Fatebringer and Midnight Coup name a
+// recipe item, and the profile lacks the record of Hawkmoon. Item 105 is
+// Fatebringer (Timelost), which names no recipe item.
+func patternFakes(t *testing.T) *fakes {
+	t.Helper()
+
+	f := newFakes(t)
+	f.bungie.ProfileBody = patternProfileBody
+	f.defs.PlugCategories = map[uint32]uint32{910: bungie.PlugCategoryResonance, 911: bungie.PlugCategoryHarmonizer}
+	f.defs.Patterns = map[string]uint32{
+		"Fatebringer":   5001,
+		"Midnight Coup": 5002,
+		"Austringer":    5003,
+		"Hawkmoon":      5004,
+	}
+	f.defs.PatternsListed = true
+
+	for _, hash := range []uint32{100, 102} {
+		def := f.defs.Items[hash]
+		def.Craftable = true
+		f.defs.Items[hash] = def
+	}
+
+	timelost := f.defs.Items[100]
+	timelost.Name = "Fatebringer (Timelost)"
+	timelost.Craftable = false
+	f.defs.Items[105] = timelost
+
+	return f
+}
+
+func TestListPatterns(t *testing.T) {
+	t.Parallel()
+
+	const (
+		header      = "\n\nweapon | progress | copies | deepsight | harmonizable\n"
+		austringer  = "Austringer | 1 of 2 | 0 |  | "
+		fatebringer = "Fatebringer | 3 of 5 | 3 | 2001 | 2002, 2004"
+		coup        = "Midnight Coup | complete | 1 |  | "
+	)
+
+	tests := map[string]struct {
+		edit    func(f *fakes)
+		want    string
+		in      ListPatternsInput
+		isError bool
+	}{
+		"incomplete patterns by default, the fewest extractions left first": {
+			want: "Patterns 1-2 of 2." + header + austringer + "\n" + fatebringer,
+		},
+		"complete patterns": {
+			in:   ListPatternsInput{Status: "complete"},
+			want: "Patterns 1-1 of 1." + header + coup,
+		},
+		"every pattern": {
+			in:   ListPatternsInput{Status: "all"},
+			want: "Patterns 1-3 of 3." + header + austringer + "\n" + fatebringer + "\n" + coup,
+		},
+		// The harmonizer socket of Midnight Coup does not count, because
+		// its pattern is complete.
+		"patterns with a harmonizable copy": {
+			in:   ListPatternsInput{Status: "all", Harmonizable: true},
+			want: "Patterns 1-1 of 1." + header + fatebringer,
+		},
+		"query in another letter case": {
+			in:   ListPatternsInput{Query: "FATE"},
+			want: "Patterns 1-1 of 1." + header + fatebringer,
+		},
+		"query that no name contains": {
+			in:   ListPatternsInput{Query: "F4TE"},
+			want: "No patterns match.",
+		},
+		"query with a lookalike digit": {
+			in:   ListPatternsInput{Query: "m1dnight", Status: "all"},
+			want: "Patterns 1-1 of 1." + header + coup,
+		},
+		"page": {
+			in:   ListPatternsInput{Limit: 1},
+			want: "Patterns 1-1 of 2. Pass offset=1 for the next page." + header + austringer,
+		},
+		"offset past the last pattern": {
+			in:   ListPatternsInput{Offset: 5},
+			want: "Offset 2 is past the last of 2 matching patterns.",
+		},
+		"unknown status": {
+			in:      ListPatternsInput{Status: "done"},
+			want:    `invalid filter: unknown status "done", pass incomplete, complete, or all`,
+			isError: true,
+		},
+		"profile without pattern records": {
+			edit: func(f *fakes) {
+				f.bungie.ProfileBody = strings.Replace(patternProfileBody, `"profileRecords"`, `"unread"`, 1)
+			},
+			want: "The profile tracks no weapon pattern.",
+		},
+		"service without record definitions": {
+			edit:    func(f *fakes) { f.defs.PatternsListed = false },
+			want:    noPatternsRefusal,
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := patternFakes(t)
+			if tc.edit != nil {
+				tc.edit(f)
+			}
+
+			got, isError := call(t, f.h.handleListPatterns, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestListPatternsRefresh(t *testing.T) {
+	t.Parallel()
+
+	f := patternFakes(t)
+
+	_, isError := call(t, f.h.handleListPatterns, ListPatternsInput{})
+	require.False(t, isError)
+
+	// A copy of the profile up to 30 seconds old serves the next call, and
+	// refresh fetches the profile again.
+	f.bungie.ProfileBody = strings.Replace(patternProfileBody, `"progress": 3`, `"progress": 4`, 1)
+
+	got, _ := call(t, f.h.handleListPatterns, ListPatternsInput{Query: "fatebringer"})
+	assert.Contains(t, got, "Fatebringer | 3 of 5 |")
+
+	got, _ = call(t, f.h.handleListPatterns, ListPatternsInput{Query: "fatebringer", Refresh: true})
+	assert.Contains(t, got, "Fatebringer | 4 of 5 |")
+}
+
+func TestDeepsightFlags(t *testing.T) {
+	t.Parallel()
+
+	f := patternFakes(t)
+
+	got, isError := call(t, f.h.handleListItems, ListItemsInput{})
+	require.False(t, isError)
+	assert.Contains(t, got, "\n2001 | Fatebringer | Kinetic Hand Cannon | Legendary |  |  | Vault |  | deepsight\n")
+	assert.Contains(t, got, "\n2002 | Fatebringer | Kinetic Hand Cannon | Legendary |  |  | Hunter |  | harmonizable\n")
+	assert.Contains(
+		t,
+		got,
+		"\n2004 | Fatebringer (Timelost) | Kinetic Hand Cannon | Legendary |  |  | Vault |  | harmonizable\n",
+	)
+	assert.True(
+		t,
+		strings.HasSuffix(got, "\n2003 | Midnight Coup | Kinetic Hand Cannon | Legendary |  |  | Vault |  | "),
+		"the complete pattern leaves the visible harmonizer socket of Midnight Coup without a flag",
+	)
+
+	tests := map[string]struct {
+		id   string
+		want string
+	}{
+		"copy with Deepsight Resonance": {
+			id:   "2001",
+			want: "Location: Vault\nFlags: deepsight\nPattern: 3 of 5\n",
+		},
+		"copy that a Deepsight Harmonizer can give Deepsight Resonance": {
+			id:   "2002",
+			want: "Location: Hunter\nFlags: harmonizable\nPattern: 3 of 5\n",
+		},
+		"copy of a weapon with a complete pattern": {
+			id:   "2003",
+			want: "Location: Vault\nPattern: complete\n",
+		},
+		"Timelost copy of a weapon with an incomplete pattern": {
+			id:   "2004",
+			want: "Location: Vault\nFlags: harmonizable\nPattern: 3 of 5\n",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, isError := call(t, patternFakes(t).h.handleGetItem, GetItemInput{InstanceID: tc.id})
+			require.False(t, isError)
+			assert.Contains(t, got, tc.want)
 		})
 	}
 }

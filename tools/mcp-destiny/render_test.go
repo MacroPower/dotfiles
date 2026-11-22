@@ -769,6 +769,47 @@ func TestListWithAnd(t *testing.T) {
 	}
 }
 
+func TestPatternLabel(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		pattern *inventory.Pattern
+		want    string
+	}{
+		"no pattern": {},
+		"one objective": {
+			pattern: &inventory.Pattern{Objectives: []inventory.Objective{{Progress: 3, Completion: 5}}},
+			want:    "3 of 5",
+		},
+		"several objectives": {
+			pattern: &inventory.Pattern{Objectives: []inventory.Objective{
+				{Progress: 3, Completion: 5},
+				{Progress: 0, Completion: 1},
+			}},
+			want: "3 of 5, 0 of 1",
+		},
+		"incomplete pattern without an objective": {
+			pattern: &inventory.Pattern{},
+			want:    "incomplete",
+		},
+		"complete pattern": {
+			pattern: &inventory.Pattern{
+				Objectives: []inventory.Objective{{Progress: 5, Completion: 5}},
+				Complete:   true,
+			},
+			want: "complete",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, patternLabel(tc.pattern))
+		})
+	}
+}
+
 func TestMoveFailure(t *testing.T) {
 	t.Parallel()
 

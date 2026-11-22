@@ -29,7 +29,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v11-"
+	defsCachePrefix = "defs-v12-"
 
 	artifactCore            = "core"
 	artifactDetail          = "detail"
@@ -46,6 +46,7 @@ const (
 	artifactVendors         = "Vendor"
 	artifactVendorItems     = "VendorItem"
 	artifactItemSets        = "EquipableItemSet"
+	artifactRecords         = "Record"
 	artifactWithheld        = "hidden"
 )
 
@@ -66,7 +67,8 @@ var ErrDefs = errors.New("definitions")
 // Bungie TierType value that DIM reads for the rarity. TierType is
 // [bungie.TierTypeBasic] when the definition gives no tier type.
 // DisablePrimaryStatDisplay marks a definition whose primary stat the game
-// hides.
+// hides. Craftable marks a definition that names a recipe item, as each
+// craftable weapon does.
 type ItemDef struct {
 	Name                      string   `json:"name"`
 	Description               string   `json:"description,omitempty"`
@@ -83,6 +85,7 @@ type ItemDef struct {
 	NonTransferable           bool     `json:"nonTransferable,omitempty"`
 	Equippable                bool     `json:"equippable,omitempty"`
 	DisablePrimaryStatDisplay bool     `json:"disablePrimaryStatDisplay,omitempty"`
+	Craftable                 bool     `json:"craftable,omitempty"`
 }
 
 // BucketDef is the subset of a Bungie inventory bucket definition that the
@@ -150,6 +153,19 @@ type VendorDef struct {
 // EquipableItemSet artifact. The web client builds no item whose set the
 // artifact lacks, so the preview reads both fields.
 //
+// PlugCategories maps the hash of each plug of the crafting sockets that
+// Deepsight reads to its plug category, [bungie.PlugCategoryResonance] or
+// [bungie.PlugCategoryHarmonizer]. It leaves out the plugs of every other
+// category.
+//
+// Patterns maps the name of each craftable weapon to the hash of the
+// record that tracks its pattern. The record definitions name a pattern
+// record after its weapon. Destiny Item Manager (DIM) therefore matches a
+// weapon to its pattern by name, and the server does the same. Of two
+// pattern records with one name, Patterns keeps the record with the
+// higher hash, as DIM does. PatternsListed records whether the service
+// index lists the Record artifact.
+//
 // Withheld lists in ascending order the item hashes whose definitions the
 // service withholds. The service withholds dummy items, classified items,
 // and items without a name, so Items lacks them. Items and Withheld
@@ -158,9 +174,10 @@ type VendorDef struct {
 // hashes.
 //
 // Activities, ActivityTypes, Destinations, Places, ActivityRewards,
-// Vendors, VendorItems, Sockets, PlugSets, ItemSets, and Withheld are
-// empty when the service index lists no artifact for them. PlugSets is
-// also empty when the index lists no artifact for Sockets.
+// Vendors, VendorItems, Sockets, PlugSets, PlugCategories, ItemSets,
+// Patterns, and Withheld are empty when the service index lists no
+// artifact for them. PlugSets is also empty when the index lists no
+// artifact for Sockets.
 //
 // Lookups holds the outcome of each lookup in the live manifest of Bungie
 // that a [*NameStore] made for one call, keyed by the item hash. Only the
@@ -172,7 +189,9 @@ type Defs struct {
 	Stats           map[uint32]string      `json:"stats"`
 	Sockets         map[uint32][]uint32    `json:"sockets"`
 	PlugSets        map[uint32][]uint32    `json:"plugSets"`
+	PlugCategories  map[uint32]uint32      `json:"plugCategories"`
 	ItemSets        map[uint32][]uint32    `json:"itemSets"`
+	Patterns        map[string]uint32      `json:"patterns"`
 	Activities      map[uint32]ActivityDef `json:"activities"`
 	ActivityTypes   map[uint32]string      `json:"activityTypes"`
 	Destinations    map[uint32]string      `json:"destinations"`
@@ -188,6 +207,7 @@ type Defs struct {
 	Withheld        []uint32               `json:"withheld"`
 	ItemSetsListed  bool                   `json:"itemSetsListed"`
 	WithheldListed  bool                   `json:"withheldListed"`
+	PatternsListed  bool                   `json:"patternsListed"`
 }
 
 // ItemName returns the name of an item hash. It reads the item definitions
@@ -377,7 +397,9 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 		Stats:           map[uint32]string{},
 		Sockets:         map[uint32][]uint32{},
 		PlugSets:        map[uint32][]uint32{},
+		PlugCategories:  map[uint32]uint32{},
 		ItemSets:        map[uint32][]uint32{},
+		Patterns:        map[string]uint32{},
 		Activities:      map[uint32]ActivityDef{},
 		ActivityTypes:   map[uint32]string{},
 		Destinations:    map[uint32]string{},
@@ -408,10 +430,20 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 	// artifact, and then each plug set that those socket lists name. The
 	// detail read therefore follows the core read, and the plugsets read
 	// follows the detail read.
+	//
+	// The Deepsight flags read the plug category of the crafting plugs,
+	// which only the detail artifact gives.
 	err = readRecords(ctx, l, index.Files[artifactDetail], func(raw rawDetail) {
 		sets := raw.plugSets()
 		if len(sets) > 0 && defs.Items[raw.Hash].ItemType == bungie.ItemTypeWeapon {
 			defs.Sockets[raw.Hash] = sets
+		}
+
+		if raw.Plug != nil {
+			switch category := raw.Plug.PlugCategoryHash; category {
+			case bungie.PlugCategoryResonance, bungie.PlugCategoryHarmonizer:
+				defs.PlugCategories[raw.Hash] = category
+			}
 		}
 	})
 	if err != nil {
@@ -465,8 +497,11 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 	// vendor definitions. They therefore keep working on a deployment whose
 	// index lists none of these artifacts. The item sets decide which items
 	// the web client builds. The preview leaves out each item with a set
-	// when the index lists no item sets, as the web client does.
+	// when the index lists no item sets, as the web client does. Only the
+	// pattern progress reads the records, so the other tools keep working
+	// without them.
 	defs.ItemSetsListed = len(index.Files[artifactItemSets]) > 0
+	defs.PatternsListed = len(index.Files[artifactRecords]) > 0
 
 	optional := map[string]func(io.Reader) error{
 		artifactActivities: func(r io.Reader) error {
@@ -486,6 +521,21 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 		},
 		artifactItemSets: func(r io.Reader) error {
 			return decodeTable(r, func(hash uint32, row itemSetRow) { defs.ItemSets[hash] = row.perks() })
+		},
+		artifactRecords: func(r io.Reader) error {
+			return decodeTable(r, func(hash uint32, row recordRow) {
+				name := row.DisplayProperties.Name
+				if !row.pattern() || name == "" {
+					return
+				}
+
+				// The table decodes in no fixed order, so the
+				// comparison picks the record that DIM keeps.
+				kept, ok := defs.Patterns[name]
+				if !ok || hash > kept {
+					defs.Patterns[name] = hash
+				}
+			})
 		},
 	}
 
@@ -574,6 +624,7 @@ type rawItem struct {
 		TierType                 *int   `json:"tierType"`
 		TierTypeName             string `json:"tierTypeName"`
 		BucketTypeHash           uint32 `json:"bucketTypeHash"`
+		RecipeItemHash           uint32 `json:"recipeItemHash"`
 		NonTransferrableOriginal bool   `json:"nonTransferrableOriginal"`
 	} `json:"inventory"`
 	Stats struct {
@@ -600,6 +651,7 @@ func (raw rawItem) item() ItemDef {
 		NonTransferable:           raw.Inventory.NonTransferrableOriginal,
 		Equippable:                raw.EquippingBlock != nil,
 		DisablePrimaryStatDisplay: raw.Stats.DisablePrimaryStatDisplay,
+		Craftable:                 raw.Inventory.RecipeItemHash != 0,
 	}
 
 	if raw.Inventory.TierType != nil {
@@ -626,8 +678,12 @@ func (raw rawItem) item() ItemDef {
 
 // rawDetail is the subset of a record of the detail artifact that the
 // loader reads. The record holds the socket entries of an item
-// definition, in the order of the sockets of each copy.
+// definition, in the order of the sockets of each copy. Plug is the plug
+// block of a plug definition, and nil for every other definition.
 type rawDetail struct {
+	Plug *struct {
+		PlugCategoryHash uint32 `json:"plugCategoryHash"`
+	} `json:"plug"`
 	Sockets struct {
 		SocketEntries []struct {
 			ReusablePlugSetHash   uint32 `json:"reusablePlugSetHash"`
@@ -847,6 +903,24 @@ func (row itemSetRow) perks() []uint32 {
 	}
 
 	return perks
+}
+
+// recordRow is the subset of a record of the Record artifact that the
+// loader reads. The service build keeps each record definition whole.
+type recordRow struct {
+	CompletionInfo *struct {
+		ToastStyle int `json:"toastStyle"`
+	} `json:"completionInfo"`
+	DisplayProperties struct {
+		Name string `json:"name"`
+	} `json:"displayProperties"`
+}
+
+// pattern reports whether the record tracks the pattern of a craftable
+// weapon. Destiny Item Manager (DIM) tells such a record by the toast
+// style of its completion block.
+func (row recordRow) pattern() bool {
+	return row.CompletionInfo != nil && row.CompletionInfo.ToastStyle == bungie.ToastCraftingRecipe
 }
 
 // decodeTable reads a JSON object that maps definition hashes to records.

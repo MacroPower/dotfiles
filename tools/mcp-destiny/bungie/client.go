@@ -45,8 +45,10 @@ const (
 	// [*Client.Profile] requests. They cover profiles, profile inventories,
 	// profile currencies, characters, character inventories, character
 	// equipment, and character loadouts. The item components cover
-	// instances, stats, sockets, and reusable plugs.
-	profileComponents = "100,102,103,200,201,205,206,300,304,305,310"
+	// instances, stats, sockets, and reusable plugs. The records
+	// component covers the records of the profile and of each
+	// character, which track the progress of each weapon pattern.
+	profileComponents = "100,102,103,200,201,205,206,300,304,305,310,900"
 
 	// vendorComponents lists the GetVendors components that
 	// [*Client.Vendors] requests. They cover vendors, vendor categories, and
@@ -214,12 +216,39 @@ type ProfileLoadouts struct {
 	Loadouts []ProfileLoadout `json:"loadouts"`
 }
 
+// ProfileRecord is one Bungie DestinyRecordComponent. State holds the
+// bits of the Bungie DestinyRecordState enum, such as
+// [RecordObjectiveNotCompleted].
+type ProfileRecord struct {
+	Objectives []ProfileObjective `json:"objectives"`
+	State      int                `json:"state"`
+}
+
+// ProfileObjective is one Bungie DestinyObjectiveProgress. Progress
+// counts toward CompletionValue, and Complete marks an objective that
+// reached it.
+type ProfileObjective struct {
+	Progress        int    `json:"progress"`
+	CompletionValue int    `json:"completionValue"`
+	Hash            uint32 `json:"objectiveHash"`
+	Complete        bool   `json:"complete"`
+}
+
+// ProfileRecords holds the records of one scope, the profile or one
+// character, keyed by the hash of the record definition.
+type ProfileRecords struct {
+	Records map[uint32]ProfileRecord `json:"records"`
+}
+
 // Profile is the subset of a Bungie DestinyProfileResponse that the server
 // reads.
 type Profile struct {
 	Characters struct {
 		Data map[string]ProfileCharacter `json:"data"`
 	} `json:"characters"`
+	CharacterRecords struct {
+		Data map[string]ProfileRecords `json:"data"`
+	} `json:"characterRecords"`
 	CharacterInventories struct {
 		Data map[string]ProfileItems `json:"data"`
 	} `json:"characterInventories"`
@@ -255,6 +284,39 @@ type Profile struct {
 	ProfileCurrencies struct {
 		Data ProfileItems `json:"data"`
 	} `json:"profileCurrencies"`
+	ProfileRecords struct {
+		Data ProfileRecords `json:"data"`
+	} `json:"profileRecords"`
+}
+
+// Record returns the record of the definition hash. It reads the records
+// of the profile first. For a record that the profile lacks, it reads the
+// records of the character that played last, as Destiny Item Manager
+// (DIM) reads the records of one character. DIM reads the character that
+// Bungie lists first. Record reports false when neither holds the
+// record.
+func (p *Profile) Record(hash uint32) (ProfileRecord, bool) {
+	record, ok := p.ProfileRecords.Data.Records[hash]
+	if ok {
+		return record, true
+	}
+
+	// A snapshot puts the character with the latest play date first. Of
+	// two characters with one play date, it puts the lower id first.
+	var (
+		last   string
+		played time.Time
+	)
+
+	for id, c := range p.Characters.Data {
+		if last == "" || c.LastPlayed.After(played) || (c.LastPlayed.Equal(played) && id < last) {
+			last, played = id, c.LastPlayed
+		}
+	}
+
+	record, ok = p.CharacterRecords.Data[last].Records[hash]
+
+	return record, ok
 }
 
 // ItemHashes returns the item hash of every item and currency of the

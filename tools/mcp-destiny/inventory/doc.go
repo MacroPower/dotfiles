@@ -82,6 +82,25 @@
 // ascending instance ids, so the id order is also the order in which the
 // account acquired the items.
 //
+// # Patterns
+//
+// A snapshot also lists the crafting pattern of each craftable weapon whose
+// pattern record the profile holds. Each copy of a craftable weapon
+// carries the pattern whose record has the name of the copy, as in DIM.
+// A copy of an Adept, Timelost, or Harrowed version carries the pattern
+// of the base weapon, because the game counts its extractions toward that
+// pattern.
+//
+// Each copy also carries two flags that DIM reads from the crafting
+// sockets of a copy. One marks a copy with Deepsight Resonance, the red
+// border of the game. The other marks a copy with an incomplete pattern
+// that a Deepsight Harmonizer can give Deepsight Resonance.
+//
+// A pattern filter selects patterns with the owned copies of each weapon.
+// Its query matches a part of the weapon name after [fold.Lookalike]
+// folds both. The incomplete patterns come first, with the fewest
+// extractions left first, and the complete patterns follow.
+//
 // # Weapon Groups
 //
 // A weapon group holds every copy of one weapon in every location. The
