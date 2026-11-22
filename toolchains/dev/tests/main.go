@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -120,6 +121,11 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestDevBaseMcpSync(ctx) })
 	eg.Go(func() error { return m.TestDevBaseKrewPlugins(ctx) })
 	eg.Go(func() error { return m.TestSandboxBase(ctx) })
+	eg.Go(func() error { return m.TestSandboxStateVolumes(ctx) })
+	eg.Go(func() error { return m.TestSandboxPersistedState(ctx) })
+	eg.Go(func() error { return m.TestSandboxHistoryLink(ctx) })
+	eg.Go(func() error { return m.TestSandboxLockedVolumes(ctx) })
+	eg.Go(func() error { return m.TestSandboxFreshState(ctx) })
 	eg.Go(func() error { return m.TestSandboxKrewPlugins(ctx) })
 	eg.Go(func() error { return m.TestSandboxKrewRoot(ctx) })
 	eg.Go(func() error { return m.TestSandboxEgressRules(ctx) })
@@ -395,11 +401,13 @@ echo OK
 //
 // +check
 func (m *Tests) TestDevBaseMcpSync(ctx context.Context) error {
-	// Without the mount, /claude-state is a directory of this container.
-	// The test therefore leaves the claude.json that the dev container
-	// persists in the cache volume as it is.
+	// Without the mounts, /claude-state and /commandhistory lie in the
+	// root file system of this container. The test therefore leaves the
+	// files that the dev container persists in the cache volumes as they
+	// are.
 	_, err := dag.Dev().DevBase().
 		WithoutMount("/claude-state").
+		WithoutMount("/commandhistory").
 		WithExec([]string{"sh", "-c", mcpSyncScript}).
 		Sync(ctx)
 	if err != nil {
@@ -534,6 +542,548 @@ func (m *Tests) TestSandboxBase(ctx context.Context) error {
 
 	if !strings.Contains(passwd, "dev:x:1000:1000") {
 		return fmt.Errorf("/etc/passwd missing dev user entry")
+	}
+
+	return nil
+}
+
+// TestSandboxStateVolumes verifies that [Dev.SandboxBase] mounts
+// /claude-state and /commandhistory from cache volumes other than the
+// volumes of [Dev.DevBase]. container-init gives the volumes of the
+// sandbox to the session user at each start. The root session of
+// [Dev.Shell] runs outside the egress filter. It starts the MCP servers
+// that the claude.json of its own volume names. Its fish writes the
+// fish_history of its own volume as root. With a shared volume, the
+// sandbox can add an MCP server to the dev shell or a command to its
+// fish history. It can also plant a link that the dev shell follows as
+// root.
+//
+// The test compares the device and the inode of the mounts, so it does
+// not write to any volume.
+//
+// +check
+func (m *Tests) TestSandboxStateVolumes(ctx context.Context) error {
+	for _, dir := range []string{"/claude-state", "/commandhistory"} {
+		shell, err := volumeID(ctx, dag.Dev().DevBase(), dir)
+		if err != nil {
+			return fmt.Errorf("volume of the dev shell: %w", err)
+		}
+
+		sandbox, err := volumeID(ctx, dag.Dev().SandboxBase(), dir)
+		if err != nil {
+			return fmt.Errorf("volume of the sandbox: %w", err)
+		}
+
+		if shell == sandbox {
+			return fmt.Errorf("the sandbox mounts the %s volume of the dev shell (%s)", dir, sandbox)
+		}
+	}
+
+	return nil
+}
+
+// volumeID returns the device and the inode of dir in ctr. It fails when
+// ctr mounts nothing at dir.
+func volumeID(ctx context.Context, ctr *dagger.Container, dir string) (string, error) {
+	out, err := ctr.
+		WithExec([]string{"grep", "-q", " " + dir + " ", "/proc/self/mountinfo"}).
+		WithExec([]string{"stat", "-c", "%d:%i", dir}).
+		Stdout(ctx)
+	if err != nil {
+		return "", fmt.Errorf("mount at %s: %w", dir, err)
+	}
+
+	return strings.TrimSpace(out), nil
+}
+
+// rootStateScript leaves /claude-state and /commandhistory the way root
+// leaves them. root owns both directories, as the engine creates a cache
+// volume, and each file in them, as a session of root writes them.
+// claude.json has mode 0600.
+const rootStateScript = `set -e
+mkdir -p /claude-state /commandhistory
+(umask 077 && echo '{"numStartups": 1}' >/claude-state/claude.json)
+echo '- cmd: seeded' >/commandhistory/fish_history
+chown -R 0:0 /claude-state /commandhistory
+`
+
+// sessionStateScript checks, as the session user of the sandbox, the
+// state that container-init persists in /claude-state and /commandhistory
+// (see toolchains/dev/scripts/container-init.sh). The user must read
+// ~/.claude.json, and the file must hold the MCP servers of the
+// container. The sync that writes the servers replaces the file, so
+// container-init must run the sync as that user.
+//
+// Claude Code and fish write a file in place, or they write a new file
+// next to it and rename the new file. The user must therefore write
+// each file and create files in each directory.
+const sessionStateScript = `set -e
+state="$HOME/.claude.json"
+histfile="$HOME/.local/share/fish/fish_history"
+servers="$HOME/.config/mcp/mcp.json"
+fail() { echo "$1"; exit 1; }
+
+[ "$(id -u)" = 1000 ] || fail "the session runs as uid $(id -u)"
+[ "$(readlink -f "$state")" = /claude-state/claude.json ] ||
+  fail "~/.claude.json does not resolve to the volume"
+[ "$(readlink -f "$histfile")" = /commandhistory/fish_history ] ||
+  fail "fish_history does not resolve to the volume"
+
+jq -e '.numStartups == 1' "$state" >/dev/null ||
+  fail "the session user cannot read the persisted ~/.claude.json"
+jq -e --slurpfile declared "$servers" '.mcpServers == $declared[0].mcpServers' "$state" >/dev/null ||
+  fail "~/.claude.json does not hold the MCP servers of the container"
+[ "$(stat -c %u:%g /claude-state/mcp-servers.json)" = 1000:1000 ] ||
+  fail "the session user does not own the record of the MCP server sync"
+
+true >>"$state" ||
+  fail "the session user cannot write ~/.claude.json"
+jq '.numStartups = 2' "$state" >/claude-state/claude.json.next ||
+  fail "the session user cannot create a file in /claude-state"
+mv /claude-state/claude.json.next /claude-state/claude.json ||
+  fail "the session user cannot replace the persisted claude.json"
+jq -e '.numStartups == 2' "$state" >/dev/null ||
+  fail "~/.claude.json does not hold what the session user wrote"
+
+echo '- cmd: session' >>"$histfile" ||
+  fail "the session user cannot write fish_history"
+cp "$histfile" /commandhistory/fish_history.next ||
+  fail "the session user cannot create a file in /commandhistory"
+mv /commandhistory/fish_history.next /commandhistory/fish_history ||
+  fail "the session user cannot replace the persisted fish_history"
+[ "$(cat "$histfile")" = "- cmd: seeded
+- cmd: session" ] ||
+  fail "fish_history does not hold what root and the session user wrote"
+echo OK
+`
+
+// plantLinksScript leaves the volumes the way a session that attacks the
+// next start leaves them. root creates /etc/persist-victim with mode
+// 0600, so the session user can neither read nor write it. The session
+// user then replaces claude.json and the record of the MCP server sync
+// with links to that file, and fish_history with a link to the missing
+// /etc/persist-created.
+const plantLinksScript = `set -e
+(umask 077 && echo '{"victim": true}' >/etc/persist-victim)
+setpriv --reuid=1000 --regid=1000 --clear-groups sh -c '
+  set -e
+  for f in /claude-state/claude.json /claude-state/mcp-servers.json; do
+    ln -s /etc/persist-victim "$f.link"
+    mv "$f.link" "$f"
+  done
+  ln -s /etc/persist-created /commandhistory/fish_history.link
+  mv /commandhistory/fish_history.link /commandhistory/fish_history
+'
+`
+
+// linkedStateScript checks, as root, the volumes that plantLinksScript
+// left after the next start of container-init. container-init must not
+// write the file that a link names or create the file that a dangling
+// link names. It must replace each link with a regular file, and
+// claude.json must hold the MCP servers of the container and nothing of
+// /etc/persist-victim. Every file in the volumes must belong to the
+// session user, because a write of root into the volumes follows a link
+// that the user plants there.
+const linkedStateScript = `set -e
+servers="$HOME/.config/mcp/mcp.json"
+fail() { echo "$1"; exit 1; }
+
+[ "$(stat -c %u:%g:%a /etc/persist-victim)" = 0:0:600 ] ||
+  fail "container-init changed the owner or the mode of the file that a link names"
+[ "$(cat /etc/persist-victim)" = '{"victim": true}' ] ||
+  fail "container-init wrote the file that a link names"
+for f in /etc/persist-victim.*; do
+  if [ -e "$f" ]; then
+    fail "container-init wrote $f next to the file that a link names"
+  fi
+done
+[ ! -e /etc/persist-created ] ||
+  fail "container-init created the file that a dangling link names"
+
+for f in /claude-state/claude.json /claude-state/mcp-servers.json /commandhistory/fish_history; do
+  if [ -L "$f" ] || [ ! -f "$f" ]; then
+    fail "$f is not a regular file"
+  fi
+done
+jq -e 'has("victim") | not' /claude-state/claude.json >/dev/null ||
+  fail "claude.json holds the content of the file that a link names"
+jq -e --slurpfile declared "$servers" '.mcpServers == $declared[0].mcpServers' /claude-state/claude.json >/dev/null ||
+  fail "claude.json does not hold the MCP servers of the container"
+[ -z "$(find /claude-state /commandhistory \( ! -user 1000 -o ! -group 1000 \) -print)" ] ||
+  fail "root owns a file in the volumes"
+echo OK
+`
+
+// TestSandboxPersistedState verifies that the non-root user of the
+// sandbox can read and write the state that the container persists (see
+// sessionStateScript). The sandbox persists it in the
+// sandbox-claude-state and sandbox-shell-history cache volumes. Both
+// volumes start with the files of root (see rootStateScript).
+//
+// The session starts the way [Dev.Sandbox] starts it. container-init
+// runs as root, and the command that it execs drops to the user.
+// setpriv stands in for terrarium init, which needs
+// InsecureRootCapabilities for its firewall.
+//
+// The session user owns the volumes and can replace a file in them with
+// a link. The test then starts container-init again and requires that
+// root writes nothing through the links (see plantLinksScript and
+// linkedStateScript).
+//
+// +check
+func (m *Tests) TestSandboxPersistedState(ctx context.Context) error {
+	// Without the mounts, /claude-state and /commandhistory lie in the
+	// root file system of this container. The test therefore leaves the
+	// files that the sandbox persists in the cache volumes as they are.
+	_, err := dag.Dev().SandboxBase().
+		WithoutMount("/claude-state").
+		WithoutMount("/commandhistory").
+		WithExec([]string{"sh", "-c", rootStateScript}).
+		WithExec([]string{
+			"container-init",
+			"setpriv", "--reuid=1000", "--regid=1000", "--clear-groups",
+			"sh", "-c", sessionStateScript,
+		}).
+		WithExec([]string{"sh", "-c", plantLinksScript}).
+		WithExec([]string{"container-init", "sh", "-c", linkedStateScript}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("persisted state of the sandbox user: %w", err)
+	}
+
+	return nil
+}
+
+// historyLinkScript leaves /commandhistory the way a session leaves it
+// when it attacks the fish history link of the build at the next start.
+// The build links ~/.local/share/fish/fish_history to
+// /commandhistory/fish_history. root creates the directory
+// /etc/persist-dir. The session user replaces fish_history with a link
+// to that directory. It then removes its own write permission from
+// /commandhistory, so container-init must give that permission back
+// before it can remove the link.
+const historyLinkScript = `set -e
+histfile="$HOME/.local/share/fish/fish_history"
+fail() { echo "$1"; exit 1; }
+
+[ "$(readlink "$histfile")" = /commandhistory/fish_history ] ||
+  fail "the build does not link fish_history to the volume"
+mkdir -p /commandhistory /etc/persist-dir
+chown 1000:1000 /commandhistory
+setpriv --reuid=1000 --regid=1000 --clear-groups sh -c '
+  set -e
+  rm -f /commandhistory/fish_history
+  ln -s /etc/persist-dir /commandhistory/fish_history
+  chmod 0555 /commandhistory
+'
+`
+
+// historyLinkStateScript checks, as root, what the next start of
+// container-init leaves after historyLinkScript. The fish history link
+// of the build must still name /commandhistory/fish_history.
+// /etc/persist-dir must stay empty, because container-init must not
+// create its link in the directory that the link of the session names.
+const historyLinkStateScript = `set -e
+histfile="$HOME/.local/share/fish/fish_history"
+fail() { echo "$1"; exit 1; }
+
+[ -z "$(find /etc/persist-dir -mindepth 1 -print)" ] ||
+  fail "container-init created a file in the directory that a link in the volume names"
+[ "$(readlink "$histfile")" = /commandhistory/fish_history ] ||
+  fail "fish_history does not link to the volume"
+echo OK
+`
+
+// TestSandboxHistoryLink verifies that container-init does not follow
+// the fish history link of the build through a link that the session
+// leaves at /commandhistory/fish_history (see historyLinkScript and
+// historyLinkStateScript). The session user owns that file. When the
+// file is a link to a directory, ln without -n creates its new link in
+// that directory as root. container-init gives the user write permission
+// on /commandhistory and removes the link before ln runs. The test
+// therefore also passes with an ln without -n. ln -n covers a
+// concurrent session that plants the link again after the removal.
+//
+// As in [Tests.TestSandboxPersistedState], the test does not mount the
+// cache volumes of the sandbox.
+//
+// +check
+func (m *Tests) TestSandboxHistoryLink(ctx context.Context) error {
+	_, err := dag.Dev().SandboxBase().
+		WithoutMount("/claude-state").
+		WithoutMount("/commandhistory").
+		WithExec([]string{"sh", "-c", historyLinkScript}).
+		WithExec([]string{"container-init", "sh", "-c", historyLinkStateScript}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("fish history link of the sandbox: %w", err)
+	}
+
+	return nil
+}
+
+// lockedVolumesScript leaves the volumes the way a session leaves them
+// when it makes the next start hang. The session user replaces
+// claude.json, the record of the MCP server sync, and fish_history with
+// FIFOs. It then removes its own write permission from /claude-state and
+// /commandhistory. container-init must give that permission back before
+// it can remove the FIFOs.
+const lockedVolumesScript = `set -e
+mkdir -p /claude-state /commandhistory
+chown 1000:1000 /claude-state /commandhistory
+setpriv --reuid=1000 --regid=1000 --clear-groups sh -c '
+  set -e
+  for f in /claude-state/claude.json /claude-state/mcp-servers.json /commandhistory/fish_history; do
+    rm -f "$f"
+    mkfifo "$f"
+  done
+  chmod 0555 /claude-state /commandhistory
+'
+`
+
+// lockedVolumesStateScript checks, as root, what the next start of
+// container-init leaves after lockedVolumesScript. Each FIFO must be a
+// regular file of the session user again.
+const lockedVolumesStateScript = `set -e
+fail() { echo "$1"; exit 1; }
+
+for f in /claude-state/claude.json /claude-state/mcp-servers.json /commandhistory/fish_history; do
+  if [ -L "$f" ] || [ ! -f "$f" ]; then
+    fail "$f is not a regular file"
+  fi
+  [ "$(stat -c %u:%g "$f")" = 1000:1000 ] ||
+    fail "the session user does not own $f"
+done
+echo OK
+`
+
+// backupFifoScript leaves /claude-state the way a session leaves it when
+// it makes the next start hang through the copy that the MCP server sync
+// keeps of a malformed claude.json. The session user writes a claude.json
+// that does not hold a JSON object. It then creates a FIFO at each name
+// that the time of the next start predicts for that copy. The names run
+// from 5 seconds before to 600 seconds after the time of the script,
+// inclusive.
+const backupFifoScript = `set -e
+setpriv --reuid=1000 --regid=1000 --clear-groups sh -c '
+  set -e
+  echo "{\"mcpServers\":" >/claude-state/claude.json
+  now=$(date +%s)
+  for t in $(seq $((now - 5)) $((now + 600))); do
+    mkfifo "/claude-state/claude.json.bak.$t"
+  done
+'
+`
+
+// backupFifoStateScript checks, as root, what the next start of
+// container-init leaves after backupFifoScript. The sync must keep one
+// copy of the malformed claude.json in a regular file and write the MCP
+// servers of the container into claude.json. A FIFO must stand at the
+// name that the time of the sync predicts. Without that FIFO, the sync
+// did not meet the FIFOs of backupFifoScript, and the test fails.
+const backupFifoStateScript = `set -e
+servers="$HOME/.config/mcp/mcp.json"
+fail() { echo "$1"; exit 1; }
+
+backup=$(find /claude-state -maxdepth 1 -name 'claude.json.bak.*' -type f)
+if [ -z "$backup" ] || [ "$(printf '%s\n' "$backup" | wc -l)" != 1 ]; then
+  fail "the MCP server sync did not keep exactly one copy of the malformed claude.json"
+fi
+[ "$(cat "$backup")" = '{"mcpServers":' ] ||
+  fail "$backup does not hold the malformed claude.json"
+ts=${backup#/claude-state/claude.json.bak.}
+ts=${ts%%.*}
+[ -p "/claude-state/claude.json.bak.$ts" ] ||
+  fail "no FIFO stands at the name that the time of the sync predicts"
+jq -e --slurpfile declared "$servers" '.mcpServers == $declared[0].mcpServers' /claude-state/claude.json >/dev/null ||
+  fail "claude.json does not hold the MCP servers of the container"
+echo OK
+`
+
+// sparseStartScript leaves the volumes the way a session leaves them
+// when it makes each later start and each later session slow. Then it
+// starts container-init as root with the script in $1. The session user
+// extends claude.json, the record of the MCP server sync, and
+// fish_history to sparse files of 1 TiB. A sparse file costs no disk
+// space. The sync reads the whole claude.json and the whole record, and
+// fish reads the whole fish_history. Each read of 1 TiB takes about 15
+// minutes or more.
+//
+// The script starts container-init in the exec that extends the files.
+// In a later exec, the files lie in a lower layer of the overlay file
+// system of the container. The chown of container-init then makes the
+// kernel copy the files to the layer of that exec.
+const sparseStartScript = `set -e
+setpriv --reuid=1000 --regid=1000 --clear-groups truncate -s 1T \
+  /claude-state/claude.json /claude-state/mcp-servers.json /commandhistory/fish_history
+exec timeout 300 container-init sh -c "$1"
+`
+
+// sparseStateScript checks, as root, what container-init leaves after
+// sparseStartScript. At each of the three paths, it requires a regular
+// file of the session user that holds at most 256 MiB. container-init
+// must keep each sparse file under the path with the suffix .oversized.
+// claude.json must hold the MCP servers of the container.
+const sparseStateScript = `set -e
+servers="$HOME/.config/mcp/mcp.json"
+fail() { echo "$1"; exit 1; }
+
+for f in /claude-state/claude.json /claude-state/mcp-servers.json /commandhistory/fish_history; do
+  if [ -L "$f" ] || [ ! -f "$f" ]; then
+    fail "$f is not a regular file"
+  fi
+  [ "$(stat -c %u:%g "$f")" = 1000:1000 ] ||
+    fail "the session user does not own $f"
+  [ "$(stat -c %s "$f")" -le 268435456 ] ||
+    fail "container-init left a file of more than 256 MiB at $f"
+  [ "$(stat -c %s "$f.oversized" 2>/dev/null)" = 1099511627776 ] ||
+    fail "container-init did not keep the sparse file at $f.oversized"
+done
+jq -e --slurpfile declared "$servers" '.mcpServers == $declared[0].mcpServers' /claude-state/claude.json >/dev/null ||
+  fail "claude.json does not hold the MCP servers of the container"
+echo OK
+`
+
+// TestSandboxLockedVolumes verifies that a file that the session leaves
+// in the volumes does not make a later start or a later session of the
+// sandbox hang. The session user owns the volumes, so it can leave a
+// FIFO at a file that container-init or fish opens. It can also lock the
+// directory that holds the FIFO (see lockedVolumesScript and
+// lockedVolumesStateScript). The claude.json seed opens such a FIFO for
+// writing, and the MCP server sync and fish read it. Each blocks until
+// another process opens the other end.
+//
+// The session can also write a malformed claude.json and leave a FIFO
+// at each name that the sync can pick for its copy of that file (see
+// backupFifoScript and backupFifoStateScript).
+//
+// Last, the session extends the files that the sync and fish read to
+// sparse files that take hours to read. container-init must move each
+// of them out of the way (see sparseStartScript and sparseStateScript).
+//
+// timeout ends a start that hangs, and the test then fails. The test
+// covers the files that a session leaves before a start, not the files
+// that a session creates during a start. A session that runs during the
+// start can still make the claude.json seed or the sync reach its limit
+// of 60 seconds. No step of the test reaches that limit.
+//
+// As in [Tests.TestSandboxPersistedState], the test does not mount the
+// cache volumes of the sandbox.
+//
+// +check
+func (m *Tests) TestSandboxLockedVolumes(ctx context.Context) error {
+	// The engine caches each exec by its arguments. backupFifoStateScript
+	// needs the FIFOs that backupFifoScript creates at the time of this
+	// run, so the extra argument makes the engine run backupFifoScript in
+	// each call.
+	run := strconv.FormatInt(time.Now().UnixNano(), 10)
+
+	_, err := dag.Dev().SandboxBase().
+		WithoutMount("/claude-state").
+		WithoutMount("/commandhistory").
+		WithExec([]string{"sh", "-c", lockedVolumesScript}).
+		WithExec([]string{"timeout", "300", "container-init", "sh", "-c", lockedVolumesStateScript}).
+		WithExec([]string{"sh", "-c", backupFifoScript, "sh", run}).
+		WithExec([]string{"timeout", "300", "container-init", "sh", "-c", backupFifoStateScript}).
+		WithExec([]string{"sh", "-c", sparseStartScript, "sh", sparseStateScript}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("locked volumes of the sandbox: %w", err)
+	}
+
+	return nil
+}
+
+// freshPrepScript leaves /claude-state and /commandhistory as empty
+// directories of root, the way the engine creates a new cache volume.
+// It adds the key persistSeed to the claude.json that the activation
+// wrote and keeps a copy of that file in /tmp/activation.json. The
+// claude.json of the activation might hold only the MCP servers, and
+// the MCP server sync writes them into a missing file too. The key
+// therefore shows whether container-init seeded the volume from the
+// file of the activation. The script writes that file in place, so the
+// file keeps the owner and the mode that the build gave it.
+const freshPrepScript = `set -e
+state="$HOME/.claude.json"
+fail() { echo "$1"; exit 1; }
+
+if [ -L "$state" ] || [ ! -f "$state" ]; then
+  fail "~/.claude.json is not the regular file that the activation wrote"
+fi
+mkdir -p /claude-state /commandhistory
+[ -z "$(find /claude-state /commandhistory -mindepth 1 -print)" ] ||
+  fail "the volumes are not empty"
+chown 0:0 /claude-state /commandhistory
+jq '.persistSeed = true' "$state" >/tmp/activation.json
+cat /tmp/activation.json >"$state"
+`
+
+// freshStateScript checks, as the session user of the sandbox, what the
+// first start of container-init leaves in the volumes of
+// freshPrepScript. The user must own both directories and every file in
+// them. /claude-state/claude.json must hold each key of the claude.json
+// that the activation wrote, and the MCP servers of the container.
+// /commandhistory/fish_history must be a regular file.
+const freshStateScript = `set -e
+state="$HOME/.claude.json"
+histfile="$HOME/.local/share/fish/fish_history"
+servers="$HOME/.config/mcp/mcp.json"
+fail() { echo "$1"; exit 1; }
+
+[ "$(id -u)" = 1000 ] || fail "the session runs as uid $(id -u)"
+for dir in /claude-state /commandhistory; do
+  [ "$(stat -c %u:%g "$dir")" = 1000:1000 ] ||
+    fail "the session user does not own $dir"
+done
+
+[ "$(readlink -f "$state")" = /claude-state/claude.json ] ||
+  fail "~/.claude.json does not resolve to the volume"
+if [ -L /claude-state/claude.json ] || [ ! -f /claude-state/claude.json ]; then
+  fail "/claude-state/claude.json is not a regular file"
+fi
+jq -e --slurpfile activation /tmp/activation.json \
+  'del(.mcpServers) == ($activation[0] | del(.mcpServers))' "$state" >/dev/null ||
+  fail "container-init did not seed claude.json from the claude.json that the activation wrote"
+jq -e --slurpfile declared "$servers" '.mcpServers == $declared[0].mcpServers' "$state" >/dev/null ||
+  fail "~/.claude.json does not hold the MCP servers of the container"
+
+[ "$(readlink -f "$histfile")" = /commandhistory/fish_history ] ||
+  fail "fish_history does not resolve to the volume"
+if [ -L /commandhistory/fish_history ] || [ ! -f /commandhistory/fish_history ]; then
+  fail "/commandhistory/fish_history is not a regular file"
+fi
+
+[ -z "$(find /claude-state /commandhistory \( ! -user 1000 -o ! -group 1000 \) -print)" ] ||
+  fail "root owns a file in the volumes"
+echo OK
+`
+
+// TestSandboxFreshState verifies the first start of the sandbox on new
+// cache volumes (see freshPrepScript). container-init must seed the
+// claude.json of the sandbox volume from the claude.json that the
+// activation wrote. It must write the volumes as the session user (see
+// freshStateScript). The build of [Dev.SandboxBase] writes nothing into
+// the volume. The settings of the activation therefore reach the
+// sandbox only through the seed of container-init.
+//
+// As in [Tests.TestSandboxPersistedState], setpriv stands in for
+// terrarium init, and the test does not mount the cache volumes of the
+// sandbox.
+//
+// +check
+func (m *Tests) TestSandboxFreshState(ctx context.Context) error {
+	_, err := dag.Dev().SandboxBase().
+		WithoutMount("/claude-state").
+		WithoutMount("/commandhistory").
+		WithExec([]string{"sh", "-c", freshPrepScript}).
+		WithExec([]string{
+			"container-init",
+			"setpriv", "--reuid=1000", "--regid=1000", "--clear-groups",
+			"sh", "-c", freshStateScript,
+		}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("first start of the sandbox on new volumes: %w", err)
 	}
 
 	return nil

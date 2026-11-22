@@ -379,10 +379,13 @@ func (m *Dev) cachedBuild(ctx context.Context, platform dagger.Platform) (*dagge
 // terminal.
 //
 // The container keeps ~/.claude.json in the claude-state cache volume
-// (see [withClaudeState]) and carries container-init. The terminal
-// sessions of [Dev.Shell] and [Dev.Sandbox] start through
+// at /claude-state (see [withClaudeState]) and the fish history in the
+// shell-history cache volume at /commandhistory. It carries
+// container-init. The terminal sessions of [Dev.Shell] start through
 // container-init, so each start syncs the MCP servers of the persisted
-// claude.json with the build.
+// claude.json with the build. [Dev.SandboxBase] does not build on this
+// container. The sandbox keeps its claude.json and its fish history in
+// cache volumes of its own.
 func (m *Dev) DevBase(
 	ctx context.Context,
 	// Kagi API key for the Kagi MCP server. The container gets the key
@@ -396,13 +399,18 @@ func (m *Dev) DevBase(
 		return nil, err
 	}
 
-	// The published sandbox image builds from devBaseForPlatform and
-	// runs without the claude-state volume, so only this container gets
-	// the volume and container-init.
-	ctr = ctr.WithNewFile(containerInitPath, containerInitScript,
-		dagger.ContainerWithNewFileOpts{Permissions: 0o755})
+	return withClaudeState(withContainerInit(ctr)).
+		WithMountedCache("/commandhistory", dag.CacheVolume(devCacheNamespace+":shell-history")), nil
+}
 
-	return withClaudeState(ctr), nil
+// withContainerInit installs container-init on ctr (see
+// scripts/container-init.sh). The terminal sessions of [Dev.Shell] and
+// [Dev.Sandbox] start through it (see [wrapWithContainerInit]). The
+// published sandbox image builds from [Dev.devBaseForPlatform] and runs
+// without the persistence volumes, so it does not get container-init.
+func withContainerInit(ctr *dagger.Container) *dagger.Container {
+	return ctr.WithNewFile(containerInitPath, containerInitScript,
+		dagger.ContainerWithNewFileOpts{Permissions: 0o755})
 }
 
 // withClaudeState mounts the claude-state cache volume on ctr and
@@ -437,9 +445,10 @@ ln -sf /claude-state/claude.json ` + homeDir + `/.claude.json
 // architecture variant runs through the same activation steps with
 // its own /nix cache.
 //
-// The container does not mount the claude-state cache volume, and
-// ~/.claude.json stays the regular file that the activation wrote.
-// [Dev.DevBase] adds the volume (see [withClaudeState]).
+// The container mounts neither the claude-state nor the shell-history
+// cache volume, and ~/.claude.json stays the regular file that the
+// activation wrote. [Dev.DevBase] adds both volumes (see
+// [withClaudeState]), and [Dev.SandboxBase] adds volumes of its own.
 //
 // When kagiApiKey is set, the container gets the key as the secret
 // variable KAGI_API_KEY. The activation runs ahead of that step, so it
@@ -500,6 +509,24 @@ mkdir -p ` + homeDir + `/.local/share/atuin
 // the krew plugins of the build (see [withSandboxUser]). [Dev.Shell]
 // runs the krew plugins of its own container, so a sandboxed process
 // cannot change the plugins that a shell session of [Dev.Shell] runs.
+//
+// The sandbox keeps ~/.claude.json in the sandbox-claude-state cache
+// volume at /claude-state and the fish history in the
+// sandbox-shell-history cache volume at /commandhistory. The session
+// user can write both volumes. [Dev.Shell] runs as root and without the
+// egress filter, and it starts the MCP servers that its claude.json
+// names. [Dev.DevBase] mounts other claude-state and shell-history
+// volumes for the dev shell. The sandbox therefore cannot add an MCP
+// server to the claude.json of the dev shell or an entry to its fish
+// history.
+//
+// The container sets PERSIST_OWNER to the session user. [Dev.Sandbox]
+// runs container-init as root ahead of terrarium init. The variable
+// makes container-init give the volumes to the user and write the files
+// in them as the user (see scripts/container-init.sh). At each start,
+// container-init links ~/.claude.json to the claude.json of the volume.
+// It seeds that file from the claude.json that the activation wrote
+// when the volume holds none.
 func (m *Dev) SandboxBase(
 	ctx context.Context,
 	// Kagi API key for the MCP server configuration.
@@ -510,10 +537,12 @@ func (m *Dev) SandboxBase(
 	// +optional
 	sandboxConfig *dagger.File,
 ) (*dagger.Container, error) {
-	ctr, err := m.DevBase(ctx, kagiApiKey)
+	built, err := m.devBaseForPlatform(ctx, "", kagiApiKey)
 	if err != nil {
 		return nil, err
 	}
+
+	ctr := withContainerInit(built)
 
 	// Override the home-manager-deployed config if one was provided.
 	// Otherwise dereference the home-manager symlink chain so the file
@@ -530,8 +559,13 @@ func (m *Dev) SandboxBase(
 		})
 	}
 
+	// The volumes mount after the setup, so no exec of the build writes
+	// into them as root.
 	return withSandboxUser(ctr).
-		WithEnvVariable("IS_SANDBOX_NETWORK", "1"), nil
+		WithMountedCache("/claude-state", dag.CacheVolume(devCacheNamespace+":sandbox-claude-state")).
+		WithMountedCache("/commandhistory", dag.CacheVolume(devCacheNamespace+":sandbox-shell-history")).
+		WithEnvVariable("IS_SANDBOX_NETWORK", "1").
+		WithEnvVariable("PERSIST_OWNER", uid+":"+gid), nil
 }
 
 // withSandboxUser creates the non-root sandbox user on ctr and makes
@@ -577,7 +611,9 @@ find %s -path '%s/*' -prune -o -exec chown -h %s:%s {} +
 // Sandbox opens an interactive development container with DNS-based
 // domain filtering and an Envoy transparent SNI-filtering proxy. Only
 // allowed domains resolve and are reachable. The shell runs as a
-// non-root user after nftables, dnsmasq, and Envoy setup.
+// non-root user after nftables, dnsmasq, and Envoy setup. The session
+// keeps ~/.claude.json and the fish history in the cache volumes that
+// [Dev.SandboxBase] mounts.
 //
 // +cache="never"
 func (m *Dev) Sandbox(
@@ -617,9 +653,6 @@ func (m *Dev) Sandbox(
 		return nil, err
 	}
 
-	ctr = ctr.
-		WithMountedCache("/commandhistory", dag.CacheVolume(devCacheNamespace+":shell-history"))
-
 	if repoSource != nil {
 		ctr = ctr.
 			WithDirectory("/src", repoSource).
@@ -633,8 +666,11 @@ func (m *Dev) Sandbox(
 		cmd = []string{"fish"}
 	}
 
-	// container-init runs ahead of terrarium init, because root owns the
-	// claude-state volume and terrarium init drops to the non-root user.
+	// container-init runs ahead of terrarium init, because it needs root
+	// and terrarium init drops to the non-root user. It gives the
+	// sandbox-claude-state and sandbox-shell-history volumes to that
+	// user. Then it syncs the persisted claude.json as that user (see
+	// [Dev.SandboxBase]).
 	initCmd := append([]string{"terrarium", "init", "--"}, wrapWithAtuinDaemon(cmd)...)
 	ctr = ctr.Terminal(dagger.ContainerTerminalOpts{
 		Cmd:                      wrapWithContainerInit(initCmd),
@@ -970,7 +1006,8 @@ func (m *Dev) PublishManifest(
 }
 
 // Shell opens an interactive development container with an optional source
-// directory mounted at /src.
+// directory mounted at /src. The session keeps ~/.claude.json and the
+// fish history in the cache volumes that [Dev.DevBase] mounts.
 //
 // +cache="never"
 func (m *Dev) Shell(
@@ -1005,9 +1042,6 @@ func (m *Dev) Shell(
 	if err != nil {
 		return nil, err
 	}
-
-	devCtr = devCtr.
-		WithMountedCache("/commandhistory", dag.CacheVolume(devCacheNamespace+":shell-history"))
 
 	if repoSource != nil {
 		devCtr = devCtr.
@@ -1068,7 +1102,7 @@ func wrapWithAtuinDaemon(cmd []string) []string {
 }
 
 // wrapWithContainerInit wraps a terminal command so that container-init
-// runs ahead of it (see scripts/container-init.sh). [Dev.DevBase]
+// runs ahead of it (see scripts/container-init.sh). [withContainerInit]
 // installs container-init.
 //
 // The claude.json in the claude-state cache volume outlives the build
@@ -1081,6 +1115,10 @@ func wrapWithAtuinDaemon(cmd []string) []string {
 // The sync is part of the terminal command because the engine caches
 // each exec of a build that did not change. The terminal command runs
 // at every start.
+//
+// In the sandbox, container-init also gives the persistence volumes to
+// the non-root user of the session. It writes the files there as that
+// user (see [Dev.SandboxBase]).
 func wrapWithContainerInit(cmd []string) []string {
 	return append([]string{containerInitPath}, cmd...)
 }

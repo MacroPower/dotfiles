@@ -71,11 +71,16 @@ let
 
       # A missing file starts as an empty document. So does a file that
       # does not hold a JSON object, after the tool keeps a copy of it.
+      #
+      # mktemp creates the copy under a name that no other process can
+      # predict. A user who can write the directory of the file can
+      # create a FIFO at each name that the time of a run predicts. cp
+      # then blocks on opening that FIFO, so the run never ends.
       doc="{}"
       if [ -e "$target" ]; then
         doc=$(<"$target")
         if ! printf '%s\n' "$doc" | valid 'type == "object"'; then
-          backup="$target.bak.$(date +%s)"
+          backup=$(mktemp "$target.bak.$(date +%s).XXXXXX")
           cp -p "$target" "$backup"
           echo "claude-json-sync: $target does not hold a JSON object, so $backup keeps a copy" >&2
           doc="{}"
@@ -311,6 +316,25 @@ let
             'a malformed file does not become a file of the declared servers'
           [ "$(cat claude.json.bak.*)" = '{"mcpServers":' ] ||
             fail 'the sync keeps no copy of a malformed file'
+
+          # A FIFO at each name that the time of the run predicts for the
+          # copy of a malformed file. timeout ends a run that blocks on
+          # one of them.
+          start backup-fifo
+          echo '{"mcpServers":' >claude.json
+          now=$(date +%s)
+          for t in $(seq $((now - 5)) $((now + 600))); do
+            mkfifo "claude.json.bak.$t"
+          done
+          status=0
+          timeout 60 claude-json-sync --servers ${serversFile} --record state/record.json claude.json ||
+            status=$?
+          [ "$status" = 0 ] ||
+            fail "a run with FIFOs at the predictable names of the copy exits with status $status"
+          expect claude.json '. == {mcpServers: $declared[0].mcpServers}' \
+            'a run with FIFOs at the predictable names of the copy does not write the declared servers'
+          [ "$(find . -maxdepth 1 -name 'claude.json.bak.*' -type f -exec cat {} +)" = '{"mcpServers":' ] ||
+            fail 'a run with FIFOs at the predictable names of the copy does not keep exactly one copy of the malformed file'
 
           start merge
           record '[]'
