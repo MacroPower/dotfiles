@@ -19,7 +19,8 @@ tasks:
     # run records the store path of the image that it copied. The task is
     # up to date when both image files exist and the flake still evaluates
     # to the recorded store path. test_image.py runs this task and the
-    # pull task against fakes of nix, zstd, and oras.
+    # pull task against fakes of nix, zstd, and oras. CheckLimaTaskfile of
+    # the nix toolchain runs test_image.py in the commit hook.
     status:
       - test -f {{.IMAGE_DIR}}/terrarium.qcow2
       - test -f {{.IMAGE_DIR}}/terrarium.qcow2.zst

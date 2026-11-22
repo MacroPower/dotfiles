@@ -4,6 +4,7 @@
 // the flake through evaluation, static analysis, and formatting checks.
 // It also verifies that the pkg:update task runs each update script in
 // pkgs/, and that pkgs/ holds each package file that a script updates.
+// It runs the tests of the image and pull tasks of the lima Taskfile.
 // The checks run in Linux containers and do not build a darwin
 // derivation.
 
@@ -868,6 +869,7 @@ func (m *Nix) All(ctx context.Context) error {
 	eg.Go(func() error { return m.Editorconfig(ctx) })
 	eg.Go(func() error { return m.CheckLint(ctx) })
 	eg.Go(func() error { return m.CheckPkgUpdate(ctx) })
+	eg.Go(func() error { return m.CheckLimaTaskfile(ctx) })
 
 	err := eg.Wait()
 	if err != nil {

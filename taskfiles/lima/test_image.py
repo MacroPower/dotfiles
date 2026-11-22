@@ -7,7 +7,8 @@ reaches the network. HOME names a temporary directory, so no test reads
 or writes ~/.lima.
 
 Run with: python3 test_image.py. The tests skip when task is not on
-PATH.
+PATH. CheckLimaTaskfile of the nix toolchain runs them with task on
+PATH in each run of `dagger check`, which the commit hook runs.
 """
 
 import os

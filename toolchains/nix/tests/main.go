@@ -29,6 +29,7 @@ func (m *Tests) All(ctx context.Context) error {
 
 	eg.Go(m.TestAggregates)
 	eg.Go(func() error { return m.TestBuild(ctx) })
+	eg.Go(func() error { return m.TestCheckLimaTaskfile(ctx) })
 	eg.Go(func() error { return m.TestCheckLintRootModule(ctx) })
 	eg.Go(func() error { return m.TestCheckLintTestModule(ctx) })
 	eg.Go(func() error { return m.TestCheckPkgUpdate(ctx) })
