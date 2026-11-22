@@ -408,6 +408,46 @@ on a set of files.
   indented code in a comment as prose. The test expects the findings
   that it lists from both copies of each file, and the same shadow from
   both.
+- `comment-code` lints the comments of `fixtures/comment-code/code.sh`
+  as a shell, Nix, awk, Python, Rust, TypeScript, Lua, and Go file. The
+  comments hold code spans in one, two, and three backticks that wrap
+  onto the next line, and fenced code blocks. The blocks include two
+  fences in tildes, one with a backtick in its info string. They also
+  include a fence in four backticks that holds a line of three, and a
+  fence after `2.`, `- `, or `> `. The test expects the same
+  ProseMayPossibility findings from every file, each on the text after
+  a span or a block.
+
+  The comments also hold a backtick that no span closes, a backtick
+  after a backslash, and a span in two backticks that holds one
+  backtick. Some backticks that no span closes sit in a heading, or
+  above a heading, a thematic break, a line of `=` marks, a blockquote,
+  or a line that holds only `>`. The line after each of them holds a
+  span. A span in a blockquote also wraps onto a line without `>`,
+  which CommonMark reads as more text of the quote. Some lines open
+  with three backticks and hold another backtick, which CommonMark
+  reads as paragraph text. In some of them, a `-` or `*` list marker or
+  a `#` heading marker comes before the backticks.
+
+  The last comment line ends in `--`. In the files that Harper lints
+  through the copy that merge_comments in `pkgs/prose-lint.nix` prints,
+  the test expects no ProseDash finding on that line, as in their
+  source. The test also lints a copy of the shell file with CRLF line
+  endings and expects the same findings from it.
+
+  The test also lints `fixtures/comment-code/template.ts`, whose
+  template literals hold `//` lines that end the template or open a
+  fence. Its code also holds backticks in strings, in regular
+  expressions, and in comments. Some of the strings use single quotes
+  or hold an escaped quote. Some of the regular expressions hold a
+  character class or an escaped `/`, and one opens its line. The last
+  block comment ends on a `//` line, and a template follows it.
+
+  The test expects a finding on each comment after these cases, and on
+  the text after each wrapped span. It lints copies of the fixture as a
+  JavaScript, JSX, and TSX file too, and it expects the same findings
+  from each.
+
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).
   It also lints lines after a fence marker four columns in after quoted
