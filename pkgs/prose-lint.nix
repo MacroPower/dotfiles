@@ -406,6 +406,9 @@ in
     # The per-line parser strips trailing `-`, `#`, `/`, `*`, and `!`
     # along with the marker, which would hide a `--` that ends a line,
     # so a comment line with text that ends in one of them gains ` x`.
+    # The copy that merge_comments prints keeps the ` x` only after a `-`
+    # when the next comment line holds text other than those marks and
+    # the line is not a banner such as `# --- Section ---`.
     #
     # The file's license header prints as `x` too, because its text
     # must stay verbatim (see license_lines).
@@ -1001,21 +1004,58 @@ in
     # line of code. Harper then does not lint those comments. Without the
     # end of the string, its parser can also miss comments further down.
     #
-    # The copy drops the ` x` that comment_lines adds after text that
-    # ends in `-`, `#`, `/`, `*`, or `!`. Harper then strips those marks
-    # at the end of the line, as it does in the source. close_spans can
-    # put a run of backticks after the ` x`, and that run stays.
+    # comment_lines adds ` x` after text that ends in `-`. The copy keeps
+    # that ` x` when the next line of the shadow holds comment text other
+    # than the marks `-`, `#`, `/`, `*`, and `!`. Harper then reads the
+    # `--` that ends the line, and ProseDash reports it, as in a markdown
+    # paragraph. Before code, an empty comment line, a line of those
+    # marks, or the end of the file, the copy drops the ` x`. The `--`
+    # then does not draw a finding, as at the end of a markdown paragraph.
+    #
+    # A list item, a heading, or a blockquote line also ends a markdown
+    # paragraph. Such a line holds text, so the copy keeps the ` x` above
+    # it, and a `--` there still draws a finding.
+    #
+    # The copy also drops the ` x` after a banner, whatever the next line
+    # holds. The text of a banner opens with three `-` marks, or with two
+    # and whitespace, such as `# --- Section ---` or `# ---Section---`.
+    # Its closing run of `-` marks is decoration and not a dash. Harper
+    # strips the opening run with the comment marker, but a markdown file
+    # reports that run. Without the ` x`, Harper strips the closing run
+    # too, so the banner does not draw a finding. A line that opens with
+    # a flag such as `--force` is not a banner.
+    #
+    # The copy drops the ` x` after text that ends in `#`, `/`, `*`, or
+    # `!`, whatever the next line holds. Harper strips the marks that end
+    # a line without the ` x`, as it does in the source. A line that ends
+    # in one of those marks can end a block comment (`// end */`) or a
+    # Rust raw string (`// end"#`), where the ` x` lands in code. In the
+    # languages that Harper reads through this copy, the only string or
+    # block comment that closes with a `-` is a Ruby percent literal such
+    # as `%q-...-`. The ` x` lands in code there only when comment text
+    # follows the line that closes the literal, and Ruby code rarely
+    # writes such a literal. close_spans can put a run of backticks after
+    # the ` x`, and that run stays.
     merge_comments() {
       SHADOW="$1" awk '
+        BEGIN {
+          while ((getline s < ENVIRON["SHADOW"]) > 0) {
+            shadow[++n] = s
+          }
+        }
         {
-          if ((getline s < ENVIRON["SHADOW"]) <= 0 || s == "x") {
+          if (!(NR in shadow) || shadow[NR] == "x") {
             print
             next
           }
+          s = shadow[NR]
           cr = sub(/\r$/, "")
           text = $0
           sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)
-          if (text ~ /[^-#\/*! \t]/ && text ~ /[-#\/*!][ \t]*$/ && match(s, / x`*$/)) {
+          after = (NR + 1) in shadow ? shadow[NR + 1] : "x"
+          goes_on = after != "x" && sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", after) && after ~ /[^-#\/*! \t]/
+          banner = text ~ /^[ \t]*(---|--[ \t])/
+          if (text ~ /[^-#\/*! \t]/ && (text ~ /[#\/*!][ \t]*$/ || ((banner || !goes_on) && text ~ /-[ \t]*$/)) && match(s, / x`*$/)) {
             s = substr(s, 1, RSTART - 1) substr(s, RSTART + 2)
           }
           print s (cr ? "\r" : "")
@@ -1523,11 +1563,11 @@ in
 
         # Lints the comments in configs/harper/fixtures/comment-code/code.sh
         # as a shell, Nix, awk, Python, Rust, TypeScript, Lua, and Go file.
-        # It expects the same ProseMayPossibility findings from each.
-        # Harper lints the shell, Nix, Rust, TypeScript, and Lua files
-        # through the copy that merge_comments prints, and the other files
-        # through their shadow. The command in configs/harper/CLAUDE.md
-        # builds this test too.
+        # It expects the same ProseMayPossibility and ProseDash findings
+        # from each. Harper lints the shell, Nix, Rust, TypeScript, and Lua
+        # files through the copy that merge_comments prints, and the other
+        # files through their shadow. The command in
+        # configs/harper/CLAUDE.md builds this test too.
         #
         # Each `may` sits inside a code span or a fenced code block, or
         # after one. The test expects a finding only on each `may` after
@@ -1566,15 +1606,14 @@ in
         # - A backtick after a backslash, above a span. CommonMark reads it
         #   as text.
         #
-        # The last line ends in `--`, and Harper drops the marks at the end
-        # of a comment line. merge_comments drops the ` x` that the shadow
-        # adds after those marks. So in the files that Harper lints through
-        # that copy, the line does not draw a ProseDash finding, as in
-        # their source. In the other files, Harper reads the ` x` of the shadow
-        # (see comment_lines), so the test reads only ProseMayPossibility
-        # findings there. The test also lints a copy of the shell file with
-        # CRLF line endings. merge_comments drops the `\r` before it tests
-        # the end of the line, so that copy draws the same findings.
+        # The second-to-last line ends in `--`, and its sentence goes on in
+        # the last line. Harper strips the marks at the end of a comment
+        # line, so the shadow adds ` x` after them (see comment_lines). The
+        # copy that merge_comments prints keeps that ` x` after a `-` when
+        # the next comment line holds text. So the test expects a ProseDash
+        # finding on the `--` from every file, as a markdown file with the
+        # same lines draws. The test also lints a copy of the shell file
+        # with CRLF line endings and expects the same findings from it.
         #
         # The `//` and `--` markers are one column wider than `#`. The
         # findings in the Rust, TypeScript, Lua, and Go files therefore sit
@@ -1592,19 +1631,50 @@ in
         # reads. More backticks sit in a string in single quotes, after an
         # escaped quote in a string, and after an escaped `/` in a regular
         # expression. Two more sit in a regular expression, one in a
-        # character class that holds a `/` and one after a class. The last
-        # one sits in a regular expression that opens its line. A span
-        # wraps in the comment after each of them, and in a comment in the
-        # code of a template. The last block comment of the file ends on a
-        # line that opens with `//`, and a template follows it. The scan
-        # finds the end of the block on that line, so it sees the template
-        # after the block. The test expects a finding on each comment after
-        # a template, and on the text after each span. Harper reads each
-        # `//` line that the shadow leaves out as in its source. So only a
-        # wrapped span or a fence shows a line that the shadow leaves out
-        # by mistake. The test lints copies of template.ts as a JavaScript,
-        # JSX, and TSX file too, and it expects the same findings from
-        # each.
+        # character class that holds a `/` and one after a class. Another
+        # sits in a regular expression that opens its line. A span wraps in
+        # the comment after each of them, and in a comment in the code of a
+        # template.
+        #
+        # The last three block comments of the file each end on a line that
+        # opens with `//` and ends in `*/`. The scan finds the end of each
+        # block on that line, so it sees the code after the block. A
+        # regular expression that opens its line and holds a backtick
+        # follows the first block, and a template follows the second. A
+        # comment line and then such a regular expression follow the third.
+        #
+        # The shadow adds ` x` after each `*/`. merge_comments drops it,
+        # even when comment text follows the line, as after the third
+        # block. So Harper reads the code after each block as in the
+        # source. With the ` x`, the `/` of the regular expression reads as
+        # a division, and its backtick opens a template that hides the
+        # comment after it.
+        #
+        # Four banners, such as `// --- The section ---`, come after the
+        # blocks. Code follows the first, and a comment line follows each
+        # of the others. The text of the third opens with `---` and no
+        # space, and the text of the fourth opens with `--` and a space.
+        # merge_comments drops the ` x` after a banner, whatever the next
+        # line holds, so the test expects no ProseDash finding on the
+        # banners.
+        #
+        # The last paragraphs of comment text in the file each end in
+        # `--`. A line of `-` marks follows the first, code follows the
+        # second, and an empty comment line follows the third. The last
+        # one ends the file. Markdown files do not draw a finding on a
+        # `--` that ends a paragraph. merge_comments drops the ` x` after
+        # each of these lines, so the test expects no ProseDash finding
+        # there either.
+        #
+        # The test expects a finding on each comment after a template, and
+        # on the text after each span. Harper reads each `//` line that the
+        # shadow leaves out as in its source. So only a wrapped span or a
+        # fence shows a line that the shadow leaves out by mistake. The test
+        # lints copies of template.ts as a JavaScript, JSX, and TSX file
+        # too, and it expects the same findings from each. It also lints a
+        # copy with CRLF line endings and expects the same findings from
+        # it. merge_comments drops the `\r` before it tests the end of a
+        # line, so it still drops the ` x` after each `*/` in that copy.
         tests.comment-code = runCommand "prose-lint-comment-code" { } ''
           cp ${../configs/harper/fixtures/comment-code}/code.sh .
           cp ${../configs/harper/fixtures/comment-code}/template.ts .
@@ -1619,6 +1689,7 @@ in
           sed 's,^#,--,; s/^x=1$/local x = 1/' code.sh >code.lua
           sed 's,^#,//,; s/^x=1$/var x = 1/' code.sh >code.go
           sed 's/$/\r/' code.sh >crlf.sh
+          sed 's/$/\r/' template.ts >crlf.ts
 
           cat >hash <<'EOF'
           2:38
@@ -1654,19 +1725,19 @@ in
           125:6
           128:6
           131:6
+          133:16
           EOF
           awk -F: '{ print $1 ":" $2 + 1 }' hash >wide
           printf '%s\n' 5:28 8:28 11:28 14:28 18:7 22:7 26:7 30:7 33:30 38:28 \
-            41:28 44:28 47:28 50:28 53:28 56:28 62:7 >template
+            41:28 44:28 47:28 50:28 53:28 56:28 61:28 67:7 73:28 >template
 
+          rules='ProseDash|ProseMayPossibility'
           for f in code.sh crlf.sh code.nix code.awk code.py code.rs code.ts code.lua code.go \
-            template.ts template.js template.jsx template.tsx; do
+            template.ts template.js template.jsx template.tsx crlf.ts; do
             case "$f" in
-              *.sh | *.nix) want=hash rules='ProseDash|ProseMayPossibility' ;;
-              *.awk | *.py) want=hash rules=ProseMayPossibility ;;
-              *.go) want=wide rules=ProseMayPossibility ;;
-              template.*) want=template rules='ProseDash|ProseMayPossibility' ;;
-              *) want=wide rules='ProseDash|ProseMayPossibility' ;;
+              *.sh | *.nix | *.awk | *.py) want=hash ;;
+              template.* | crlf.ts) want=template ;;
+              *) want=wide ;;
             esac
             rc=0
             found=$(${lib.getExe finalAttrs.finalPackage} "$f") || rc=$?
@@ -1675,7 +1746,8 @@ in
               exit 1
             fi
             printf '%s\n' "$found" |
-              sed -nE "s,^[^:]+:([0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::($rules): .*,\1,p" >got
+              sed -nE "s,^[^:]+:([0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::($rules): .*,\1,p" |
+              sort -t: -k1,1n -k2,2n >got
             if ! diff "$want" got; then
               echo "$f draws other $rules findings than $want lists" >&2
               exit 1

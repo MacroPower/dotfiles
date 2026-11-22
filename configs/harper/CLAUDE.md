@@ -431,24 +431,51 @@ on a set of files.
   reads as paragraph text. In some of them, a `-` or `*` list marker or
   a `#` heading marker comes before the backticks.
 
-  The last comment line ends in `--`. In the files that Harper lints
-  through the copy that merge_comments in `pkgs/prose-lint.nix` prints,
-  the test expects no ProseDash finding on that line, as in their
-  source. The test also lints a copy of the shell file with CRLF line
-  endings and expects the same findings from it.
+  The second-to-last comment line ends in `--`, and its sentence goes on
+  in the last line. Harper strips the marks at the end of a comment
+  line, so the comment shadow adds ` x` after them. The test expects a
+  ProseDash finding on the `--` from every file, as a markdown file
+  with the same lines draws. The test also lints a copy of the shell
+  file with CRLF line endings and expects the same findings from it.
 
   The test also lints `fixtures/comment-code/template.ts`, whose
   template literals hold `//` lines that end the template or open a
   fence. Its code also holds backticks in strings, in regular
   expressions, and in comments. Some of the strings use single quotes
   or hold an escaped quote. Some of the regular expressions hold a
-  character class or an escaped `/`, and one opens its line. The last
-  block comment ends on a `//` line, and a template follows it.
+  character class or an escaped `/`, and three open their line.
+
+  The last three block comments of the fixture each end on a `//` line
+  that ends in `*/`. A regular expression with a backtick follows the
+  first block, and a template follows the second. A comment line and
+  then such a regular expression follow the third. The comment shadow
+  adds ` x` after each `*/`. merge_comments in `pkgs/prose-lint.nix`
+  drops it, even when comment text follows the line, as after the third
+  block. With the ` x`, the `/` of the regular expression reads as a
+  division, and its backtick opens a template that hides the comment
+  after it.
+
+  Four banners, such as `// --- The section ---`, come after the
+  blocks. Code follows the first, and a comment line follows each of
+  the others. The text of the third opens with `---` and no space, and
+  the text of the fourth opens with `--` and a space. merge_comments
+  drops the ` x` after a banner, whatever the next line holds, so the
+  test expects no ProseDash finding on the banners.
+
+  The last paragraphs of comment text in the fixture each end in `--`.
+  A line of `-` marks follows the first, code follows the second, and
+  an empty comment line follows the third. The last one ends the file.
+  Markdown files do not draw a finding on a `--` that ends a paragraph.
+  merge_comments drops the ` x` after each of these lines, so the test
+  expects no ProseDash finding there either.
 
   The test expects a finding on each comment after these cases, and on
   the text after each wrapped span. It lints copies of the fixture as a
   JavaScript, JSX, and TSX file too, and it expects the same findings
-  from each.
+  from each. It also lints a copy with CRLF line endings and expects
+  the same findings from it. merge_comments drops the `\r` before it
+  tests the end of a line, so it still drops the ` x` after each `*/`
+  in that copy.
 
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).

@@ -56,7 +56,36 @@ const slash = /\/`/;
 // stop` here, and then it may stop.
 /*
 // The block ends here. */
+/`/.test("x");
+// A span wraps over `it may
+// stop` here, and then it may stop.
+/*
+// The block ends here. */
 const blk = `
 // ~~~
 // end`;
 // It may help after the block.
+/*
+// The block ends here. */
+// The comment goes on.
+/`/.test("x");
+// A span wraps over `it may
+// stop` here, and then it may stop.
+// --- The section ---
+const banner = 1;
+// --- The other section ---
+// The section sets up the cache.
+// ---The third section---
+// The section sets up the cache.
+// -- The fourth section --
+// The section sets up the cache.
+const other = 1;
+// The rule follows --
+// -----
+const rule = 1;
+// The job runs --
+const job = 1;
+// The job runs --
+//
+// The cache refills.
+// The job runs --
