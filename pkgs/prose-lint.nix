@@ -385,13 +385,28 @@ in
     # the `{--}` ... `--}` idiom that toggles a block of code uses it. So
     # the scan puts four spaces in place of `{--}`, which GHC reads as
     # whitespace.
+    #
+    # GHC reads fewer comments as doc comments than the scan unmarks. It
+    # reads `-- |` and `-- ^` with one space between the dashes and the
+    # marker, and `{-|` and `{-^` with one space at most. For each marker
+    # in one of those forms, the scan writes the line and the column of
+    # the first dash or the `{` to the file that the first argument
+    # names. blank_examples reads inline code only in a doc comment.
     unmark_comments() {
-      awk '
+      DOCS="$1" awk '
+        BEGIN {
+          docs = ENVIRON["DOCS"]
+          printf "" >docs
+        }
         {
           rest = $0
           line = ""
           while (match(rest, /(^|[^-!#$%&*+.\/<=>?@\\^|~:])--+[ \t]+[|^]|[{]-(-*[ \t]*[|^]|-+)/)) {
             end = RSTART + RLENGTH - 1
+            opener = substr(rest, RSTART, 1) ~ /[-{]/ ? RSTART : RSTART + 1
+            if (substr(rest, opener, 4) ~ /^(-- |[{]- ?)[|^]/ && substr(rest, end, 2) != "|]") {
+              print NR, length(line) + opener >docs
+            }
             if (substr(rest, end, 2) == "|]") {
               line = line substr(rest, 1, end)
             } else if (substr(rest, RSTART, 4) == "{--}") {
@@ -414,7 +429,8 @@ in
 
     # Prints the Haskell file that the first argument names, with a space
     # in place of each character of a Haddock code example in a comment.
-    # Haddock reads these lines of a comment as code:
+    # It also writes each span of Haddock inline code in a doc comment as
+    # a code span. Haddock reads these lines of a comment as code:
     #
     # - A bird track, whose text opens with `>` (`-- > lookup 1 m`).
     # - An example, whose text opens with `>>>`, and each result line
@@ -423,12 +439,13 @@ in
     #   block comment.
     # - A property, whose text opens with `prop>`.
     # - Each line of a code block, between a line whose text holds only
-    #   `@` and the next line whose text opens with `@`. As in the
-    #   codeblock parser of Haddock, the line right under the opener does
-    #   not close the block. The closing line must come before the next
-    #   line that is not a comment and before the end of the block
-    #   comment. Haddock reads the lines under an `@` that no line closes
-    #   as text, so the cut keeps those lines.
+    #   `@` and the next line whose text opens with `@`. In a doc comment,
+    #   the `@` line must open a paragraph, because under a line of text
+    #   it opens inline code. As in the codeblock parser of Haddock, the
+    #   line right under the opener does not close the block. The closing
+    #   line must come before the next line that is not a comment and
+    #   before the end of the block comment. Haddock reads the lines under
+    #   an `@` that no line closes as text, so the cut keeps those lines.
     #
     # Harper reads each comment line as markdown on its own. It reads a
     # bird track or an example as a blockquote and lints the code in it.
@@ -440,12 +457,92 @@ in
     # opening line holds only `@`, and the text after the closing `@`, as
     # in `@since 1.0`, is prose.
     #
+    # Haddock also reads inline code between two `@` marks of a
+    # paragraph, as in `Returns @lookup k m@ for the key`. Haddock reads
+    # only doc comments, and a plain comment uses `@` for a type
+    # application, as in `read @Int`. So the copy reads inline code only
+    # in a doc comment. As in GHC, these comments open a doc comment:
+    #
+    # - A comment that opens with `-- |`, `-- ^`, `{-|`, `{-^`, `{- |`, or
+    #   `{- ^`. unmark_comments clears those markers, so it writes the
+    #   line and the column of each one to the file that the fourth
+    #   argument names.
+    # - A comment that opens with `-- $`, `{-$`, or `{- $`, which opens a
+    #   named chunk. GHC takes the name of the chunk, such as `usage` in
+    #   `-- $usage`, out of its text. So the line of the name holds no
+    #   text, and a line of only `@` under it opens a code block.
+    # - A comment that opens with `-- *`, `{-*`, or `{- *`, which opens a
+    #   section heading. GHC ends a `-- *` heading at the end of its line,
+    #   and under a doc comment, it reads a `-- *` line as a line of that
+    #   comment.
+    #
+    # A doc comment that `--` opens goes on over the `--` lines under it.
+    # A line that is not a comment ends it, and so does a `--` line that
+    # opens with three dashes or more. A doc comment that `{-` opens ends
+    # at its `-}`.
+    #
+    # The code can run on over the lines of its paragraph. A paragraph
+    # holds the lines of text of one doc comment, and these lines end it:
+    #
+    # - A comment line without text, a line that the cut takes, and a
+    #   line that opens a code block.
+    # - A line that is not a comment, and the end of a block comment.
+    # - A line that holds only `@since` and a version, which Haddock reads
+    #   as a field of the comment. A package name and a `-` can open the
+    #   version, as in `@since base-4.7.0.0`.
+    # - A line that opens a doc comment. Under a doc comment, GHC reads a
+    #   `-- |` or `-- ^` line as a line of that comment, but its writer
+    #   means a new comment.
+    # - A list item under another item. When the text of a paragraph opens
+    #   with `*`, `-`, a number and a `.`, or a number in parentheses,
+    #   Haddock reads a list. Each later line of the paragraph whose text
+    #   opens with one of those marks then opens an item.
+    # - A header, whose text opens a paragraph with `=`, as in
+    #   `-- = Usage`. Haddock reads the text of the header by itself, and
+    #   the line under it opens a paragraph. So a line of only `@` under a
+    #   header opens a code block.
+    # - A fence line, whose text opens with a run of three or more
+    #   backticks or tildes after any list markers. A run of backticks
+    #   with another backtick after it on the line opens a code span
+    #   instead, as in CommonMark. Haddock reads a fence line as text,
+    #   but close_spans reads the fence of markdown. A code span in place
+    #   of a part of a fence line hides the fence from close_spans. The
+    #   fence then does not close, and close_spans blanks the lines under
+    #   it as code.
+    #
+    # The text after the `@` that closes a code block opens a paragraph.
+    # So does the text of a comment after code on its line, and the text
+    # after the `{-` on the line that opens a block comment. A `--` line
+    # under a doc comment after code goes on with its paragraph.
+    #
+    # As in the inline parser of Haddock, each `@` opens inline code that
+    # runs to the next `@` of the paragraph. An `@` that no later `@` of
+    # the paragraph closes is text. Harper and lib/markdown.awk read the
+    # `@` marks as text and lint the code between them. So the copy puts
+    # a code span in place of the part of each span on each line, which
+    # Harper and lib/markdown.awk skip. Harper reads each comment line on
+    # its own, in a block comment too, so the copy closes the span on
+    # each line.
+    #
+    # The code span holds a run of two backticks at each end of the part
+    # and a space in place of each character between them. Haddock reads
+    # an identifier between a quote and a backtick, so a lone backtick
+    # can sit in the text before the part. A run of one backtick does
+    # not close a run of two, so that backtick does not hide the prose
+    # up to the span. A part of four characters or fewer holds no room
+    # for two runs of two and a space between them. A backtick right
+    # next to a part joins a run of a code span into a longer run. So in
+    # those parts, a `%` takes the place of the first and the last
+    # character, as close_spans writes a run that no run closes.
+    #
     # blank_examples reads the file twice, because a line of only `@`
     # opens a code block only when a later line closes it. The first pass
     # finds each `@` line that a later line closes. The second pass opens
-    # a code block only at those lines. It prints the copy and writes the
-    # files that the second and third arguments name. Each pass starts
-    # the scan over at the first line of the file.
+    # a code block only at those lines. It writes the files that the
+    # second and third arguments name. It holds each line of the copy
+    # until the end of the file, because inline code can close on a later
+    # line of its paragraph. It then pairs the `@` marks and prints the
+    # copy. Each pass starts the scan over at the first line of the file.
     #
     # The text of a `--` line opens after its dashes and the whitespace
     # after them, as in `-- > f` and `--- > f`. The whitespace keeps out
@@ -459,7 +556,8 @@ in
     # or after the dashes and whitespace of a `--` line. It ends before
     # the `-}` that closes the block, and the code after that `-}` stays.
     # The cut skips the line that opens a block comment, so it misses an
-    # example on that line, such as `{-| >>> f`.
+    # example on that line, such as `{-| >>> f`. It reads inline code on
+    # that line, after the `{-`.
     #
     # The cut keeps each `{-`, `-}`, and `|]` at its column. So each
     # block comment and quasiquote of the copy opens and closes where it
@@ -512,11 +610,16 @@ in
     # line that ends in `\r` keeps it.
     #
     # Under a line of text, a line of only `@` opens inline code that runs
-    # to the next `@` of the paragraph. The cut reads that line as the
-    # opener of a code block, which a later line must close. Inline code
-    # that closes inside a line, as in `lookup k m@ for the key`, does not
-    # close the block. Haddock reads a line of only `@` among the result
-    # lines of an example as one more result line, and so does the cut.
+    # to the next `@` of the paragraph. In a doc comment, the copy reads
+    # that line the same way. A code block at that line runs past the end
+    # of the paragraph to the next line that opens with `@`, such as an
+    # `@since` line under the paragraphs after it. The copy does not read
+    # inline code in a plain comment. So there, the cut reads that line as
+    # the opener of a code block, which a later line must close. Inline
+    # code that closes inside a line, as in `lookup k m@ for the key`,
+    # does not close the block. Haddock reads a line of only `@` among the
+    # result lines of an example as one more result line, and so does the
+    # cut.
     #
     # The prose hook runs under the locale of the user. gawk counts
     # characters under a UTF-8 locale and bytes under the C locale,
@@ -532,11 +635,18 @@ in
     # for drop_comment_markers. Each column counts characters under
     # either locale, as Harper does.
     blank_examples() {
-      DELIMITERS="$2" MARKERS="$3" awk '
+      DELIMITERS="$2" MARKERS="$3" DOCS="$4" awk '
         BEGIN {
           utf8 = length("é") == 1
           printf "" >ENVIRON["DELIMITERS"]
           markers = ENVIRON["MARKERS"]
+          docs_file = ENVIRON["DOCS"]
+          while ((getline entry <docs_file) > 0) {
+            split(entry, field, " ")
+            docs[field[1], field[2]] = 1
+          }
+          close(docs_file)
+          texts = listed = -1
         }
 
         # Follows the string of the line s from column i, and returns the
@@ -585,7 +695,10 @@ in
         # leaves no block comment open or `|]` that closes a quasiquote,
         # or 0 when the line holds neither. marker and marker_end take the
         # columns of the first and the last dash that open a line comment,
-        # or 0 when the line holds none.
+        # or 0 when the line holds none. opened takes the column of the
+        # first `{-` that opens a block comment outside any other. shut
+        # takes the column of the `-}` that closes that block. Each is 0
+        # when the line holds no such mark.
         #
         # Each test reads only the characters that it needs. The longest
         # character literal holds the escape `\o4177777` between its two
@@ -597,6 +710,8 @@ in
           ends = 0
           marker = 0
           marker_end = 0
+          opened = 0
+          shut = 0
           nopeners = 0
           i = str ? string(s, 1, n) + 1 : 1
           for (; i <= n; i++) {
@@ -611,6 +726,9 @@ in
                 i++
               }
             } else if (two == "{-") {
+              if (!depth && !opened) {
+                opened = i
+              }
               depth++
               i++
             } else if (depth) {
@@ -618,6 +736,9 @@ in
                 i++
                 if (!--depth && !ends) {
                   ends = i - 1
+                }
+                if (!depth && opened && !shut) {
+                  shut = i - 1
                 }
               }
             } else if (c == "\"") {
@@ -677,12 +798,212 @@ in
           return i - gsub("[\x80-\xBF]", "", head)
         }
 
+        # Reports whether the comment that opens at column i of the
+        # current line opens a doc comment. A `-- *` heading also sets
+        # heading, so the main rule ends the doc comment after the line.
+        function opens_doc(i) {
+          heading = substr($0, i, 4) == "-- *"
+          return (FNR, i) in docs || substr($0, i, 4) ~ /^(-- |[{]- ?)[$*]/
+        }
+
+        # Returns the column where the text starts in the comment that
+        # opens at column i of the current line. GHC takes the name of a
+        # named chunk out of its text, so the text of a named chunk starts
+        # after the name. The text of any other comment starts at column
+        # from.
+        function named(i, from) {
+          if (substr($0, i, 4) ~ /^(-- |[{]- ?)[$]/) {
+            match(substr($0, i), /^[^$]*[$][^ \t]*/)
+            return i + RLENGTH
+          }
+          return from
+        }
+
+        # Takes the text of the current line from column from to column
+        # to, without the whitespace at each end, into the paragraph that
+        # para numbers. texts takes the number of the last paragraph that
+        # holds text. In a doc comment, the main rule reads it to keep a
+        # line of only `@` right under a line of text from opening a code
+        # block. listed takes the number of the paragraph when its text
+        # opens with the mark of a list item. A later line of that
+        # paragraph that opens with such a mark opens a new paragraph. In
+        # a doc comment, the text of a header opens a paragraph with `=`,
+        # and the paragraph ends after its line. pair() reads only the
+        # text of a doc comment.
+        function inline(from, to,   head, header) {
+          while (from <= to && substr($0, from, 1) ~ /[ \t]/) {
+            from++
+          }
+          while (to >= from && substr($0, to, 1) ~ /[ \t]/) {
+            to--
+          }
+          if (from <= to) {
+            head = substr($0, from, to - from < 8 ? to - from + 1 : 8)
+            header = doc && texts != para && head ~ /^=+[ \t]*[^ \t]/
+            if (head ~ /^([*-]|[0-9]+[.]|[(][0-9]+[)])/) {
+              if (listed == para) {
+                para++
+              }
+              if (texts != para) {
+                listed = para
+              }
+            }
+            texts = para
+            if (second && doc) {
+              text_from[FNR] = from
+              text_to[FNR] = to
+              text_para[FNR] = para
+            }
+            para += header
+          }
+        }
+
+        # Records the inline code from column from of line r to column to
+        # of line q as one part on each line that it spans.
+        function mark(r, from, q, to,   l) {
+          for (l = r; l <= q; l++) {
+            parts[l]++
+            part_from[l, parts[l]] = l == r ? from : text_from[l]
+            part_to[l, parts[l]] = l == q ? to : text_to[l]
+          }
+        }
+
+        # Pairs the `@` marks of each paragraph, the way the inline
+        # parser of Haddock reads them, and marks each span of inline
+        # code. The scan skips each character after a `\`. Outside inline
+        # code, Haddock reads these marks first, and their text can hold
+        # an `@`, so the scan skips them:
+        #
+        # - An identifier in quotes or backticks that holds an operator,
+        #   such as `@?=` in quotes.
+        # - A link in angle brackets on one line (`<ekmett@gmail.com>`).
+        # - A URL.
+        #
+        # An `@` right before another `@` holds no code, so it opens no
+        # span.
+        function pair(   r, s, i, j, c, to, p, open, open_from, unlinked) {
+          p = ""
+          open = 0
+          for (r = 1; r <= rows_seen; r++) {
+            if (!(r in text_para)) {
+              continue
+            }
+            if (text_para[r] != p) {
+              p = text_para[r]
+              open = 0
+            }
+            s = rows[r]
+            to = text_to[r]
+            for (i = text_from[r]; i <= to; i++) {
+              c = substr(s, i, 1)
+              if (c == "\\") {
+                i++
+              } else if (open) {
+                if (c == "@") {
+                  mark(open, open_from, r, i)
+                  open = 0
+                }
+              } else if (c == "@") {
+                if (i == to || substr(s, i + 1, 1) != "@") {
+                  open = r
+                  open_from = i
+                }
+              } else if (c == "\047" || c == "`") {
+                if (match(substr(s, i, to - i < 128 ? to - i + 1 : 128), /^[\047`][(`]?([A-Za-z_][A-Za-z0-9_]*#*[.])*[-!#$%&*+.\/<=>?@\\^|~:]+[)`]?[\047`]/)) {
+                  i += RLENGTH - 1
+                }
+              } else if (c == "<" && unlinked != r) {
+                for (j = i + 1; j <= to && substr(s, j, 1) != ">"; j++) {
+                  if (substr(s, j, 1) == "\\") {
+                    j++
+                  }
+                }
+                if (j > to) {
+                  unlinked = r
+                } else {
+                  i = j
+                }
+              } else if (c ~ /[fh]/ && substr(s, i, 8) ~ /^(https?|ftp):\/\//) {
+                for (j = i; j <= to && substr(s, j, 1) !~ /[ \t]/; j++) {
+                }
+                i = j - 1
+              }
+            }
+          }
+        }
+
+        # Reports whether the two characters at column i of s form a `{-`,
+        # a `-}`, or a `|]`.
+        function delimiter(s, i) {
+          return substr(s, i, 2) ~ /^([{]-|-[}]|[|]])$/
+        }
+
+        # Returns s with the characters from column from to column to as
+        # a code span. A run of two backticks takes the place of the first
+        # two characters and of the last two. A space takes the place of
+        # each character between them, other than a `{-`, `-}`, or `|]`.
+        # at takes the column of the first byte of each character. So under
+        # the C locale, one backtick takes the place of all the bytes of a
+        # character.
+        #
+        # A run of one backtick does not close a run of two. So a lone
+        # backtick earlier in the paragraph does not pair with the code
+        # span and hide the prose between them. Some Haskell comments open
+        # a name with a backtick and close it with a quote, as TeX does. A
+        # code span in runs of one pairs with that backtick.
+        #
+        # A range of four characters or fewer holds no room for two runs of
+        # two and a space between them. A run of two does not fit either
+        # where a backtick of it would take the place of a character of a
+        # `{-`, `-}`, or `|]`. A backtick right before the range or right
+        # after it joins a run of a code span into a longer run. The two
+        # ends of that code span then hold runs of two lengths. close_spans
+        # can pair either run with a run on another line of the paragraph,
+        # and Harper then skips the prose between them.
+        #
+        # In each of those ranges, a `%` takes the place of the first and
+        # the last character. close_spans writes a run that no run closes
+        # the same way. The `%` keeps apart the words on each side of the
+        # range, and the backtick pairs as it does in the source. The test
+        # for a backtick reads s, where each part right of the range already
+        # holds its code span. When a `%` would take the place of a
+        # character of a `{-`, `-}`, or `|]`, the range becomes spaces.
+        function code(s, from, to,   n, i, at, ticked, clash, inner) {
+          n = 0
+          for (i = from; i <= to; i++) {
+            if (utf8 || substr(s, i, 1) !~ "[\x80-\xBF]") {
+              at[++n] = i
+            }
+          }
+          ticked = substr(s, from - 1, 1) == "`" || substr(s, to + 1, 1) == "`"
+          clash = n < 5 || delimiter(s, at[1]) || delimiter(s, at[2]) ||
+            delimiter(s, at[n - 2]) || delimiter(s, at[n - 1])
+          if (!ticked && !clash) {
+            inner = substr(s, at[3], at[n - 1] - at[3])
+            return substr(s, 1, from - 1) "``" cut(inner, 1, length(inner)) "``" substr(s, to + 1)
+          }
+          if (n > 1 && (delimiter(s, at[1]) || delimiter(s, at[n - 1]))) {
+            return cut(s, from, to)
+          }
+          if (n == 1) {
+            return substr(s, 1, from - 1) "%" substr(s, to + 1)
+          }
+          inner = substr(s, at[2], at[n] - at[2])
+          return substr(s, 1, from - 1) "%" cut(inner, 1, length(inner)) "%" substr(s, to + 1)
+        }
+
         # The second pass starts over at the first line of the file.
         FNR == 1 && NR > 1 {
-          depth = str = gap = quasi = results = block = 0
+          depth = str = gap = quasi = results = block = doc = heading = 0
+          para++
         }
 
         {
+          # doc is 1 inside a doc comment. A `-- *` heading ends with its
+          # line.
+          if (heading) {
+            doc = heading = 0
+          }
           second = NR > FNR
           cr = sub(/\r$/, "")
           inside = depth > 0
@@ -701,15 +1022,44 @@ in
               last = ends - 1
             }
           } else if (!quoted && match($0, /^[ \t]*--+([ \t]|$)/)) {
-            match($0, /^[ \t]*--+[ \t]*/)
+            # A `--` line goes on with the comment above it, other than a
+            # line that ends a doc comment or opens one. Under a doc
+            # comment, a `-- *` line goes on with it. The lead of a
+            # `-- $name` line takes the name. The cut reads each line of a
+            # code block or an example as code. So in a code block or an
+            # example, a line goes on with its comment. Its lead leaves out
+            # the name, so the cut takes the name too.
+            dash = index($0, "-")
+            if (substr($0, dash, 3) == "---") {
+              doc = 0
+              para++
+            } else if (!block && !results && !(doc && substr($0, dash, 4) == "-- *") && opens_doc(dash)) {
+              doc = 1
+              para++
+            }
+            match($0, substr($0, dash, 4) == "-- $" && !block && !results ? "^[ \t]*--+[ \t]*[$][^ \t]*[ \t]*" : "^[ \t]*--+[ \t]*")
             if (ends) {
               last = ends - 1
             }
           } else {
+            # A comment after code opens a paragraph. A block comment
+            # that closes on its line ends there.
             results = 0
             block = 0
+            para++
+            doc = 0
+            if (opened) {
+              doc = opens_doc(opened)
+              inline(named(opened, opened + 2), shut ? shut - 1 : last)
+              doc = doc && !shut
+            } else if (marker) {
+              doc = opens_doc(marker)
+              inline(named(marker, marker_end + 1), last)
+            }
             if (second) {
-              print $0 (cr ? "\r" : "")
+              rows[FNR] = $0
+              crs[FNR] = cr
+              rows_seen = FNR
             }
             next
           }
@@ -722,30 +1072,60 @@ in
           }
           # block is 1 on the line right under the `@` that opens a code
           # block, and 2 on each later line of the block. opener holds
-          # the line of that `@`.
+          # the line of that `@`. Each line that the cut takes ends the
+          # paragraph, and so do a line of only `@since` and a version and
+          # a fence line. The text after the `@` that closes a code block
+          # opens a paragraph. In a plain comment, a line of only `@` can
+          # open a code block under a line of text.
           if (block) {
             if (block == 2 && text ~ /^@/) {
               closed[opener] = 1
               block = 0
+              para++
+              inline(lead + 2, last)
             } else {
               block = 2
               $0 = cut($0, lead + 1, last)
             }
           } else if (text !~ /[^ \t]/) {
             results = 0
+            para++
           } else if (results || text ~ /^(>|prop>)/) {
             results = results || text ~ /^>>>/
             $0 = cut($0, lead + 1, last)
-          } else if (text ~ /^@[ \t]*$/ && (!second || FNR in closed)) {
+            para++
+          } else if (text ~ /^@[ \t]*$/ && (!doc || texts != para) && (!second || FNR in closed)) {
             block = 1
             opener = FNR
+            para++
+          } else if (text ~ /^@since ([A-Za-z_]+-)*[0-9]+([.][0-9]+)*[ \t]*$/ || text ~ /^(([-*+]|[0-9]+[.)])[ \t]+)*(~{3,}|`{3,}[^`]*$)/) {
+            para++
+          } else {
+            inline(lead + 1, last)
           }
           if (ends) {
             results = 0
             block = 0
+            doc = 0
+            para++
           }
+          # rows takes each line of the copy and crs its `\r`, so the END
+          # rule prints the line after it pairs the `@` marks.
           if (second) {
-            print $0 (cr ? "\r" : "")
+            rows[FNR] = $0
+            crs[FNR] = cr
+            rows_seen = FNR
+          }
+        }
+
+        END {
+          pair()
+          for (r = 1; r <= rows_seen; r++) {
+            s = rows[r]
+            for (k = parts[r]; k > 0; k--) {
+              s = code(s, part_from[r, k], part_to[r, k])
+            }
+            print s (crs[r] ? "\r" : "")
           }
         }
       ' "$1" "$1"
@@ -3121,13 +3501,15 @@ in
 
     # The shadow and the copy that merge_comments prints read the
     # comments of a Haskell file from a copy of it. The copy omits the
-    # Haddock markers, the code examples, and each `{-` and `--` in a
-    # string (see unmark_comments and blank_examples). A file that
-    # prose-lint cannot read stays the source, so prose-lint fails on it
-    # as on a file of any other language. A failed redirection exits 1,
-    # which a caller reads as findings, so a failed copy exits 2.
+    # Haddock markers, the code examples, the inline code of each doc
+    # comment, and each `{-` and `--` in a string (see unmark_comments
+    # and blank_examples). A file that prose-lint cannot read stays the
+    # source, so prose-lint fails on it as on a file of any other
+    # language. A failed redirection exits 1, which a caller reads as
+    # findings, so a failed copy exits 2.
     # blank_examples reads the output of unmark_comments from a file,
-    # because it reads that output twice. It also writes the file of the
+    # because it reads that output twice. It also reads the file of the
+    # doc comments that unmark_comments writes. It writes the file of the
     # delimiters that close_spans keeps on the lines of a fence.
     source=$file
     delimiters=/dev/null
@@ -3136,8 +3518,8 @@ in
     if [ "$ext" = hs ] && [ -f "$file" ] && [ -r "$file" ]; then
       source=$tmp_dir/source.hs
       delimiters=$tmp_dir/delimiters
-      unmark_comments <"$file" >"$tmp_dir/unmarked.hs" || exit 2
-      blank_examples "$tmp_dir/unmarked.hs" "$delimiters" "$markers" >"$source" || exit 2
+      unmark_comments "$tmp_dir/docs" <"$file" >"$tmp_dir/unmarked.hs" || exit 2
+      blank_examples "$tmp_dir/unmarked.hs" "$delimiters" "$markers" "$tmp_dir/docs" >"$source" || exit 2
     fi
 
     # --shadow prints the shadow and stops, so a corpus measurement
@@ -4641,11 +5023,14 @@ in
         # cut takes the line of prose under it.
         #
         # A line of only `@` right under a line of prose sits above a line
-        # of text and a line of code. A `--` comment under the code opens
-        # with `@since` and holds prose. The code ends the comment, so the
-        # `@since` line does not close a block, and the cut keeps the line
-        # of text. When blank_examples keeps the block open past the code,
-        # the `@since` line closes it, and the cut takes the line of text.
+        # of text and a line of code, in a `--` comment without a Haddock
+        # marker. The copy does not read inline code in such a comment, so
+        # the `@` can open a code block there. A `--` comment under the
+        # code opens with `@since` and holds prose. The code ends the
+        # comment, so the `@since` line does not close a block, and the cut
+        # keeps the line of text. When blank_examples keeps the block open
+        # past the code, the `@since` line closes it, and the cut takes the
+        # line of text.
         #
         # A `{-|` block holds a code block and a line of prose. Its last
         # `@` line sits right above the line that ends the block with a
@@ -4789,16 +5174,209 @@ in
         # long.hs holds a sentence of more than 32 words in a `-- |`
         # comment, and one of its lines opens with `@spaceConsumer@`.
         # Haddock reads that name as inline code, and the sentence goes on
-        # there. The test expects the ProseSentenceLength finding of the
-        # whole sentence.
+        # there. blank_examples writes the name as a code span. A plain
+        # `--` comment under the code holds the same sentence, and the copy
+        # keeps its `@` marks. lib/markdown.awk does not read a line of a
+        # Haskell file that opens with `@` as a block tag, so that sentence
+        # goes on too. The test expects the ProseSentenceLength finding of
+        # each whole sentence.
+        #
+        # mono.hs holds Haddock inline code between two `@` marks. The
+        # code holds `Just` and a `--` comment, which draw findings in
+        # prose. blank_examples writes each span of a doc comment as a code
+        # span. So the test expects a ProseMayPossibility finding only on
+        # the prose of each line. Spans sit on one line in a `-- |` comment,
+        # in a `{-|` block, and in a `{-^` block and a `-- ^` comment after
+        # code. One span follows the `@` that closes a code block.
+        #
+        # Other spans run onto later lines. One opens at a line of only
+        # `@` right under a line of prose, and an `@since 1.0` line further
+        # down opens with `@`. When blank_examples opens a code block at
+        # that `@`, the `@since` line closes the block, and the cut takes
+        # the lines between them. Spans also run from a `-- ^` comment
+        # after code onto the `--` line under it, and onto the second line
+        # of a block comment. One span ends its first line in `café` and
+        # opens its last line with `é`. The last part of another span holds
+        # two characters, and two `%` marks take their place.
+        #
+        # In `Compares @a@ and @b@ and returns`, each span becomes a code
+        # span. With spaces in place of the spans, RepeatedWords reports
+        # the doubled `and`. The span of `Compares the @a` and `b@ the
+        # values` holds one or two characters on each line, so `%` marks
+        # take their place. With spaces there, RepeatedWords reports the
+        # `the` on each side of the span.
+        #
+        # Haddock reads some marks before the `@` in them: `\@`, the
+        # identifier `'@?='`, the link `<a@b.org>`, and a URL. When
+        # blank_examples reads that `@` as the opener of a span, the span
+        # takes the prose up to the `@` before `Just`. Harper then lints the
+        # code after it. An `@` that no later `@` of its paragraph closes
+        # stays text. Such an `@` sits in `a@b.org` and above an empty
+        # comment line, and one opens a line of `@since 1.0`. When a span
+        # runs past the empty comment line or opens at the `@since` line,
+        # the cut takes prose.
+        #
+        # Haddock does not read any code in `@@`, so the second `@` opens
+        # the code, which runs to the `@` before `Just`. The test expects a
+        # ProseDash finding on the `--` after that `Just`, and on the `--`
+        # above the empty comment line.
+        #
+        # A plain comment uses `@` for a type application, as in
+        # `read @Int`. Two of them sit in a `--` comment under code, and two
+        # more sit in the code spans of a `--` comment. When blank_examples
+        # pairs the `@` marks of a plain comment, the span hides the prose
+        # between them. In the second comment, a line of only `@` right
+        # under a line of prose opens a code block, and the cut takes the
+        # code.
+        #
+        # In the next cases, the `@` of `a@b.org` sits above a span. Haddock
+        # ends the paragraph between them at a list item under another
+        # item, such as a `(2)` item under a `1.` item. It also ends the
+        # paragraph at a `-- $` line that opens a named chunk. GHC goes on
+        # with a `-- ^` comment after code onto a `-- |` line, but
+        # blank_examples opens a new paragraph there, because the writer
+        # means a new comment. When the paragraph runs on, the `@` of
+        # `a@b.org` opens a span that hides prose, and Harper lints the code
+        # after the span.
+        #
+        # blank_examples also ends the paragraph at a line of `@since 1.0`
+        # and at a bird track right under a line with `a@b.org`. Haddock
+        # reads each of those lines under a line of text as more text of
+        # the paragraph. But the cut takes the bird track, and a `@since`
+        # line at the start of a paragraph is a field of the comment.
+        #
+        # Under a line of text, Haddock reads a line that opens with `-` as
+        # more text of the paragraph. So the `@` of `a@b` pairs with the `@`
+        # of `c@` on the line under it, and the span hides the prose between
+        # them. When blank_examples opens a list item at each of those
+        # lines, Harper lints that prose.
+        #
+        # The cases after those end a doc comment above a `--` line or a
+        # `---` line that holds `@` marks, which stay text. GHC ends a
+        # `-- *` heading at the end of its line, and a `---` line ends a
+        # doc comment. A `{-^` block after code closes on its line. When
+        # the doc comment runs on, an `@` above the line with the marks
+        # opens a span that hides prose. GHC reads `--  ^` with two spaces
+        # as a plain comment, and the test expects a ProseDash finding on
+        # the `--` between its `@` marks.
+        #
+        # In a `{-|` block, a span runs onto a line that opens with a nested
+        # block comment. The copy keeps the `{-` of that nested comment.
+        # When a backtick or a `%` takes the place of its `{`, the `-}` of
+        # the nested comment closes the outer block. Harper then skips the
+        # prose after it. A `<` that no `>` closes sits before a span on its
+        # line, and a line of `@since base-4.7.0.0` sits above a span. When
+        # blank_examples skips the span or opens a span at that `@since`,
+        # Harper lints the code.
+        #
+        # A header ends its paragraph after its line. One header holds
+        # `a@b.org` above a span, and a code block sits under another
+        # header, `-- = Usage`. When the paragraph runs on past the header,
+        # the `@` of `a@b.org` opens a span that hides prose, and Harper
+        # lints the code after the span. Under a line of text, a line that
+        # opens with `=` is more text of the paragraph. So the span that
+        # opens at `@f x` runs over such a line.
+        #
+        # The names of the `-- $usage` and `{-$chunk` chunks are not text,
+        # so a code block sits under each name. A code block also sits
+        # under a `-- $usage` comment after code. Each code block under a
+        # header or a name holds an empty comment line and a `--` in its
+        # code. When blank_examples reads the `@` that opens the block as
+        # inline code, the empty comment line ends the paragraph, and
+        # Harper lints the code.
+        #
+        # Other lines hold a span in each of the other forms that open a
+        # doc comment: `{- |`, `{- ^` after code, `{-$`, `{- *`, and a
+        # `-- *` heading after code. When blank_examples reads one of them
+        # as a plain comment, Harper lints the code of the span.
+        #
+        # A line holds the name `restart` between a quote and a backtick,
+        # and Haddock reads the three as an identifier. A span sits on the
+        # line under it. The code span of that span opens and closes with
+        # two backticks. When it opens with one, the backtick after
+        # `restart` pairs with it, and Harper skips the prose between
+        # them.
+        #
+        # One span of a `{-|` block opens with a nested block comment
+        # (`@{- x -} b@`), and another ends with one (`@a {- x -}@`). When
+        # a backtick takes the place of the `{` of the first nested
+        # comment, its `-}` closes the outer block, and Harper skips the
+        # prose after it. When a backtick takes the place of the `}` of
+        # the second one, the outer block stays open. Harper then lints
+        # the string of prose under the block.
+        #
+        # Two plain `--` lines under the `-}` of that block hold
+        # `read @Int` and `show @Bool`. When the doc comment runs on past
+        # the `-}`, the `@` marks pair and hide the prose between them.
+        #
+        # A line of a code block and a result line of an example each open
+        # with `$just--now`. The cut takes all the text of each line.
+        # When blank_examples reads `$just--now` there as the name of a
+        # chunk, the shadow keeps the name, and Harper reports its `--`.
+        #
+        # A line of a doc comment holds a backtick right before a span, and
+        # another line holds one right after a span. A span sits on the line
+        # under each of them. A `%` takes the place of each `@` of the span
+        # next to the backtick, so the backtick pairs as it does in the
+        # source. When a code span takes the place of that span, a run of it
+        # joins the backtick into a longer run. close_spans then pairs the
+        # other run with a run of the code span on the next line, and Harper
+        # skips the prose between them.
+        #
+        # A line of `` `@foo bar@` `` holds a backtick on each side of a
+        # span. There, the runs of a code span join the backticks into runs
+        # of three. The line then opens with a run of three, and
+        # break_fence_runs puts a `%` right after the `--`. GHC reads `--%`
+        # as an operator, so Harper skips the prose of the line.
+        #
+        # A fence in a doc comment holds `user@example.com`, and a line with
+        # a span sits right under the fence. Another fence follows a list
+        # marker under a line with `a@b.org`, and it holds `foo @Int x`.
+        # blank_examples ends the paragraph at each fence line. When a span
+        # runs over a fence line, a code span takes the place of a part of
+        # that line. close_spans then misses that fence line, so a fence
+        # stays open, and close_spans blanks the lines under it as code. A
+        # line whose text opens with ```` ```x``` ```` holds a code span and
+        # not a fence, so the span after it on the line still pairs.
+        #
+        # In another `{-|` block, a span opens right after a backtick on a
+        # line that ends with the `-}` of a nested comment. When a `%` takes
+        # the place of the `}`, the nested comment stays open, and so does
+        # the outer block. Harper then lints the string of prose under the
+        # block.
+        #
+        # Two `--` doc comments open with `lookup` between a backtick and a
+        # quote. A span of three characters sits on the line under the
+        # first. In the second, a span of four characters sits after
+        # `lookup` on its line. A `%` takes the place of each `@` of those
+        # spans. When a code span in runs of one takes the place of a span,
+        # the backtick before `lookup` pairs with it. Harper then skips the
+        # prose between them.
+        #
+        # In the `{-|` block under them, the first line of a span ends with
+        # the `-}` of a nested comment. When a backtick takes the place of
+        # its `}`, the nested comment stays open, and so does the outer
+        # block. Harper then lints the string of prose under the block.
+        #
+        # A code block of a plain `--` comment holds the shell prompt
+        # `$ cabal build`, and the result line of an example in another
+        # plain comment opens with `$5`. In each comment, a line under the
+        # code holds `read @Int` and `show @Bool`. When blank_examples reads
+        # the `-- $` of the code as the opener of a named chunk, the comment
+        # becomes a doc comment. The `@` marks then pair and hide the prose
+        # between them.
+        #
+        # The test reads the shadow of mono.hs and of a copy with CRLF line
+        # endings under the C locale and under a UTF-8 locale. It lints each
+        # copy under each locale too.
         #
         # harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that
         # holds a comment, and harperOverlay in lib/default.nix patches
         # it. When harper-cli aborts on a probe file, the test checks
         # only the shadows and the exit status. The Verification section
         # of configs/harper/CLAUDE.md gives the command that builds this
-        # test with the patched harper and lints doc.hs, example.hs, and
-        # strings.hs end to end.
+        # test with the patched harper. That test lints doc.hs, example.hs,
+        # strings.hs, long.hs, and mono.hs end to end.
         tests.haddock = runCommand "prose-lint-haddock" { nativeBuildInputs = [ gawk ]; } ''
           cat >doc.hs <<'EOF'
           module Doc where
@@ -5251,6 +5829,389 @@ in
             exit 1
           fi
 
+          cat >mono.hs <<'EOF'
+          module Mono where
+
+          -- | Returns @lookup 1 m == Just 2 -- O(n)@ for the key. It may help here.
+          -- @
+          -- lookup 1 m == Just 2 -- O(n)
+          -- lookup 2 m == Just 3@. It may help here.
+          --
+          -- Use @lookup 1
+          -- m == Just 2 -- O(n)@ for the key. It may help here.
+          -- Use @lookup 1 (f
+          -- )@ for the key. It may help here.
+          --
+          -- Compares @a@ and @b@ and returns the larger one.
+          -- A \@ is a sign, and it may help here. Use @Just -- x@.
+          -- The '@?=' operator may help here. Use @Just -- x@.
+          -- Mail <a@b.org>, and it may help here. Use @Just -- x@.
+          -- See https://example.org/@a, and it may help here. Use @Just -- x@.
+          -- Mail a@b.org. It may help here.
+          --
+          -- Type @@ and it may help here. Use @Just -- x@.
+          --
+          -- Use @Just -- x
+          --
+          -- It may help here.@
+          --
+          -- @since 1.0
+          -- Use @Just -- x@. It may help here.
+          -- Use @café -- x@, and it may help here.
+          -- Use @lookup café
+          -- é m == Just 2 -- café@, and it may help here.
+          f :: Int
+          f = 1 -- ^ Returns @Just -- x@. It may help here.
+
+          k :: Int -- ^ Use @lookup 1
+                    -- m == Just 2 -- O(n)@. It may help here.
+          k = 1
+
+          {-| Returns @lookup 1 m == Just 2 -- O(n)@ for the key. It may help here.
+          Use @lookup 1
+          m == Just 2 -- O(n)@ for the key. It may help here.
+          Use @Just -- x@ -} -- It may help here.
+          g :: Int
+          g = 1 {-^ Use @Just -- x@. It may help here. -}
+
+          -- | @
+          -- lookup 1 m == Just 2 -- O(n)
+          -- @ and @Just -- x@. It may help here.
+          h :: Int
+          h = 1
+
+          f2 :: Int
+          f2 = read @Int "1"
+            -- We call read @Int here. It may help here, and then
+            -- show @Bool fixes the other one.
+
+          -- We call `read @Int` here. It may help here, and then
+          -- `show @Bool` fixes the other one. Use this code:
+          -- @
+          -- lookup 1 m == Just 2 -- O(n)
+          -- @
+          g2 :: Int
+          g2 = 1
+
+          -- | Contact:
+          --
+          -- * Mail a@b.org, and it may help here.
+          -- * Use @Just -- x@. It may help here.
+          --   Use @lookup 1
+          --   m == Just 2 -- O(n)@. It may help here.
+          x = 1 -- ^ Mail a@b.org, and it may help here.
+          -- | Use @Just -- x@. It may help here.
+          y :: Int
+          y = 1 {-^ Use @a. It may help here. -}
+          -- b@ for the key.
+
+          -- * Mail a@b.org, and it may help here.
+          -- Use @Just -- x@.
+          x2 = 1 -- ^ Mail a@b.org, and it may help here.
+          -- $chunk
+          -- Use @Just -- x@. It may help here.
+          x3 = 1 -- ^ Mail a@b.org, and it may help here.
+          --- Use @Just -- x@.
+          --  ^ Use @Just -- x@.
+
+          {-| Use @lookup
+          {- nested -} m == Just 2@ and it may help here. -}
+          z :: Int
+          z = 1
+
+          -- | If a < b, use @Just -- x@. It may help here.
+          --
+          -- @since base-4.7.0.0
+          -- Use @Just -- x@. It may help here.
+          w :: Int
+          w = 1
+
+          -- | Some intro.
+          --
+          -- = Mail a@b.org, and it may help here.
+          -- Use @Just -- x@. It may help here.
+          --
+          -- = Usage
+          -- @
+          -- lookup 1 m == Just 2 -- O(n)
+          --
+          -- lookup 2 m == Just 3 -- O(n)
+          -- @
+          v :: Int
+          v = 1
+
+          -- $usage
+          -- @
+          -- lookup 1 m == Just 2 -- O(n)
+          --
+          -- lookup 2 m == Just 3 -- O(n)
+          -- @
+
+          {-$chunk
+          @
+          lookup 1 m == Just 2 -- O(n)
+
+          lookup 2 m == Just 3 -- O(n)
+          @
+          Use @Just -- x@. It may help here.
+          -}
+
+          {- | Use @Just -- x@. It may help here. -}
+          y2 :: Int
+          y2 = 1 {- ^ Use @Just -- x@. It may help here. -}
+          -- * Use @Just -- x@. It may help here.
+          {- * Use @Just -- x@. It may help here. -}
+          y3 :: Int
+          y3 = 1
+
+          -- | Use @f x
+          -- = Just 2 -- O(n)
+          -- @ for the key. It may help here.
+          u :: Int
+          u = 1
+
+          -- | Calls the 'restart` function on exit.
+          -- It may help here, and you set the flag to @True@.
+          q :: Int
+          q = 1
+
+          {-| Use @{- x -} b@ and it may help here.
+          Use @a {- x -}@ and it may help here.
+          -}
+          -- We call read @Int here. It may help here, and then
+          -- show @Bool fixes the other one.
+          r :: String
+          r = "It may help here."
+
+          -- | Derives the instances.
+          --
+          -- @
+          -- $just--now x
+          -- @
+          --
+          -- >>> lookup 1 m
+          -- $just--now x
+          t :: Int
+          t = 1 -- $usage
+          -- @
+          -- lookup 1 m == Just 2 -- O(n)
+          --
+          -- lookup 2 m == Just 3 -- O(n)
+          -- @
+
+          -- | Mail a@b.org, and it may help here.
+          -- @since 1.0
+          -- Use @Just -- x@.
+          -- Mail a@b.org, and it may help here.
+          -- > lookup 1 m
+          -- Use @Just -- x@.
+          --
+          -- 1. Mail a@b.org, and it may help here.
+          -- (2) Use @Just -- x@.
+          --
+          -- Some text.
+          -- - Mail a@b, and it may help here.
+          -- - Use c@ d.
+          s :: Int
+          s = 1
+
+          -- | Some text.
+          -- `@foo bar@` It may help here.
+          p :: Int
+          p = 1
+
+          -- | Compares `@xyzzy@ and it may help here.
+          -- Then use @Just -- x@ and it may help here.
+          --
+          -- Apply `@Int` and `@Bool` to the value, and it may help here.
+          -- Then use @Just -- x@ and it may help here.
+          --
+          -- Use @foo bar@` and it may help here.
+          -- Then use @Just -- x@ and it may help here.
+          --
+          -- Compares the @a
+          -- b@ the values, and it may help here.
+          n :: Int
+          n = 1
+
+          -- | Example:
+          --
+          -- ```
+          -- user@example.com
+          -- ```
+          -- See @Just -- x@. It may help here.
+          --
+          --  ```x``` Use @Just -- x@.
+          --
+          -- It may help here.
+          --
+          -- Mail a@b.org, and it may help here.
+          -- - ~~~
+          --   foo @Int x
+          --   ~~~
+          -- It may help here.
+          o :: Int
+          o = 1
+
+          {-| See {- the note
+          Use `@lookup -}
+          x@ and it may help here.
+          -}
+          r2 :: String
+          r2 = "It may help here."
+
+          -- | Like `lookup', but it may help here.
+          -- Then it takes @n@ as the key.
+          l :: Int
+          l = 1
+
+          -- | Like `lookup', but it may help here, and it takes @xs@ as the key.
+          l2 :: Int
+          l2 = 1
+
+          {-| Use @a {- x -}
+          b@ and it may help here.
+          -}
+          r3 :: String
+          r3 = "It may help here."
+
+          -- Build it with:
+          --
+          -- @
+          -- $ cabal build
+          -- @
+          --
+          -- We call read @Int here, and it may help here, then show @Bool.
+          c :: Int
+          c = 1
+
+          -- Print it:
+          --
+          -- >>> printf "$%d" 5
+          -- $5
+          --
+          -- We call read @Int here, and it may help here, then show @Bool.
+          c2 :: Int
+          c2 = 1
+          EOF
+          sed 's/$/\r/' mono.hs >mono-crlf.hs
+          cat >want <<'EOF'
+          3: --   Returns ``                          `` for the key. It may help here.
+          4: -- %
+          5: -- ``                        ``
+          6: -- ``                 ``. It may help here.
+          8: -- Use ``     ``
+          9: -- ``                `` for the key. It may help here.
+          10: -- Use ``        ``
+          11: -- %% for the key. It may help here.
+          13: -- Compares % % and % % and returns the larger one.
+          14: -- A \@ is a sign, and it may help here. Use ``       ``.
+          15: -- The '@?=' operator may help here. Use ``       ``.
+          16: -- Mail <a@b.org>, and it may help here. Use ``       ``.
+          17: -- See https://example.org/@a, and it may help here. Use ``       ``.
+          18: -- Mail a@b.org. It may help here.
+          20: -- Type @``                         ``Just -- x@.
+          22: -- Use @Just -- x
+          24: -- It may help here.@
+          26: -- @since 1.0
+          27: -- Use ``       ``. It may help here.
+          28: -- Use ``       ``, and it may help here.
+          29: -- Use ``        ``
+          30: -- ``                  ``, and it may help here.
+          35:           -- ``                ``. It may help here.
+          45: --   @
+          47: -- @ and ``       ``. It may help here.
+          53:   -- We call read @Int here. It may help here, and then
+          54:   -- show @Bool fixes the other one.
+          56: -- We call `read @Int` here. It may help here, and then
+          57: -- `show @Bool` fixes the other one. Use this code:
+          58: -- @
+          60: -- @
+          64: --   Contact:
+          66: -- * Mail a@b.org, and it may help here.
+          67: -- * Use ``       ``. It may help here.
+          68: --   Use ``     ``
+          69: --   ``                ``. It may help here.
+          71: --   Use ``       ``. It may help here.
+          74: -- b@ for the key.
+          76: -- * Mail a@b.org, and it may help here.
+          77: -- Use @Just -- x@.
+          79: -- $chunk
+          80: -- Use ``       ``. It may help here.
+          82: --- Use @Just -- x@.
+          83: --    Use @Just -- x@.
+          90: --   If a < b, use ``       ``. It may help here.
+          92: -- @since base-4.7.0.0
+          93: -- Use ``       ``. It may help here.
+          97: --   Some intro.
+          99: -- = Mail a@b.org, and it may help here.
+          100: -- Use ``       ``. It may help here.
+          102: -- = Usage
+          103: -- @
+          107: -- @
+          111: -- $usage
+          112: -- @
+          116: -- @
+          130: -- * Use ``       ``. It may help here.
+          135: --   Use %  %
+          136: -- ``            ``
+          137: -- % for the key. It may help here.
+          141: --   Calls the 'restart% function on exit.
+          142: -- It may help here, and you set the flag to ``  ``.
+          149: -- We call read @Int here. It may help here, and then
+          150: -- show @Bool fixes the other one.
+          154: --   Derives the instances.
+          156: -- @
+          158: -- @
+          164: -- @
+          168: -- @
+          170: --   Mail a@b.org, and it may help here.
+          171: -- @since 1.0
+          172: -- Use ``       ``.
+          173: -- Mail a@b.org, and it may help here.
+          175: -- Use ``       ``.
+          177: -- 1. Mail a@b.org, and it may help here.
+          178: -- (2) Use ``       ``.
+          180: -- Some text.
+          181: -- - Mail a``                     ``
+          182: -- ``    `` d.
+          186: --   Some text.
+          187: -- `%       %` It may help here.
+          191: --   Compares %%     % and it may help here.
+          192: -- Then use ``       `` and it may help here.
+          194: -- Apply `%          %Bool` to the value, and it may help here.
+          195: -- Then use ``       `` and it may help here.
+          197: -- Use %       %% and it may help here.
+          198: -- Then use ``       `` and it may help here.
+          200: -- Compares the %%
+          201: -- %% the values, and it may help here.
+          205: --   Example:
+          210: -- See ``       ``. It may help here.
+          212: -- %```x``` Use ``       ``.
+          214: -- It may help here.
+          216: -- Mail a@b.org, and it may help here.
+          220: -- It may help here.
+          231: --   Like %lookup', but it may help here.
+          232: -- Then it takes % % as the key.
+          236: --   Like %lookup', but it may help here, and it takes %  % as the key.
+          246: -- Build it with:
+          248: -- @
+          250: -- @
+          252: -- We call read @Int here, and it may help here, then show @Bool.
+          256: -- Print it:
+          261: -- We call read @Int here, and it may help here, then show @Bool.
+          EOF
+          for locale in C "$utf8"; do
+            for f in mono.hs mono-crlf.hs; do
+              LC_ALL=$locale ${lib.getExe finalAttrs.finalPackage} --shadow "$f" |
+                awk '$0 != "x" && /[^ \t-]/ { print NR ": " $0 }' >got
+              if ! diff want got; then
+                echo "under the $locale locale, the shadow of $f holds other text than want lists" >&2
+                exit 1
+              fi
+            done
+          done
+
           cp doc.hs unread.hs
           chmod 000 unread.hs
           if [ -r unread.hs ]; then
@@ -5331,13 +6292,38 @@ in
             '-- | The parser reads each token of the input and hands it to the other' \
             '-- functions of this module, and when the docs name the parser' \
             '-- @spaceConsumer@ in an example, the name stands for the space parser that' \
-            '-- the caller of that function passes to it.' 'f :: Int' 'f = 1' >long.hs
-          printf '%s\n' '3:6 ProseSentenceLength' >want
+            '-- the caller of that function passes to it.' 'f :: Int' 'f = 1' "" \
+            '-- The parser reads each token of the input and hands it to the other' \
+            '-- functions of this module, and when the docs name the parser' \
+            '-- @spaceConsumer@ in an example, the name stands for the space parser that' \
+            '-- the caller of that function passes to it.' 'g :: Int' 'g = 2' >long.hs
+          printf '%s ProseSentenceLength\n' 3:6 10:4 | sort >want
           findings long.hs C >got
           if ! diff want got; then
             echo "long.hs draws other findings than want lists" >&2
             exit 1
           fi
+
+          {
+            printf '%s ProseMayPossibility\n' 3:61 6:30 9:41 11:23 14:27 \
+              15:23 16:27 17:39 18:21 24:7 27:24 28:28 30:35 32:36 35:39 \
+              38:60 40:38 41:26 43:31 47:26 53:33 56:33 66:27 67:26 69:31 \
+              70:33 71:26 73:22 76:27 78:34 80:24 81:34 86:34 90:36 93:24 \
+              99:27 100:24 124:21 127:26 129:33 130:26 131:26 137:22 142:7 \
+              146:28 147:24 149:31 170:27 173:25 177:28 187:19 191:31 \
+              192:32 194:50 195:32 197:26 198:32 201:26 210:24 214:7 216:25 220:7 \
+              226:11 231:28 236:28 241:11 252:35 261:35
+            printf '%s ProseDash\n' 20:44 22:14 77:14 82:15 83:17
+          } | sort >want
+          for locale in C "$utf8"; do
+            for f in mono.hs mono-crlf.hs; do
+              findings "$f" "$locale" >got
+              if ! diff want got; then
+                echo "under the $locale locale, $f draws other findings than want lists" >&2
+                exit 1
+              fi
+            done
+          done
           touch "$out"
         '';
 

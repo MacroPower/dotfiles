@@ -1014,16 +1014,120 @@ on a set of files.
   A fifth Haskell file holds a `-- |` comment of one sentence of more
   than 32 words, and one of its lines opens with `@spaceConsumer@`.
   Haddock reads that name as inline code, so the sentence goes on
-  there. prose-lint does not read a line that opens with `@` in a
-  Haskell file as a block tag, and the test expects the
-  ProseSentenceLength finding of the whole sentence.
+  there, and prose-lint writes the name as a code span. A plain `--`
+  comment under the code holds the same sentence, and prose-lint keeps
+  its `@` marks. prose-lint does not read a line that opens with `@` in
+  a Haskell file as a block tag. So the test expects the
+  ProseSentenceLength finding of each whole sentence.
+
+  A sixth Haskell file holds Haddock inline code between two `@` marks,
+  and the code holds `Just` and a `--` comment. As in Haddock, each `@`
+  of a doc comment opens inline code that runs to the next `@` of its
+  paragraph, also on a later line.
+
+  prose-lint writes the part of each span on each line as a code span.
+  The code span opens and closes with two backticks and holds spaces
+  between them. So a lone backtick in the text before it does not pair
+  with it. In a part of four characters or fewer and in a part right
+  next to a backtick, a `%` takes the place of the first and the last
+  character. The test expects a ProseMayPossibility finding only on the
+  prose of each line. The file holds these cases:
+
+  - spans on one line in a `-- |` comment, in a `{-|` block, and after
+    the `@` that closes a code block
+  - spans in a `{-^` block and in a `-- ^` comment after code
+  - spans that run onto a later line. One opens at a line of only `@`
+    right under a line of prose. Others run from a `-- ^` comment onto
+    the `--` line under it, and onto the next line of a block comment.
+  - a span that ends its first line in `café` and opens its last line
+    with `é`
+  - a span whose last part holds two characters, which become two `%`
+    marks
+  - `Compares @a@ and @b@ and returns`. Spaces in place of the spans
+    draw a RepeatedWords finding on the doubled `and`.
+  - a span from `Compares the @a` to `b@ the values` on the next line.
+    Spaces in place of its parts draw a RepeatedWords finding on the two
+    `the` words.
+  - an `@` inside a mark that Haddock reads first: `\@`, the identifier
+    `'@?='`, the link `<a@b.org>`, and a URL
+  - an `@` that no later `@` of its paragraph closes, in `a@b.org`,
+    above an empty comment line, and in a line of `@since 1.0`
+  - `@@`, which does not hold any code, so its second `@` opens the code
+  - type applications such as `read @Int` in plain `--` comments. In a
+    plain comment, a line of only `@` right under a line of prose opens
+    a code block.
+  - a span under the `@` of `a@b.org`, in a list item under another
+    item, in a `-- |` line under a `-- ^` comment after code, and under a
+    `-- $` line. Other spans sit in a `(2)` item under a `1.` item, under
+    a line of `@since 1.0`, and under a bird track, each right under a
+    line with `a@b.org`.
+  - a `- c@ d` line under a `- a@b` line in a paragraph of text. Haddock
+    reads both lines as text of the paragraph, so the span between their
+    `@` marks hides the prose of the `- a@b` line.
+  - `@` marks in a `--` line under a `-- *` heading and under a `{-^`
+    block that closes after code. Other `@` marks sit in a `---` line
+    under a doc comment and in a `--  ^` comment with two spaces. GHC
+    reads each of those lines as a plain comment.
+  - a span that runs onto a line that opens with a nested block comment
+  - a span that opens with a nested block comment and one that ends with
+    one, in a `{-|` block with a string of prose in the code under it
+  - type applications in plain `--` lines under the `-}` of a doc block
+  - a span after a `<` that no `>` closes, and a span under a line of
+    `@since base-4.7.0.0`
+  - a span under a header that holds `a@b.org`, and a code block under
+    the `-- = Usage` header
+  - a span that runs over a line that opens with `=` under a line of
+    text, which Haddock reads as more text of the paragraph
+  - code blocks under the names of a `-- $usage` chunk and a `{-$chunk`
+    chunk, and under a `-- $usage` comment after code. Each of these code
+    blocks, and the one under `-- = Usage`, holds an empty comment line.
+  - a line that opens with `$just--now` in a code block and among the
+    result lines of an example, which the cut takes whole
+  - spans in `{- |`, `{- ^`, `{-$`, and `{- *` comments, and in a `-- *`
+    heading after code
+  - a line that holds `restart` between a quote and a backtick, which
+    Haddock reads as an identifier, above a span
+  - spans right after a backtick and right before one, each above a line
+    with a span, and a line of a doc comment whose text opens with
+    `` `@foo bar@` ``. With code spans next to those backticks, the runs
+    pair across the lines, or the text of the line opens with a run of
+    three.
+  - a fence that holds `user@example.com` above a span, and a fence after
+    a list marker that holds `foo @Int x` under a line with `a@b.org`. A
+    line whose text opens with ` ```x``` ` and holds a span after it
+    does not hold a fence.
+  - a span right after a backtick on a line that ends with the `-}` of a
+    nested comment, in a `{-|` block with a string of prose in the code
+    under it
+  - `lookup` between a backtick and a quote, above a span of three
+    characters and before a span of four characters on its line
+  - a span whose first line ends with the `-}` of a nested comment, in a
+    `{-|` block with a string of prose in the code under it
+  - the shell prompt `$ cabal build` in a code block of a plain `--`
+    comment, and the result line `$5` of an example in another plain
+    comment. A line with type applications sits under each.
+
+  Empty comment lines end a paragraph, and so do lines of `@since` and a
+  version, such as `@since 1.0` and `@since base-4.7.0.0`. List items
+  under another item, lines that open a doc comment, fence lines, and
+  lines that the cut takes end it too. A header that opens a paragraph
+  ends it after its line. GHC takes the name of a named chunk out of the
+  text of the chunk. In a doc comment, a line of only `@` opens a code
+  block only at the start of a paragraph.
+
+  The test expects a ProseDash finding on the `--` in the code after
+  `@@` and on the `--` above the empty comment line. It also expects
+  one on the `--` between the `@` marks of the `-- *`, `---`, and
+  `--  ^` cases. The test expects the same shadow and findings from a
+  copy of the sixth file with CRLF line endings, under the C locale and
+  under a UTF-8 locale.
 
   harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that holds
   a comment. With that harper-cli, the test checks only the shadows and
   the exit status. The command that builds the `haddock` test from a
   home configuration of the flake uses the patched harper of
   harperOverlay in `lib/default.nix`. Only that command lints the
-  first three Haskell files and the fifth one of the test end to end.
+  Haskell files of the test end to end, other than the fourth.
 
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).
@@ -1525,8 +1629,8 @@ the `haddock` test checks only the shadows and the exit status there.
 On a Linux host, this command builds the `haddock` test from the `dev`
 home configuration of the flake for the system of the host. The harper
 of that configuration carries the patches of harperOverlay in
-`lib/default.nix`, so the test also lints its first three Haskell files
-end to end.
+`lib/default.nix`, so the test also lints its Haskell files end to end,
+other than the fourth.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); in f.homeConfigurations."dev@${builtins.currentSystem}".pkgs.prose-lint.passthru.tests.haddock'

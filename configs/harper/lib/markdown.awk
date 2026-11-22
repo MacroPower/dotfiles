@@ -104,8 +104,12 @@
 # block tag. A check that splits paragraphs therefore ends one before a
 # tag line, so a run of tags does not read as one long sentence. With
 # HADDOCK=1 in the environment, the shadow comes from a Haskell file,
-# and `tag_line` stays 0. Haddock reads `@` marks as the ends of inline
-# code (`@spaceConsumer@`), so a sentence can wrap onto such a line.
+# and `tag_line` stays 0. prose-lint writes the inline code of a
+# Haddock doc comment as a code span. It keeps the `@` marks of a plain
+# comment, such as a type application (`read @Int`), and each `@` that
+# no later `@` of its paragraph closes. Haskell comments do not use
+# block tags such as `@param`, so a sentence can wrap onto a line that
+# opens with such an `@`.
 #
 # In that mode, BLOCKS in the environment can name the blocks file that
 # prose-lint writes for the shadow. Each line of the file opens with the
