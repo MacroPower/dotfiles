@@ -18,17 +18,19 @@ let
     fi
   '';
 
-  # Convert a Nix value into the string form the .NET ConfigurationBinder
-  # accepts. Booleans must be the literals "true"/"false" -- `toString true`
-  # in Nix yields "1" and would silently fail to bind to bool?.
+  # Convert a Nix value into the string form that the .NET
+  # ConfigurationBinder accepts. Booleans must be the literals "true" and
+  # "false". `toString true` in Nix yields "1", which silently fails to
+  # bind to `bool?`.
   valueToString = v: if builtins.isBool v then lib.boolToString v else toString v;
 
   # Flatten { LogLevel = { Default = "Warning"; PhotoCli = "Information"; }; }
   # into  { "LogLevel__Default" = "Warning"; "LogLevel__PhotoCli" = "Information"; }
   # and { SupportedExtensions = [ "jpg" "jpeg" ]; } into
   #     { "SupportedExtensions__0" = "jpg"; "SupportedExtensions__1" = "jpeg"; }.
-  # Only one level of attrs is flattened -- matches the photo-cli schema
-  # (`LogLevel : Dictionary<string,string>` is the only nested field).
+  # flattenSettings flattens only one level of attrs. That depth matches
+  # the photo-cli schema, where `LogLevel : Dictionary<string,string>` is
+  # the only nested field.
   flattenSettings =
     attrs:
     lib.foldlAttrs (
@@ -69,14 +71,14 @@ let
       inherit description;
     };
 
-  # Enum literal sets for photo-cli verb flags. Sourced from
-  # photo-cli's `Models/Enums/*.cs`. The `Unset = 0` sentinel members
-  # are excluded -- those exist so photo-cli's constructor can detect
-  # "no CLI value supplied" and fall back to its own default; passing
-  # them as a CLI value would defeat that. CommandLineParser binds
-  # enums case-insensitively (Enum.Parse(..., ignoreCase: true)) but
-  # `lib.types.enum` is exact-match, so users must spell the literal
-  # using the C# member casing.
+  # Enum literal sets for photo-cli verb flags, taken from photo-cli's
+  # `Models/Enums/*.cs`. The sets leave out the `Unset = 0` sentinel
+  # members. Those members exist so that photo-cli's constructor can
+  # detect "no CLI value supplied" and fall back to its own default. A
+  # CLI value of `Unset` defeats that check. CommandLineParser
+  # binds enums case-insensitively (Enum.Parse(..., ignoreCase: true)),
+  # but `lib.types.enum` matches exactly, so users must spell each
+  # literal with the C# member casing.
   namingStyleEnum = lib.types.enum [
     "Numeric"
     "Day"
@@ -209,8 +211,8 @@ let
   # Address spec cherry-picks the non-`reverseGeocode` entries instead
   # because its `reverseGeocode` is a required positional rather than
   # a shared optional. API-key flags (`--bigdatacloud-key`,
-  # `--googlemaps-key`, `--locationiq-key`) are intentionally absent
-  # everywhere -- those values come from sops via
+  # `--googlemaps-key`, `--locationiq-key`) are absent from every spec,
+  # because those values come from sops through
   # `dotfiles.photo-cli.geocoder.*`, never from plain-text Nix.
   sharedGeocodeFlags = {
     reverseGeocode = mkFlag {
@@ -421,11 +423,11 @@ let
     };
   };
 
-  # Defines `_pc_has_flag <short> <long> "$@"` -- returns 0 iff any of
-  # `-<short>`, `--<long>`, `--<long>=*` appears in the args. Pattern
-  # set deliberately omits `-<short>=*`: CommandLineParser 2.x doesn't
-  # accept that form, so a user passing it would already hit a parser
-  # error.
+  # Defines the shell function `_pc_has_flag <short> <long> "$@"`. It
+  # returns 0 iff any of `-<short>`, `--<long>`, or `--<long>=*` appears
+  # in the args. The pattern set omits `-<short>=*`, because
+  # CommandLineParser 2.x rejects that form, so a user who passes it
+  # already hits a parser error.
   hasFlagFn = ''
     _pc_has_flag() {
       local short="$1" long="$2"; shift 2
@@ -831,9 +833,9 @@ in
     home.packages = [ photoCliWrapped ];
 
     # Declare geocoder secrets only when the matching geocoder is enabled.
-    # sops-install-secrets validates that every declared key exists in the
-    # encrypted YAML at build time, so unconditional declarations would
-    # break the build on hosts that haven't populated the values yet.
+    # sops-install-secrets checks at build time that every declared key
+    # exists in the encrypted YAML. An unconditional declaration therefore
+    # breaks the build on each host whose YAML does not hold the values.
     sops.secrets = lib.mkIf sopsEnabled (
       lib.mkMerge [
         (lib.mkIf cfg.geocoder.bigDataCloud.enable {
