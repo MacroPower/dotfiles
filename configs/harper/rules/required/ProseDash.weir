@@ -42,7 +42,7 @@
 #
 # Measurement
 #
-# The rule hit 343 lines in the measure.py corpus, and 20 of 20 sampled
+# The rule hit 342 lines in the measure.py corpus, and 20 of 20 sampled
 # hits used a dash as punctuation. Twelve of them separated a list-item
 # label from its text.
 expr word [NOUN, VERB, ADJ, ADV, PRON, DET, PROPN, NUM]

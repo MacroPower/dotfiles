@@ -411,12 +411,16 @@ on a set of files.
   that it lists from both copies of each file, and the same shadow from
   both.
 - `comment-code` lints the comments of `fixtures/comment-code/code.sh`
-  as a shell, Nix, awk, Python, Rust, TypeScript, Lua, and Go file. The
-  comments hold code spans in one, two, and three backticks that wrap
-  onto the next line, and fenced code blocks. The blocks include two
-  fences in tildes, one with a backtick in its info string. They also
-  include a fence in four backticks that holds a line of three, and a
-  fence after `2.`, `- `, or `> `. The test expects the same
+  as a shell, Nix, awk, Python, YAML, HCL, Rust, TypeScript, Lua, and
+  Go file. It also lints a copy with `//` markers as an HCL file.
+  comment_lines writes such a marker as `# `, so the copy tests that
+  hide_end_dashes reads the text after the `//`.
+
+  The comments hold code spans in one, two, and three backticks that
+  wrap onto the next line, and fenced code blocks. The blocks include
+  two fences in tildes, one with a backtick in its info string. They
+  also include a fence in four backticks that holds a line of three,
+  and a fence after `2.`, `- `, or `> `. The test expects the same
   ProseMayPossibility findings from every file, each on the text after
   a span or a block.
 
@@ -431,12 +435,228 @@ on a set of files.
   reads as paragraph text. In some of them, a `-` or `*` list marker or
   a `#` heading marker comes before the backticks.
 
-  The second-to-last comment line ends in `--`, and its sentence goes on
-  in the last line. Harper strips the marks at the end of a comment
-  line, so the comment shadow adds ` x` after them. The test expects a
-  ProseDash finding on the `--` from every file, as a markdown file
-  with the same lines draws. The test also lints a copy of the shell
-  file with CRLF line endings and expects the same findings from it.
+  The comments at the end of the file hold lines that end in `--`.
+  Harper strips the marks at the end of a comment line, so the comment
+  shadow adds ` x` after them. hide_end_dashes in `pkgs/prose-lint.nix`
+  keeps that ` x` only when the next comment line continues the
+  paragraph, as in a markdown file with the same lines. The test
+  expects the same findings from every file. It also lints a copy of
+  the shell file with CRLF line endings and expects the same findings
+  from it.
+
+  The sentence of the first `--` goes on in the next line. The text of
+  the second line ends in an ` x` of its own after the `--`. The test
+  expects a ProseDash finding on each of these dashes.
+
+  Four banners, such as `# --- The section ---`, come next. Code
+  follows the first, and a comment line follows each of the others.
+  The text of the third opens with `---` and no space, and the text of
+  the fourth opens with `--` and a space. hide_end_dashes drops the
+  ` x` after a banner, whatever the next line holds, so the test
+  expects no ProseDash finding on the banners.
+
+  Pairs of comment lines come next, and the first line of each pair
+  ends in `--`. The second line of each of the first eight pairs ends
+  the paragraph, so the test expects no ProseDash finding on them. Three
+  of them open a list item, a heading, and a blockquote. Two more open a
+  list item under a list item, one at the text of that item and one at
+  `2.`. The sixth holds a line of `=` marks, the seventh opens a list
+  item at `1.`, and the eighth holds a thematic break in `_` marks.
+
+  The first line of the ninth pair is a heading. Headings form blocks
+  of their own, so the test expects no finding on it either.
+
+  The second line of each of the next six pairs continues the
+  paragraph, so the test expects a ProseDash finding on each:
+
+  - A second line in a blockquote.
+  - A list item at `2.` under a paragraph. CommonMark reads an item at
+    a number other than 1 as more text of a paragraph, but as the next
+    item under a list item.
+  - A line without `>` under a line in a blockquote, and a line of `=`
+    marks without `>` under one. CommonMark reads each of them as more
+    text of the quote. It does not read such a line of `=` marks as the
+    underline of a heading.
+  - A line under a list item, left of the text of the item, which
+    CommonMark reads as more text of the item.
+  - A list item indented 4 columns under a paragraph, which CommonMark
+    reads as more text of the paragraph.
+
+  The next groups of comment lines test the blocks that hold the line
+  that ends in `--`. In each of the first five, the line after the `--`
+  continues the paragraph, so the test expects a ProseDash finding on
+  each:
+
+  - A second line in a blockquote inside a list item.
+  - A line of `=` marks under a list item inside a list item, left of
+    the text of the inner item. CommonMark reads it as more text of
+    that item.
+  - A list item indented 4 columns under a paragraph indented 2.
+    CommonMark measures the indent of the item from the start of the
+    text, so it reads the item as more text of the paragraph.
+  - A list item at `2.` under a paragraph indented 2 columns.
+  - A line whose own text is `--- x`. close_spans does not add ` x` to
+    it, so hide_end_dashes reads it as text and not as a line of `-`
+    marks.
+
+  In each of the other groups, the line after the `--` ends the
+  paragraph, so the test expects no ProseDash finding on them:
+
+  - A list item at `2.` under a line in a blockquote. CommonMark reads
+    a line without `>` there as more text of the quote, but a list item
+    at any number ends the quote.
+  - A line in a blockquote under a blockquote inside a list item. Its
+    `>` sits left of the text of the item, so it opens a blockquote
+    outside the item.
+  - A list item at `2.` under the second line of a list item. That line
+    sits at the text of the item, so CommonMark reads it as text of the
+    item, and the `2.` item ends the paragraph.
+  - A line of `-` marks in a blockquote under a line in that
+    blockquote, which CommonMark reads as the underline of a heading.
+    The shadow adds ` x` after that line too, and hide_end_dashes reads
+    the line without it.
+  - A list item at `2.` under a paragraph of a list item, after an
+    empty comment line. The empty line does not end the item.
+  - A line in a blockquote under a paragraph that follows a heading in
+    a blockquote. CommonMark adds a lazy line only to a paragraph, so
+    the paragraph after the heading sits outside the quote, and the `>`
+    opens a new one.
+  - A list item at `2.` indented 2 columns under a list item whose
+    marker a tab follows. The tab reaches column 4, so the text of the
+    item starts there, and the `2.` item sits left of it.
+
+  More groups follow. In each of the first seven, the line after the
+  `--` continues the paragraph, so the test expects a ProseDash finding
+  on each:
+
+  - A line under a line in a blockquote, whose `>` sits 4 columns in.
+    That `>` does not open a blockquote, so CommonMark reads the line as
+    more text of the quote.
+  - A line that opens with seven `#` marks, which do not open a
+    heading.
+  - A line under a line whose text opens with `--force`, which is not a
+    banner.
+  - A list item at `2.` under a paragraph that follows a list item at
+    `1.` without text and an empty comment line. The empty line ends
+    the empty item, so CommonMark reads the `2.` line as more text of
+    the paragraph.
+  - A list item at `2.` under a list item in a blockquote, at the text
+    of that item. The text of the item starts after the `>` and one
+    blank, so the `2.` line sits in the item.
+  - A line that opens with ten digits and a `.`, under a line in a
+    blockquote. A list marker holds 9 digits at most, so the line does
+    not open a list item. CommonMark reads it as more text of the
+    quote.
+  - A list item at `2.` under a line that opens with ten digits and a
+    `.`, which does not open a list item.
+
+  In each of the other groups, the line after the `--` ends the
+  paragraph, so the test expects no ProseDash finding on them:
+
+  - A list item in a blockquote, whose marker sits 4 columns past the
+    `>`. The text of the quote starts after its `>` and one blank, so
+    the marker sits 3 columns into that text, and it opens a list item.
+  - A list item indented 4 columns under a list item whose marker a tab
+    follows. The tab reaches column 4, so the inner item sits at the
+    text of the outer item.
+  - A list item at `2.` under the second line of a list item at `1.`
+    without text. The text of such an item starts one column past its
+    marker, so the second line sits in the item.
+  - A line in a blockquote under a paragraph that follows a thematic
+    break in a blockquote. The paragraph sits outside the quote, so the
+    `>` opens a new one.
+  - A list item at `2.` under a paragraph of a list item at `1.`
+    without text, after an empty comment line. The item holds text
+    above the empty line, so the empty line does not end it.
+  - A list item at `2.` under a paragraph of a list item whose first
+    line holds a list item at `1.` without text, after an empty comment
+    line. The empty line ends only the inner item, so the paragraph
+    sits in the outer item, and the `2.` item ends it.
+
+  More groups follow, and some of their lines hold only `-` and `*`
+  marks. Such a line opens its list items, and a thematic break in it
+  ends the blocks that it leaves, as in CommonMark. In each of the
+  first eight groups, the line after the `--` continues the paragraph,
+  so the test expects a ProseDash finding on each:
+
+  - A line under a line in a blockquote, whose `>` sits 3 columns in.
+    The copy with `//` markers holds the same text after each `//`, so
+    its `>` opens a blockquote too.
+  - A line of `=` marks under a paragraph of a list item whose marker
+    line holds only `-`. CommonMark reads that line as an empty list
+    item. The line of `=` marks leaves the item, so CommonMark reads it
+    as more text of the item.
+  - The same lines with the `-` 3 columns in.
+  - A line of `=` marks under a paragraph of a list item inside a list
+    item, whose marker line holds only `- -`.
+  - A list item at `2.` in a blockquote inside a list item, under a
+    thematic break in `*` marks, and a line of `=` marks under the `2.`
+    item. No paragraph sits above the item, so the item opens a list,
+    and the line of `=` marks leaves it.
+  - The same lines in a blockquote whose first line holds a `-` 5
+    columns past the `>`. CommonMark reads that `-` as indented code,
+    so no paragraph sits above the `2.` item either.
+  - A line of `=` marks under a paragraph of a list item whose marker 4
+    blanks follow, after a line that holds a `-` 4 columns in. The text
+    of the item starts 5 columns in, so that `-` sits 4 columns past
+    the blocks that its line stays in. That line does not open a block
+    and reads as blank, so the item stays open.
+  - A line that opens with ten digits and a `.`, under a paragraph
+    line. The number has the value 1, but a list marker holds 9 digits
+    at most, so the line does not open a list item.
+
+  A heading follows, whose underline is a line that holds only `-`, so
+  the test expects no finding on the heading. A list item at `2.`
+  follows the heading, and a line of `=` marks follows the item. No
+  paragraph sits above the item, so the item opens a list, and the test
+  expects a finding on it.
+
+  In each of the other groups, the line after the `--` ends the
+  paragraph, so the test expects no ProseDash finding on them:
+
+  - A list item indented 4 columns under a paragraph of a list item
+    whose marker line holds only `*`. The inner item sits at the text
+    of the outer item.
+  - A list item at `01.` under a paragraph. The number has the value 1,
+    so the item ends the paragraph.
+  - A line that holds only `--` under a paragraph line. CommonMark
+    reads it as the underline of a heading. hide_end_dashes reads it as
+    a blank line, because Harper strips its marks.
+  - A line of `=` marks under a paragraph indented 2 columns. A
+    thematic break in `-` marks and blanks sits above the paragraph,
+    under a list item, and it ends the item. So the paragraph sits
+    outside the item, and the line of `=` marks underlines it.
+  - The same lines with a thematic break in `*` marks and no blanks.
+
+  The test also writes a shell file and a copy of it as a Python file.
+  `.editorconfig` trims the blanks that end a line of the fixture, but
+  two comment lines of this file end in a blank. The first ends in `--`
+  and sits above code. The second holds a line of `-` marks in a
+  blockquote, under a line of that blockquote that ends in `--`. The
+  test expects no ProseDash finding from either file.
+
+  The last paragraphs of comment text in the file each end in `--`. A
+  line of `-` marks follows the first, code follows the second, and an
+  empty comment line follows the third. The last one ends the file.
+  Markdown files do not draw a finding on a `--` that ends a paragraph.
+  hide_end_dashes drops the ` x` after each of these lines, so the test
+  expects no ProseDash finding there either.
+
+  The test also lints `fixtures/comment-code/describe.tf` and a copy of
+  it with CRLF line endings. Some of its quoted `description` and
+  `error_message` strings end in `--`, and the closing quote ends the
+  paragraph of each. One of them sits above a comment line, which does
+  not continue its paragraph. A comment line that ends in `--` sits
+  above a quoted `description`, and a heredoc description ends in `--`.
+
+  Two comment lines that each open a list item at `2.` follow the last
+  quoted `description`. hide_end_dashes reads the string as code for
+  those lines, so the second line opens the next item. In another
+  heredoc description, a line that ends in `--` sits above a line that
+  opens with `//`. That `//` is text of the description, so the line
+  continues the paragraph. The test expects a ProseDash finding on that
+  `--` and on the string whose text ends in an ` x` of its own after the
+  `--`.
 
   The test also lints `fixtures/comment-code/template.ts`, whose
   template literals hold `//` lines that end the template or open a
@@ -454,20 +674,6 @@ on a set of files.
   block. With the ` x`, the `/` of the regular expression reads as a
   division, and its backtick opens a template that hides the comment
   after it.
-
-  Four banners, such as `// --- The section ---`, come after the
-  blocks. Code follows the first, and a comment line follows each of
-  the others. The text of the third opens with `---` and no space, and
-  the text of the fourth opens with `--` and a space. merge_comments
-  drops the ` x` after a banner, whatever the next line holds, so the
-  test expects no ProseDash finding on the banners.
-
-  The last paragraphs of comment text in the fixture each end in `--`.
-  A line of `-` marks follows the first, code follows the second, and
-  an empty comment line follows the third. The last one ends the file.
-  Markdown files do not draw a finding on a `--` that ends a paragraph.
-  merge_comments drops the ` x` after each of these lines, so the test
-  expects no ProseDash finding there either.
 
   The test expects a finding on each comment after these cases, and on
   the text after each wrapped span. It lints copies of the fixture as a
@@ -496,12 +702,18 @@ on a set of files.
   ends in the operator `--|`, after code and at the start of a line, and
   the test expects no finding there.
 
+  A Haddock banner, `-- | --- The section ---`, sits above the second
+  quasiquote, and a `--` line of text follows it. hide_end_dashes reads
+  the copy without Haddock markers, so it finds the banner and drops the
+  ` x` that the shadow adds after it. The test expects no finding on the
+  banner.
+
   The test also expects the shadow to hold each full-line `--` comment
-  without its Haddock marker. The shadow takes a `--` marker only before
-  whitespace or the line end, so it does not hold a line for the
-  operator or the `--- |` comment. The test expects prose-lint to exit 2
-  on an unreadable copy of the file, as on the file of any other
-  language.
+  without its Haddock marker, and the banner without the ` x`. The
+  shadow takes a `--` marker only before whitespace or the line end, so
+  it does not hold a line for the operator or the `--- |` comment. The
+  test expects prose-lint to exit 2 on an unreadable copy of the file,
+  as on the file of any other language.
 
   The test also lints a second Haskell file, which holds Haddock code
   examples, fenced code blocks, and block comments that open with `{--`.

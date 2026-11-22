@@ -132,3 +132,214 @@ x=1
 x=1
 # The job runs --
 # the cache refills.
+x=1
+# The job runs -- x
+x=1
+# --- The section ---
+x=1
+# --- The other section ---
+# The section sets up the cache.
+# ---The third section---
+# The section sets up the cache.
+# -- The fourth section --
+# The section sets up the cache.
+x=1
+# The job runs --
+# - an item follows.
+x=1
+# The job runs --
+# # A heading
+x=1
+# The job runs --
+# > A quote follows.
+x=1
+# - The job runs --
+#   - an item follows.
+x=1
+# - The job runs --
+# 2. An item follows.
+x=1
+# The job runs --
+# ===
+x=1
+# The job runs --
+# 1. An item follows.
+x=1
+# The job runs --
+# ___
+x=1
+# # The job runs --
+# The cache refills.
+x=1
+# > The job runs --
+# > the cache refills.
+x=1
+# The job runs --
+# 2. An item follows.
+x=1
+# > The job runs --
+# the cache refills.
+x=1
+# > The job runs --
+# ===
+x=1
+# - The job runs --
+# the cache refills.
+x=1
+# The job runs --
+#     - the cache refills.
+x=1
+# - > The job runs --
+#   > the cache refills.
+x=1
+# - - The job runs --
+#   ===
+x=1
+#   The job runs --
+#     - the cache refills.
+x=1
+#   The job runs --
+# 2. An item follows.
+x=1
+# The job runs --
+# --- x
+x=1
+# > The job runs --
+# 2. An item follows.
+x=1
+# - > The job runs --
+# > A quote follows.
+x=1
+# - The job runs
+#   and the cache refills --
+# 2. An item follows.
+x=1
+# > The job runs --
+# > -----
+x=1
+# - The job runs.
+#
+#   The cache refills --
+# 2. An item follows.
+x=1
+# > The job runs.
+# > ===
+# The cache refills --
+# > A quote follows.
+x=1
+# -	The job runs --
+#   2. An item follows.
+x=1
+# > The job runs --
+#     > - the cache refills.
+x=1
+# The job runs --
+# ####### the cache refills.
+x=1
+# --force skips the job --
+# the cache refills.
+x=1
+# 1.
+#
+#    The job runs --
+# 2. An item follows.
+x=1
+# > - The job runs --
+# >   2. An item follows.
+x=1
+# > The job runs --
+# 1234567890. the cache refills.
+x=1
+# 1234567890. The job runs --
+# 2. An item follows.
+x=1
+# > The job runs --
+# >    - the cache refills.
+x=1
+# -	The job runs --
+#     - the cache refills.
+x=1
+# 1.
+#    The job runs --
+# 2. An item follows.
+x=1
+# > ___
+# The job runs --
+# > the cache refills.
+x=1
+# 1.
+#    The job runs.
+#
+#    The cache refills --
+# 2. An item follows.
+x=1
+# - 1.
+#
+#   The job runs --
+# 2. An item follows.
+x=1
+#    > The job runs --
+# > the cache refills.
+x=1
+# -
+#   The job runs --
+# ===
+x=1
+#    -
+#      The job runs --
+# ===
+x=1
+# - -
+#     The job runs --
+#   ===
+x=1
+# - > ***
+#   > 2. The job runs --
+#   > ===
+x=1
+# >     -
+# > 2. The job runs --
+# > ===
+x=1
+# -    The job runs
+#     -
+#      and the cache refills --
+# ===
+x=1
+# The job runs --
+# 0000000001. the cache refills.
+x=1
+# The job runs --
+# -
+# 2. The cache refills --
+# ===
+x=1
+# *
+#   The job runs --
+#     - an item follows.
+x=1
+# The job runs --
+# 01. An item follows.
+x=1
+# The job runs --
+# --
+x=1
+# - a
+# - - -
+#   The job runs --
+# ===
+x=1
+# - a
+# ***
+#   The job runs --
+# ===
+x=1
+# The rule follows --
+# -----
+x=1
+# The job runs --
+x=1
+# The job runs --
+#
+# The cache refills.
+# The job runs --

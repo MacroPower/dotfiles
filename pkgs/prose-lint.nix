@@ -1183,6 +1183,8 @@ in
     # each comment line whose text ends in one of those marks and holds
     # another character. It reads the line before it adds the ` x`, so
     # `> ***` reads as a thematic break, and `> * x` keeps its text.
+    # hide_end_dashes drops the ` x` again after a `-` that ends a
+    # paragraph, a heading, or a banner.
     #
     # A run that no run closes is literal text, and each of its
     # backticks becomes a `%`. lib/markdown.awk reads each line of the
@@ -1664,6 +1666,315 @@ in
       '
     }
 
+    # Drops the ` x` that close_spans adds after text that ends in `-`
+    # when the `-` ends a comment paragraph, a heading, or a banner.
+    # Harper then strips the marks that end the line, so the `--` does not
+    # draw a ProseDash finding, as at the end of a markdown paragraph. The
+    # arguments name the comment kind and the source file of the shadow on
+    # stdin. The shadow lint and the copy that merge_comments prints both
+    # read the result, so every language draws the same findings on these
+    # lines.
+    #
+    # The step reads each run of comment lines as a markdown file with the
+    # same comment text. It keeps the ` x` only when the next line
+    # continues the paragraph there. Harper then reads the `--`, and
+    # ProseDash reports it, as in that markdown file.
+    #
+    # The step tracks the blockquotes and the list items that hold each
+    # line, as CommonMark does. A line stays in a blockquote when it opens
+    # with a `>` after up to 3 blanks. It stays in a list item when it is
+    # blank or indented to the text of the item, which starts after its
+    # marker. But a list item whose marker line holds no text ends at a
+    # blank line right under that line. A line that stays in each block
+    # that holds the paragraph continues the paragraph, unless it opens
+    # one of these blocks:
+    #
+    # - A blockquote, a heading, or a thematic break in `_` marks.
+    # - A list item in `-`, `*`, or `+` that holds text, or a list item
+    #   that holds text at a number whose value is 1, such as `1.`, `1)`,
+    #   or `01.`.
+    # - A line of `=` marks, which CommonMark reads as the underline of a
+    #   heading.
+    #
+    # A line that leaves a block that holds the paragraph is a lazy line.
+    # A lazy line continues the paragraph, unless it opens a blockquote, a
+    # heading, a thematic break in `_` marks, or a list item at any marker,
+    # with or without text. A line opens none of these blocks when it is
+    # indented 4 or more columns past the text of the innermost block that
+    # it stays in. The text of a blockquote starts after its `>` and one
+    # blank.
+    #
+    # These lines end the paragraph too:
+    #
+    # - Code, the end of the file, and a line of a fence. The step runs
+    #   after close_spans, which blanks each line of a fence down to its
+    #   marker.
+    # - A comment line whose text after its opening `>` marks holds only
+    #   blanks and the marks `-`, `#`, `/`, `*`, and `!`. Harper strips
+    #   the marks that end a comment line, so the step reads most such
+    #   lines as blank lines, such as an empty comment line or a lone `#`.
+    #
+    # A line whose marks form `-` or `*` list markers or a thematic break,
+    # such as `-`, `- -`, `* -`, or `-----`, does not read as blank. It
+    # opens its list items, and its thematic break ends the blocks that
+    # it leaves, as in CommonMark. The line still ends the paragraph of
+    # the line before. CommonMark reads a lone `-` there as the underline
+    # of a heading. A lone `*` there reads as blank, as the other lines of
+    # marks do. When the marks sit 4 or more columns past the blocks that
+    # the line stays in, they open no block, and the line reads as blank.
+    #
+    # A heading forms a block of its own, so the step drops the ` x` after
+    # a heading line, whatever the next line holds.
+    #
+    # The step does not read HTML, so a `--` above an HTML tag still draws
+    # a finding. Harper lints comment text indented 4 or more columns as
+    # prose. So the step reads such text after a blank line as a paragraph,
+    # not as an indented code block. CommonMark reads some lines of marks
+    # as more text of a paragraph, such as a lone `*` or a `-` indented 4
+    # columns under a paragraph line. The step reads such a line as a
+    # blank line, so a `--` above it does not draw a finding, though a
+    # markdown file draws one. The step counts each tab as the columns up
+    # to the next multiple of four, as close_spans does.
+    #
+    # comment_lines writes the `//` marker of an HCL comment as `# `. The
+    # step reads the text of such a line after its `//` marker and one
+    # blank, as in a Go file.
+    #
+    # The step also drops the ` x` after a banner, whatever the next line
+    # holds. The text of a banner opens with three `-` marks, or with two
+    # and whitespace, such as `# --- Section ---` or `# ---Section---`. Its
+    # closing run of `-` marks is decoration and not a dash. Harper strips
+    # the opening run with the comment marker, but a markdown file reports
+    # that run. Without the ` x`, Harper strips the closing run too, so the
+    # banner does not draw a finding. A line that opens with a flag such as
+    # `--force` is not a banner.
+    #
+    # The step tests the text of the source line, because a comment can
+    # end in ` x` of its own (`# a - x`). A shadow line that ends in ` x`
+    # after a source line that ends in `-` gained the ` x` from
+    # close_spans. A span that wraps onto the next line puts its run of
+    # backticks after the ` x`, and the run stays. The text of a quoted HCL
+    # `description` or `error_message` string sits in quotes on its source
+    # line, so the step tests the text between the quotes. The closing
+    # quote ends the paragraph, so the step drops the ` x` after such a
+    # string, whatever the next line holds. The step reads such a string
+    # as code for the comment lines around it. So a comment line above
+    # the string ends its paragraph there, and a comment line under the
+    # string opens a new paragraph.
+    hide_end_dashes() {
+      KIND="$1" SOURCE="$2" awk '
+        # Sets text to the shadow line s of source line k after its marker
+        # and one blank. Returns 0 for a line that is not a comment.
+        # comment_lines writes the `//` marker of an HCL comment as `# `, so
+        # comment_text takes `# ` and one blank as the marker of such a
+        # line. A heredoc line that opens with `//` keeps its `//` after the
+        # `#` that comment_lines writes, so it takes the usual marker. When
+        # the source line ends in a mark, comment_text drops the ` x` that
+        # close_spans adds after it. Each tab becomes the blanks up to the
+        # next multiple of four columns. quoted holds the width of the `>`
+        # marks that open text. A line that holds only blanks and the marks
+        # `-`, `#`, `/`, `*`, and `!` after those marks reads as blank, so
+        # text keeps only its `>` marks. markers is 1 when those marks form
+        # `-` or `*` list markers, a thematic break, or both. text keeps
+        # such a line whole.
+        function comment_text(s, k,   own, i, mark, tail) {
+          mark = "^[ \t]*(//[/!]?|#|--)[ \t]?"
+          if (hcl && source[k] ~ /^[ \t]*\/\// && s ~ /^[ \t]*# /) {
+            mark = "^[ \t]*# [ \t]?"
+          }
+          if (s == "x" || !match(s, mark)) {
+            return 0
+          }
+          text = substr(s, RLENGTH + 1)
+          own = source[k]
+          sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", own)
+          if (own ~ /[-#\/*!][ \t]*$/ && match(text, / x`*$/)) {
+            text = substr(text, 1, RSTART - 1) substr(text, RSTART + 2)
+          }
+          while ((i = index(text, "\t"))) {
+            text = substr(text, 1, i - 1) substr("    ", 1, 4 - (i - 1) % 4) substr(text, i + 1)
+          }
+          match(text, /^([ \t]{0,3}>[ \t]?)*/)
+          quoted = RLENGTH
+          tail = substr(text, quoted + 1)
+          markers = tail ~ ("^[ \t]*([-*][ \t]+)*([-*]|" rule ")[ \t]*$")
+          if (!markers && tail !~ /[^-#\/*! \t]/) {
+            text = substr(text, 1, quoted)
+          }
+          return 1
+        }
+
+        # Matches text against the blocks that hold the line before it,
+        # from the outermost. A blockquote takes a `>` after up to 3 blanks,
+        # and the blank after it. A list item takes a blank line, or the
+        # blanks up to its text. Sets rest to the text after the blocks that
+        # match, and returns their number.
+        function stay(   i) {
+          rest = text
+          for (i = 1; i <= depth; i++) {
+            if (kind[i] == ">") {
+              if (!match(rest, /^[ \t]{0,3}>[ \t]?/)) {
+                break
+              }
+              rest = substr(rest, RLENGTH + 1)
+            } else if (rest ~ /[^ \t]/) {
+              match(rest, /^[ \t]*/)
+              if (RLENGTH < width[i]) {
+                break
+              }
+              rest = substr(rest, width[i] + 1)
+            }
+          }
+          return i - 1
+        }
+
+        # Reports whether rest opens a block that ends the paragraph of the
+        # line before. inside is 1 for a line that stays in each block of
+        # that paragraph. Such a line opens a list item only in `-`, `*`, or
+        # `+`, or at a number whose value is 1, such as `1.` or `01)`, with
+        # text after the marker. A line of `=` marks there underlines a
+        # heading. Any other line opens a list item at any marker.
+        function opens(inside,   b) {
+          match(rest, /^[ \t]*/)
+          if (RLENGTH >= 4) {
+            return 0
+          }
+          b = substr(rest, RLENGTH + 1)
+          if (b ~ /^(>|#{1,6}([ \t]|$)|(_[ \t]*){3,}$)/) {
+            return 1
+          }
+          if (inside) {
+            return b ~ /^(=+[ \t]*$|[-*+][ \t]+[^ \t]|0{0,8}1[.)][ \t]+[^ \t])/
+          }
+          return b ~ /^([-*+]|[0-9]{1,9}[.)])([ \t]|$)/
+        }
+
+        # Reads the shadow line t of source line k. depth, kind, and width
+        # hold the blocks that hold the line before it, and para is 1 when
+        # that line holds paragraph text. When the line before opens a list
+        # item without text, fresh holds the depth of that item. Sets them
+        # for t, and returns 1 when t continues the paragraph of the line
+        # before. A lazy line keeps the blocks that it leaves open, as in
+        # CommonMark. A blank line right under an empty list item ends the
+        # item. A quoted HCL `description` or `error_message` string ends
+        # the blocks, as code does.
+        #
+        # When markers is 1, t opens its list items, and its thematic break
+        # opens no block. Such a line never continues the paragraph of the
+        # line before. When its marks sit 4 or more columns past the blocks
+        # that it stays in, it reads as blank.
+        function advance(t, k,   n, setext, ind, b, m, w) {
+          if (!comment_text(t, k) || (hcl && source[k] ~ describes)) {
+            depth = 0
+            para = 0
+            return 0
+          }
+          n = stay()
+          if (markers && rest ~ /^[ \t]{4}/) {
+            text = substr(text, 1, quoted)
+            n = stay()
+          }
+          if (fresh && n >= fresh && rest !~ /[^ \t]/) {
+            n = fresh - 1
+          }
+          fresh = 0
+          if (para && rest ~ /[^ \t]/ && !opens(n == depth)) {
+            if (!markers) {
+              return 1
+            }
+            depth = n
+            para = 0
+            return 0
+          }
+          setext = para && n == depth && rest ~ /^[ \t]{0,3}=+[ \t]*$/
+          depth = n
+          for (;;) {
+            match(rest, /^[ \t]*/)
+            ind = RLENGTH
+            b = substr(rest, ind + 1)
+            if (ind >= 4 || b ~ ("^" rule "$")) {
+              break
+            }
+            if (match(b, /^>[ \t]?/)) {
+              kind[++depth] = ">"
+              rest = substr(b, RLENGTH + 1)
+              continue
+            }
+            if (!match(b, /^([-*+]|[0-9]{1,9}[.)])/)) {
+              break
+            }
+            m = RLENGTH
+            b = substr(b, m + 1)
+            if (b !~ /[^ \t]/) {
+              w = ind + m + 1
+              fresh = depth + 1
+            } else if (match(b, /^[ \t]+/)) {
+              w = ind + m + (RLENGTH > 4 ? 1 : RLENGTH)
+            } else {
+              break
+            }
+            kind[++depth] = "-"
+            width[depth] = w
+            rest = substr(rest, w + 1)
+          }
+          para = !markers && !setext && rest ~ /[^ \t]/ && rest !~ ("^[ \t]{0,3}(#{1,6}([ \t]|$)|(_[ \t]*){3,}$|" rule "$)")
+          return 0
+        }
+
+        # Prints the shadow line s of source line k. goes_on is 1 when the
+        # next shadow line continues the paragraph of s. advance ends the
+        # paragraph at a quoted `description` or `error_message` string, so
+        # goes_on is 0 after one.
+        function emit(k, s, goes_on,   text, i, c, ends) {
+          text = source[k]
+          if (hcl && match(text, describes)) {
+            text = substr(text, RLENGTH + 1)
+            for (i = 1; i <= length(text); i++) {
+              c = substr(text, i, 1)
+              if (c == "\\") {
+                i++
+              } else if (c == "\"") {
+                break
+              }
+            }
+            text = substr(text, 1, i - 1)
+          } else {
+            sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)
+            ends = text ~ /^[ \t]*(---|--[ \t])/
+          }
+          if (s != "x" && text ~ /-[ \t]*$/ && (ends || !goes_on) && match(s, / x`*$/)) {
+            s = substr(s, 1, RSTART - 1) substr(s, RSTART + 2)
+          }
+          print s
+        }
+
+        BEGIN {
+          RS = "\r?\n"
+          hcl = ENVIRON["KIND"] == "hcl"
+          describes = "^[ \t]*(description|error_message)[ \t]*=[ \t]*\""
+          # A thematic break in `-` or `*` marks.
+          rule = "((-[ \t]*){3,}|(\\*[ \t]*){3,})"
+          while ((getline line < ENVIRON["SOURCE"]) > 0) {
+            source[++lines] = line
+          }
+        }
+        {
+          goes_on = advance($0, NR)
+        }
+        NR > 1 {
+          emit(NR - 1, prev, goes_on)
+        }
+        {
+          prev = $0
+        }
+        END {
+          if (NR > 0) {
+            emit(NR, prev, 0)
+          }
+        }
+      '
+    }
+
     # Keeps Harper and lib/markdown.awk from opening a code block at a
     # comment line of the shadow whose text opens with three backticks.
     # After close_spans, none of those lines opens a fence. A run of
@@ -1712,27 +2023,6 @@ in
     # line of code. Harper then does not lint those comments. Without the
     # end of the string, its parser can also miss comments further down.
     #
-    # close_spans adds ` x` after text that ends in `-`. The copy keeps
-    # that ` x` when the next line of the shadow holds comment text other
-    # than the marks `-`, `#`, `/`, `*`, and `!`. Harper then reads the
-    # `--` that ends the line, and ProseDash reports it, as in a markdown
-    # paragraph. Before code, an empty comment line, a line of those
-    # marks, or the end of the file, the copy drops the ` x`. The `--`
-    # then does not draw a finding, as at the end of a markdown paragraph.
-    #
-    # A list item, a heading, or a blockquote line also ends a markdown
-    # paragraph. Such a line holds text, so the copy keeps the ` x` above
-    # it, and a `--` there still draws a finding.
-    #
-    # The copy also drops the ` x` after a banner, whatever the next line
-    # holds. The text of a banner opens with three `-` marks, or with two
-    # and whitespace, such as `# --- Section ---` or `# ---Section---`.
-    # Its closing run of `-` marks is decoration and not a dash. Harper
-    # strips the opening run with the comment marker, but a markdown file
-    # reports that run. Without the ` x`, Harper strips the closing run
-    # too, so the banner does not draw a finding. A line that opens with
-    # a flag such as `--force` is not a banner.
-    #
     # The copy drops the ` x` after text that ends in `#`, `/`, `*`, or
     # `!`, whatever the next line holds. Harper strips the marks that end
     # a line without the ` x`, as it does in the source. A line that ends
@@ -1740,10 +2030,11 @@ in
     # Rust raw string (`// end"#`), where the ` x` lands in code. In the
     # languages that Harper reads through this copy, the only string or
     # block comment that closes with a `-` is a Ruby percent literal such
-    # as `%q-...-`. The ` x` lands in code there only when comment text
-    # follows the line that closes the literal, and Ruby code rarely
-    # writes such a literal. close_spans can put a run of backticks after
-    # the ` x`, and that run stays.
+    # as `%q-...-`. hide_end_dashes keeps the ` x` after a `-` only when
+    # the next comment line continues the paragraph. So the ` x` lands in
+    # code there only when such a line follows the line that closes the
+    # literal. Ruby code rarely writes such a literal. close_spans can put
+    # a run of backticks after the ` x`, and that run stays.
     merge_comments() {
       SHADOW="$1" awk '
         BEGIN {
@@ -1760,10 +2051,7 @@ in
           cr = sub(/\r$/, "")
           text = $0
           sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)
-          after = (NR + 1) in shadow ? shadow[NR + 1] : "x"
-          goes_on = after != "x" && sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", after) && after ~ /[^-#\/*! \t]/
-          banner = text ~ /^[ \t]*(---|--[ \t])/
-          if (text ~ /[^-#\/*! \t]/ && (text ~ /[#\/*!][ \t]*$/ || ((banner || !goes_on) && text ~ /-[ \t]*$/)) && match(s, / x`*$/)) {
+          if (text ~ /[^-#\/*! \t]/ && text ~ /[#\/*!][ \t]*$/ && match(s, / x`*$/)) {
             s = substr(s, 1, RSTART - 1) substr(s, RSTART + 2)
           }
           print s (cr ? "\r" : "")
@@ -2052,7 +2340,7 @@ in
         exit 2
       fi
       comment_lines "$comment_kind" "$source" /dev/null | end_list_leads |
-        close_spans /dev/null "$delimiters" | break_fence_runs | straighten
+        close_spans /dev/null "$delimiters" | hide_end_dashes "$comment_kind" "$source" | break_fence_runs | straighten
       exit 0
     fi
 
@@ -2111,7 +2399,7 @@ in
       : >"$shifts"
       : >"$span_shifts"
       comment_lines "$comment_kind" "$source" "$shifts" | end_list_leads |
-        close_spans "$span_shifts" "$delimiters" | break_fence_runs | straighten >"$shadow"
+        close_spans "$span_shifts" "$delimiters" | hide_end_dashes "$comment_kind" "$source" | break_fence_runs | straighten >"$shadow"
     fi
 
     # The harper-cli runs and the awk checks share no state, so each
@@ -2331,11 +2619,11 @@ in
         '';
 
         # Lints the comments in configs/harper/fixtures/comment-code/code.sh
-        # as a shell, Nix, awk, Python, Rust, TypeScript, Lua, and Go file.
-        # It expects the same ProseMayPossibility and ProseDash findings
-        # from each. Harper lints the shell, Nix, Rust, TypeScript, and Lua
-        # files through the copy that merge_comments prints, and the other
-        # files through their shadow. The command in
+        # as a shell, Nix, awk, Python, YAML, HCL, Rust, TypeScript, Lua,
+        # and Go file. It expects the same ProseMayPossibility and ProseDash
+        # findings from each. Harper lints the shell, Nix, Rust, TypeScript,
+        # and Lua files through the copy that merge_comments prints, and the
+        # other files through their shadow. The command in
         # configs/harper/CLAUDE.md builds this test too.
         #
         # Each `may` sits inside a code span or a fenced code block, or
@@ -2375,18 +2663,240 @@ in
         # - A backtick after a backslash, above a span. CommonMark reads it
         #   as text.
         #
-        # The second-to-last line ends in `--`, and its sentence goes on in
-        # the last line. Harper strips the marks at the end of a comment
-        # line, so the shadow adds ` x` after them (see close_spans). The
-        # copy that merge_comments prints keeps that ` x` after a `-` when
-        # the next comment line holds text. So the test expects a ProseDash
-        # finding on the `--` from every file, as a markdown file with the
-        # same lines draws. The test also lints a copy of the shell file
-        # with CRLF line endings and expects the same findings from it.
+        # The comments at the end of code.sh hold lines that end in `--`.
+        # Harper strips the marks at the end of a comment line, so the
+        # shadow adds ` x` after them (see close_spans). hide_end_dashes
+        # keeps that ` x` only when the next comment line continues the
+        # paragraph, as in a markdown file with the same lines. So the test
+        # expects the same findings from every file. It also lints a copy of
+        # the shell file with CRLF line endings and expects the same findings
+        # from it.
+        #
+        # The sentence of the first `--` goes on in the next line. The text
+        # of the second line ends in an ` x` of its own after the `--`. The
+        # test expects a ProseDash finding on each of these dashes.
+        #
+        # Four banners, such as `# --- The section ---`, come next. Code
+        # follows the first, and a comment line follows each of the others.
+        # The text of the third opens with `---` and no space, and the text
+        # of the fourth opens with `--` and a space. hide_end_dashes drops
+        # the ` x` after a banner, whatever the next line holds, so the test
+        # expects no ProseDash finding on the banners.
+        #
+        # Pairs of comment lines come next, and the first line of each pair
+        # ends in `--`. The second line of each of the first eight pairs
+        # ends the paragraph, so the test expects no ProseDash finding on
+        # them. Three of them open a list item, a heading, and a blockquote.
+        # Two more open a list item under a list item, one at the text of
+        # that item and one at `2.`. The sixth holds a line of `=` marks, the
+        # seventh opens a list item at `1.`, and the eighth holds a thematic
+        # break in `_` marks.
+        #
+        # The first line of the ninth pair is a heading. Headings form
+        # blocks of their own, so the test expects no finding on it either.
+        #
+        # The second line of each of the next six pairs continues the
+        # paragraph, so the test expects a ProseDash finding on each:
+        #
+        # - A second line in a blockquote.
+        # - A list item at `2.` under a paragraph. CommonMark reads an item
+        #   at a number other than 1 as more text of a paragraph, but as the
+        #   next item under a list item.
+        # - A line without `>` under a line in a blockquote, and a line of
+        #   `=` marks without `>` under one. CommonMark reads each of them as
+        #   more text of the quote. It does not read such a line of `=` marks
+        #   as the underline of a heading.
+        # - A line under a list item, left of the text of the item, which
+        #   CommonMark reads as more text of the item.
+        # - A list item indented 4 columns under a paragraph, which
+        #   CommonMark reads as more text of the paragraph.
+        #
+        # The next groups of comment lines test the blocks that hold the
+        # line that ends in `--`. In each of the first five, the line after
+        # the `--` continues the paragraph, so the test expects a ProseDash
+        # finding on each:
+        #
+        # - A second line in a blockquote inside a list item.
+        # - A line of `=` marks under a list item inside a list item, left
+        #   of the text of the inner item. CommonMark reads it as more text
+        #   of that item.
+        # - A list item indented 4 columns under a paragraph indented 2.
+        #   CommonMark measures the indent of the item from the start of the
+        #   text, so it reads the item as more text of the paragraph.
+        # - A list item at `2.` under a paragraph indented 2 columns.
+        # - A line whose own text is `--- x`. close_spans does not add ` x`
+        #   to it, so hide_end_dashes reads it as text and not as a line of
+        #   `-` marks.
+        #
+        # In each of the other groups, the line after the `--` ends the
+        # paragraph, so the test expects no ProseDash finding on them:
+        #
+        # - A list item at `2.` under a line in a blockquote. CommonMark
+        #   reads a line without `>` there as more text of the quote, but a
+        #   list item at any number ends the quote.
+        # - A line in a blockquote under a blockquote inside a list item.
+        #   Its `>` sits left of the text of the item, so it opens a
+        #   blockquote outside the item.
+        # - A list item at `2.` under the second line of a list item. That
+        #   line sits at the text of the item, so CommonMark reads it as
+        #   text of the item, and the `2.` item ends the paragraph.
+        # - A line of `-` marks in a blockquote under a line in that
+        #   blockquote, which CommonMark reads as the underline of a
+        #   heading. The shadow adds ` x` after that line too, and
+        #   hide_end_dashes reads the line without it.
+        # - A list item at `2.` under a paragraph of a list item, after an
+        #   empty comment line. The empty line does not end the item.
+        # - A line in a blockquote under a paragraph that follows a heading
+        #   in a blockquote. CommonMark adds a lazy line only to a
+        #   paragraph, so the paragraph after the heading sits outside the
+        #   quote, and the `>` opens a new one.
+        # - A list item at `2.` indented 2 columns under a list item whose
+        #   marker a tab follows. The tab reaches column 4, so the text of
+        #   the item starts there, and the `2.` item sits left of it.
+        #
+        # More groups follow. In each of the first seven, the line after the
+        # `--` continues the paragraph, so the test expects a ProseDash
+        # finding on each:
+        #
+        # - A line under a line in a blockquote, whose `>` sits 4 columns
+        #   in. That `>` does not open a blockquote, so CommonMark reads
+        #   the line as more text of the quote.
+        # - A line that opens with seven `#` marks, which do not open a
+        #   heading.
+        # - A line under a line whose text opens with `--force`, which is
+        #   not a banner.
+        # - A list item at `2.` under a paragraph that follows a list item
+        #   at `1.` without text and an empty comment line. The empty line
+        #   ends the empty item, so CommonMark reads the `2.` line as more
+        #   text of the paragraph.
+        # - A list item at `2.` under a list item in a blockquote, at the
+        #   text of that item. The text of the item starts after the `>`
+        #   and one blank, so the `2.` line sits in the item.
+        # - A line that opens with ten digits and a `.`, under a line in a
+        #   blockquote. A list marker holds 9 digits at most, so the line
+        #   does not open a list item. CommonMark reads it as more text of
+        #   the quote.
+        # - A list item at `2.` under a line that opens with ten digits and
+        #   a `.`, which does not open a list item.
+        #
+        # In each of the other groups, the line after the `--` ends the
+        # paragraph, so the test expects no ProseDash finding on them:
+        #
+        # - A list item in a blockquote, whose marker sits 4 columns past
+        #   the `>`. The text of the quote starts after its `>` and one
+        #   blank, so the marker sits 3 columns into that text, and it
+        #   opens a list item.
+        # - A list item indented 4 columns under a list item whose marker a
+        #   tab follows. The tab reaches column 4, so the inner item sits at
+        #   the text of the outer item.
+        # - A list item at `2.` under the second line of a list item at
+        #   `1.` without text. The text of such an item starts one column
+        #   past its marker, so the second line sits in the item.
+        # - A line in a blockquote under a paragraph that follows a
+        #   thematic break in a blockquote. The paragraph sits outside the
+        #   quote, so the `>` opens a new one.
+        # - A list item at `2.` under a paragraph of a list item at `1.`
+        #   without text, after an empty comment line. The item holds text
+        #   above the empty line, so the empty line does not end it.
+        # - A list item at `2.` under a paragraph of a list item whose
+        #   first line holds a list item at `1.` without text, after an
+        #   empty comment line. The empty line ends only the inner item, so
+        #   the paragraph sits in the outer item, and the `2.` item ends it.
+        #
+        # More groups follow, and some of their lines hold only `-` and `*`
+        # marks. Such a line opens its list items, and a thematic break in
+        # it ends the blocks that it leaves, as in CommonMark. In each of
+        # the first eight groups, the line after the `--` continues the
+        # paragraph, so the test expects a ProseDash finding on each:
+        #
+        # - A line under a line in a blockquote, whose `>` sits 3 columns
+        #   in. The copy with `//` markers holds the same text after each
+        #   `//`, so its `>` opens a blockquote too.
+        # - A line of `=` marks under a paragraph of a list item whose
+        #   marker line holds only `-`. CommonMark reads that line as an
+        #   empty list item. The line of `=` marks leaves the item, so
+        #   CommonMark reads it as more text of the item.
+        # - The same lines with the `-` 3 columns in.
+        # - A line of `=` marks under a paragraph of a list item inside a
+        #   list item, whose marker line holds only `- -`.
+        # - A list item at `2.` in a blockquote inside a list item, under a
+        #   thematic break in `*` marks, and a line of `=` marks under the
+        #   `2.` item. No paragraph sits above the item, so the item opens
+        #   a list, and the line of `=` marks leaves it.
+        # - The same lines in a blockquote whose first line holds a `-` 5
+        #   columns past the `>`. CommonMark reads that `-` as indented
+        #   code, so no paragraph sits above the `2.` item either.
+        # - A line of `=` marks under a paragraph of a list item whose
+        #   marker 4 blanks follow, after a line that holds a `-` 4 columns
+        #   in. The text of the item starts 5 columns in, so that `-` sits
+        #   4 columns past the blocks that its line stays in. That line
+        #   does not open a block and reads as blank, so the item stays
+        #   open.
+        # - A line that opens with ten digits and a `.`, under a paragraph
+        #   line. The number has the value 1, but a list marker holds 9
+        #   digits at most, so the line does not open a list item.
+        #
+        # A heading follows, whose underline is a line that holds only `-`,
+        # so the test expects no finding on the heading. A list item at
+        # `2.` follows the heading, and a line of `=` marks follows the
+        # item. No paragraph sits above the item, so the item opens a list,
+        # and the test expects a finding on it.
+        #
+        # In each of the other groups, the line after the `--` ends the
+        # paragraph, so the test expects no ProseDash finding on them:
+        #
+        # - A list item indented 4 columns under a paragraph of a list item
+        #   whose marker line holds only `*`. The inner item sits at the
+        #   text of the outer item.
+        # - A list item at `01.` under a paragraph. The number has the
+        #   value 1, so the item ends the paragraph.
+        # - A line that holds only `--` under a paragraph line. CommonMark
+        #   reads it as the underline of a heading. hide_end_dashes reads it
+        #   as a blank line, because Harper strips its marks.
+        # - A line of `=` marks under a paragraph indented 2 columns. A
+        #   thematic break in `-` marks and blanks sits above the
+        #   paragraph, under a list item, and it ends the item. So the
+        #   paragraph sits outside the item, and the line of `=` marks
+        #   underlines it.
+        # - The same lines with a thematic break in `*` marks and no
+        #   blanks.
+        #
+        # The test also writes a shell file and a copy of it as a Python
+        # file. .editorconfig trims the blanks that end a line of the
+        # fixture, but two comment lines of this file end in a blank. The
+        # first ends in `--` and sits above code. The second holds a line
+        # of `-` marks in a blockquote, under a line of that blockquote
+        # that ends in `--`. The test expects no ProseDash finding from
+        # either file.
+        #
+        # The last paragraphs of comment text in the file each end in `--`.
+        # A line of `-` marks follows the first, code follows the second,
+        # and an empty comment line follows the third. The last one ends the
+        # file. Markdown files do not draw a finding on a `--` that ends a
+        # paragraph. hide_end_dashes drops the ` x` after each of these
+        # lines, so the test expects no ProseDash finding there either.
         #
         # The `//` and `--` markers are one column wider than `#`. The
-        # findings in the Rust, TypeScript, Lua, and Go files therefore sit
-        # one column right of the others.
+        # findings in the Rust, TypeScript, Lua, and Go files and in the
+        # HCL copy with `//` markers therefore sit one column right of the
+        # others.
+        #
+        # The test also lints configs/harper/fixtures/comment-code/describe.tf
+        # and a copy of it with CRLF line endings. Some of its quoted
+        # `description` and `error_message` strings end in `--`, and the
+        # closing quote ends the paragraph of each. One of them sits above a
+        # comment line, which does not continue its paragraph. A comment
+        # line that ends in `--` sits above a quoted `description`, and a
+        # heredoc description ends in `--`.
+        #
+        # Two comment lines that each open a list item at `2.` follow the
+        # last quoted `description`. hide_end_dashes reads the string as
+        # code for those lines, so the second line opens the next item. In
+        # another heredoc description, a line that ends in `--` sits above a
+        # line that opens with `//`. That `//` is text of the description,
+        # so the line continues the paragraph. The test expects a ProseDash
+        # finding on that `--` and on the string whose text ends in an ` x`
+        # of its own after the `--`.
         #
         # The test also lints configs/harper/fixtures/comment-code/template.ts.
         # Its template literals hold `//` lines with a fence in tildes and
@@ -2419,22 +2929,6 @@ in
         # a division, and its backtick opens a template that hides the
         # comment after it.
         #
-        # Four banners, such as `// --- The section ---`, come after the
-        # blocks. Code follows the first, and a comment line follows each
-        # of the others. The text of the third opens with `---` and no
-        # space, and the text of the fourth opens with `--` and a space.
-        # merge_comments drops the ` x` after a banner, whatever the next
-        # line holds, so the test expects no ProseDash finding on the
-        # banners.
-        #
-        # The last paragraphs of comment text in the file each end in
-        # `--`. A line of `-` marks follows the first, code follows the
-        # second, and an empty comment line follows the third. The last
-        # one ends the file. Markdown files do not draw a finding on a
-        # `--` that ends a paragraph. merge_comments drops the ` x` after
-        # each of these lines, so the test expects no ProseDash finding
-        # there either.
-        #
         # The test expects a finding on each comment after a template, and
         # on the text after each span. Harper reads each `//` line that the
         # shadow leaves out as in its source. So only a wrapped span or a
@@ -2447,18 +2941,27 @@ in
         tests.comment-code = runCommand "prose-lint-comment-code" { } ''
           cp ${../configs/harper/fixtures/comment-code}/code.sh .
           cp ${../configs/harper/fixtures/comment-code}/template.ts .
+          cp ${../configs/harper/fixtures/comment-code}/describe.tf .
           cp template.ts template.js
           cp template.ts template.jsx
           cp template.ts template.tsx
           cp code.sh code.nix
           cp code.sh code.awk
           cp code.sh code.py
+          cp code.sh code.yaml
+          cp code.sh code.tf
           sed 's,^#,//,; s/^x=1$/let x = 1;/' code.sh >code.rs
           sed 's,^#,//,; s/^x=1$/const x = 1;/' code.sh >code.ts
           sed 's,^#,--,; s/^x=1$/local x = 1/' code.sh >code.lua
           sed 's,^#,//,; s/^x=1$/var x = 1/' code.sh >code.go
+          sed 's,^#,//,' code.sh >slash.tf
           sed 's/$/\r/' code.sh >crlf.sh
           sed 's/$/\r/' template.ts >crlf.ts
+          sed 's/$/\r/' describe.tf >crlf.tf
+          printf '%s\n' 'x=1' '# The job runs -- ' 'x=1' '# > The rule follows --' \
+            '# > ----- ' 'x=1' >trail.sh
+          cp trail.sh trail.py
+          : >none
 
           cat >hash <<'EOF'
           2:38
@@ -2495,16 +2998,49 @@ in
           128:6
           131:6
           133:16
+          136:16
+          174:18
+          177:16
+          180:18
+          183:18
+          186:18
+          189:16
+          192:20
+          195:20
+          198:18
+          201:18
+          204:16
+          233:18
+          236:16
+          239:25
+          244:19
+          247:20
+          250:18
+          253:28
+          281:21
+          285:18
+          289:21
+          293:20
+          297:23
+          301:21
+          306:30
+          309:16
+          314:24
           EOF
           awk -F: '{ print $1 ":" $2 + 1 }' hash >wide
           printf '%s\n' 5:28 8:28 11:28 14:28 18:7 22:7 26:7 30:7 33:30 38:28 \
             41:28 44:28 47:28 50:28 53:28 56:28 61:28 67:7 73:28 >template
+          printf '%s\n' 6:31 40:18 >describe
 
           rules='ProseDash|ProseMayPossibility'
-          for f in code.sh crlf.sh code.nix code.awk code.py code.rs code.ts code.lua code.go \
-            template.ts template.js template.jsx template.tsx crlf.ts; do
+          for f in code.sh crlf.sh code.nix code.awk code.py code.yaml code.tf code.rs code.ts \
+            code.lua code.go slash.tf template.ts template.js template.jsx template.tsx crlf.ts \
+            describe.tf crlf.tf trail.sh trail.py; do
             case "$f" in
-              *.sh | *.nix | *.awk | *.py) want=hash ;;
+              describe.tf | crlf.tf) want=describe ;;
+              slash.tf) want=wide ;;
+              trail.*) want=none ;;
+              *.sh | *.nix | *.awk | *.py | *.yaml | *.tf) want=hash ;;
               template.* | crlf.ts) want=template ;;
               *) want=wide ;;
             esac
@@ -2546,6 +3082,12 @@ in
         # on to the end of the second and skips the comment. The file
         # ends in the operator `--|`, after code and at the start of a
         # line, and the test expects no finding there.
+        #
+        # A Haddock banner, `-- | --- The section ---`, sits above the
+        # second quasiquote, and a `--` line of text follows it.
+        # hide_end_dashes reads the copy without Haddock markers, so it
+        # finds the banner and drops the ` x` after it. The test expects
+        # the shadow line without the ` x`, and no finding on the banner.
         #
         # The test also expects the shadow to hold each full-line `--`
         # comment without its Haddock marker. comment_lines takes a `--`
@@ -2843,6 +3385,8 @@ in
           -- | It may help here.
           h :: Int
           h = 1
+          -- | --- The section ---
+          -- The section reads the flags.
 
           r :: String
           r = [x| b |]
@@ -3177,7 +3721,8 @@ in
             awk '$0 != "x" { print NR ": " $0 }' >got
           printf '%s\n' '3: --   It may help here.' '4: -- It may help here.' \
             '11:     --   It may help here.' '29: --    It may help here.' \
-            '40: --   It may help here.' >want
+            '40: --   It may help here.' '43: --   --- The section ---' \
+            '44: -- The section reads the flags.' >want
           if ! diff want got; then
             echo "the shadow of doc.hs holds other comment lines than want lists" >&2
             exit 1
