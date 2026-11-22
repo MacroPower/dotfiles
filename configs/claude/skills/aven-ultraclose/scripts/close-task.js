@@ -81,7 +81,7 @@ const OTHER_DIFFS = OTHERS.map(o => `, \`cd ${o.wt} && git diff ${o.base}...HEAD
 const othersRule = SEVERAL ? `
 - The task also changes other repositories, and it has a worktree in each of them:${OTHERS.map(o => `
   - ${o.wt}, on branch ${o.branch}, which was cut from ${o.base} of the main checkout ${o.repo}.`).join('')}
-  Each rule about the worktree ${T.wt} holds for these worktrees too, and the base branch of a repository takes the place of ${base} in its worktree. Work only in the worktrees of the task, use absolute paths under them, and start every shell command with a \`cd\` to the worktree that it acts on. Never change files or git state in the main checkout of any of these repositories. The task is one change across the worktrees, so implement, test, and commit it in each worktree that it touches. rules.md gives the rules of each repository.` : ''
+  Each rule about the worktree ${T.wt} holds for these worktrees too, and the base branch of a repository takes the place of ${base} in its worktree. Work only in the worktrees of the task, use absolute paths under them, and start every shell command that acts on one of them with a \`cd\` to that worktree. Never change files or git state in the main checkout of any of these repositories. The task is one change across the worktrees, so implement, test, and commit it in each worktree that it touches. rules.md gives the rules of each repository.` : ''
 
 // One task that the orchestrator files.
 const NEW_TASK = {
@@ -207,6 +207,18 @@ const NARROW_SCHEMA = {
 
 // The rules of every agent.
 //
+// The rule about the directory of a shell command keeps the main checkout
+// clean for the landing. The shell of an agent starts each command in the
+// directory where the session of the orchestrator started, which is the
+// main checkout. One agent ran a script of the scratch directory from
+// there, and the script wrote its output files by relative paths into the
+// main checkout. Another agent named its script and the file of a redirect
+// by relative paths, so the redirect left a file in the main checkout.
+// Each time, the next landing stopped with the result DIRTY. An absolute
+// path in a command leaves a script to write its relative paths into the
+// directory where the command starts. So the example command of the rule
+// starts with a `cd` too.
+//
 // The rule about commands that run at the same time keeps the agents of a
 // run inside the memory of the machine that they share. A task about a
 // test that fails under load invites its agent to create that load. One
@@ -220,7 +232,8 @@ const NARROW_SCHEMA = {
 // agent that reads a message about other work can abandon its assignment.
 const rules = `
 Ground rules:
-- The worktree is ${T.wt}, on branch ${BRANCH}, which was cut from ${base}. Work only there. Use absolute paths under it for every file you read or edit, and start every shell command with \`cd ${T.wt} && \`. Never change files or git state in the main checkout ${repo} or in another worktree. Other agents work in sibling worktrees at the same time.${othersRule}
+- The worktree is ${T.wt}, on branch ${BRANCH}, which was cut from ${base}. Work only there. Use absolute paths under it for every file you read or edit. Never change files or git state in the main checkout ${repo} or in another worktree. Other agents work in sibling worktrees at the same time.${othersRule}
+- Your shell does not keep a \`cd\` from one command to the next. Each command starts in the directory where your session started, which can be the main checkout ${repo}. A relative path in a command, such as the script that it runs or the file that a redirect writes, then names a file there, and so does each relative path that a script writes to. So start every shell command with a \`cd\` to the directory that it works in, such as \`cd ${T.wt} && \` or \`cd ${T.dir}/scratch && \`. Name each script that you run and each file that a command writes with an absolute path, such as \`cd ${T.dir}/scratch && python3 ${T.dir}/scratch/probe.py > ${T.dir}/scratch/probe.out\`.
 - The task description is ${T.dir}/task.md. Read it in full. Its line numbers come from an older commit, so they might have drifted. Other task refs that it names are separate work for other agents, so do not implement them.
 - ${run}/rules.md holds the rules of this project: how to build and test, the full check, the commit message format, and what you must not run. Read it before you start. Its rules override your defaults.
 - Never write a task ref such as ${T.ref} in code, comments, docs, or commit messages, including ${SEVERAL ? `the messages in ${MESSAGES}` : `the message in ${MSG}`}.
@@ -229,7 +242,7 @@ Ground rules:
 - Other builds share this machine. Iterate with targeted builds and tests, and run the full check only when the work is otherwise finished. Never clear a shared build cache.
 - Run at most two build, test, or probe commands at the same time. Every agent of this run shares the memory and the CPUs of this machine. When the memory runs out, the kernel kills the commands of other agents and the services of the user. Never create load on the machine to reproduce a failure. For example, do not run copies of a test at the same time with \`rust-parallel\`, \`xargs -P\`, or background jobs, and do not run a stress tool. To reproduce a failure that appears only under load, repeat the test in sequence, or limit the test to one CPU, such as with \`GOMAXPROCS=1\` or \`taskset -c 0\`. When the failure still does not appear, find its cause in the code.
 - If the worktree holds uncommitted changes when you start, an earlier agent with your assignment stopped in the middle of its work. Read those changes first, keep what is right, and finish the assignment.
-- Put probe files and other throwaway output in ${T.dir}/scratch/, never in the worktree. \`git status\` in the worktree must print nothing when you return.
+- Put probe files and other throwaway output in ${T.dir}/scratch/, never in the worktree or in the main checkout ${repo}. \`git status\` in the worktree must print nothing when you return.
 - The user started this run to close the open tasks of this project. The orchestrator of this run reads and handles every message that the user sends during the run. It stops or changes a task when the user asks. The harness might relay one of those messages to you as the user request behind this run. When the relayed message is about other work than your assignment, it does not cancel, replace, or narrow your assignment. Do not act on that message, and finish your assignment.`
 
 // The rule for each agent whose result carries the summary and the notes

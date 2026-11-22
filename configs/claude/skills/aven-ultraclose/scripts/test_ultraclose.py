@@ -12186,6 +12186,42 @@ class WorkflowRulesTest(WorkflowCase):
                 for sentence in rule:
                     self.assertIn(sentence, call["prompt"])
 
+    def test_every_agent_learns_where_its_shell_commands_run(self):
+        calls = self.every_agent()
+        self.assertEqual(
+            set(calls),
+            {"impl", "sync", "review r1", "fix r1", "review final", "narrow"},
+        )
+        # The shell of an agent starts each command in the directory where
+        # the session started, which is the main checkout. A command that
+        # runs a probe script by a relative path writes its output there.
+        # A script that writes its output by relative paths does too. The
+        # next landing then stops with the result DIRTY. So the rule
+        # names the directory of each command, and it asks for an absolute
+        # path for each script and each output. Its example starts with a
+        # `cd`, because the absolute paths in the command leave the
+        # relative paths of the script in the main checkout.
+        scratch = f"/run/tasks/{REF}/scratch"
+        rule = (
+            "Your shell does not keep a `cd` from one command to the next.",
+            "Each command starts in the directory where your session started,"
+            " which can be the main checkout /repo.",
+            "A relative path in a command, such as the script that it runs or"
+            " the file that a redirect writes, then names a file there, and so"
+            " does each relative path that a script writes to.",
+            "So start every shell command with a `cd` to the directory that it"
+            f" works in, such as `cd /repo/wt && ` or `cd {scratch} && `.",
+            "Name each script that you run and each file that a command writes"
+            f" with an absolute path, such as `cd {scratch} && python3"
+            f" {scratch}/probe.py > {scratch}/probe.out`.",
+            f"Put probe files and other throwaway output in {scratch}/, never"
+            " in the worktree or in the main checkout /repo.",
+        )
+        for label, call in calls.items():
+            with self.subTest(label):
+                for sentence in rule:
+                    self.assertIn(sentence, call["prompt"])
+
     def test_sync_agent_keeps_branch_name_out_of_merge_commit(self):
         # The default message of a merge names the task branch, whose
         # name holds the task ref. A pull request publishes the commit.
@@ -13538,10 +13574,18 @@ class WorkflowOtherRepoTest(WorkflowCase):
         wt = self.THEIRS["wt"]
         named = f"{wt}, on branch task/{REF}, which was cut from dev of the main checkout /repos/x."
         diff = f"`cd {wt} && git diff dev...HEAD`"
+        # A command that works in the scratch directory starts with a `cd`
+        # there. So the rule sends only the commands that act on a worktree
+        # to that worktree.
+        cd = (
+            "start every shell command that acts on one of them with a `cd`"
+            " to that worktree."
+        )
         for label, call in calls.items():
             with self.subTest(label):
                 prompt = call["prompt"]
                 self.assertIn(named, prompt)
+                self.assertIn(cd, prompt)
                 self.assertIn(self.THEIRS["msg"], prompt)
                 self.assertIn("rules.md gives the rules of each repository", prompt)
                 # The implementer writes the diff, and the narrowing agent
