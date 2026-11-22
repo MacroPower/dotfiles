@@ -76,6 +76,12 @@ const (
 	ItemSpoilsOfConquest    uint32 = 3702027555
 )
 
+// StatAspectEnergyCapacity is the hash of the investment stat of an
+// aspect that opens fragment sockets on its subclass. The value of the
+// stat is the number of fragment sockets. It is the AspectEnergyCapacity
+// value of the StatHashes of Destiny Item Manager (DIM).
+const StatAspectEnergyCapacity uint32 = 2223994109
+
 // RecordObjectiveNotCompleted is the ObjectiveNotCompleted bit of the
 // Bungie DestinyRecordState enum. A record whose state carries the bit
 // still has an objective to complete.

@@ -73,7 +73,13 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				{"hash": 405, "displayProperties": {"name": "Iron Truage Helm"}, "itemTypeDisplayName": "Helmet",
 				 "itemType": 2, "classType": 1,
 				 "inventory": {"tierTypeName": "Legendary", "tierType": 5, "bucketTypeHash": 3448274439},
-				 "equippingBlock": {"ammoType": 0, "equipableItemSetHash": 3727270518}}
+				 "equippingBlock": {"ammoType": 0, "equipableItemSetHash": 3727270518}},
+				{"hash": 406, "displayProperties": {"name": "Prismatic Hunter"}, "itemTypeDisplayName": "Hunter Subclass",
+				 "itemType": 16, "classType": 1, "inventory": {"bucketTypeHash": 3284755031}},
+				{"hash": 913, "displayProperties": {"name": "Winter's Shroud", "description": "Your class ability slows."},
+				 "itemTypeDisplayName": "Hunter Aspect", "itemType": 19, "classType": 1,
+				 "investmentStats": [{"statTypeHash": 1, "value": 5},
+				  {"statTypeHash": 2223994109, "value": 2, "isConditionallyActive": false}]}
 			]`,
 			// The service build splits the detail array across files.
 			// Fatebringer has a socket with only a randomized plug set,
@@ -82,8 +88,9 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 			// the first file. Firefly is a plug, and the core artifact
 			// lacks item 777. The record of Hawkmoon has no sockets, and
 			// Midnight Coup has no socket entry. The second file holds
-			// the plugs of the two crafting sockets that Deepsight reads
-			// and a plug of another category.
+			// the plugs of the two crafting sockets that Deepsight reads,
+			// a plug of another category, and the socket list of the
+			// subclass Prismatic Hunter.
 			"detail-0.json": `[
 				{"hash": 100, "sockets": {"socketEntries": [
 					{"socketTypeHash": 1, "randomizedPlugSetHash": 40},
@@ -102,14 +109,15 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				 "plugCategoryHash": 2748073883}},
 				{"hash": 911, "plug": {"plugCategoryIdentifier": "crafting.plugs.weapons.mods.extractors",
 				 "plugCategoryHash": 3520412733}},
-				{"hash": 912, "plug": {"plugCategoryIdentifier": "frames", "plugCategoryHash": 7906839}}
+				{"hash": 912, "plug": {"plugCategoryIdentifier": "frames", "plugCategoryHash": 7906839}},
+				{"hash": 406, "sockets": {"socketEntries": [{"reusablePlugSetHash": 46}, {"socketTypeHash": 2}]}}
 			]`,
 			// The service build splits the plugsets array across files.
 			// Plug set 40 lists Firefly twice and a plug that the core
 			// artifact lacks. Plug set 41 lists no plug. No socket of a
-			// kept weapon names the plug sets 42, 43, and 44. A socket
-			// without a plug set has the hash 0, so no socket names the
-			// plug set 0.
+			// kept weapon names the plug sets 42, 43, and 44. Only the
+			// subclass names the plug set 46. A socket without a plug set
+			// has the hash 0, so no socket names the plug set 0.
 			"plugsets-0.json": `[
 				{"hash": 40, "reusablePlugItems": [
 					{"plugItemHash": 900, "currentlyCanRoll": true}, {"plugItemHash": 12345}, {"plugItemHash": 900}
@@ -121,7 +129,8 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				{"hash": 0, "reusablePlugItems": [{"plugItemHash": 900}]}
 			]`,
 			"plugsets-1.json": `[
-				{"hash": 45, "reusablePlugItems": [{"plugItemHash": 900}]}
+				{"hash": 45, "reusablePlugItems": [{"plugItemHash": 900}]},
+				{"hash": 46, "reusablePlugItems": [{"plugItemHash": 913}]}
 			]`,
 			"buckets.json": `{
 				"1498876634": {"displayProperties": {"name": "Kinetic Weapons"}, "scope": 0, "category": 3,
@@ -230,7 +239,7 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 // fixtureSockets returns the socket lists that the loader builds from
 // the detail files of [newFakeArtifacts].
 func fixtureSockets() map[uint32][]uint32 {
-	return map[uint32][]uint32{100: {40, 41, 0}, 402: {45}}
+	return map[uint32][]uint32{100: {40, 41, 0}, 402: {45}, 406: {46, 0}}
 }
 
 func TestLoader(t *testing.T) {
@@ -242,10 +251,10 @@ func TestLoader(t *testing.T) {
 	clock := WithClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
-	// layout without the source tags has the prefix defs-v12-. Its
-	// file holds the manifest version of the service, and the loader does
-	// not read it.
-	stale := filepath.Join(dir, "defs-v12-245114.26_1.json")
+	// layout without the socket lists of the subclasses has the prefix
+	// defs-v13-. Its file holds the manifest version of the service, and
+	// the loader does not read it.
+	stale := filepath.Join(dir, "defs-v13-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
 	loader := NewLoader(source, dir, clock)
@@ -331,6 +340,15 @@ func TestLoader(t *testing.T) {
 				Equippable: true,
 				SetHash:    3727270518,
 			},
+			// The loader keeps the socket list of a subclass.
+			406: {
+				Name:      "Prismatic Hunter",
+				TypeName:  "Hunter Subclass",
+				TierType:  bungie.TierTypeBasic,
+				Bucket:    bungie.BucketSubclass,
+				ItemType:  16,
+				ClassType: bungie.ClassHunter,
+			},
 			900: {
 				Name:        "Firefly",
 				Description: "Precision final blows explode.",
@@ -339,6 +357,17 @@ func TestLoader(t *testing.T) {
 				TierType:    bungie.TierTypeBasic,
 				ItemType:    bungie.ItemTypePlug,
 				ClassType:   bungie.ClassAny,
+			},
+			// An aspect takes its fragment slots from the investment stat
+			// of the aspect energy capacity and ignores its other stats.
+			913: {
+				Name:          "Winter's Shroud",
+				Description:   "Your class ability slows.",
+				TypeName:      "Hunter Aspect",
+				TierType:      bungie.TierTypeBasic,
+				ItemType:      bungie.ItemTypePlug,
+				ClassType:     bungie.ClassHunter,
+				FragmentSlots: 2,
 			},
 		},
 		Buckets: map[uint32]BucketDef{
@@ -567,7 +596,7 @@ func TestLoaderWithoutOptionalArtifacts(t *testing.T) {
 			got, err := NewLoader(source, "").Get(t.Context())
 			require.NoError(t, err)
 			assert.Empty(t, tc.field(got))
-			assert.Len(t, got.Items, 8)
+			assert.Len(t, got.Items, 10)
 
 			for _, file := range tc.files {
 				assert.NotContains(t, source.Fetched, file)
@@ -709,7 +738,7 @@ func TestLoaderIgnoresCorruptCache(t *testing.T) {
 
 	got, err := loader.Get(t.Context())
 	require.NoError(t, err)
-	assert.Len(t, got.Items, 8)
+	assert.Len(t, got.Items, 10)
 }
 
 func TestWithLoaded(t *testing.T) {
@@ -759,7 +788,7 @@ func TestWithLoaded(t *testing.T) {
 				assert.Same(t, seed, got)
 			} else {
 				assert.Equal(t, "245114.26/1", got.Version)
-				assert.Len(t, got.Items, 8)
+				assert.Len(t, got.Items, 10)
 			}
 		})
 	}

@@ -111,12 +111,15 @@ const maxSuggestions = 10
 
 // Plug is one plug that a socket of an item holds or can hold. Hash is the
 // item hash of the plug definition, and Description is the text of that
-// definition, which is empty for some plugs.
+// definition, which is empty for some plugs. FragmentSlots is the number
+// of fragment sockets that an aspect opens on its subclass, and zero for
+// every plug other than an aspect.
 type Plug struct {
-	Name        string
-	Type        string
-	Description string
-	Hash        uint32
+	Name          string
+	Type          string
+	Description   string
+	FragmentSlots int
+	Hash          uint32
 }
 
 // Enhanced reports whether the plug is the enhanced variant of a perk.
@@ -127,28 +130,64 @@ func (p Plug) Enhanced() bool {
 }
 
 // Perk is the active plug in one visible socket of an item, such as a
-// weapon trait or an armor mod. Socket is the index of the socket in the
-// socket list of the item. Options lists the other plugs that Bungie
-// allows the socket to hold, one for each name. A name that has both a
-// base and an enhanced plug keeps the enhanced one.
+// weapon trait, an armor mod, or an aspect of a subclass. Socket is the
+// index of the socket in the socket list of the item. Options lists the
+// other plugs that Bungie allows the socket to hold, one for each name. A
+// name that has both a base and an enhanced plug keeps the enhanced one.
+//
+// PlugSet is the hash of the plug set of a socket of a subclass, and zero
+// for every other socket. The two aspect sockets of a subclass share a
+// plug set, and so do its fragment sockets. Sockets that share a plug set
+// never hold one plug twice in the game. The Options of such a socket
+// therefore leave out the name of each plug that another socket of the
+// set holds. An open socket with a plug set counts as a perk even when it
+// holds the placeholder of an empty socket, such as "Empty Fragment
+// Socket". The perk then names the plugs that can fill the socket. The
+// aspects of a subclass open its fragment sockets up to the sum of their
+// fragment slots. Bungie reports each other fragment socket as closed. The
+// game does not apply a plug in a closed socket. A closed socket with a
+// plug set therefore does not count as a perk, whatever plug it holds.
+//
+// Locked lists the other plugs of the plug set that Bungie reports as
+// locked, one for each name, by the rules of Options. It leaves out each
+// name that Bungie also lists as unlocked. Bungie reports the unlocks of
+// a subclass from the view of one character of the account. Locked can
+// therefore hold a plug that the account owns.
 type Perk struct {
 	Plug
 
 	Options []Plug
+	Locked  []Plug
 
 	// Plugs lists each plug that Bungie allows the socket to hold, and
-	// [optionsOf] picks Options from them. A perk change picks Options
-	// again, so they match the Options of the next profile fetch.
-	Plugs []Plug
+	// LockedPlugs lists each plug of the plug set that Bungie reports as
+	// locked. [swapsOf] picks Options and Locked from them. A perk change
+	// picks both again, so they match the next profile fetch.
+	Plugs       []Plug
+	LockedPlugs []Plug
 
-	Socket int
+	Socket  int
+	PlugSet uint32
 }
+
+// LockedLabel opens the list of the plugs in [Perk.Locked] in the text
+// that names a perk, such as the text of [PerkLabel].
+const LockedLabel = "Bungie reports as locked: "
 
 // OptionNames returns the name of each plug in [Perk.Options].
 func (p Perk) OptionNames() []string {
-	names := make([]string, 0, len(p.Options))
-	for _, option := range p.Options {
-		names = append(names, option.Name)
+	return plugNames(p.Options)
+}
+
+// LockedNames returns the name of each plug in [Perk.Locked].
+func (p Perk) LockedNames() []string {
+	return plugNames(p.Locked)
+}
+
+func plugNames(plugs []Plug) []string {
+	names := make([]string, 0, len(plugs))
+	for _, plug := range plugs {
+		names = append(names, plug.Name)
 	}
 
 	return names
@@ -620,7 +659,7 @@ func NewItem(
 		item.Damage = defs.DamageTypes[damage]
 	}
 
-	item.Perks = perksOf(profile, defs, pi.InstanceID)
+	item.Perks = perksOf(profile, defs, def, pi, owner)
 	item.Stats = statsOf(profile, defs, pi.InstanceID)
 	item.Pattern = patternOf(profile, defs, def, def.Name)
 	item.Deepsight, item.Harmonizable = deepsightOf(profile, defs, def, pi.InstanceID, item.Pattern)
@@ -706,18 +745,54 @@ func kindOf(def definitions.ItemDef) string {
 	}
 }
 
-func perksOf(profile *bungie.Profile, defs *definitions.Defs, instanceID string) []Perk {
+// perksOf returns the perks of the profile item pi, whose definition is
+// def and whose owner is owner. The reusable plugs of each socket that
+// the profile lists give the plugs that Bungie allows the socket to hold.
+//
+// The profile does not list reusable plugs for the sockets of a subclass,
+// such as its super, its abilities, its aspects, and its fragments. Each such
+// socket takes its plugs from the plug set that the definitions name for
+// it. The profile lists the plugs of the set with the profile and with
+// the character that owns the subclass, as [bungie.Profile.PlugSetPlugs]
+// returns them. A plug of the set that Bungie allows the socket to hold
+// goes to [Perk.Plugs], and every other plug of the set goes to
+// [Perk.LockedPlugs]. Neither list takes the placeholder of an empty
+// socket, so no socket offers a swap that empties it. The game does not
+// apply a plug in a socket that Bungie reports as closed. Each closed
+// socket with a plug set therefore stays out of the perks, whatever plug
+// it holds. The open sockets of its set offer that plug.
+func perksOf(
+	profile *bungie.Profile,
+	defs *definitions.Defs,
+	def definitions.ItemDef,
+	pi bungie.ProfileItem,
+	owner string,
+) []Perk {
 	var perks []Perk
 
-	options := profile.ItemComponents.ReusablePlugs.Data[instanceID].Plugs
+	options := profile.ItemComponents.ReusablePlugs.Data[pi.InstanceID].Plugs
 
-	for i, socket := range profile.ItemComponents.Sockets.Data[instanceID].Sockets {
+	var sets []uint32
+	if def.Bucket == bungie.BucketSubclass {
+		sets = defs.Sockets[pi.Hash]
+	}
+
+	for i, socket := range profile.ItemComponents.Sockets.Data[pi.InstanceID].Sockets {
+		var set uint32
+		if i < len(sets) {
+			set = sets[i]
+		}
+
 		plug, ok := defs.Items[socket.PlugHash]
-		if !socket.IsVisible || !ok || !isPerk(plug) {
+		if !socket.IsVisible || !ok || (set != 0 && !socket.IsEnabled) {
 			continue
 		}
 
-		perk := Perk{Plug: plugOf(plug, socket.PlugHash), Socket: i}
+		if !isPerk(plug) && (set == 0 || !isPlaceholder(plug)) {
+			continue
+		}
+
+		perk := Perk{Plug: plugOf(plug, socket.PlugHash), Socket: i, PlugSet: set}
 
 		for _, option := range options[strconv.Itoa(i)] {
 			def, ok := defs.Items[option.Hash]
@@ -726,44 +801,97 @@ func perksOf(profile *bungie.Profile, defs *definitions.Defs, instanceID string)
 			}
 		}
 
-		perk.Options = optionsOf(perk.Plugs, perk.Plug)
+		if set != 0 {
+			for _, option := range profile.PlugSetPlugs(set, owner) {
+				def, ok := defs.Items[option.Hash]
+
+				switch {
+				case !ok || !isPerk(def):
+				case option.CanInsert:
+					perk.Plugs = append(perk.Plugs, plugOf(def, option.Hash))
+				default:
+					perk.LockedPlugs = append(perk.LockedPlugs, plugOf(def, option.Hash))
+				}
+			}
+		}
+
 		perks = append(perks, perk)
+	}
+
+	for i := range perks {
+		perks[i].Options, perks[i].Locked = swapsOf(perks, i)
 	}
 
 	return perks
 }
 
 func plugOf(def definitions.ItemDef, hash uint32) Plug {
-	return Plug{Name: def.Name, Type: def.TypeName, Description: def.Description, Hash: hash}
+	return Plug{
+		Name:          def.Name,
+		Type:          def.TypeName,
+		Description:   def.Description,
+		FragmentSlots: def.FragmentSlots,
+		Hash:          hash,
+	}
 }
 
-// optionsOf returns the plugs that a socket that holds active can swap to,
-// one for each name other than the name of active. A name that has both a
-// base and an enhanced plug keeps the enhanced one.
-func optionsOf(plugs []Plug, active Plug) []Plug {
-	var options []Plug
+// swapsOf returns the [Perk.Options] and the [Perk.Locked] of the socket
+// of perks[i]. Each list holds one plug for each name that the socket
+// does not hold. For a socket with a plug set, both lists also leave out
+// the name of each plug that another socket of the set holds, as [Perk]
+// describes. The locked list leaves out each name of [Perk.Plugs], so a
+// plug that Bungie lists both as unlocked and as locked counts as
+// unlocked.
+func swapsOf(perks []Perk, i int) ([]Plug, []Plug) {
+	perk := perks[i]
+	held := []string{perk.Name}
 
-	for _, plug := range plugs {
-		if plug.Name == active.Name {
-			continue
-		}
-
-		kept := slices.IndexFunc(options, func(p Plug) bool { return p.Name == plug.Name })
-		switch {
-		case kept < 0:
-			options = append(options, plug)
-		case plug.Enhanced():
-			options[kept] = plug
+	if perk.PlugSet != 0 {
+		for j := range perks {
+			if perks[j].PlugSet == perk.PlugSet {
+				held = append(held, perks[j].Name)
+			}
 		}
 	}
 
-	return options
+	options := byName(perk.Plugs, held)
+	locked := byName(perk.LockedPlugs, append(held, plugNames(perk.Plugs)...))
+
+	return options, locked
+}
+
+// byName returns one plug of plugs for each name outside skip. A name that
+// has both a base and an enhanced plug keeps the enhanced one.
+func byName(plugs []Plug, skip []string) []Plug {
+	var kept []Plug
+
+	for _, plug := range plugs {
+		if slices.Contains(skip, plug.Name) {
+			continue
+		}
+
+		i := slices.IndexFunc(kept, func(p Plug) bool { return p.Name == plug.Name })
+		switch {
+		case i < 0:
+			kept = append(kept, plug)
+		case plug.Enhanced():
+			kept[i] = plug
+		}
+	}
+
+	return kept
+}
+
+// isPlaceholder reports whether a plug is the placeholder of an empty
+// socket, such as "Empty Fragment Socket".
+func isPlaceholder(plug definitions.ItemDef) bool {
+	return strings.HasPrefix(plug.Name, "Empty ")
 }
 
 // isPerk reports whether a plug changes how an item plays. It rejects
 // cosmetic plugs and the placeholders of empty sockets.
 func isPerk(plug definitions.ItemDef) bool {
-	if plug.Name == "" || plug.TypeName == "" || strings.HasPrefix(plug.Name, "Empty ") {
+	if plug.Name == "" || plug.TypeName == "" || isPlaceholder(plug) {
 		return false
 	}
 

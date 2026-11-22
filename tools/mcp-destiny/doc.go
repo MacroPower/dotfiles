@@ -227,6 +227,48 @@
 // text of Bungie. Bungie gives one frame name to the frames of several
 // weapon types that play differently.
 //
+// # Subclass Swaps
+//
+// The get_item tool lists the plugs that each socket of an item can swap
+// to, and the set_perk tool accepts each of them. For a weapon or an
+// armor piece, the Bungie profile lists those plugs with the item. For a
+// subclass, the profile lists none with the item. The sockets of a
+// subclass hold plugs such as its super, its abilities, its aspects, and
+// its fragments. Each of them takes its plugs from a plug set that the
+// Destiny definitions name. The profile lists the plugs of each plug set,
+// some with the profile and some with each character.
+//
+// The server offers a plug of the set as a swap when the profile or the
+// character that holds the subclass lists it and Bungie allows its
+// insert. It lists each other plug of the set after "Bungie reports as
+// locked:". Bungie reports the unlocks of a subclass from the view of one
+// character of the account, so on another character it can report an
+// owned aspect or fragment as locked. DIM shows every plug of the set for
+// that reason, and it cites issue 1572 of the Bungie API. The set_perk
+// tool therefore accepts a locked plug as well, and Bungie refuses the
+// insert when the plug is locked.
+//
+// The two aspect sockets of a subclass share a plug set, and so do its
+// fragment sockets. Sockets that share a plug set never hold one plug
+// twice in the game. The swaps of such a socket therefore leave out each
+// plug that another socket of the set holds.
+//
+// Each aspect gives the number of fragment slots that it opens, which its
+// definition holds as an investment stat. The aspects open the fragment
+// sockets of a subclass up to the sum of their fragment slots. Bungie
+// reports each other fragment socket as closed. The game does not apply a
+// fragment in a closed socket, so the get_item tool leaves out each closed
+// socket, whatever it holds. The open fragment sockets offer a fragment
+// that a closed socket holds. An open empty aspect or fragment socket
+// appears under the name of its placeholder, such as "Empty Fragment
+// Socket", with the plugs that can fill it.
+//
+// No socket offers a placeholder as a swap, so the server cannot empty a
+// socket. When several empty sockets of one plug set can take a plug, the
+// set_perk tool fills the first of them. An aspect change can open or
+// close fragment sockets. The server shows the open sockets from before
+// the change until its next fetch of the profile.
+//
 // # Roll Ratings
 //
 // The service publishes a roll sheet for each game mode. The Aegis sheet

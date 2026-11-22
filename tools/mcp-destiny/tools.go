@@ -250,7 +250,7 @@ type SetLockInput struct {
 type SetPerkInput struct {
 	InstanceID string `json:"instance_id"      jsonschema:"Instance id from list_items"`
 	Perk       string `json:"perk"             jsonschema:"Perk to make active, in any letter case and with or without accents, such as 'Rampage'. A digit also matches the letter that it stands for, such as 0 for o. get_item lists the perks that each socket can swap to"`
-	Replace    string `json:"replace,omitzero" jsonschema:"Active perk to swap out, in any letter case and with or without accents. A digit also matches the letter that it stands for, such as 0 for o. Pass it when more than one socket can swap to the perk"`
+	Replace    string `json:"replace,omitzero" jsonschema:"Active perk to swap out, in any letter case and with or without accents. A digit also matches the letter that it stands for, such as 0 for o. Pass it when more than one socket can swap to the perk. To fill an empty socket of a subclass, pass its placeholder, such as 'Empty Fragment Socket'"`
 }
 
 // ListLoadoutsInput is the input schema of the list_loadouts tool.

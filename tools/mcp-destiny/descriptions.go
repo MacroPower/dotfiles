@@ -23,8 +23,13 @@ const clarityCredit = `Under each perk, the lines before "Clarity:" are the in-g
 	`except a line that starts with "Might predate the final patch", which the server adds.`
 
 // writePerks writes the perk list of an item, one list item for each
-// perk. The item names the perk, its type, and the perks that its socket
-// can swap to. The in-game text of Bungie follows on indented lines.
+// perk. The item names the perk, its type, the perks that its socket can
+// swap to, and the perks of the socket that Bungie reports as locked
+// after [inventory.LockedLabel]. The placeholder of an empty socket has no
+// type, so its item leaves out the type. The in-game text of Bungie
+// follows on indented lines. Each aspect of a subclass, active or a swap,
+// also gives the number of fragment sockets that it opens, as
+// [fragmentSlots] words it.
 //
 // A perk that the database in tested describes also shows the
 // description of Clarity. [writeClarity] writes that description under
@@ -43,10 +48,31 @@ func writePerks(b *strings.Builder, perks []inventory.Perk, tested clarity.State
 	credited := false
 
 	for _, perk := range perks {
-		fmt.Fprintf(b, "- %s (%s)", perk.Name, perk.Type)
+		var details []string
+		if perk.Type != "" {
+			details = append(details, perk.Type)
+		}
+
+		if perk.FragmentSlots > 0 {
+			details = append(details, fragmentSlots(perk.FragmentSlots))
+		}
+
+		b.WriteString("- " + perk.Name)
+
+		if len(details) > 0 {
+			fmt.Fprintf(b, " (%s)", strings.Join(details, ", "))
+		}
+
+		separator := ", "
 
 		if len(perk.Options) > 0 {
-			fmt.Fprintf(b, ", can swap to %s", strings.Join(perk.OptionNames(), ", "))
+			fmt.Fprintf(b, ", can swap to %s", optionLabels(perk.Options))
+
+			separator = "; "
+		}
+
+		if len(perk.Locked) > 0 {
+			b.WriteString(separator + inventory.LockedLabel + optionLabels(perk.Locked))
 		}
 
 		b.WriteString("\n")
@@ -70,6 +96,34 @@ func writePerks(b *strings.Builder, perks []inventory.Perk, tested clarity.State
 	case credited:
 		b.WriteString(clarityCredit + "\n")
 	}
+}
+
+// optionLabels names the plugs that a socket can swap to, separated by
+// commas. The label of an aspect also gives the number of fragment
+// sockets that the aspect opens, such as "Winter's Shroud (2 fragment
+// slots)".
+func optionLabels(options []inventory.Plug) string {
+	labels := make([]string, 0, len(options))
+
+	for _, option := range options {
+		if option.FragmentSlots == 0 {
+			labels = append(labels, option.Name)
+		} else {
+			labels = append(labels, option.Name+" ("+fragmentSlots(option.FragmentSlots)+")")
+		}
+	}
+
+	return strings.Join(labels, ", ")
+}
+
+// fragmentSlots words the number of fragment sockets that an aspect
+// opens, such as "1 fragment slot" or "3 fragment slots".
+func fragmentSlots(n int) string {
+	if n == 1 {
+		return "1 fragment slot"
+	}
+
+	return fmt.Sprintf("%d fragment slots", n)
 }
 
 // writeClarity writes the lines of a Clarity description indented under

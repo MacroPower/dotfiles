@@ -29,7 +29,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v13-"
+	defsCachePrefix = "defs-v14-"
 
 	artifactCore            = "core"
 	artifactDetail          = "detail"
@@ -74,6 +74,11 @@ var ErrDefs = errors.New("definitions")
 // DisablePrimaryStatDisplay marks a definition whose primary stat the game
 // hides. Craftable marks a definition that names a recipe item, as each
 // craftable weapon does.
+//
+// FragmentSlots is the number of fragment sockets that an aspect opens on
+// its subclass, which the investment stat
+// [bungie.StatAspectEnergyCapacity] of the aspect gives. It is zero for
+// every definition other than an aspect.
 type ItemDef struct {
 	Name                      string   `json:"name"`
 	Description               string   `json:"description,omitempty"`
@@ -85,6 +90,7 @@ type ItemDef struct {
 	DamageType                int      `json:"damageType,omitempty"`
 	AmmoType                  int      `json:"ammoType,omitempty"`
 	TierType                  int      `json:"tierType,omitempty"`
+	FragmentSlots             int      `json:"fragmentSlots,omitempty"`
 	Bucket                    uint32   `json:"bucket,omitempty"`
 	SetHash                   uint32   `json:"setHash,omitempty"`
 	NonTransferable           bool     `json:"nonTransferable,omitempty"`
@@ -145,12 +151,14 @@ type VendorDef struct {
 // names the items and currencies that the vendors list. Both name dummy
 // items, which Items leaves out.
 //
-// Sockets maps the item hash of a weapon to one plug set hash for each
-// socket of the weapon, by socket index. A zero marks a socket without a
-// plug set. PlugSets maps the hash of each plug set that Sockets names to
-// the hashes of the plugs that the set lists. The roll ratings read both
-// maps to find the socket of a perk column in which a copy rolled no
-// pick. Only weapons have roll ratings, so Sockets holds only weapons.
+// Sockets maps the item hash of a weapon or a subclass to one plug set
+// hash for each socket of the item, by socket index. A zero marks a
+// socket without a plug set. PlugSets maps the hash of each plug set that
+// a socket of a weapon names to the hashes of the plugs that the set
+// lists. The roll ratings read both maps to find the socket of a perk
+// column in which a copy rolled no pick. The perks of a subclass read
+// only Sockets, because the Bungie profile lists the plugs of each plug
+// set of a subclass with their state.
 //
 // ItemSets maps the hash of each equipable item set to the sandbox perk
 // hashes of the set bonuses of the set, in the order of the definition.
@@ -457,9 +465,15 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 	//
 	// The Deepsight flags read the plug category of the crafting plugs,
 	// which only the detail artifact gives.
+	//
+	// The loader also keeps the socket list of each subclass, which the
+	// perks of a subclass read without the plugsets artifact. A subclass
+	// without a socket list does not show any swaps.
 	err = readRecords(ctx, l, index.Files[artifactDetail], func(raw rawDetail) {
 		sets := raw.plugSets()
-		if len(sets) > 0 && defs.Items[raw.Hash].ItemType == bungie.ItemTypeWeapon {
+		item := defs.Items[raw.Hash]
+
+		if len(sets) > 0 && (item.ItemType == bungie.ItemTypeWeapon || item.Bucket == bungie.BucketSubclass) {
 			defs.Sockets[raw.Hash] = sets
 		}
 
@@ -476,7 +490,11 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 
 	named := map[uint32]bool{}
 
-	for _, sets := range defs.Sockets {
+	for hash, sets := range defs.Sockets {
+		if defs.Items[hash].ItemType != bungie.ItemTypeWeapon {
+			continue
+		}
+
 		for _, set := range sets {
 			if set != 0 {
 				named[set] = true
@@ -661,7 +679,11 @@ type rawItem struct {
 	} `json:"displayProperties"`
 	ItemTypeDisplayName string   `json:"itemTypeDisplayName"`
 	ItemCategoryHashes  []uint32 `json:"itemCategoryHashes"`
-	Inventory           struct {
+	InvestmentStats     []struct {
+		StatTypeHash uint32 `json:"statTypeHash"`
+		Value        int    `json:"value"`
+	} `json:"investmentStats"`
+	Inventory struct {
 		TierType                 *int   `json:"tierType"`
 		TierTypeName             string `json:"tierTypeName"`
 		BucketTypeHash           uint32 `json:"bucketTypeHash"`
@@ -712,6 +734,12 @@ func (raw rawItem) item() ItemDef {
 
 	if raw.ItemType == bungie.ItemTypePlug {
 		def.Description = raw.DisplayProperties.Description
+
+		for _, stat := range raw.InvestmentStats {
+			if stat.StatTypeHash == bungie.StatAspectEnergyCapacity {
+				def.FragmentSlots = stat.Value
+			}
+		}
 	}
 
 	return def

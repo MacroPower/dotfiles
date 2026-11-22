@@ -45,7 +45,9 @@ const (
 	// [*Client.Profile] requests. They cover profiles, profile inventories,
 	// profile currencies, characters, character inventories, character
 	// equipment, and character loadouts. The item components cover
-	// instances, stats, sockets, and reusable plugs. The records
+	// instances, stats, sockets, and reusable plugs. The sockets
+	// component also returns the plug sets of the profile and of each
+	// character, which the sockets of a subclass read. The records
 	// component covers the records of the profile and of each
 	// character, which track the progress of each weapon pattern.
 	profileComponents = "100,102,103,200,201,205,206,300,304,305,310,900"
@@ -180,11 +182,19 @@ type ProfileSocket struct {
 
 // ProfilePlug is one Bungie DestinyItemPlugBase. CanInsert reports whether
 // the plug meets the insertion rules of its definition, such as the level
-// that unlocks an enhanced trait. Bungie can still refuse an insert, such
-// as one that costs materials.
+// that unlocks an enhanced trait or the purchase that unlocks an aspect of
+// a subclass. Bungie can still refuse an insert, such as one that costs
+// materials.
 type ProfilePlug struct {
 	Hash      uint32 `json:"plugItemHash"`
 	CanInsert bool   `json:"canInsert"`
+}
+
+// ProfilePlugSets is one Bungie DestinyPlugSetsComponent. Plugs maps the
+// hash of each plug set definition to the plugs of the set that the
+// component lists.
+type ProfilePlugSets struct {
+	Plugs map[uint32][]ProfilePlug `json:"plugs"`
 }
 
 // ProfileItems is a list of items inside a profile component.
@@ -287,6 +297,22 @@ type Profile struct {
 	ProfileRecords struct {
 		Data ProfileRecords `json:"data"`
 	} `json:"profileRecords"`
+	ProfilePlugSets struct {
+		Data ProfilePlugSets `json:"data"`
+	} `json:"profilePlugSets"`
+	CharacterPlugSets struct {
+		Data map[string]ProfilePlugSets `json:"data"`
+	} `json:"characterPlugSets"`
+}
+
+// PlugSetPlugs returns the plugs of the plug set with the hash set that
+// the profile lists for the character with the id character. Bungie lists
+// some plugs of a set with the profile and the others with a character.
+// PlugSetPlugs returns the plugs of the profile first and then the plugs
+// of the character, as Destiny Item Manager (DIM) joins them. It returns
+// nil when neither lists the set.
+func (p *Profile) PlugSetPlugs(set uint32, character string) []ProfilePlug {
+	return append(slices.Clone(p.ProfilePlugSets.Data.Plugs[set]), p.CharacterPlugSets.Data[character].Plugs[set]...)
 }
 
 // Record returns the record of the definition hash. It reads the records

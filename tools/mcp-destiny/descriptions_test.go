@@ -149,6 +149,55 @@ func TestWritePerks(t *testing.T) {
 	}
 }
 
+func TestWritePerksSubclass(t *testing.T) {
+	t.Parallel()
+
+	aspect := func(hash uint32, name string, slots int) inventory.Plug {
+		return inventory.Plug{Hash: hash, Name: name, Type: "Prismatic Hunter Aspect", FragmentSlots: slots}
+	}
+
+	fragment := func(hash uint32, name string) inventory.Plug {
+		return inventory.Plug{Hash: hash, Name: name, Type: "Prismatic Fragment"}
+	}
+
+	// The perks of a subclass. Each aspect, active, a swap, or locked,
+	// gives its fragment slots. A super and a fragment open no fragment
+	// slot. The locked plugs follow the swaps, and a socket without a
+	// swap lists only its locked plugs. The placeholder of an empty
+	// socket has no type.
+	perks := []inventory.Perk{
+		{
+			Plug:    inventory.Plug{Hash: 10, Name: "Silence and Squall", Type: "Prismatic Super"},
+			Options: []inventory.Plug{{Hash: 11, Name: "Storm's Edge", Type: "Prismatic Super"}},
+		},
+		{
+			Plug:    aspect(20, "Stylish Executioner", 2),
+			Options: []inventory.Plug{aspect(22, "Ascension", 3), aspect(23, "Flowing Grace", 1)},
+			Locked:  []inventory.Plug{aspect(24, "Threaded Specter", 2)},
+		},
+		{Plug: aspect(21, "Winter's Shroud", 2)},
+		{
+			Plug:    fragment(30, "Facet of Protection"),
+			Options: []inventory.Plug{fragment(31, "Facet of Courage")},
+		},
+		{
+			Plug:   inventory.Plug{Hash: 39, Name: "Empty Fragment Socket"},
+			Locked: []inventory.Plug{fragment(31, "Facet of Courage"), fragment(32, "Facet of Dominance")},
+		},
+	}
+
+	var b strings.Builder
+
+	writePerks(&b, perks, clarity.State{})
+	assert.Equal(t, "- Silence and Squall (Prismatic Super), can swap to Storm's Edge\n"+
+		"- Stylish Executioner (Prismatic Hunter Aspect, 2 fragment slots), "+
+		"can swap to Ascension (3 fragment slots), Flowing Grace (1 fragment slot); "+
+		"Bungie reports as locked: Threaded Specter (2 fragment slots)\n"+
+		"- Winter's Shroud (Prismatic Hunter Aspect, 2 fragment slots)\n"+
+		"- Facet of Protection (Prismatic Fragment), can swap to Facet of Courage\n"+
+		"- Empty Fragment Socket, Bungie reports as locked: Facet of Courage, Facet of Dominance\n", b.String())
+}
+
 // TestGetItemClarity pins the perk descriptions of get_item for each
 // state of the Clarity database. Instance 1001 holds Explosive Payload
 // (900) and Firefly (901), and the fixture definitions give only Firefly

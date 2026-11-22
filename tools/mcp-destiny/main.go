@@ -393,6 +393,21 @@ func newServer(h *handler) *mcp.Server {
 		Name: toolGetItem,
 		Description: "Show one item instance in full: perks with their descriptions and the alternatives each socket can swap to, " +
 			"stats, tag, note, and location. " +
+			"The sockets of a subclass hold plugs such as its super, its abilities, its aspects, and its fragments. " +
+			"For each socket of a subclass, the alternatives are the plugs that Bungie reports as unlocked, " +
+			"and the plugs after 'Bungie reports as locked:' follow them. " +
+			"Bungie reports the unlocks of a subclass from the view of one character, " +
+			"so on another character it can report an owned aspect or fragment as locked. " +
+			"Ask the user before you rule out a plug that Bungie reports as locked. " +
+			"Every socket leaves out each plug that another socket of the subclass holds, " +
+			"such as the aspect in the other aspect socket. " +
+			"Each aspect gives the number of fragment slots that it opens, such as 'Ascension (3 fragment slots)'. " +
+			"The aspects open fragment sockets up to the sum of their fragment slots, " +
+			"and get_item leaves out each closed fragment socket with the fragment in it, " +
+			"because the game does not apply that fragment. " +
+			"The open fragment sockets offer that fragment. " +
+			"An open empty aspect or fragment socket shows its placeholder, such as 'Empty Fragment Socket', " +
+			"with the plugs that can fill it. " +
 			"For a craftable weapon, the Pattern line gives the progress of its crafting pattern, " +
 			"such as '3 of 5' extractions, or 'complete'. " +
 			"Under each perk, the in-game text of Bungie comes first. " +
@@ -628,13 +643,18 @@ func newServer(h *handler) *mcp.Server {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolSetPerk,
-		Description: "Make a perk active on an item instance in the live game, such as a weapon trait or a barrel. " +
-			"The perk must be one that get_item lists as a swap for a socket of the item. " +
+		Description: "Make a perk active on an item instance in the live game, " +
+			"such as a weapon trait, a barrel, or an aspect of a subclass. " +
+			"The perk must be one that get_item lists as a swap for a socket of the item, " +
+			"or a plug of a subclass that get_item lists after 'Bungie reports as locked:'. " +
+			"Bungie refuses a plug that is locked for the character that holds the item. " +
+			"To fill an empty socket of a subclass, pass its placeholder as replace, such as 'Empty Fragment Socket'. " +
 			"Bungie refuses a plug that costs materials to insert. It also allows the change only while the character " +
 			"that holds the item is offline, in orbit, or in a social space. For an item in the vault, " +
 			"that character is the most recently played one. " +
 			"get_item and list_items show the stats of the item from before the change until the next inventory fetch, " +
-			"up to 30 seconds later.",
+			"up to 30 seconds later. " +
+			"Until that fetch, get_item also shows the open fragment sockets of a subclass from before an aspect change.",
 		Annotations: additive,
 	}, h.handleSetPerk)
 
