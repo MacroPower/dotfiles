@@ -167,6 +167,16 @@ in
     # success path discards below.
     export HOME="''${TMPDIR:-/tmp}"
 
+    # A caller can export a variable that the wrapper also sets, as
+    # every Nix build and nix-shell does with `out`. An assignment keeps
+    # the export, and a local of the same name in a function inherits
+    # it. An exported variable passes the wrapper's value to each
+    # command that the wrapper starts. Linux refuses to start a command
+    # with an environment string of more than 128 KiB. These variables
+    # hold findings, which grow with the file, so the wrapper keeps
+    # them out of the environment.
+    export -n out found checks
+
     # Runs harper-cli with one rule list over one file. harper-cli exits
     # 1 when it found lints; any other non-zero code is a crash, so its
     # stderr is passed through and the wrapper exits 2 for hook-router
@@ -3160,6 +3170,54 @@ in
             echo "the rule comments above draw a Required or Recommended finding" >&2
             exit 1
           fi
+          touch "$out"
+        '';
+
+        # Lints a file with more than 128 KiB of findings, as a file and
+        # as a commit message, with `out`, `found`, and `checks` exported.
+        # The wrapper holds findings in these variables, and Linux refuses
+        # to start a command with an environment string of more than 128
+        # KiB. Each line of prose holds a `may` for the Weir rule
+        # ProseMayPossibility and an `e.g.` for the awk check
+        # ProseLatinAbbreviation. A commit message keeps the findings of
+        # harper-cli in `found` and those of the awk checks in `checks`,
+        # so the findings of each rule take more than 128 KiB. Each run
+        # must exit 1 and report both rules on every line. The command in
+        # configs/harper/CLAUDE.md builds this test too.
+        tests.exported-variables = runCommand "prose-lint-exported-variables" { } ''
+          for i in $(seq 1500); do
+            printf 'The cache may be stale, e.g. after a restart.\n\n'
+          done >many.md
+          export out found=/x checks=/x
+
+          # Lints many.md with the arguments and fails unless prose-lint
+          # exits 1 and reports each rule on each line of prose. The
+          # findings stay in files, because an exported variable that
+          # holds them fails each command that the test starts after it.
+          expect() {
+            local rc=0 rule n size
+            ${lib.getExe finalAttrs.finalPackage} "$@" <many.md >findings || rc=$?
+            if [ "$rc" -ne 1 ]; then
+              echo "prose-lint $*: exited $rc, expected 1" >&2
+              exit 1
+            fi
+            for rule in ProseMayPossibility ProseLatinAbbreviation; do
+              grep "::$rule:" findings >rule_findings || true
+              n=$(wc -l <rule_findings)
+              size=$(wc -c <rule_findings)
+              if [ "$n" -ne 1500 ]; then
+                echo "prose-lint $*: reported $n $rule findings, expected 1500" >&2
+                exit 1
+              fi
+              if [ "$size" -le 131072 ]; then
+                echo "prose-lint $*: the $rule findings take $size bytes, which fit in 128 KiB" >&2
+                exit 1
+              fi
+            done
+          }
+
+          expect many.md
+          expect --commit
           touch "$out"
         '';
       };

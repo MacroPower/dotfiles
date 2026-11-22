@@ -654,6 +654,15 @@ on a set of files.
   library under `lib/`. It fails on each Required or Recommended
   finding. A change to one rule therefore fails the test when the rule
   reports a phrase in the comment of another rule file.
+- `exported-variables` lints a file with more than 128 KiB of findings,
+  as a file and as a commit message. It exports `out`, `found`, and
+  `checks`, the variables in which `pkgs/prose-lint.nix` holds
+  findings. A Nix build and a nix-shell export `out` the same way.
+  Linux refuses to start a command with an environment string of more
+  than 128 KiB. So the wrapper keeps these variables out of the
+  environment of each command that it starts. The test expects exit
+  status 1 and a ProseMayPossibility and a ProseLatinAbbreviation
+  finding on each line of prose.
 
 This command builds every test.
 
