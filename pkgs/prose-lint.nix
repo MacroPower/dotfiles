@@ -1652,6 +1652,36 @@ in
         #   or `<br>` at the margin under that paragraph ends the item.
         #   So the line is neither an underline nor more text of the
         #   paragraph.
+        # - A line that opens a blockquote sits right under a table, at
+        #   the margin and in a blockquote. One table has its header row
+        #   right under a paragraph. The blockquote ends the table and
+        #   opens a paragraph in the quote.
+        # - A link reference definition at the margin sits under an HTML
+        #   block in a blockquote. The definition ends the blockquote and
+        #   the HTML block, so a blockquote under it opens a paragraph.
+        # - An HTML block of type 1 ends at the line that holds its end
+        #   tag, `</script>` or `</pre>`. A link reference definition or a
+        #   fence follows that line, and a paragraph follows them.
+        # - A line that holds only one tag sits right under a paragraph
+        #   that the check skips. The paragraph opens with inline HTML or
+        #   holds the text of a list item. GFM reads the tag as more text
+        #   of the paragraph, so it does not open an HTML block. A fence
+        #   or a line of `>` follows the tag, and a paragraph follows
+        #   them. In one paragraph, a row of `-` cells sits above the tag.
+        #   The row holds more cells than the line above it, so it does
+        #   not open a table.
+        # - An HTML block opens on a later line of a list item. A fence, a
+        #   link reference definition, or an HTML comment that spans lines
+        #   follows it. A paragraph at the margin under them ends the item
+        #   and the HTML block.
+        # - A line of `===` four columns in sits right under a paragraph
+        #   that opens with inline HTML. GFM reads the line as more text of
+        #   the paragraph and not as an underline. So a tag under it is
+        #   more text too, and a blockquote under the tag opens a paragraph.
+        # - An HTML tag four columns in sits right under a heading, a
+        #   table, or a fence. GFM reads the tag as indented code and not
+        #   as an HTML block. A line of `>` or an HTML comment follows the
+        #   tag, and a paragraph follows them.
         #
         # check.py expects a finding on each line of a bad fixture.
         # Definitions, fence markers, and the rows of a table do not hold
@@ -1840,7 +1870,108 @@ in
             "" \
             '>   It may help' \
             '> | a | to |' \
-            '> | - | - |' >pronoun.md
+            '> | - | - |' \
+            "" \
+            '| Name | Value |' \
+            '| ---- | ----- |' \
+            '> It runs on the node.' \
+            "" \
+            'The pod holds the cache.' \
+            '| Name | Value |' \
+            '| ---- | ----- |' \
+            '> It runs on the node.' \
+            "" \
+            '> | Name | Value |' \
+            '> | ---- | ----- |' \
+            '> > It runs on the node.' \
+            "" \
+            '> <div>' \
+            '[a]: x' \
+            '> It runs on the node.' \
+            "" \
+            '<script>x</script>' \
+            '[a]: x' \
+            'It runs on the node.' \
+            "" \
+            '<pre>' \
+            'x' \
+            '</pre>' \
+            '```sh' \
+            'make' \
+            '```' \
+            'It runs on the node.' \
+            "" \
+            '<span>x</span> y' \
+            '<br>' \
+            '```sh' \
+            'make' \
+            '```' \
+            'It runs on the node.' \
+            "" \
+            '<span>x</span> y' \
+            '<br>' \
+            '>' \
+            '> It runs on the node.' \
+            "" \
+            '<span>x</span> y' \
+            '| - | - |' \
+            '<br>' \
+            '> It runs on the node.' \
+            "" \
+            '- The pod holds the cache.' \
+            '  <br>' \
+            '```sh' \
+            'make' \
+            '```' \
+            'It runs on the node.' \
+            "" \
+            '- Install the agent.' \
+            "" \
+            '  <details>' \
+            '  ```sh' \
+            '  make' \
+            '  ```' \
+            'It runs on the node.' \
+            "" \
+            '- Install the agent.' \
+            '  <div>' \
+            '  [a]: x' \
+            'It runs on the node.' \
+            "" \
+            '- Install the agent.' \
+            '  <div>' \
+            '  <!-- a' \
+            '  b -->' \
+            'It runs on the node.' \
+            "" \
+            '<span>x</span> y' \
+            '    ===' \
+            '<br>' \
+            '>' \
+            '> It runs on the node.' \
+            "" \
+            '## Setup' \
+            '    <div>' \
+            '>' \
+            '> It runs on the node.' \
+            "" \
+            '## Setup' \
+            '    <div>' \
+            '<!-- c -->' \
+            'It runs on the node.' \
+            "" \
+            '| a |' \
+            '| - |' \
+            '    <div>' \
+            '<!-- c -->' \
+            'It runs on the node.' \
+            "" \
+            '```sh' \
+            'make' \
+            '```' \
+            '    <div>' \
+            '<!-- c -->' \
+            'It runs on the node.' >pronoun.md
 
           cat >want <<'EOF'
           pronoun.md:3:3
@@ -1874,6 +2005,24 @@ in
           pronoun.md:169:4
           pronoun.md:176:5
           pronoun.md:180:5
+          pronoun.md:186:3
+          pronoun.md:191:3
+          pronoun.md:195:5
+          pronoun.md:199:3
+          pronoun.md:203:1
+          pronoun.md:211:1
+          pronoun.md:218:1
+          pronoun.md:223:3
+          pronoun.md:228:3
+          pronoun.md:235:1
+          pronoun.md:243:1
+          pronoun.md:248:1
+          pronoun.md:254:1
+          pronoun.md:260:3
+          pronoun.md:265:3
+          pronoun.md:270:1
+          pronoun.md:276:1
+          pronoun.md:283:1
           EOF
 
           rc=0

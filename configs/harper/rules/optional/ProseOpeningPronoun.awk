@@ -30,10 +30,44 @@
 # rule ends the paragraph. So does a line that opens with more `>`
 # markers than the first line of the paragraph, because it opens a
 # deeper blockquote (`> to restart the pod.`). That line opens a
-# paragraph in the quote, and an underline or a rule under it ends that
-# paragraph. The check does not report a paragraph that opens this way,
-# although GFM reads it as a paragraph (`The pod holds the cache.`,
-# `> It runs on the node.`).
+# paragraph in the quote, and the check reads that paragraph as any
+# other, so it can draw a finding (`The pod holds the cache.`, `> It
+# runs on the node.`).
+#
+# A blockquote also ends a table or a list item, and it can sit on the
+# line right under a heading. A line with more `>` markers than such a
+# block right above it therefore opens a paragraph in the quote too
+# (`| a | b |`, `| - | - |`, `> It runs on the node.`). deeper_quote()
+# tests the line, under a paragraph or such a block. Each `>` marker of
+# the line must sit fewer than four columns past the edge that the
+# marker before it leaves. Further right, GFM reads the line as more
+# text or as indented code (`> The pod holds the cache.`, `    > > It
+# runs on the node.`). After a marker, the edge sits after the marker
+# and the space after it. The first marker counts from the text of the
+# innermost list item that `item_depth` counts, or from the margin.
+#
+# A list item can open a blockquote after its list marker (`- > The pod
+# holds the cache.`). The block then holds the markers of that quote
+# too, and skip_depth() counts them for a line that sits in the item.
+# A line with no more markers than that continues the quote (`  > It
+# runs on the node.`). A marker left of the text of the item ends the
+# item and opens a new blockquote, which opens a paragraph (`> It runs
+# on the node.`).
+#
+# A list item can also hold an HTML block, after its list marker (`-
+# <details>`) or on a later line (`- Install the agent.`, `  <div>`).
+# The block holds each later line that stays in the item, so a quoted
+# line there is text of the block (`  > It runs on the node.`). A line
+# left of the text of the item ends the item and the block, and it
+# opens a block of its own (`It runs on the node.`). A block on a later
+# line ends this way only in an item that `item_depth` counts, so not in
+# a blockquote.
+#
+# The check does not track a list item in a blockquote, nor an item
+# that `item_depth` misses. It therefore misses a blockquote four or
+# more columns past the edge that it uses but within three columns of
+# the text of such an item (`> - The pod holds the cache.`, `>      >
+# It runs on the node.`).
 #
 # GFM opens an HTML block of types 1 to 6 at a line that opens with one
 # of the tags that cmark-gfm, the parser that GitHub uses, lists for
@@ -71,9 +105,10 @@
 # comment or a `pre` element, which lib/markdown.awk marks in
 # `bare_line`. A line with a deeper indent cannot open a block there, so
 # it is more text of the paragraph (`It may help`, `    - first`, `to
-# restart the pod.`). At any indent, the check still reads a line with
-# more `>` markers than the paragraph as a deeper blockquote, so the
-# line ends the paragraph.
+# restart the pod.`). At any indent, the check still ends the paragraph
+# at a line with more `>` markers than the paragraph. The line opens a
+# paragraph in the quote. When deeper_quote() rejects the line, that
+# paragraph does not draw a finding.
 #
 # The check reads a line as more text only when no `>` marker of the
 # line sits left of the marker with the same index in the first line of
@@ -162,10 +197,23 @@
 # The underline must open with as many `>` markers as the paragraph. In
 # a list item, it must also reach the column where the text of the
 # paragraph starts. underline() in lib/sentences.awk applies the same
-# tests. The check also reads a line of `=` or `-` indented four or more
-# spaces past the text of the paragraph as an underline. It therefore
-# drops that paragraph, although GFM and lib/sentences.awk read the
-# line as more text of the paragraph.
+# tests. A line of `=` or `-` that `more` marks is more text of the
+# paragraph and not an underline (`It may help`, `    ---`). The check
+# counts that indent from the text of the paragraph. So it still reads
+# a line as an underline when GFM counts four columns from the edge of
+# the block and the check counts fewer (`   It runs on the node.`,
+# `     ---`). It then misses the paragraph, which GFM keeps.
+#
+# False Positives names the guard for a paragraph under a heading. The
+# guard records the `>` markers of the heading. For a heading in a list
+# item, it also records the markers before the list marker and the text
+# column of the item. A paragraph passes only when holds() finds those
+# markers and that column on its first line. The check
+# knows the column of an item that `item_depth` counts, or of an item
+# whose heading follows its list marker. It therefore passes a
+# paragraph after a list in a blockquote that ends in a heading (`> -
+# The pod holds the cache.`, `>`, `>   ## Setup`, `>`, `> It runs on
+# the node.`).
 #
 # A horizontal rule repeats one mark, `-`, `*`, or `_`, three or more
 # times, with or without spaces between the marks (`***`, `- - -`). A
@@ -211,6 +259,72 @@
 # which GFM reads as a paragraph (`## Setup`, `***`, `It runs on the
 # node.`).
 #
+# Among those lines, a line with more `>` markers than the block that
+# the check skips opens a paragraph, as deeper_quote() decides. Its text
+# must also sit fewer than four columns past the edge after its
+# markers. Further right, GFM reads the text as indented code in the
+# quote (`- > The pod holds the cache.`, `>     It runs on the node.`).
+#
+# No paragraph opens in an HTML block, `>` lines included. A block of
+# type 6 or 7 runs to the next blank line. A block of types 1 to 5 runs
+# to the first line that holds its end token, such as `</pre>`, `-->`,
+# or `?>`. That can be the line that opens the block
+# (`<script>x</script>`). The check also misses a paragraph right under
+# such a line, because it skips the lines up to the blank line (`<pre>`,
+# `x`, `</pre>`, `It runs on the node.`).
+#
+# A line of only `>` markers is text of the HTML block too, unless it is
+# a blank line of the blockquote that holds the block (`<div>`, `>`, `>
+# It runs on the node.`). Such a blank line ends the block, as a blank
+# line outside a blockquote does (`> <div>`, `>`, `> >`, `> > It runs
+# on the node.`). The block also holds a line right under a line that
+# lib/markdown.awk skips, such as quoted indented code (`<div>`,
+# `>     x`, `> It runs on the node.`).
+#
+# In a blockquote, a line with fewer `>` markers than the HTML block
+# ends the quote and the block (`> <div>`, `---`, `> It runs on the
+# node.`). So does such a line that lib/markdown.awk skips (`> <div>`,
+# `[a]: x`, `> It runs on the node.`). So does such a line right under
+# a block of types 1 to 5 that has ended (`> <script>x</script>`, `It
+# runs on the node.`). The line opens a paragraph, unless GFM reads it
+# as indented code (`> <div>`, `It runs on the node.`).
+#
+# A line that holds only one tag opens an HTML block among those lines,
+# unless GFM reads the tag as more text of a paragraph that the check
+# skips. `skip_text` marks such a paragraph, which opens with `|` or `<`
+# (`<span>x</span> y`, `<br>`) or holds the text of a list item (`- The
+# pod holds the cache.`, `  <br>`). The tag must stay in the block that
+# holds the paragraph, as skip_holds() decides. A tag left of the text
+# of the item, or with fewer `>` markers, opens an HTML block (`- The
+# pod holds the cache.`, `<br>`). So does a tag under a delimiter row
+# that turns the paragraph into a table, or under a rule or an
+# underline (`| a | b |`, `| - | - |`, `<br>`).
+#
+# skip_underline() tests an underline of such a paragraph as for a
+# paragraph that the check reads. The underline turns the paragraph
+# into a heading, which the guard for a paragraph under a heading reads.
+# A lone `-` there is an underline too (`| a |`, `-`). A line of `=`
+# that fails the test is more text of the paragraph.
+#
+# A tag four or more columns past the edge of its block is indented
+# code in GFM, and indented code never opens an HTML block.
+# lib/markdown.awk passes such a line to the check right under a
+# heading, a table, or a fence. With no paragraph open, the line does
+# not open an HTML block for the check (`## Setup`, `    <div>`). The
+# check counts from the text of the innermost item that `item_depth`
+# counts, or else from the margin.
+#
+# In a blockquote, and in a list while `list_seen` holds, such a tag
+# still opens an HTML block for the check. So does a tag right under a
+# link reference definition, which GFM reads as more text of the
+# paragraph that the definition opens (`[a]: x`, `<br>`). The HTML
+# block then holds the lines up to the next blank line. So the check
+# misses a paragraph under a line that lib/markdown.awk skips or that
+# holds only a comment (`[a]: x`, `<br>`, a fence, `> It runs on the
+# node.`). Other examples are `> | a |`, `> | - |`, `>     <div>`, `>
+# <!-- c -->`, `> It runs on the node.` and `- Install the agent.`, a
+# blank line, `      <div>`, `  <!-- c -->`, `  It runs on the node.`.
+#
 # ends_sentence() in lib/markdown.awk finds the end of the first
 # sentence, so `e.g.`, `i.e.`, `vs.`, `cf.`, and a three-period
 # ellipsis do not end it (`It may help, e.g. to restart the pod`). A
@@ -242,11 +356,46 @@
 # the pronoun points at the span (``This is the default: `false` ``).
 #
 # A paragraph directly under a heading passes, because there the
-# pronoun points at the heading's topic, which the reader can see. In a
-# blockquote, a line of only `>` markers between the two counts as a
-# blank line (`> ## Setup`, `>`, `> This is the setup step.`). The
-# first paragraph of a file passes when front matter or any other line
-# sits above it, because there the pronoun points at the page.
+# pronoun points at the heading's topic, which the reader can see. A
+# setext heading counts too, and its underline is the line above the
+# paragraph (`Setup`, `-----`, a blank line, `It runs on the node.`).
+# So does a heading in a list item, also one right after the list marker
+# (`- ## Setup`). So does a setext heading of a paragraph whose lines the
+# check skips, such as one that opens with inline HTML (`<b>Setup</b>
+# steps`, `=====`).
+#
+# In a blockquote, a line of only `>` markers between the heading and
+# the paragraph counts as a blank line (`> ## Setup`, `>`, `> This is
+# the setup step.`). A blockquote under the heading sits in its section,
+# so a paragraph in a deeper quote passes too (`## Setup`, `> It runs on
+# the node.`).
+#
+# The paragraph must sit in the block that holds the heading. A
+# paragraph with fewer `>` markers than the heading follows the
+# blockquote that holds the heading, so it can draw a finding (`> ##
+# Setup`, a blank line, `It runs on the node.`). A line of only
+# whitespace ends that blockquote too, so a paragraph in a new quote
+# under it can draw a finding (`> ## Setup`, a blank line, `> It runs on
+# the node.`). Under a heading outside a blockquote, a line of only `>`
+# markers opens an empty quote. A paragraph that follows that quote can
+# draw a finding (`## Setup`, `>`, a blank line, `> It runs on the
+# node.`). A paragraph left of the text of the list item that holds the
+# heading follows the list (`- ## Setup`, a blank line, `It runs on the
+# node.`).
+#
+# lib/markdown.awk passes indented code right under a line of only `>`
+# markers, and the check reads that code as a paragraph. Under a
+# heading, the line of `>` opens an empty quote, so the guard does not
+# pass the code, and the check reports it (`## Setup`, `>`, `    It
+# runs on the node.`).
+#
+# lib/markdown.awk also passes indented code right under a line that
+# holds only an HTML comment, and right under a closing fence. The
+# check reads that code as a paragraph too, so it can report the code
+# (`<!-- c -->`, `    It runs on the node.`).
+#
+# The first paragraph of a file passes when front matter or any other
+# line sits above it, because there the pronoun points at the page.
 #
 # GFM counts the indent from the left edge of the block. Outside a list
 # and a blockquote, the edge is the start of the line. In a list item,
@@ -417,6 +566,62 @@
 # that line (`  The pod holds the cache.` in a list item, ` ***`,
 # `    This is some code.`).
 #
+# A rule in a blockquote counts as indented for that test, because the
+# check blanks its `>` markers. So the check can also report an
+# indented line under a rule in a quoted list (`> - The pod holds the
+# cache.`, `>`, `>   The pod holds the cache.`, `> ***`, `    This is
+# some code.`).
+#
+# Among the lines that the check skips after a block, a line with fewer
+# `>` markers than the block sets the depth that a later blockquote
+# must pass. GFM can read such a line as more text of a paragraph in
+# the block, such as a line that looks like a list item but sits four
+# columns in. The check then reports a quoted line that GFM reads as
+# more text of that paragraph too (`> - The pod holds the cache.`,
+# `    - first`, `  > It runs on the node.`).
+#
+# Expression names a blockquote in a quoted list item that the check
+# misses. A later line of that blockquote with its marker within three
+# columns of the edge after `> ` opens a paragraph for the check. GFM
+# reads that line as more text of the paragraph in the missed quote
+# (`> - The pod holds the cache.`, `>      > The pod holds the cache.`,
+# `>   > It runs on the node.`).
+#
+# GFM does not end an HTML block of types 1 to 5 at a blank line.
+# lib/markdown.awk passes the lines after a blank line in such a block
+# to the check, and the check ends the block at the blank line. It
+# therefore reports a paragraph that GFM reads as text of the block
+# (`<pre>`, a blank line, `It runs on the node.`, `</pre>`).
+#
+# GFM reads a link reference definition right under a line of paragraph
+# text as more text of the paragraph, also on a line with fewer `>`
+# markers. lib/markdown.awk skips the definition, so the check opens a
+# paragraph at the line under it. That line can draw a finding (`> > The
+# pod holds the cache.`, `[a]: x`, `> > It runs on the node.`). A later
+# line with the markers of the first paragraph then opens a deeper
+# blockquote for the check. GFM reads that line as more text of the
+# first paragraph (`> > The pod holds the cache.`, `> [a]: x`, `> The
+# pod holds the cache.`, `> > It runs on the node.`).
+#
+# Under a definition that opens a blockquote, the check reads a lazy
+# line of text as a paragraph outside the quote. A quoted line under it
+# then opens a deeper blockquote for the check, but GFM reads that line
+# as more text of the paragraph (`- > The pod holds the cache.`, `> [a]:
+# x`, `The pod holds the cache.`, `> It runs on the node.`). A line that
+# holds only one tag continues that paragraph for the check. GFM opens
+# an HTML block at the tag instead, and a quoted line under the tag is
+# text of the block (`> [a]: x`, `<span>x</span> y`, `<br>`, `> > It
+# runs on the node.`).
+#
+# A quoted line left of the text of a list item ends the item in GFM,
+# and it opens a new blockquote. The check reads such a line as more
+# text of a quoted paragraph in the item when the line holds as many
+# `>` markers. It then reads an underline under the line as a rule, so
+# it reports a paragraph in a deeper quote under the rule. GFM places
+# that paragraph right under a heading (`- The pod holds the cache.`,
+# `  > The pod holds the cache.`, `> Setup`, `> ---`, `> > It runs on
+# the node.`).
+#
 # The check reads markdown only. Go doc comments open later paragraphs
 # with `It` by convention, and there the first paragraph names the
 # function.
@@ -447,10 +652,26 @@
 # Tracks the last two non-blank lines, code and comments included, so a
 # paragraph can tell whether a heading sits directly above it. A line of
 # only `>` markers is a blank line inside a blockquote, so it does not
-# count. `def_line` names the last line that opens like a link
-# reference definition (`[guide]: https://example.com`).
-# lib/markdown.awk skips such a line only within three columns of the
-# margin, and it passes every other one to prose().
+# count. `last_blank` names the last line of only whitespace, which
+# lib/markdown.awk never passes to prose().
+#
+# `heading_gap` holds the number of `>` markers of the last line after a
+# heading that is blank or holds only `>` markers. heading_at() starts
+# it at the markers of the heading. A line with fewer markers than the
+# line before it ends a blockquote, and `heading_broken` records that.
+# Take `## Setup` and `>`. A line of only whitespace under them ends the
+# empty quote that `>` opens. A paragraph in a quote after that line
+# therefore does not sit right under the heading (`## Setup`, `>`, a
+# blank line, `> It runs on the node.`). A line with a `>` marker left
+# of the text of the list item that holds the heading ends the item, so
+# `heading_broken` records that too (`- > ## Setup`, `>`, `  > It runs
+# on the node.`).
+#
+# `def_line` names the last
+# line that opens like a link reference definition (`[guide]:
+# https://example.com`). lib/markdown.awk skips such a line only within
+# three columns of the margin, and it passes every other one to
+# prose().
 #
 # A definition cannot interrupt a paragraph. Right under a line of
 # paragraph text, GFM therefore reads a definition as more text of the
@@ -464,18 +685,58 @@
 # lib/markdown.awk skips right under a line that reached prose(),
 # whatever the indent of the definition and whatever that line holds.
 # False Positives names the definitions that GFM reads another way.
+#
+# The block also ends the HTML block that `skip_html` marks at a line
+# with fewer `>` markers than the block, as prose() explains. After a
+# list item, a line left of the text of the item ends the block too.
+# lib/markdown.awk skips some such lines (`> <div>`, `[a]: x`), so
+# prose() does not see them. `html_end` names that line.
+#
+# A block of types 1 to 5 ends at the first line that holds the pattern
+# in `skip_end`. The block above `@include` tests each line, also a
+# line that lib/markdown.awk skips. `close_line` names that line, which
+# still sits in the block, and the block ends for the line after it. A
+# line with fewer `>` markers right under it ends the blockquote that
+# held the block, so the test for such a line runs first.
 {
   if (FNR == 1) {
     prev_nb = 0
     cur_nb = 0
     heading_line = 0
+    heading_outer = 0
+    heading_reach = 0
+    heading_gap = 0
+    heading_broken = 0
+    last_blank = 0
     def_line = 0
     rule_line = 0
     head_line = 0
+    html_end = 0
+    close_line = 0
   }
   if ($0 !~ /^[ \t>]*$/) {
     prev_nb = cur_nb
     cur_nb = FNR
+  }
+  if ($0 ~ /^[ \t]*$/) {
+    last_blank = FNR
+  }
+  if ($0 ~ /^[ \t>]*$/) {
+    heading_broken = heading_broken || quote_depth() < heading_gap || (quote_depth() > heading_outer && !holds(heading_outer, heading_reach))
+    heading_gap = quote_depth()
+  }
+  if (skip_html && (quote_depth() < skip_quote || (skip_item && $0 ~ /[^ \t]/ && !skip_holds()))) {
+    skip_html = 0
+    skip_quote = quote_depth()
+    skip_inner = 0
+    html_end = FNR
+  }
+  if (close_line && close_line < FNR) {
+    skip_html = 0
+    close_line = 0
+  }
+  if (skip_html && skip_end != "" && tolower(blank($0, "^([ \t]*>)+")) ~ skip_end) {
+    close_line = FNR
   }
   if ($0 ~ /^([ \t]*>)*[ \t]*\[[^]^][^]]*\]:/) {
     def_line = FNR
@@ -518,6 +779,15 @@ function BEGIN_CHECK() {
   list_col = 0
   list_tracked = 0
   list_depth = 0
+  skip_quote = 0
+  skip_inner = 0
+  skip_col = 0
+  skip_html = 0
+  skip_end = ""
+  skip_item = 0
+  skip_reach = 0
+  skip_text = 0
+  skip_cells = 0
 }
 
 # Returns token t in lowercase without the punctuation around it.
@@ -613,6 +883,26 @@ function inset() {
   return text_col() - quote_edge()
 }
 
+# Records a heading on the line for the guard in prose(). `q` counts the
+# `>` markers of the heading. For a heading in a list item, `outer`
+# counts the markers before the list marker. `reach` then holds the
+# distance from the edge after those markers to the text of the item.
+# Outside a list, `outer` is `q` and `reach` is 0.
+function heading_at(q, outer, reach) {
+  heading_line = FNR
+  heading_outer = outer
+  heading_reach = reach
+  heading_gap = q
+  heading_broken = 0
+}
+
+# Returns the text column of the innermost list item that `item_depth`
+# counts, or 0. The check does not track a list item in a blockquote,
+# so it returns 0 for a quoted line.
+function item_reach() {
+  return quote_depth() ? 0 : item_depth ? item_cols[item_depth] : 0
+}
+
 # Returns 1 when no `>` marker of the line sits left of the marker with
 # the same index in the first line of the paragraph. In a list item, GFM
 # can end the item at a marker further left and open a new blockquote
@@ -627,6 +917,148 @@ function marks_hold(   n, i, k) {
     }
   }
   return 1
+}
+
+# Returns 1 when the line opens a blockquote inside the block above it,
+# which sits after `q` markers. The line must hold more than `q`
+# markers, and GFM must read each of them as a marker. So each marker
+# must sit fewer than four columns past the edge that the marker before
+# it leaves, after that marker and the space after it. Further right,
+# GFM reads the rest of the line as more text or as indented code. The
+# first marker counts from the text of the innermost list item that
+# `item_depth` counts, or from the margin.
+function deeper_quote(q,   n, i, k, edge) {
+  match($0, /^([ \t]*>)*/)
+  n = RLENGTH
+  edge = item_depth ? item_cols[item_depth] : 0
+  k = 0
+  for (i = 1; i <= n; i++) {
+    if (substr($0, i, 1) != ">") {
+      continue
+    }
+    if (cols(i - 1) - edge >= 4) {
+      return 0
+    }
+    k++
+    edge = cols(i) + (substr($0, i + 1, 1) ~ /[ \t]/)
+  }
+  return k > q
+}
+
+# Returns the number of `>` markers after the list marker that opens the
+# line, as the list-item branch of lib/markdown.awk counts them. Each
+# one opens a blockquote in the item (`- > text`, `- - > text`, `> - >
+# text`). The function sets `item_col` to the column of the first of
+# those markers, with tabs expanded, or to 0 when the line holds none.
+# It sets `item_line` to 1 when the line opens with a list marker.
+# `item_rest` then holds the text after the list markers and the `>`
+# markers of the item, and `item_text` holds the column where that text
+# starts.
+function item_quotes(   s, n, c) {
+  s = blank(expand_tabs($0), "^([ \t]*>)+")
+  n = 0
+  item_col = 0
+  item_line = 0
+  item_rest = ""
+  item_text = 0
+  if (!match(s, /^[ \t]*([-*+]|[0-9]{1,9}[.)])([ \t]+|$)/)) {
+    return 0
+  }
+  item_line = 1
+  c = RLENGTH
+  s = substr(s, RLENGTH + 1)
+  while (match(s, /^ {0,3}(>[ \t]?|([-*+]|[0-9]{1,9}[.)])([ \t]+|$))/)) {
+    if (index(substr(s, 1, RLENGTH), ">")) {
+      if (!n) {
+        item_col = c + index(s, ">") - 1
+      }
+      n++
+    }
+    c += RLENGTH
+    s = substr(s, RLENGTH + 1)
+  }
+  item_rest = s
+  item_text = c + (match(s, /[^ \t]/) ? RSTART - 1 : 0)
+  return n
+}
+
+# Returns the number of `>` markers of the block that the check skips,
+# as the line sees them. `skip_quote` counts the markers that open the
+# block. A list item adds the `skip_inner` markers after its list marker
+# (`- > The pod holds the cache.`). The line stays in the quotes of the
+# item when its marker after the first `skip_quote` markers sits at
+# least `skip_col` columns past the edge that the marker before it
+# leaves. `skip_col` holds that distance for the first marker after the
+# list marker, on the line of the item (`  > It runs on the node.`). A
+# marker further left sits left of the text of the item. It ends the
+# item and the quotes in it, and it opens a new blockquote (`> It runs
+# on the node.`).
+function skip_depth(   n, i, k, edge) {
+  if (!skip_inner) {
+    return skip_quote
+  }
+  match($0, /^([ \t]*>)*/)
+  n = RLENGTH
+  k = 0
+  edge = 0
+  for (i = 1; i <= n; i++) {
+    if (substr($0, i, 1) != ">") {
+      continue
+    }
+    if (++k > skip_quote) {
+      return skip_quote + (cols(i - 1) - edge >= skip_col ? skip_inner : 0)
+    }
+    edge = cols(i) + (substr($0, i + 1, 1) ~ /[ \t]/)
+  }
+  return skip_quote
+}
+
+# Returns 1 when the line holds at least `q` `>` markers and reaches
+# `reach` columns past the edge after the first `q` of them. The
+# function measures the first character after those markers and the
+# whitespace after them, which can be a `>` marker too.
+function holds(q, reach,   n, i, k, edge) {
+  match($0, /^([ \t]*>)*/)
+  n = RLENGTH
+  k = 0
+  edge = 0
+  for (i = 1; i <= n && k < q; i++) {
+    if (substr($0, i, 1) == ">") {
+      k++
+      edge = cols(i) + (substr($0, i + 1, 1) ~ /[ \t]/)
+    }
+  }
+  if (k < q) {
+    return 0
+  }
+  match(substr($0, i), /^[ \t]*/)
+  return cols(i - 1 + RLENGTH) - edge >= reach
+}
+
+# Returns 1 when the line stays in the innermost block that holds the
+# block the check skips. After a list item that opens a blockquote after
+# its list marker, the line must hold the markers of that quote, as
+# skip_depth() reads them (`- > <div>`, `  > > It runs on the node.`).
+# Otherwise holds() tests the first `skip_quote` markers and
+# `skip_reach`. After a list item, `skip_reach` holds the distance to
+# the text of the item (`- <div>`, `  > It runs on the node.`).
+function skip_holds() {
+  if (skip_inner) {
+    return quote_depth() >= skip_quote + skip_inner && skip_depth() > skip_quote
+  }
+  return holds(skip_quote, skip_reach)
+}
+
+# Returns 1 when `line` is a setext underline of the paragraph that
+# `skip_text` marks (`<b>Setup</b> steps`, `=====`). The line holds only
+# `=` or only `-` marks and as many `>` markers as the paragraph, and
+# skip_holds() keeps it in the block of the paragraph. Its marks must
+# sit fewer than four columns past `skip_reach`, or past the edge after
+# the quotes of a list item that `skip_inner` counts. Further right, GFM
+# reads the line as more text of the paragraph (`<b>Setup</b> steps`,
+# `    ---`).
+function skip_underline(line) {
+  return skip_text && line ~ /^[ \t]*(=+|-+)[ \t]*$/ && quote_depth() == skip_quote + skip_inner && skip_holds() && inset() - (skip_inner ? 0 : skip_reach) < 4
 }
 
 # Returns the number of cells in the table row s, as GFM counts them. A
@@ -651,6 +1083,32 @@ function cells(s,   n) {
 # after `<!`, as in cmark-gfm (`<!DOCTYPE html>`).
 function html_block(s) {
   return s ~ /^[ \t]*<![A-Z]/ || tolower(s) ~ html_start
+}
+
+# Returns the pattern, in lowercase, that ends the HTML block of types 1
+# to 5 that the line s opens. GFM ends such a block at the first line
+# that holds the pattern, the line that opens the block included. A
+# block of type 1 ends at the closing tag of any of its four tags, so
+# `</style>` also ends a `<pre>` block. The function returns an empty
+# string for a block of type 6 or 7, which runs to the next blank line.
+function end_token(s,   t) {
+  t = tolower(s)
+  if (t ~ /^[ \t]*<(script|pre|textarea|style)([ \t>]|$)/) {
+    return "</(script|pre|textarea|style)>"
+  }
+  if (t ~ /^[ \t]*<!--/) {
+    return "-->"
+  }
+  if (t ~ /^[ \t]*<[?]/) {
+    return "[?]>"
+  }
+  if (t ~ /^[ \t]*<!\[cdata\[/) {
+    return "]]>"
+  }
+  if (s ~ /^[ \t]*<![A-Z]/) {
+    return ">"
+  }
+  return ""
 }
 
 # Prints the finding that the paragraph holds back until it ends, unless
@@ -717,6 +1175,7 @@ function finish() {
 # never exceeds the indent that GFM counts.
 function open_para(item,   n, i, k) {
   in_para = 1
+  skip_text = 0
   para_more = 0
   para_quote = quote_depth()
   match($0, /^([ \t]*>)*[ \t]*/)
@@ -734,8 +1193,59 @@ function open_para(item,   n, i, k) {
   }
 }
 
-function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, list_before, more, html, block, inline) {
+function prose(text,   start, quote_open, rest, t1, t2, t3, w1, shown, line, after_rule, list_before, more, html, block, inline) {
   start = (FILENAME != last_file || FNR != last_line + 1 || gap)
+  # A blockquote ends a paragraph, a table, or a list item, and it can
+  # sit right under a heading. A line that opens one also opens a
+  # paragraph in the quote (`The pod holds the cache.`, `> It runs on
+  # the node.`). `quote_open` marks such a line right under a paragraph,
+  # or right under a block whose lines the check skips. `start` holds
+  # for that line too, so the line takes the tests of the first line of
+  # a paragraph. inset() must be less than four. Further right, GFM
+  # reads the text as indented code in the quote (`>     It runs on the
+  # node.`).
+  #
+  # `skip_quote` holds the number of `>` markers of the block that the
+  # check skips. `skip_html` marks an HTML block, which holds its lines
+  # up to the next blank line, `>` lines included, or up to its end
+  # token. An HTML block does not take a line with fewer `>` markers as
+  # more of its text. Such a line ends the blockquote that holds the
+  # block, and the block with it (`> <div>`, `---`). A later blockquote
+  # counts from the markers of that line. The block above `@include`
+  # makes this test and sets `html_end`, so a line that lib/markdown.awk
+  # skips ends the HTML block too (`> <div>`, `[a]: x`, `> It runs on
+  # the node.`).
+  #
+  # The line at `html_end` opens a block of its own, so `start` holds
+  # for it (`> <div>`, `It runs on the node.`). So does a line left of
+  # the text of a list item that opens an HTML block (`- <details>`, `It
+  # runs on the node.`). GFM reads the line as indented code when a `>`
+  # marker of the line sits four or more columns past the edge before
+  # it. The same holds when its text sits that far past the edge, and
+  # `start` then stays off (`> > <div>`, `    > x`). The first marker
+  # counts from the text of the innermost list item that `item_depth`
+  # counts, as in deeper_quote().
+  #
+  # After a list item, skip_depth() also counts the `>` markers after
+  # the list marker, which `skip_inner` holds. So `  > It runs on the
+  # node.` under `- > The pod holds the cache.` continues that quote,
+  # but `> It runs on the node.` opens a new one.
+  #
+  # lib/markdown.awk skips some lines of an HTML block, such as quoted
+  # indented code (`<div>`, `>     x`). The line after one still sits in
+  # the block when no blank line sits between them, so `start` turns
+  # off for it.
+  if (FILENAME != last_file || last_blank > last_line) {
+    skip_html = 0
+  }
+  if (html_end == FNR && deeper_quote(-1) && text_col() - (quote_depth() ? quote_edge() : (item_depth ? item_cols[item_depth] : 0)) < 4) {
+    start = 1
+  }
+  if (start && skip_html && !in_para && !gap) {
+    start = 0
+  }
+  quote_open = !start && inset() < 4 && (in_para ? deeper_quote(para_quote) : !skip_html && deeper_quote(skip_depth()))
+  start = start || quote_open
   # `rule_above` marks a horizontal rule, or indented code under one, on
   # the last line that reached prose(). `prev_nb` names the last line
   # above this one that is not blank, so only blank lines sit between
@@ -834,6 +1344,13 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
   # reached prose(). So the reset does not fire below such a definition.
   # An item that `item_depth` does not count keeps `list_col` while
   # `list_seen` holds.
+  #
+  # A blockquote that ends the item also ends the list for `list_seen`
+  # and `list_before`. A paragraph or a rule in the quote then sits
+  # outside the list (`- The pod holds the cache.`, `> It runs on the
+  # node.`, `>---`). So does a line at `html_end`, which ends an HTML
+  # block of the item and the item with it. lib/markdown.awk keeps the
+  # list open there (`- <div>`, `x`, `> ---`).
   if (!list_seen) {
     list_col = 0
   } else if (!more && quote_depth() == 0 && text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ && line !~ hrule && (start || !in_para || para_quote || item_opens)) {
@@ -843,6 +1360,10 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
     }
   } else if (list_tracked && list_depth && !item_depth && (start || quote_depth() || html_block(raw) || tolower(raw) ~ html_lone)) {
     list_col = 0
+    if (quote_depth() || html_end == FNR) {
+      list_seen = 0
+      list_before = 0
+    }
   }
   list_depth = item_depth
   if (FILENAME != last_file) {
@@ -854,20 +1375,42 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
   # an HTML comment or a `pre` element, the line is more text of the
   # paragraph. A line of `>` markers and spaces stays a blank line of
   # the quote.
+  #
+  # In an HTML block, a bare line is text of the block, unless it is a
+  # blank line of the blockquote that holds the block. So `>` under
+  # `<div>` does not end the block, but `>` under `> <div>` does. After
+  # a list item, the block sits in the quotes that `skip_inner` counts
+  # (`  >` under `- > <div>`). Every other bare line therefore clears
+  # `skip_html`. A later line with more
+  # `>` markers then opens a blockquote (`> <div>`, `>`, `> >`, `> > It
+  # runs on the node.`). A later line with fewer markers continues a
+  # paragraph in the quote and does not end an HTML block (`> <div>`,
+  # `>`, `> The pod holds the cache.`, `It runs on the node.`).
+  if (bare_line && !in_para && skip_html && (quote_depth() > skip_quote + (skip_item ? skip_inner : 0) || raw ~ /[^ \t]/)) {
+    gap = 0
+    return
+  }
   if (bare_line && !(more && raw ~ /[^ \t]/)) {
     finish()
     in_para = 0
     gap = 1
+    skip_html = 0
     return
   }
   gap = 0
   # A setext underline makes the paragraph a heading. An empty list item
   # cannot interrupt a paragraph, so a lone `-` there is an underline.
   # This test therefore runs before the test for a list item. A line of
-  # three or more `-` marks that fails this test is a horizontal rule.
-  if (!start && in_para && quote_depth() == para_quote && line ~ /^[ \t]*(=+|-+)[ \t]*$/ && match(line, /[^ \t]/) > para_item) {
+  # three or more `-` marks that fails this test is a horizontal rule. A
+  # line that `more` marks is more text of the paragraph, so it is not an
+  # underline (`    ---`).
+  if (!start && !more && in_para && quote_depth() == para_quote && line ~ /^[ \t]*(=+|-+)[ \t]*$/ && match(line, /[^ \t]/) > para_item) {
     pending = 0
     in_para = 0
+    heading_at(para_quote, para_quote, item_reach())
+    skip_quote = para_quote
+    skip_inner = 0
+    skip_html = 0
     return
   }
   # A horizontal rule ends the paragraph before it and does not open
@@ -926,12 +1469,23 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
     first = head_first
     finish()
     in_para = 0
+    skip_quote = para_quote
+    skip_inner = 0
+    skip_html = 0
+    return
+  }
+  # A setext underline also turns a paragraph that `skip_text` marks
+  # into a heading (`<b>Setup</b> steps`, `=====`). A lone `-` there is
+  # an underline and not an empty list item.
+  if (!start && !in_para && skip_underline(line)) {
+    skip_text = 0
+    heading_at(quote_depth(), skip_quote, skip_inner ? skip_col : skip_reach)
     return
   }
   # A heading opens with one to six `#` marks. A line with more marks is
   # text, as in CommonMark, so it opens or continues a paragraph.
   if (!more && text ~ /^[ \t]*#{1,6}([ \t]|$)/) {
-    heading_line = FNR
+    heading_at(quote_depth(), quote_depth(), item_reach())
   }
   # Headings, HTML blocks, and list items are not paragraphs, so each one
   # ends the paragraph before it. The lines that continue a list item
@@ -944,7 +1498,13 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
   # the text of a list item, does not reach the paragraph in GFM. When
   # such a line holds only one tag, it opens an HTML block of type 7.
   # That block ends the blockquote or the list item, and the paragraph
-  # with it (`> It may help`, `<br>`).
+  # with it (`> It may help`, `<br>`). Such a line also opens an HTML
+  # block where no paragraph is open. That holds at the start of a
+  # block, and under a block whose lines the check skips, such as a
+  # table (`| a |`, `| - |`, `<br>`). `skip_text` marks a paragraph
+  # that the check skips. Under it, a line that skip_holds() keeps in the
+  # block of the paragraph is more text of the paragraph
+  # (`<span>x</span> y`, `<br>`).
   #
   # In a list item, the check compares the inset() of the line with that
   # of the first line of the paragraph. It therefore measures from the
@@ -967,22 +1527,82 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
   # therefore leaves out such a line, so a line that opens with `|` or
   # `<` after the marker ends the paragraph (`  > It may help`, `>
   # <span>x</span> to restart the pod.`).
-  html = html_block(raw) || (!start && in_para && quote_depth() <= para_quote && (quote_depth() < para_quote || (para_list && inset() < para_inset)) && tolower(raw) ~ html_lone)
+  html = html_block(raw) || (tolower(raw) ~ html_lone && (start || (in_para ? quote_depth() <= para_quote && (quote_depth() < para_quote || (para_list && inset() < para_inset)) : !(skip_text && skip_holds()))))
   block = html || text ~ /^[ \t]*(#{1,6}([ \t]|$)|[|<])/ || text ~ /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/
   inline = !html && text ~ /^[ \t]*[|<]/ && (!para_list || marks_hold())
+  # The check skips the lines after such a block up to the next blank
+  # line, unless `quote_open` marks one. Inside an HTML block, each
+  # later block line keeps `skip_html` and `skip_quote`, because GFM
+  # reads the line as text of the HTML block (`> <div>`, `> > ## Setup`).
+  #
+  # A list item reads the text after its list marker and the `>` markers
+  # after it. That text can open an HTML block in the item (`- <div>`),
+  # and `skip_item` marks the block of a list item. So does an HTML
+  # block on a later line of an item that `item_depth` counts (`- The
+  # pod holds the cache.`, `  <div>`). Plain text after the list marker
+  # is the first line of a paragraph (`- The pod holds the cache.`), and
+  # a heading there sits in the item (`- ## Setup`). `skip_reach` holds
+  # the distance from the edge after the first `skip_quote` markers to
+  # the text of the item. Any other block holds
+  # a paragraph only when the line opens with `|` or `<` at the start of
+  # a paragraph. There `skip_reach` holds the distance to the text of the
+  # list item that holds the paragraph. The check does not track a list
+  # item in a blockquote. There it uses the inset() of the paragraph, as
+  # the test for a tag in an open paragraph does. `skip_cells` holds
+  # the number of cells of the last line, for a delimiter row under it.
+  #
+  # GFM reads a tag four or more columns past the text of the item that
+  # `item_depth` counts, or past the margin, as indented code when no
+  # paragraph is open (`## Setup`, `    <div>`). Such a line therefore
+  # does not set `skip_html`. In a blockquote, and in a list while
+  # `list_seen` holds, the line still opens an HTML block.
   if (!more && block && (start || !inline)) {
     finish()
+    if (start || in_para || !skip_html) {
+      skip_quote = quote_depth()
+      skip_inner = item_quotes()
+      skip_col = item_col - quote_edge()
+      skip_item = item_line
+      if (item_line) {
+        rest = item_rest
+        skip_html = html_block(rest) || tolower(rest) ~ html_lone
+        skip_text = !skip_html && rest ~ /[^ \t]/ && rest !~ /^[ \t]*(#{1,6}([ \t]|$)|```|~~~)/ && rest !~ hrule
+        skip_reach = item_text - quote_edge()
+        if (rest ~ /^[ \t]*#{1,6}([ \t]|$)/) {
+          heading_at(quote_depth() + skip_inner, skip_quote, skip_inner ? skip_col : skip_reach)
+        }
+      } else {
+        rest = raw
+        skip_html = html && ((in_para && !start) || quote_depth() || list_seen || text_col() - item_reach() < 4)
+        skip_text = start && inline
+        skip_reach = quote_depth() ? (list_seen ? inset() : 0) : item_reach()
+        skip_item = html && item_reach() && text_col() >= skip_reach
+      }
+      skip_end = skip_html ? end_token(rest) : ""
+      close_line = skip_end != "" && tolower(rest) ~ skip_end ? FNR : 0
+      skip_cells = cells(rest)
+    }
     in_para = 0
     return
   }
   if (!start) {
     if (!in_para) {
+      # A rule, an underline, or a delimiter row with as many cells as the
+      # line above it ends the paragraph that `skip_text` marks.
+      if (skip_text && (line ~ hrule || (raw ~ delimiter && cells(raw) == skip_cells))) {
+        skip_text = 0
+      }
+      skip_cells = cells(raw)
       return
     }
     if (quote_depth() > para_quote) {
-      # A deeper blockquote ends the paragraph and opens one in the
-      # quote. That paragraph does not draw a finding, but an underline
-      # or a rule under it still ends it.
+      # A line with more `>` markers than the paragraph that
+      # `quote_open` does not mark holds a marker four or more columns
+      # past the edge that the marker before it leaves. GFM reads the
+      # line as more text of the paragraph or as indented code. The
+      # check still ends the paragraph there and opens one in the quote.
+      # That paragraph does not draw a finding, but an underline or a
+      # rule under it still ends it.
       finish()
       open_para(list_seen)
     } else {
@@ -1012,7 +1632,22 @@ function prose(text,   start, rest, t1, t2, t3, w1, shown, line, after_rule, lis
     return
   }
   # A heading directly above names the topic that the pronoun points at.
-  if (heading_line && heading_line == prev_nb) {
+  # The paragraph must sit in the blockquote of the heading, or in a
+  # deeper one. A paragraph with fewer `>` markers follows the
+  # blockquote that holds the heading (`> ## Setup`, a blank line, `It
+  # runs on the node.`). Each line between the two must hold at least as
+  # many markers as the line before it, so that no blockquote ends. A
+  # line of only whitespace therefore ends the quote of the heading, but
+  # a line of only `>` markers does not (`> ## Setup`, a blank line, `>
+  # It runs on the node.`). The paragraph must hold the markers of the
+  # last line before it, which `heading_gap` counts (`## Setup`, `>`,
+  # `It runs on the node.`).
+  #
+  # The paragraph must also stay in the list item that holds the
+  # heading. `heading_outer` counts the markers before the list marker,
+  # and `heading_reach` holds the distance from the edge after them to
+  # the text of the item (`- ## Setup`, `  > It runs on the node.`).
+  if (heading_line && heading_line == prev_nb && !heading_broken && para_quote >= heading_gap && holds(heading_outer, heading_reach)) {
     return
   }
   rest = text

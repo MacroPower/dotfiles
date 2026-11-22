@@ -523,6 +523,32 @@ on a set of files.
     the item. GFM reads that definition as more text of the item. GFM
     ends each item at the line under the paragraph, and the line does
     not hold a finding.
+  - A line that opens a blockquote right under a table, at the margin
+    and in a blockquote. The header row of one table sits right under a
+    paragraph. The blockquote ends the table and opens a paragraph in
+    the quote.
+  - A link reference definition at the margin under an HTML block in a
+    blockquote. The definition ends the blockquote and the HTML block,
+    so a blockquote under it opens a paragraph.
+  - A paragraph under an HTML block of type 1 that ends at its end tag,
+    `</script>` or `</pre>`, with a definition or a fence between them.
+  - A paragraph under a line that holds only one tag, with a fence or a
+    line of `>` between them. The tag sits right under a paragraph that
+    opens with inline HTML or holds the text of a list item. GFM reads
+    the tag as more text of that paragraph, so it does not open an HTML
+    block. In one paragraph, a row of `-` cells sits above the tag. The
+    row holds more cells than the line above it, so no table opens.
+  - A paragraph at the margin under an HTML block that opens on a later
+    line of a list item. Between them sits a fence, a link reference
+    definition, or an HTML comment that spans lines. The paragraph ends
+    the item and the HTML block.
+  - A line of `===` four columns in under a paragraph that opens with
+    inline HTML. GFM reads the line as more text of the paragraph, so a
+    tag under it is more text too. A blockquote under the tag opens a
+    paragraph.
+  - An HTML tag four columns in under a heading, a table, or a fence.
+    GFM reads the tag as indented code and not as an HTML block. Under
+    the tag, a line of `>` or an HTML comment sits above a paragraph.
 
   Every bad fixture needs a finding on each line. Definitions, fence
   markers, and the rows of a table do not hold one.
