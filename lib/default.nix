@@ -469,24 +469,39 @@ let
 
   # harper builds its curated dictionary from the rune files on every
   # start, which takes about 160ms of each harper-cli run. prose-lint runs
-  # harper-cli on every file Claude writes, so the cost adds up. The patch
-  # lets a build embed the finished dictionary. The overlay builds harper
-  # once with the patch, dumps the dictionary with that build, and builds
-  # again with HARPER_PRECOMPUTED_DICT naming the dump. The patch also
-  # changes Cargo.lock, so the overlay fetches the vendored crates again.
-  # When nixpkgs bumps harper, the patch might stop applying. Rebase it on
-  # the new tag, or drop this overlay.
+  # harper-cli on every file Claude writes, so the cost adds up.
+  # harper-precomputed-dict.patch lets a build embed the finished
+  # dictionary. The overlay builds harper once with the patches, dumps the
+  # dictionary with that build, and builds again with
+  # HARPER_PRECOMPUTED_DICT naming the dump.
+  #
+  # harper 3.0.0 builds tree-sitter-haskell 0.23.1, whose external scanner
+  # corrupts the heap. harper-cli then aborts with `corrupted size vs.
+  # prev_size` on every Haskell file that holds a comment and on many
+  # files that hold none, and prose-lint exits 2 there.
+  # harper-tree-sitter-haskell.patch moves the crate to 0.24.1, the
+  # version that harper 3.1.0 and later build. The install check of the
+  # embedded build lints a comment in a Haskell file, so a harper that
+  # aborts there fails the build. Drop that patch when nixpkgs ships
+  # harper 3.1.0 or later.
+  #
+  # Both patches change Cargo.lock, so the overlay fetches the vendored
+  # crates again. When nixpkgs bumps harper, a patch might stop applying.
+  # Rebase it on the new tag, or drop it.
   harperOverlay = final: prev: {
     harper =
       let
-        patch = ../pkgs/harper-precomputed-dict.patch;
+        patches = [
+          ../pkgs/harper-tree-sitter-haskell.patch
+          ../pkgs/harper-precomputed-dict.patch
+        ];
         unembedded = prev.harper.overrideAttrs (old: {
-          patches = (old.patches or [ ]) ++ [ patch ];
+          patches = (old.patches or [ ]) ++ patches;
           cargoDeps = final.rustPlatform.fetchCargoVendor {
             inherit (old) src;
             name = "${old.pname}-${old.version}";
-            patches = [ patch ];
-            hash = "sha256-JTA+S+BcitX7WJJNoluV85zi/CTGK+pQikO4Fj2+Om8=";
+            inherit patches;
+            hash = "sha256-eZazlrbjnOEupykL0moQ0pk/+wQWkefN23BIaYR+un4=";
           };
           # The embedded build runs the tests.
           doCheck = false;
@@ -502,6 +517,18 @@ let
         };
         doCheck = prev.harper.doCheck;
         doInstallCheck = prev.harper.doInstallCheck;
+        # harper-cli exits 1 when it finds a lint, and 134 when it aborts.
+        postInstallCheck = (old.postInstallCheck or "") + ''
+          printf '%s\n' 'module Main where' "" '-- This is is a comment.' \
+            'main :: IO ()' 'main = pure ()' >check.hs
+          status=0
+          "$out/bin/harper-cli" lint --format compact check.hs >check.out || status=$?
+          cat check.out
+          if [ "$status" -ne 1 ] || ! grep -q '^check.hs:3:.*RepeatedWords' check.out; then
+            echo "harper-cli did not lint the comment in check.hs (exit $status)" >&2
+            exit 1
+          fi
+        '';
         passthru = (old.passthru or { }) // {
           inherit dictionary unembedded;
         };

@@ -1,0 +1,29 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 99d2360..ea6577b 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -5903,9 +5903,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "tree-sitter-haskell"
+-version = "0.23.1"
++version = "0.24.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "977c51e504548cba13fc27cb5a2edab2124cf6716a1934915d07ab99523b05a4"
++checksum = "781de30e0d1ec8e6db4ed799d36ce1cedaf4684374dada45ebe2a8ea44c3f814"
+ dependencies = [
+  "cc",
+  "tree-sitter-language",
+diff --git a/harper-comments/Cargo.toml b/harper-comments/Cargo.toml
+index 09202eb..1293dbd 100644
+--- a/harper-comments/Cargo.toml
++++ b/harper-comments/Cargo.toml
+@@ -21,7 +21,7 @@ tree-sitter-c-sharp = "0.23.5"
+ tree-sitter-elixir = "0.3.5"
+ tree-sitter-go = "0.25.0"
+ tree-sitter-groovy = "0.1.2"
+-tree-sitter-haskell = "0.23.1"
++tree-sitter-haskell = "0.24.1"
+ tree-sitter-java = "0.23.5"
+ tree-sitter-javascript = "0.25.0"
+ tree-sitter-kotlin-ng = "1.1.0"
