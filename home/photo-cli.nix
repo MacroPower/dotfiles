@@ -57,10 +57,10 @@ let
     "None"
   ];
 
-  # Wraps a typed scalar in `nullOr` with `default = null` so an unset
-  # option contributes nothing after `flattenSettings`, leaving photo-cli
-  # to apply its own constructor default. `LogLevel` doesn't use this --
-  # an empty attrset is its natural "unset".
+  # Wraps a typed scalar in `nullOr` with `default = null`. An unset
+  # option then contributes nothing after `flattenSettings`, so photo-cli
+  # applies its own constructor default. An empty attrset is the natural
+  # unset value of `LogLevel`, so `LogLevel` does not use this helper.
   settingOpt =
     type: description:
     lib.mkOption {
