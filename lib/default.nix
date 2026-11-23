@@ -380,23 +380,6 @@ let
     };
   };
 
-  # Hydra has no cached atuin build for aarch64-linux or darwin at the
-  # nixpkgs pin, so terrarium and the Macs build it locally. Its timing
-  # and e2e session tests fail when the builder is busy, so skip the check
-  # phase there. x86_64-linux keeps the stock package, which
-  # cache.nixos.org serves. Drop each platform from the condition when
-  # Hydra caches atuin for it.
-  atuinOverlay = _final: prev: {
-    atuin =
-      if
-        prev.stdenv.hostPlatform.isDarwin
-        || (prev.stdenv.hostPlatform.isAarch64 && prev.stdenv.hostPlatform.isLinux)
-      then
-        prev.atuin.overrideAttrs { doCheck = false; }
-      else
-        prev.atuin;
-  };
-
   # harlequin's test_a_timed_out_run_closes_its_connection_once_the_work_stopped
   # runs a query with --timeout 0.1 against a stuck mock adapter and asserts
   # the connection closed after the worker left. Under a loaded build sandbox
@@ -918,7 +901,6 @@ let
     isortOverlay
     pyjwtOverlay
     direnvOverlay
-    atuinOverlay
     harlequinOverlay
     czkawkaOverlay
     harperOverlay
@@ -967,7 +949,6 @@ let
     isortOverlay
     pyjwtOverlay
     direnvOverlay
-    atuinOverlay
     harlequinOverlay
     czkawkaOverlay
     harperOverlay
