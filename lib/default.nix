@@ -493,7 +493,8 @@ let
   # derivation reads its version and download table from the `generated`
   # argument. This overlay swaps in the 158.0.1 en-US entries, with the
   # hashes from Mozilla's SHA256SUMS for that release. Remove the pin
-  # after a 159 or later firefox-bin launches on macOS.
+  # after a 159 or later firefox-bin launches on macOS. NixOS/nixpkgs#591542
+  # signs the relocated binaries and should fix the launch.
   firefoxBinOverlay = _final: prev: {
     firefox-bin-unwrapped = prev.firefox-bin-unwrapped.override {
       generated = {
