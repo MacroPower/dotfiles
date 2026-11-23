@@ -4823,6 +4823,9 @@ in
             };
             sandbox = {
               enabled = sandboxEnabled;
+              # Claude Code 2.1.325 and later send sandboxed Bash commands
+              # through the normal permission flow unless this is set.
+              autoAllowBashIfSandboxed = true;
               failIfUnavailable = true;
               allowUnsandboxedCommands = false;
               # Allow access to the system TLS trust service.
