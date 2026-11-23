@@ -932,7 +932,17 @@ func isPerk(plug definitions.ItemDef) bool {
 // definitions do not give a type to the trackers, such as "Kill
 // Tracker", or to the plugs that restore a default, such as "Default
 // Ornament". So isCosmetic accepts an untyped plug by its name.
+//
+// isCosmetic also accepts each armor piece and each weapon. A socket
+// holds a piece of gear as the appearance of an item, such as another
+// chest armor piece for a chest armor piece. The type of such a plug
+// names its slot, such as "Chest Armor", so isCosmetic reads its item
+// type instead.
 func isCosmetic(plug definitions.ItemDef) bool {
+	if plug.ItemType == bungie.ItemTypeArmor || plug.ItemType == bungie.ItemTypeWeapon {
+		return true
+	}
+
 	untyped := plug.TypeName == ""
 	if untyped && (strings.HasSuffix(plug.Name, " Tracker") || strings.HasPrefix(plug.Name, "Default ")) {
 		return true

@@ -134,6 +134,53 @@ func TestPerksOf(t *testing.T) {
 	}
 }
 
+func TestPerksOfCosmetic(t *testing.T) {
+	t.Parallel()
+
+	defs := definitionstest.Defs()
+	defs.Items[940] = definitions.ItemDef{
+		Name:     "Iron Truage Casque",
+		TypeName: "Helmet",
+		ItemType: bungie.ItemTypeArmor,
+	}
+	defs.Items[941] = definitions.ItemDef{Name: "Kill Tracker", ItemType: bungie.ItemTypePlug}
+
+	// Socket 0 of the item holds the plug of each case and can hold only
+	// that plug. Socket 1 holds Explosive Payload. Item 100 is a weapon,
+	// and item 200 is a helmet.
+	tests := map[string]struct {
+		item uint32
+		plug uint32
+	}{
+		"shader":            {item: 100, plug: 902},
+		"untyped tracker":   {item: 100, plug: 941},
+		"armor appearance":  {item: 200, plug: 940},
+		"weapon appearance": {item: 100, plug: 102},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var profile bungie.Profile
+
+			require.NoError(t, json.Unmarshal(fmt.Appendf(nil, `{"itemComponents": {
+				"sockets": {"data": {"7": {"sockets": [
+					{"plugHash": %[1]d, "isVisible": true, "isEnabled": true},
+					{"plugHash": 900, "isVisible": true, "isEnabled": true}
+				]}}},
+				"reusablePlugs": {"data": {"7": {"plugs": {
+					"0": [{"plugItemHash": %[1]d, "canInsert": true}]
+				}}}}
+			}}`, tc.plug), &profile))
+
+			assert.Equal(t, []Perk{{Plug: plugExplosivePayload, Socket: 1}},
+				perksOf(&profile, defs, defs.Items[tc.item], bungie.ProfileItem{InstanceID: "7", Hash: tc.item}, ""),
+				"the perks leave out a socket whose plug changes only how the item looks")
+		})
+	}
+}
+
 // subclassDefs returns the fixture definitions with the subclass
 // Prismatic Hunter, item 800, and the plugs of its sockets. Socket 0
 // takes a super from plug set 60. Sockets 1 and 2 take aspects from plug

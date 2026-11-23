@@ -218,14 +218,13 @@ func loadoutsOf(profile *bungie.Profile, defs *definitions.Defs) []Loadout {
 }
 
 // savedPlugs reads the item hashes hashes that a saved loadout holds for
-// one item. It skips [bungie.UnsetPlugHash], each plug that [isCosmetic]
-// accepts, and each armor piece or weapon. A loadout saves a piece of
-// gear as the appearance of an item, such as another chest armor piece
-// for a chest armor piece. Of the other hashes, savedPlugs returns the
-// plugs that [isPerk] accepts, in socket order. It also returns the
-// number of placeholders of empty sockets and the number of unknown
-// plugs. An unknown plug is missing from the definitions defs, or isPerk
-// and [isPlaceholder] both reject its definition.
+// one item. It skips [bungie.UnsetPlugHash] and each plug that
+// [isCosmetic] accepts, such as the armor piece that gives an item its
+// appearance. Of the other hashes, savedPlugs returns the plugs that
+// [isPerk] accepts, in socket order. It also returns the number of
+// placeholders of empty sockets and the number of unknown plugs. An
+// unknown plug is missing from the definitions defs, or isPerk and
+// [isPlaceholder] both reject its definition.
 func savedPlugs(defs *definitions.Defs, hashes []uint32) ([]Plug, int, int) {
 	var (
 		plugs   []Plug
@@ -243,7 +242,7 @@ func savedPlugs(defs *definitions.Defs, hashes []uint32) ([]Plug, int, int) {
 		switch {
 		case !ok:
 			unknown++
-		case isCosmetic(def), def.ItemType == bungie.ItemTypeArmor, def.ItemType == bungie.ItemTypeWeapon:
+		case isCosmetic(def):
 		case isPerk(def):
 			plugs = append(plugs, plugOf(def, hash))
 		case isPlaceholder(def):
