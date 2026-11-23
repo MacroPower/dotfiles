@@ -76,7 +76,7 @@ let
 
   # Stock devbox reads packages with builtins.fetchClosure, which Lix 2.95
   # removed, and devbox 0.18.3 and later refuse to start on that Lix. This
-  # patch is jetify-com/devbox#2997 rebased onto 0.18.4. It makes the
+  # patch is jetify-com/devbox#2997 rebased onto 0.22.0. It makes the
   # generated flake use builtins.appendContext and deletes the Lix check.
   # Drop it once a devbox release includes that change.
   devboxOverlay = _final: prev: {
@@ -459,33 +459,25 @@ let
   # dictionary with that build, and builds again with
   # HARPER_PRECOMPUTED_DICT naming the dump.
   #
-  # harper 3.0.0 builds tree-sitter-haskell 0.23.1, whose external scanner
-  # corrupts the heap. harper-cli then aborts with `corrupted size vs.
-  # prev_size` on every Haskell file that holds a comment and on many
-  # files that hold none, and prose-lint exits 2 there.
-  # harper-tree-sitter-haskell.patch moves the crate to 0.24.1, the
-  # version that harper 3.1.0 and later build. The install check of the
+  # harper 3.0.0 aborted on most Haskell files, because its
+  # tree-sitter-haskell 0.23.1 corrupts the heap. The install check of the
   # embedded build lints a comment in a Haskell file, so a harper that
-  # aborts there fails the build. Drop that patch when nixpkgs ships
-  # harper 3.1.0 or later.
+  # aborts there fails the build.
   #
-  # Both patches change Cargo.lock, so the overlay fetches the vendored
-  # crates again. When nixpkgs bumps harper, a patch might stop applying.
+  # The patch changes Cargo.lock, so the overlay fetches the vendored
+  # crates again. When nixpkgs bumps harper, the patch might stop applying.
   # Rebase it on the new tag, or drop it.
   harperOverlay = final: prev: {
     harper =
       let
-        patches = [
-          ../pkgs/harper-tree-sitter-haskell.patch
-          ../pkgs/harper-precomputed-dict.patch
-        ];
+        patches = [ ../pkgs/harper-precomputed-dict.patch ];
         unembedded = prev.harper.overrideAttrs (old: {
           patches = (old.patches or [ ]) ++ patches;
           cargoDeps = final.rustPlatform.fetchCargoVendor {
             inherit (old) src;
             name = "${old.pname}-${old.version}";
             inherit patches;
-            hash = "sha256-eZazlrbjnOEupykL0moQ0pk/+wQWkefN23BIaYR+un4=";
+            hash = "sha256-pIt9QXHWifbSCTTo+0PX/e+K3La5FIB0695nw/QAcNE=";
           };
           # The embedded build runs the tests.
           doCheck = false;

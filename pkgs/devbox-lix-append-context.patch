@@ -1,8 +1,8 @@
 diff --git a/internal/devpkg/narinfo_cache.go b/internal/devpkg/narinfo_cache.go
-index c37d84e9..98c0e94a 100644
+index d79d40c4..78a70dfa 100644
 --- a/internal/devpkg/narinfo_cache.go
 +++ b/internal/devpkg/narinfo_cache.go
-@@ -15,7 +15,10 @@
+@@ -17,7 +17,10 @@
  )
  
  // binaryCache is the store from which to fetch this package's binaries.
@@ -15,7 +15,7 @@ index c37d84e9..98c0e94a 100644
  
  // useDefaultOutputs is a special value for the outputName parameter of
 diff --git a/internal/nix/command.go b/internal/nix/command.go
-index 902f2a33..68b657f2 100644
+index f46cbbec..195be941 100644
 --- a/internal/nix/command.go
 +++ b/internal/nix/command.go
 @@ -5,7 +5,7 @@
@@ -26,7 +26,7 @@ index 902f2a33..68b657f2 100644
 +		"--option", "experimental-features", "nix-command flakes",
  	}
  
- 	// Add GitHub access token if available to avoid rate limiting
+ 	// Retry commands that fail because of a flaky network, such as a
 diff --git a/internal/nix/install.go b/internal/nix/install.go
 index 2d6654b5..9f4f0430 100644
 --- a/internal/nix/install.go
@@ -55,10 +55,10 @@ index 2d6654b5..9f4f0430 100644
  
  	if BinaryInstalled() {
 diff --git a/internal/nix/nix.go b/internal/nix/nix.go
-index 3b99d2d4..fd05120f 100644
+index 4ec8e6db..9b66430e 100644
 --- a/internal/nix/nix.go
 +++ b/internal/nix/nix.go
-@@ -117,7 +117,7 @@ func FlakeNixpkgs(commit string) string {
+@@ -119,7 +119,7 @@ func FlakeNixpkgs(commit string) string {
  }
  
  func ExperimentalFlags() []string {
@@ -83,10 +83,10 @@ index 03a9b97e..7f66a236 100644
  		if err != nil {
  			return nil, err
 diff --git a/internal/shellgen/flake_plan.go b/internal/shellgen/flake_plan.go
-index 91063fe5..ea70ca4f 100644
+index 1bf0f5fe..013c7ae0 100644
 --- a/internal/shellgen/flake_plan.go
 +++ b/internal/shellgen/flake_plan.go
-@@ -171,12 +171,6 @@ func (g *glibcPatchFlake) addOutput(pkg *devpkg.Package) error {
+@@ -176,12 +176,6 @@ func (g *glibcPatchFlake) addOutput(pkg *devpkg.Package) error {
  	if g.Outputs.Packages == nil {
  		g.Outputs.Packages = map[string]map[string]string{nix.System(): {}}
  	}
@@ -99,7 +99,7 @@ index 91063fe5..ea70ca4f 100644
  
  	inputAttrPath, err := g.inputRelativeAttrPath(pkg)
  	if err != nil {
-@@ -240,22 +234,6 @@ func (g *glibcPatchFlake) inputRelativeAttrPath(pkg *devpkg.Package) (string, er
+@@ -245,29 +239,6 @@ func (g *glibcPatchFlake) inputRelativeAttrPath(pkg *devpkg.Package) (string, er
  	return atrrPath, nil
  }
  
@@ -112,16 +112,46 @@ index 91063fe5..ea70ca4f 100644
 -	if len(storePaths) == 0 {
 -		return "", fmt.Errorf("no store path for package %s", pkg.Raw)
 -	}
+-	return fetchClosureStorePathExpr(storePaths[0]), nil
+-}
+-
+-// fetchClosureStorePathExpr returns a builtins.fetchClosure expression that
+-// fetches storePath from the default binary cache. It uses the same store as
+-// the fetchClosure calls in flake.nix.tmpl.
+-func fetchClosureStorePathExpr(storePath string) string {
 -	return fmt.Sprintf(`builtins.fetchClosure {
 -  fromStore = "%s";
 -  fromPath = "%s";
 -  inputAddressed = true;
--}`, "devpkg.BinaryCache", storePaths[0]), nil
+-}`, "https://cache.nixos.org", storePath)
 -}
 -
  // copySystemCUDALib searches for the system's libcuda.so shared library and
  // copies it in the flake's lib directory.
  func (g *glibcPatchFlake) copySystemCUDALib(flakeDir string) error {
+diff --git a/internal/shellgen/flake_plan_test.go b/internal/shellgen/flake_plan_test.go
+index e68fed90..6d320cc3 100644
+--- a/internal/shellgen/flake_plan_test.go
++++ b/internal/shellgen/flake_plan_test.go
+@@ -84,18 +84,6 @@ func TestNewGlibcPatchFlakeSkipsNonNix(t *testing.T) {
+ 	}
+ }
+ 
+-func TestFetchClosureStorePathExpr(t *testing.T) {
+-	got := fetchClosureStorePathExpr("/nix/store/0123456789abcdfghijklmnpqrsvwxyz-python3-3.12.0")
+-	want := `builtins.fetchClosure {
+-  fromStore = "https://cache.nixos.org";
+-  fromPath = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-python3-3.12.0";
+-  inputAddressed = true;
+-}`
+-	if got != want {
+-		t.Errorf("got expression:\n%s\n\nwant:\n%s", got, want)
+-	}
+-}
+-
+ func TestCopySystemCUDALibRemovesStaleLibs(t *testing.T) {
+ 	flakeDir := t.TempDir()
+ 	libDir := filepath.Join(flakeDir, "lib")
 diff --git a/internal/shellgen/tmpl/flake.nix.tmpl b/internal/shellgen/tmpl/flake.nix.tmpl
 index 3bd0513f..50e0ae3f 100644
 --- a/internal/shellgen/tmpl/flake.nix.tmpl
@@ -157,10 +187,10 @@ index 3bd0513f..50e0ae3f 100644
              {{- end }}
              {{- end }}
 diff --git a/nix/nix.go b/nix/nix.go
-index f793b606..406a5511 100644
+index aa5a7df2..7fdc6c66 100644
 --- a/nix/nix.go
 +++ b/nix/nix.go
-@@ -202,12 +202,11 @@ func (n *Nix) Info() (Info, error) {
+@@ -222,12 +222,11 @@ func (n *Nix) Info() (Info, error) {
  	MinVersion = Version2_18
  )
  
@@ -178,7 +208,7 @@ index f793b606..406a5511 100644
  
  // versionRegexp matches the first line of "nix --version" output.
  //
-@@ -365,29 +364,6 @@ func (i Info) AtLeast(version string) bool {
+@@ -385,29 +384,6 @@ func (i Info) AtLeast(version string) bool {
  	return semver.Compare("v"+prerelease, version) >= 0
  }
  

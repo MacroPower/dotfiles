@@ -1,8 +1,8 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index 99d23604..162edaa4 100644
+index 54d2738..b97e708 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -2048,6 +2048,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -2015,6 +2015,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "a6956a1e60e2d1412b44b4169d44a03dae518f8583d3e10090c912c105e48447"
  dependencies = [
   "rayon",
@@ -10,15 +10,15 @@ index 99d23604..162edaa4 100644
  ]
  
  [[package]]
-@@ -2714,6 +2715,7 @@ name = "harper-core"
- version = "3.0.0"
+@@ -2696,6 +2697,7 @@ name = "harper-core"
+ version = "3.3.0"
  dependencies = [
   "ammonia",
 + "bincode",
   "bitflags 2.13.2",
   "blanket",
   "boxcar",
-@@ -3274,6 +3276,8 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
+@@ -3255,6 +3257,8 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
  dependencies = [
   "equivalent",
   "hashbrown 0.17.1",
@@ -27,7 +27,7 @@ index 99d23604..162edaa4 100644
  ]
  
  [[package]]
-@@ -3535,6 +3539,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -3516,6 +3520,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "936de6c22f08e7135a921f8ada907acd0d88880c4f42b5591f634b9f1dd8e07f"
  dependencies = [
   "fid-rs",
@@ -35,7 +35,7 @@ index 99d23604..162edaa4 100644
  ]
  
  [[package]]
-@@ -6124,6 +6129,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -6105,6 +6110,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "f6f88f4b0a1ebd6c3d16be3e45eb0e8089372ccadd88849b7ca162ba64b5e6f6"
  dependencies = [
   "louds-rs",
@@ -44,10 +44,10 @@ index 99d23604..162edaa4 100644
  
  [[package]]
 diff --git a/harper-cli/src/main.rs b/harper-cli/src/main.rs
-index 2d314b5c..d5e76f4f 100644
+index e3d5c08..4eac88c 100644
 --- a/harper-cli/src/main.rs
 +++ b/harper-cli/src/main.rs
-@@ -199,6 +199,13 @@ enum Args {
+@@ -243,6 +243,13 @@ enum Args {
      },
      /// Print harper-core version.
      CoreVersion,
@@ -61,7 +61,7 @@ index 2d314b5c..d5e76f4f 100644
      /// Rename a flag in the dictionary and affixes.
      RenameFlag {
          /// The old flag.
-@@ -582,6 +589,10 @@ fn main() -> anyhow::Result<()> {
+@@ -626,6 +633,10 @@ fn main() -> anyhow::Result<()> {
              println!("harper-core v{}", harper_core::core_version());
              Ok(())
          }
@@ -73,12 +73,12 @@ index 2d314b5c..d5e76f4f 100644
          Args::TrainBrillTagger {
              datasets: dataset,
 diff --git a/harper-core/Cargo.toml b/harper-core/Cargo.toml
-index cdebb62b..19b065bb 100644
+index e6ac468..c89460f 100644
 --- a/harper-core/Cargo.toml
 +++ b/harper-core/Cargo.toml
-@@ -33,8 +33,9 @@ ammonia = "4.1.2"
- harper-brill = { path = "../harper-brill", version = "3.0.0" }
+@@ -33,8 +33,9 @@ harper-brill = { path = "../harper-brill", version = "3.0.0" }
  harper-thesaurus = { path = "../harper-thesaurus", version = "3.0.0", optional = true }
+ harper-context-ranker = { path = "../harper-context-ranker", version = "3.1.0", optional = true }
  bitflags = { version = "2.11.0", features = ["serde"] }
 -trie-rs = "0.4.2"
 -indexmap = "2.13.1"
@@ -89,7 +89,7 @@ index cdebb62b..19b065bb 100644
  regex = "1.12.3"
  boxcar = { version = "0.2.14", optional = true }
 diff --git a/harper-core/build.rs b/harper-core/build.rs
-index df200a1b..71779c0a 100644
+index df200a1..71779c0 100644
 --- a/harper-core/build.rs
 +++ b/harper-core/build.rs
 @@ -70,6 +70,15 @@ fn rust_string_literal(value: &str) -> String {
@@ -109,7 +109,7 @@ index df200a1b..71779c0a 100644
      let weir_rule_dir = manifest_dir.join("./src/linting/weir_rules");
      let out_dir = Path::new(&env::var("OUT_DIR").unwrap()).to_path_buf();
 diff --git a/harper-core/src/spell/fst_dictionary.rs b/harper-core/src/spell/fst_dictionary.rs
-index f28df671..4d6dcc61 100644
+index f28df67..4d6dcc6 100644
 --- a/harper-core/src/spell/fst_dictionary.rs
 +++ b/harper-core/src/spell/fst_dictionary.rs
 @@ -25,8 +25,12 @@ pub struct FstDictionary {
@@ -152,27 +152,27 @@ index f28df671..4d6dcc61 100644
      /// This can be expensive, so only use this if fast fuzzy searches are worth it.
      pub fn new(mut words: Vec<(CharString, DictWordMetadata)>) -> Self {
 diff --git a/harper-core/src/spell/mod.rs b/harper-core/src/spell/mod.rs
-index 96ba0f26..655da9c2 100644
+index cd57f0c..8754cfc 100644
 --- a/harper-core/src/spell/mod.rs
 +++ b/harper-core/src/spell/mod.rs
-@@ -9,6 +9,7 @@ pub use self::dictionary::Dictionary;
- pub use self::fst_dictionary::FstDictionary;
+@@ -11,6 +11,7 @@ pub use self::fst_dictionary::FstDictionary;
  pub use self::merged_dictionary::MergedDictionary;
  pub use self::mutable_dictionary::MutableDictionary;
+ pub use self::surrounding_words::{context_word, surrounding_words};
 +pub use self::precomputed::encode as encode_precomputed_curated;
  pub use self::trie_dictionary::TrieDictionary;
  pub use self::word_id::{CanonicalWordId, CaseFoldedWordId};
  
-@@ -16,6 +17,7 @@ mod dictionary;
+@@ -18,6 +19,7 @@ mod dictionary;
  mod fst_dictionary;
  mod merged_dictionary;
  mod mutable_dictionary;
 +mod precomputed;
  mod rune;
+ mod surrounding_words;
  mod trie_dictionary;
- mod word_id;
 diff --git a/harper-core/src/spell/mutable_dictionary.rs b/harper-core/src/spell/mutable_dictionary.rs
-index 0d4bc926..d8a58823 100644
+index 0d4bc92..d8a5882 100644
 --- a/harper-core/src/spell/mutable_dictionary.rs
 +++ b/harper-core/src/spell/mutable_dictionary.rs
 @@ -3,6 +3,7 @@ use super::{
@@ -206,7 +206,7 @@ index 0d4bc926..d8a58823 100644
          super::dictionary::ANNOTATIONS_STR,
 diff --git a/harper-core/src/spell/precomputed.rs b/harper-core/src/spell/precomputed.rs
 new file mode 100644
-index 00000000..de3c854b
+index 0000000..de3c854
 --- /dev/null
 +++ b/harper-core/src/spell/precomputed.rs
 @@ -0,0 +1,171 @@
@@ -382,7 +382,7 @@ index 00000000..de3c854b
 +    }
 +}
 diff --git a/harper-core/src/spell/trie_dictionary.rs b/harper-core/src/spell/trie_dictionary.rs
-index 660ab881..1a93e1cf 100644
+index 660ab88..1a93e1c 100644
 --- a/harper-core/src/spell/trie_dictionary.rs
 +++ b/harper-core/src/spell/trie_dictionary.rs
 @@ -15,8 +15,15 @@ pub struct TrieDictionary<D: Dictionary> {
@@ -415,7 +415,7 @@ index 660ab881..1a93e1cf 100644
  
  impl<D: Dictionary> Dictionary for TrieDictionary<D> {
 diff --git a/harper-core/src/spell/word_map/mod.rs b/harper-core/src/spell/word_map/mod.rs
-index e080dd64..4f58d77f 100644
+index e080dd6..4f58d77 100644
 --- a/harper-core/src/spell/word_map/mod.rs
 +++ b/harper-core/src/spell/word_map/mod.rs
 @@ -5,6 +5,7 @@ use std::{
@@ -436,7 +436,7 @@ index e080dd64..4f58d77f 100644
      /// Underlying container for the entries in the word map.
      canonical: CanonicalStorage,
 diff --git a/harper-core/src/spell/word_map/word_map_entry.rs b/harper-core/src/spell/word_map/word_map_entry.rs
-index 047ec195..33c3bb5c 100644
+index 047ec19..33c3bb5 100644
 --- a/harper-core/src/spell/word_map/word_map_entry.rs
 +++ b/harper-core/src/spell/word_map/word_map_entry.rs
 @@ -1,6 +1,8 @@
