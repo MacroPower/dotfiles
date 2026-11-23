@@ -351,10 +351,15 @@ in
           ${lib.concatStringsSep "\n          " (
             lib.mapAttrsToList (name: path: ''cp -f "${path}" "$obsidian_dir/${name}"'') configs
           )}
+          # Obsidian 1.15.1 and later move the settings of a plugin that
+          # is not installed yet to data.json.bak when the plugin is
+          # installed. So seed only plugins whose manifest exists. After a
+          # first install, run the activation again and reload the plugin.
           ${lib.concatStringsSep "\n          " (
             lib.mapAttrsToList (name: path: ''
-              mkdir -p "$obsidian_dir/plugins/$(dirname "${name}")"
-              cp -f "${path}" "$obsidian_dir/plugins/${name}"
+              if [ -f "$obsidian_dir/plugins/$(dirname "${name}")/manifest.json" ]; then
+                cp -f "${path}" "$obsidian_dir/plugins/${name}"
+              fi
             '') pluginConfigs
           )}
 
