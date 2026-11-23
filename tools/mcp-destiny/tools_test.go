@@ -6684,6 +6684,149 @@ func TestSaveLoadoutToolAfterEquip(t *testing.T) {
 	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 }
 
+// withArtifact gives the fake Hunter the artifact Hunter's Journal (1008)
+// equipped. Its sockets hold the plugs with the given hashes. The plugs
+// 930 and 931 are the artifact perks Radiant Orbs and Void Hegemony, and
+// 932 is the placeholder of an empty socket.
+func withArtifact(f *fakes, plugs ...uint32) {
+	f.defs.Items[410] = definitions.ItemDef{
+		Name:       "Hunter's Journal",
+		TypeName:   "Artifact",
+		Tier:       "Legendary",
+		TierType:   bungie.TierTypeLegendary,
+		Bucket:     bungie.BucketArtifacts,
+		ClassType:  bungie.ClassAny,
+		Equippable: true,
+	}
+
+	perk := func(name string) definitions.ItemDef {
+		return definitions.ItemDef{
+			Name:      name,
+			TypeName:  "Artifact Perk",
+			ItemType:  bungie.ItemTypePlug,
+			ClassType: bungie.ClassAny,
+		}
+	}
+
+	f.defs.Items[930] = perk("Radiant Orbs")
+	f.defs.Items[931] = perk("Void Hegemony")
+	f.defs.Items[932] = definitions.ItemDef{
+		Name:        "Empty Artifact Mod",
+		Description: "No mod currently selected.",
+		ItemType:    bungie.ItemTypePlug,
+		ClassType:   bungie.ClassAny,
+	}
+
+	sockets := make([]string, 0, len(plugs))
+	for _, plug := range plugs {
+		sockets = append(sockets, fmt.Sprintf(`{"plugHash": %d, "isEnabled": true, "isVisible": true}`, plug))
+	}
+
+	equipped := `{"itemHash": 410, "itemInstanceId": "1008", "quantity": 1, "location": 1, ` +
+		`"bucketHash": 1506418338, "transferStatus": 1}, `
+	profile := strings.Replace(bungietest.ProfileJSON, `{"itemHash": 200, "itemInstanceId": "1004"`,
+		equipped+`{"itemHash": 200, "itemInstanceId": "1004"`, 1)
+	profile = strings.Replace(profile, `"sockets": {"data": {`,
+		`"sockets": {"data": {"1008": {"sockets": [`+strings.Join(sockets, ", ")+`]}, `, 1)
+	f.bungie.ProfileBody = `{"ErrorCode": 1, "Response": ` + profile + `}`
+}
+
+func TestSaveLoadoutToolArtifactPerks(t *testing.T) {
+	t.Parallel()
+
+	const saved = "Saved loadout 2 on Hunter with the name Raid Night. It holds the gear that Hunter has " +
+		"equipped: Hunter's Journal (1008), Fatebringer (1006), Celestial Nighthawk (1004)."
+
+	tests := map[string]struct {
+		want  string
+		plugs []uint32
+	}{
+		"artifact with perks": {
+			plugs: []uint32{930, 932, 931},
+			want:  saved + " The loadout also holds the perks of the artifact Hunter's Journal: Radiant Orbs, Void Hegemony.",
+		},
+		"artifact without perks": {
+			plugs: []uint32{932, 932},
+			want:  saved + " The artifact Hunter's Journal does not hold any perk.",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			withArtifact(f, tc.plugs...)
+
+			got, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 2})
+			assert.False(t, isError)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestSaveLoadoutToolArtifactPerksAfterEquip(t *testing.T) {
+	t.Parallel()
+
+	const (
+		notHere = `{"ErrorCode": 1671, "ErrorStatus": "DestinyCannotPerformActionAtThisLocation", ` +
+			`"Message": "Not here."}`
+		saved = "Saved loadout 3 on Hunter with the name Trials. It holds the gear that Hunter has " +
+			"equipped: Hunter's Journal (1008), Fatebringer (1006), Celestial Nighthawk (1004)."
+		pending = " The loadout also holds the perks of the artifact Hunter's Journal that equip_loadout applied. " +
+			"The server reads those perks at its next inventory fetch, up to 30 seconds later."
+		perks = " The loadout also holds the perks of the artifact Hunter's Journal: Radiant Orbs, Void Hegemony."
+	)
+
+	tests := map[string]struct {
+		bungieError string
+		want        string
+		after       time.Duration
+		fetches     int
+	}{
+		"save in the snapshot of the equip": {
+			want:    saved + pending,
+			fetches: 1,
+		},
+		"save after the next fetch": {
+			after:   snapshotTTL,
+			want:    saved + perks,
+			fetches: 2,
+		},
+		"save after a refused equip": {
+			bungieError: notHere,
+			want:        saved + perks,
+			fetches:     1,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			withArtifact(f, 930, 931)
+
+			f.bungie.ActionError = tc.bungieError
+			f.bungie.ActionErrorPath = pathLoadout
+
+			_, isError := call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "hunter", Loadout: 2})
+			require.Equal(t, tc.bungieError != "", isError)
+
+			later := bungietest.Now.Add(tc.after)
+			f.h.now = func() time.Time { return later }
+
+			// Every fetch of the fake profile gives the artifact the perks
+			// Radiant Orbs and Void Hegemony. The save names them when no
+			// equip followed the last fetch.
+			got, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 3})
+			assert.False(t, isError)
+			assert.Equal(t, tc.want, got)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), tc.fetches)
+		})
+	}
+}
+
 func TestLoadoutWriteSnapshotAge(t *testing.T) {
 	t.Parallel()
 

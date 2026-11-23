@@ -307,7 +307,10 @@ func (s *Snapshot) RecordLoadoutClear(characterID string, number int) {
 //
 // EquipLoadout records each move in the snapshot. After the equip it marks
 // every loadout item as equipped. The plugs that the loadout sets, such as
-// armor mods, reach the snapshot with the next profile fetch.
+// armor mods, reach the snapshot with the next profile fetch. The game
+// also applies the artifact perks that the loadout saved, so EquipLoadout
+// sets [Item.PerksPending] on each artifact that the character then has
+// equipped.
 func (s *Snapshot) EquipLoadout(ctx context.Context, equipper LoadoutEquipper, l Loadout) (LoadoutEquip, error) {
 	var (
 		out   LoadoutEquip
@@ -370,6 +373,12 @@ func (s *Snapshot) EquipLoadout(ctx context.Context, equipper LoadoutEquipper, l
 
 	for _, item := range out.Items {
 		s.markEquipped(item)
+	}
+
+	for _, item := range s.Items {
+		if item.Owner == l.CharacterID && item.Equipped && item.Bucket == bungie.BucketArtifacts {
+			item.PerksPending = true
+		}
 	}
 
 	out.Changed = true

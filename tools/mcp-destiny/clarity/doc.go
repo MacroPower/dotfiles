@@ -35,6 +35,12 @@
 // skips the weapon frames, because Bungie gives one frame name to the
 // frames of several weapon types that play differently.
 //
+// The Prismatic subclasses give each of their aspects a plug of its own,
+// and Clarity does not give those plugs an entry. Clarity keys the entry
+// of an aspect by the plug of the aspect on its elemental subclass, and
+// the text covers the Prismatic aspect too. A caller of this package
+// therefore finds the entry of an aspect by name.
+//
 // # Store
 //
 // A caller keeps one store for the process and asks it for the database

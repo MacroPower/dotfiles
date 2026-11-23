@@ -28,8 +28,9 @@ const (
 	defsRecheck = time.Hour
 
 	// defsCachePrefix names cache files. The digit changes when the fields
-	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v14-"
+	// of [Defs] change or when the loader fills them in another way. A
+	// process therefore never decodes a stale layout.
+	defsCachePrefix = "defs-v15-"
 
 	artifactCore            = "core"
 	artifactDetail          = "detail"
@@ -48,6 +49,7 @@ const (
 	artifactItemSets        = "EquipableItemSet"
 	artifactRecords         = "Record"
 	artifactItemSources     = "ItemSource"
+	artifactSandboxPerks    = "SandboxPerk"
 	artifactWithheld        = "hidden"
 )
 
@@ -62,7 +64,8 @@ var ErrDefs = errors.New("definitions")
 // ItemDef is the subset of a Bungie inventory item definition that the
 // server reads. Perks, mods, and shaders are item definitions too.
 // The loader keeps Description only for plugs, so the cache file stays
-// small. Categories holds the item category hashes of the definition, in
+// small. Description is the in-game text of the plug, as [Defs] describes
+// it. Categories holds the item category hashes of the definition, in
 // the order of the definition. AmmoType is the Bungie DestinyAmmunitionType
 // value of the equipping block, and zero when the definition has no
 // equipping block. SetHash is the hash of the equipable item set of the
@@ -192,6 +195,15 @@ type VendorDef struct {
 // together hold every item of the manifest version. WithheldListed
 // records whether the service index lists the artifact of the withheld
 // hashes.
+//
+// The description of a plug in Items is the text that the game shows for
+// the plug. Most plug definitions hold that text. The definitions of some
+// plugs do not hold any text, such as the aspects of a subclass and the
+// perks of an artifact. The game then shows the text of each sandbox perk
+// of the plug that it does not hide. The description joins those texts,
+// as the web client and Destiny Item Manager (DIM) do. The SandboxPerk
+// artifact holds the texts of the sandbox perks. Each such plug keeps an
+// empty description when the service index does not list the artifact.
 //
 // Activities, ActivityTypes, Destinations, Places, ActivityRewards,
 // Vendors, VendorItems, Sockets, PlugSets, PlugCategories, ItemSets,
@@ -469,12 +481,22 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 	// The loader also keeps the socket list of each subclass, which the
 	// perks of a subclass read without the plugsets artifact. A subclass
 	// without a socket list does not show any swaps.
+	//
+	// Only the detail artifact lists the sandbox perks of a plug. Shown
+	// maps each plug whose core record does not hold a description to
+	// the sandbox perks that the game shows for it.
+	shown := map[uint32][]uint32{}
+
 	err = readRecords(ctx, l, index.Files[artifactDetail], func(raw rawDetail) {
 		sets := raw.plugSets()
 		item := defs.Items[raw.Hash]
 
 		if len(sets) > 0 && (item.ItemType == bungie.ItemTypeWeapon || item.Bucket == bungie.BucketSubclass) {
 			defs.Sockets[raw.Hash] = sets
+		}
+
+		if item.ItemType == bungie.ItemTypePlug && item.Description == "" {
+			shown[raw.Hash] = raw.shownPerks()
 		}
 
 		if raw.Plug != nil {
@@ -507,6 +529,13 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 			defs.PlugSets[raw.Hash] = raw.plugs()
 		}
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Only the perk descriptions of get_item read the sandbox perks, so
+	// the other tools keep working without them.
+	err = l.describePlugs(ctx, index.Files[artifactSandboxPerks], defs, shown)
 	if err != nil {
 		return nil, err
 	}
@@ -748,7 +777,9 @@ func (raw rawItem) item() ItemDef {
 // rawDetail is the subset of a record of the detail artifact that the
 // loader reads. The record holds the socket entries of an item
 // definition, in the order of the sockets of each copy. Plug is the plug
-// block of a plug definition, and nil for every other definition.
+// block of a plug definition, and nil for every other definition. Perks
+// lists the sandbox perks of the definition, in the order of the
+// definition.
 type rawDetail struct {
 	Plug *struct {
 		PlugCategoryHash uint32 `json:"plugCategoryHash"`
@@ -759,7 +790,26 @@ type rawDetail struct {
 			RandomizedPlugSetHash uint32 `json:"randomizedPlugSetHash"`
 		} `json:"socketEntries"`
 	} `json:"sockets"`
+	Perks []struct {
+		PerkHash       uint32 `json:"perkHash"`
+		PerkVisibility int    `json:"perkVisibility"`
+	} `json:"perks"`
 	Hash uint32 `json:"hash"`
+}
+
+// shownPerks returns the hash of each sandbox perk of the record that the
+// game shows, in the order of the record. The game hides a perk whose
+// visibility is [bungie.PerkVisibilityHidden].
+func (raw rawDetail) shownPerks() []uint32 {
+	var perks []uint32
+
+	for _, perk := range raw.Perks {
+		if perk.PerkVisibility != bungie.PerkVisibilityHidden {
+			perks = append(perks, perk.PerkHash)
+		}
+	}
+
+	return perks
 }
 
 // plugSets returns the plug set hash of each socket entry of the record,
@@ -775,6 +825,57 @@ func (raw rawDetail) plugSets() []uint32 {
 	}
 
 	return sets
+}
+
+// sandboxPerkRow is the subset of a record of the SandboxPerk artifact
+// that the loader reads. The service build keeps each sandbox perk
+// definition whole.
+type sandboxPerkRow struct {
+	DisplayProperties struct {
+		Description string `json:"description"`
+	} `json:"displayProperties"`
+}
+
+// describePlugs gives each plug of shown the texts of its sandbox perks,
+// which the SandboxPerk artifact in files holds. Shown maps the item
+// hash of each plug to the hashes of the sandbox perks that the game
+// shows for it, in the order of the definition. The description joins
+// the texts with a blank line between two of them, as the web client
+// does. It keeps each text once, as DIM does. A plug keeps an empty
+// description when none of its sandbox perks has a text. Every plug of
+// shown keeps an empty description when files is empty.
+func (l *Loader) describePlugs(ctx context.Context, files []string, defs *Defs, shown map[uint32][]uint32) error {
+	if len(files) == 0 {
+		return nil
+	}
+
+	texts := map[uint32]string{}
+
+	err := l.read(ctx, files[0], func(r io.Reader) error {
+		return decodeTable(r, func(hash uint32, row sandboxPerkRow) {
+			texts[hash] = strings.TrimSpace(row.DisplayProperties.Description)
+		})
+	})
+	if err != nil {
+		return err
+	}
+
+	for hash, perks := range shown {
+		var parts []string
+
+		for _, perk := range perks {
+			text := texts[perk]
+			if text != "" && !slices.Contains(parts, text) {
+				parts = append(parts, text)
+			}
+		}
+
+		item := defs.Items[hash]
+		item.Description = strings.Join(parts, "\n\n")
+		defs.Items[hash] = item
+	}
+
+	return nil
 }
 
 // rawPlugSet is the subset of a record of the plugsets artifact that the

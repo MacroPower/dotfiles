@@ -398,3 +398,75 @@ func TestDatabaseBaseOfLiteral(t *testing.T) {
 	_, ok = none.Base("Gun and Run")
 	assert.False(t, ok, "a nil database holds no description")
 }
+
+func TestDatabaseAspect(t *testing.T) {
+	t.Parallel()
+
+	// entry returns the entry of a descriptions file for a perk with the
+	// name, the type, and one line of text.
+	entry := func(hash, name, typeName, text string) string {
+		return `"` + hash + `": {"name": "` + name + `", "type": "` + typeName + `",
+			"descriptions": {"en": [{"linesContent": [{"text": "` + text + `"}]}]}}`
+	}
+
+	db, err := Decode("2.5", []byte(`{`+strings.Join([]string{
+		entry("187655374", "Stylish Executioner", "Subclass Aspect", "Debuffed kills grant Invisibility."),
+		entry("2934767477", "Winter's Shroud", "Subclass Aspect", "Dodging applies Slow."),
+		entry("2934767470", "Winter's Shroud", "Subclass Aspect", "The entry with the lower hash."),
+		entry("3469412969", "Whisper of Durance", "Subclass Fragment", "Slow lasts longer."),
+		entry("940", "Psychohack", "Weapon Trait Origin", "Hits apply Suppression."),
+	}, ",")+`}`))
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		name string
+		want []string
+	}{
+		"an aspect": {
+			name: "Stylish Executioner",
+			want: []string{"Debuffed kills grant Invisibility."},
+		},
+		"the name folds": {
+			name: "stylish EXECUTIÖNER",
+			want: []string{"Debuffed kills grant Invisibility."},
+		},
+		"two entries with one name give the entry with the lower hash": {
+			name: "Winter's Shroud",
+			want: []string{"The entry with the lower hash."},
+		},
+		"a fragment": {
+			name: "Whisper of Durance",
+		},
+		"a weapon perk": {
+			name: "Psychohack",
+		},
+		"a name without an entry": {
+			name: "Threaded Specter",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := db.Aspect(tc.name)
+			if tc.want == nil {
+				assert.False(t, ok)
+
+				return
+			}
+
+			require.True(t, ok)
+			assert.Equal(t, tc.want, got.Lines)
+		})
+	}
+
+	// The aspects stay out of the index of the base perks.
+	_, ok := db.Base("Stylish Executioner")
+	assert.False(t, ok)
+
+	var none *Database
+
+	_, ok = none.Aspect("Stylish Executioner")
+	assert.False(t, ok, "a nil database holds no description")
+}

@@ -40,6 +40,7 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 			artifactRecords:         {"records.json"},
 			artifactItemSources:     {"item-sources-0.json", "item-sources-1.json"},
 			artifactWithheld:        {"withheld-0.json", "withheld-1.json"},
+			artifactSandboxPerks:    {"sandbox-perks.json"},
 		},
 		Files: map[string]string{
 			"core-0.json": `[
@@ -79,7 +80,14 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				{"hash": 913, "displayProperties": {"name": "Winter's Shroud", "description": "Your class ability slows."},
 				 "itemTypeDisplayName": "Hunter Aspect", "itemType": 19, "classType": 1,
 				 "investmentStats": [{"statTypeHash": 1, "value": 5},
-				  {"statTypeHash": 2223994109, "value": 2, "isConditionallyActive": false}]}
+				  {"statTypeHash": 2223994109, "value": 2, "isConditionallyActive": false}]},
+				{"hash": 914, "displayProperties": {"name": "Stylish Executioner", "description": ""},
+				 "itemTypeDisplayName": "Void Aspect | Light Ability", "itemType": 19, "classType": 1,
+				 "investmentStats": [{"statTypeHash": 2223994109, "value": 2}]},
+				{"hash": 915, "displayProperties": {"name": "Radiant Orbs"},
+				 "itemTypeDisplayName": "Artifact Perk", "itemType": 19, "classType": 3},
+				{"hash": 916, "displayProperties": {"name": "Empty Artifact Mod", "description": ""},
+				 "itemType": 19, "classType": 3}
 			]`,
 			// The service build splits the detail array across files.
 			// Fatebringer has a socket with only a randomized plug set,
@@ -90,13 +98,20 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 			// Midnight Coup has no socket entry. The second file holds
 			// the plugs of the two crafting sockets that Deepsight reads,
 			// a plug of another category, and the socket list of the
-			// subclass Prismatic Hunter.
+			// subclass Prismatic Hunter. It also holds the sandbox perks
+			// of three plugs without a description and of Firefly, which
+			// has one. Stylish Executioner hides one perk. It shows a
+			// perk that the SandboxPerk table lacks, a perk without a
+			// text, and two perks with one text. Empty Artifact Mod has
+			// only a hidden perk. The weapon Fatebringer and the subclass
+			// Prismatic Hunter each show a sandbox perk with a text, and
+			// the loader gives that text only to plugs.
 			"detail-0.json": `[
 				{"hash": 100, "sockets": {"socketEntries": [
 					{"socketTypeHash": 1, "randomizedPlugSetHash": 40},
 					{"socketTypeHash": 2, "reusablePlugSetHash": 41, "randomizedPlugSetHash": 42},
 					{"socketTypeHash": 3}
-				]}},
+				]}, "perks": [{"perkHash": 75, "perkVisibility": 0}]},
 				{"hash": 900, "plug": {"plugCategoryIdentifier": "frames"},
 				 "sockets": {"socketEntries": [{"reusablePlugSetHash": 43}]}},
 				{"hash": 777, "sockets": {"socketEntries": [{"randomizedPlugSetHash": 44}]}},
@@ -110,7 +125,19 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				{"hash": 911, "plug": {"plugCategoryIdentifier": "crafting.plugs.weapons.mods.extractors",
 				 "plugCategoryHash": 3520412733}},
 				{"hash": 912, "plug": {"plugCategoryIdentifier": "frames", "plugCategoryHash": 7906839}},
-				{"hash": 406, "sockets": {"socketEntries": [{"reusablePlugSetHash": 46}, {"socketTypeHash": 2}]}}
+				{"hash": 406, "sockets": {"socketEntries": [{"reusablePlugSetHash": 46}, {"socketTypeHash": 2}]},
+				 "perks": [{"perkHash": 70, "perkVisibility": 0}]},
+				{"hash": 914, "perks": [
+					{"requirementDisplayString": "", "perkHash": 70, "perkVisibility": 0},
+					{"perkHash": 71, "perkVisibility": 2},
+					{"perkHash": 74, "perkVisibility": 0},
+					{"perkHash": 76, "perkVisibility": 0},
+					{"perkHash": 73, "perkVisibility": 0},
+					{"perkHash": 72, "perkVisibility": 1}
+				]},
+				{"hash": 915, "plug": {"plugCategoryHash": 1}, "perks": [{"perkHash": 75, "perkVisibility": 0}]},
+				{"hash": 916, "perks": [{"perkHash": 71, "perkVisibility": 2}]},
+				{"hash": 900, "perks": [{"perkHash": 70, "perkVisibility": 0}]}
 			]`,
 			// The service build splits the plugsets array across files.
 			// Plug set 40 lists Firefly twice and a plug that the core
@@ -232,6 +259,22 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 			// files. The loader sorts the hashes and keeps each one once.
 			"withheld-0.json": `[3708253562, 502, 373750294]`,
 			"withheld-1.json": `[502, 600]`,
+			// The service build keeps each sandbox perk definition whole.
+			// Perk 73 repeats the text of perk 70 with other white space
+			// around it.
+			"sandbox-perks.json": `{
+				"70": {"hash": 70, "displayProperties": {"name": "Stylish Executioner",
+				 "description": "Defeating a debuffed target grants invisibility.", "hasIcon": false},
+				 "isDisplayable": true, "damageType": 0},
+				"71": {"hash": 71, "displayProperties": {"name": "", "description": "Hidden text."}},
+				"72": {"hash": 72, "displayProperties": {"name": "",
+				 "description": "Your next melee attack while invisible weakens targets. "}},
+				"73": {"hash": 73, "displayProperties": {"name": "",
+				 "description": " Defeating a debuffed target grants invisibility.\n"}},
+				"75": {"hash": 75, "displayProperties": {"name": "Radiant Orbs",
+				 "description": "Picking up an Orb of Power makes you Radiant."}},
+				"76": {"hash": 76, "displayProperties": {"name": "", "description": ""}}
+			}`,
 		},
 	}
 }
@@ -251,10 +294,10 @@ func TestLoader(t *testing.T) {
 	clock := WithClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
-	// layout without the socket lists of the subclasses has the prefix
-	// defs-v13-. Its file holds the manifest version of the service, and
+	// layout without the texts of the sandbox perks has the prefix
+	// defs-v14-. Its file holds the manifest version of the service, and
 	// the loader does not read it.
-	stale := filepath.Join(dir, "defs-v13-245114.26_1.json")
+	stale := filepath.Join(dir, "defs-v14-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
 	loader := NewLoader(source, dir, clock)
@@ -264,6 +307,7 @@ func TestLoader(t *testing.T) {
 	assert.Equal(t, &Defs{
 		Version: "245114.26/1",
 		Items: map[uint32]ItemDef{
+			// A weapon does not take the text of its sandbox perk.
 			100: {
 				Name:       "Fatebringer",
 				TypeName:   "Hand Cannon",
@@ -340,7 +384,8 @@ func TestLoader(t *testing.T) {
 				Equippable: true,
 				SetHash:    3727270518,
 			},
-			// The loader keeps the socket list of a subclass.
+			// The loader keeps the socket list of a subclass. A subclass
+			// does not take the text of its sandbox perk.
 			406: {
 				Name:      "Prismatic Hunter",
 				TypeName:  "Hunter Subclass",
@@ -368,6 +413,35 @@ func TestLoader(t *testing.T) {
 				ItemType:      bungie.ItemTypePlug,
 				ClassType:     bungie.ClassHunter,
 				FragmentSlots: 2,
+			},
+			// A plug without a description takes the distinct texts of
+			// the sandbox perks that the game shows, in the order of the
+			// definition.
+			914: {
+				Name: "Stylish Executioner",
+				Description: "Defeating a debuffed target grants invisibility.\n\n" +
+					"Your next melee attack while invisible weakens targets.",
+				TypeName:      "Void Aspect | Light Ability",
+				TierType:      bungie.TierTypeBasic,
+				ItemType:      bungie.ItemTypePlug,
+				ClassType:     bungie.ClassHunter,
+				FragmentSlots: 2,
+			},
+			915: {
+				Name:        "Radiant Orbs",
+				Description: "Picking up an Orb of Power makes you Radiant.",
+				TypeName:    "Artifact Perk",
+				TierType:    bungie.TierTypeBasic,
+				ItemType:    bungie.ItemTypePlug,
+				ClassType:   bungie.ClassAny,
+			},
+			// A plug that shows only a hidden sandbox perk keeps an empty
+			// description.
+			916: {
+				Name:      "Empty Artifact Mod",
+				TierType:  bungie.TierTypeBasic,
+				ItemType:  bungie.ItemTypePlug,
+				ClassType: bungie.ClassAny,
 			},
 		},
 		Buckets: map[uint32]BucketDef{
@@ -432,7 +506,7 @@ func TestLoader(t *testing.T) {
 		PatternsListed: true,
 		SourcesListed:  true,
 	}, got)
-	assert.Len(t, source.Fetched, 25)
+	assert.Len(t, source.Fetched, 26)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
@@ -460,7 +534,7 @@ func TestLoader(t *testing.T) {
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.Fetched, 25)
+	assert.Len(t, source.Fetched, 26)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
@@ -574,6 +648,19 @@ func TestLoaderWithoutOptionalArtifacts(t *testing.T) {
 				assert.False(t, got.FromRaid(100))
 			},
 		},
+		// A plug without a description of its own keeps an empty
+		// description, and a plug with one keeps it.
+		"sandbox perks": {
+			artifact: artifactSandboxPerks,
+			files:    []string{"sandbox-perks.json"},
+			field:    func(d *Defs) any { return d.Items[914].Description },
+			check: func(t *testing.T, got *Defs, _ []string) {
+				t.Helper()
+
+				assert.Empty(t, got.Items[915].Description)
+				assert.Equal(t, "Precision final blows explode.", got.Items[900].Description)
+			},
+		},
 		"plug sets": {
 			artifact: artifactPlugSets,
 			files:    []string{"plugsets-0.json", "plugsets-1.json"},
@@ -596,7 +683,7 @@ func TestLoaderWithoutOptionalArtifacts(t *testing.T) {
 			got, err := NewLoader(source, "").Get(t.Context())
 			require.NoError(t, err)
 			assert.Empty(t, tc.field(got))
-			assert.Len(t, got.Items, 10)
+			assert.Len(t, got.Items, 13)
 
 			for _, file := range tc.files {
 				assert.NotContains(t, source.Fetched, file)
@@ -696,6 +783,14 @@ func TestLoaderErrors(t *testing.T) {
 			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "item-sources-1.json") },
 			err:    dvm.ErrService,
 		},
+		"sandbox perk table is not an object": {
+			break_: func(f *dvmtest.Artifacts) { f.Files["sandbox-perks.json"] = `[]` },
+			err:    ErrDefs,
+		},
+		"sandbox perk fetch fails": {
+			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "sandbox-perks.json") },
+			err:    dvm.ErrService,
+		},
 		"second plug set file is not an array": {
 			break_: func(f *dvmtest.Artifacts) { f.Files["plugsets-1.json"] = `{"hash": 45}` },
 			err:    ErrDefs,
@@ -738,7 +833,7 @@ func TestLoaderIgnoresCorruptCache(t *testing.T) {
 
 	got, err := loader.Get(t.Context())
 	require.NoError(t, err)
-	assert.Len(t, got.Items, 10)
+	assert.Len(t, got.Items, 13)
 }
 
 func TestWithLoaded(t *testing.T) {
@@ -768,7 +863,7 @@ func TestWithLoaded(t *testing.T) {
 		"after the recheck window the loader replaces a seed of another version": {
 			version:     "245000.1",
 			elapsed:     defsRecheck,
-			wantFetched: 25,
+			wantFetched: 26,
 		},
 	}
 
@@ -788,7 +883,7 @@ func TestWithLoaded(t *testing.T) {
 				assert.Same(t, seed, got)
 			} else {
 				assert.Equal(t, "245114.26/1", got.Version)
-				assert.Len(t, got.Items, 10)
+				assert.Len(t, got.Items, 13)
 			}
 		})
 	}

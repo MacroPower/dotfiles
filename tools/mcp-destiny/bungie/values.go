@@ -82,6 +82,11 @@ const (
 // value of the StatHashes of Destiny Item Manager (DIM).
 const StatAspectEnergyCapacity uint32 = 2223994109
 
+// PerkVisibilityHidden is the Hidden value of the Bungie
+// ItemPerkVisibility enum. The game does not show a sandbox perk of a
+// plug whose visibility has the value.
+const PerkVisibilityHidden = 2
+
 // RecordObjectiveNotCompleted is the ObjectiveNotCompleted bit of the
 // Bungie DestinyRecordState enum. A record whose state carries the bit
 // still has an objective to complete.

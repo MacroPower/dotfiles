@@ -411,6 +411,8 @@ func newServer(h *handler) *mcp.Server {
 			"The open fragment sockets offer that fragment. " +
 			"An open empty aspect or fragment socket shows its placeholder, such as 'Empty Fragment Socket', " +
 			"with the plugs that can fill it. " +
+			"No tool of the server picks a single perk of an artifact, " +
+			"so those perks do not show any alternative. " +
 			"For a craftable weapon, the Pattern line gives the progress of its crafting pattern, " +
 			"such as '3 of 5' extractions, or 'complete'. " +
 			"For a craftable weapon with an incomplete pattern and a source on list_patterns, " +
@@ -427,6 +429,9 @@ func newServer(h *handler) *mcp.Server {
 			"An enhanced trait, origin trait, or other weapon perk without a description of its own " +
 			"shows the description of its base perk. " +
 			"An enhanced weapon frame without one shows only the in-game text. " +
+			"An aspect without one, such as an aspect of a Prismatic subclass, " +
+			"shows the description of the aspect with its name. " +
+			"Clarity does not describe the perks of an artifact, so each of them shows only the in-game text. " +
 			"A line that starts with 'Might predate the final patch' names an update of Destiny 2 " +
 			"that changed the perk after Clarity last updated the description, so its numbers might be out of date. " +
 			"When the server cannot load the Clarity database, one line after the perk list gives the reason, " +
@@ -683,6 +688,9 @@ func newServer(h *handler) *mcp.Server {
 			"or a plug of a subclass that get_item lists after 'Bungie reports as locked:'. " +
 			"Bungie refuses a plug that is locked for the character that holds the item. " +
 			"To fill an empty socket of a subclass, pass its placeholder as replace, such as 'Empty Fragment Socket'. " +
+			"The tool cannot change the perks of an artifact. " +
+			"equip_loadout applies the artifact perks that a loadout saved, " +
+			"and otherwise the user picks them in the game. " +
 			"Bungie refuses a plug that costs materials to insert. It also allows the change only while the character " +
 			"that holds the item is offline, in orbit, or in a social space. For an item in the vault, " +
 			"that character is the most recently played one. " +
@@ -715,6 +723,11 @@ func newServer(h *handler) *mcp.Server {
 			"character holds is not transferable, or when another character has it equipped and does not " +
 			"hold a replacement for its slot. " +
 			"A failed move stops the tool before it equips the loadout. " +
+			"The game also applies the artifact perks that the loadout saved, " +
+			"and they replace the active perks of the equipped artifact. " +
+			"Until the next inventory fetch, up to 30 seconds later, get_item shows the plugs that the equip changed, " +
+			"such as the artifact perks and the armor mods, as they were before the equip. " +
+			"Until that fetch, save_loadout also does not name the artifact perks that it saves. " +
 			"Bungie allows equipping only while the character is offline, in orbit, or in a social space.",
 		Annotations: additive,
 	}, h.handleEquipLoadout)
@@ -733,6 +746,11 @@ func newServer(h *handler) *mcp.Server {
 			"A saved loadout also keeps its icon and its color, and an empty slot takes the first icon and " +
 			"the first color. The tool cannot pick an icon or a color, because the game defines both only as images. " +
 			"The result lists the equipped items that the loadout holds and the name that it carries. " +
+			"It also lists the perks of the equipped artifact, which the game saves with the loadout. " +
+			"After equip_loadout, the result names those perks only after the next inventory fetch, " +
+			"up to 30 seconds later. " +
+			"No tool of the server picks a single perk of an artifact, " +
+			"so the user picks them in the game before the save. " +
 			"A slot number outside the slots of the character fails with the number of slots, and a name " +
 			"that the game does not offer fails with the list of names. " +
 			"Bungie can refuse the save, such as for a character in an activity, and the result then gives " +

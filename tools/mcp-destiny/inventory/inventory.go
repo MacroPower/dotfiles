@@ -118,10 +118,10 @@ var (
 const maxSuggestions = 10
 
 // Plug is one plug that a socket of an item holds or can hold. Hash is the
-// item hash of the plug definition, and Description is the text of that
-// definition, which is empty for some plugs. FragmentSlots is the number
-// of fragment sockets that an aspect opens on its subclass, and zero for
-// every plug other than an aspect.
+// item hash of the plug definition. Description is the in-game text of the
+// plug, as [definitions.Defs] describes it, and it is empty for some
+// plugs. FragmentSlots is the number of fragment sockets that an aspect
+// opens on its subclass, and zero for every plug other than an aspect.
 type Plug struct {
 	Name          string
 	Type          string
@@ -268,6 +268,12 @@ type Character struct {
 // Raid marks a weapon or an armor piece that drops in a raid, as the
 // source tags of DIM tell. SourceKnown records whether the definitions
 // hold the source tags. Without them, Raid stays false for every item.
+//
+// PerksPending marks an equipped artifact whose perks the game replaced
+// after the fetch of the profile, such as with the artifact perks that
+// [*Snapshot.EquipLoadout] applies. Perks then holds the perks from
+// before the change. The next fetch builds a new snapshot, which holds
+// the active perks.
 type Item struct {
 	Categories     []int64
 	InstanceID     string
@@ -311,6 +317,7 @@ type Item struct {
 	Harmonizable   bool
 	Raid           bool
 	SourceKnown    bool
+	PerksPending   bool
 }
 
 // StatTotal returns the sum of the stat values of an armor piece. It reports

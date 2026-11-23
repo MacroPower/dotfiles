@@ -198,6 +198,79 @@ func TestWritePerksSubclass(t *testing.T) {
 		"- Empty Fragment Socket, Bungie reports as locked: Facet of Courage, Facet of Dominance\n", b.String())
 }
 
+func TestWritePerksAspectClarity(t *testing.T) {
+	t.Parallel()
+
+	uploaded := time.Date(2026, time.July, 9, 0, 0, 0, 0, time.UTC)
+
+	// The perks of a Prismatic subclass and of an artifact. Clarity keys
+	// Stylish Executioner and Winter's Shroud by the plugs of their
+	// elemental subclasses. It also gives Winter's Shroud an entry of its
+	// own, which wins. Only an aspect finds its entry by name, so the
+	// fragment Facet of Protection does not show the aspect entry with
+	// its name. Clarity does not describe any artifact perk.
+	perks := []inventory.Perk{
+		{Plug: inventory.Plug{
+			Hash:          20,
+			Name:          "Stylish Executioner",
+			Type:          "Void Aspect | Light Ability",
+			Description:   "Defeating a debuffed target grants invisibility.",
+			FragmentSlots: 2,
+		}},
+		{Plug: inventory.Plug{Hash: 21, Name: "Winter's Shroud", Type: "Stasis Aspect", FragmentSlots: 2}},
+		{Plug: inventory.Plug{Hash: 30, Name: "Facet of Protection", Type: "Prismatic Fragment"}},
+		{Plug: inventory.Plug{
+			Hash:        40,
+			Name:        "Radiant Orbs",
+			Type:        "Artifact Perk",
+			Description: "Picking up an Orb of Power makes you Radiant.",
+		}},
+	}
+
+	database := &clarity.Database{
+		Version: "2.5",
+		Descriptions: map[uint32]clarity.Description{
+			187655374: {
+				Name:     "Stylish Executioner",
+				Type:     "Subclass Aspect",
+				Uploaded: uploaded,
+				Lines:    []string{"Debuffed kills grant Invisibility for 8 seconds."},
+			},
+			2934767477: {
+				Name:     "Winter's Shroud",
+				Type:     "Subclass Aspect",
+				Uploaded: uploaded,
+				Lines:    []string{"The entry of the elemental aspect."},
+			},
+			21: {
+				Name:     "Winter's Shroud",
+				Type:     "Subclass Aspect",
+				Uploaded: uploaded,
+				Lines:    []string{"Dodging applies Slow."},
+			},
+			31: {
+				Name:     "Facet of Protection",
+				Type:     "Subclass Aspect",
+				Uploaded: uploaded,
+				Lines:    []string{"An aspect with the name of a fragment."},
+			},
+		},
+	}
+
+	var b strings.Builder
+
+	writePerks(&b, perks, clarity.State{Database: database})
+	assert.Equal(t, "- Stylish Executioner (Void Aspect | Light Ability, 2 fragment slots)\n"+
+		"  Defeating a debuffed target grants invisibility.\n"+
+		"  Clarity: Debuffed kills grant Invisibility for 8 seconds.\n"+
+		"- Winter's Shroud (Stasis Aspect, 2 fragment slots)\n"+
+		"  Clarity: Dodging applies Slow.\n"+
+		"- Facet of Protection (Prismatic Fragment)\n"+
+		"- Radiant Orbs (Artifact Perk)\n"+
+		"  Picking up an Orb of Power makes you Radiant.\n"+
+		clarityCreditLine+"\n", b.String())
+}
+
 // TestGetItemClarity pins the perk descriptions of get_item for each
 // state of the Clarity database. Instance 1001 holds Explosive Payload
 // (900) and Firefly (901), and the fixture definitions give only Firefly

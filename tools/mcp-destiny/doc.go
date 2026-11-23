@@ -10,6 +10,14 @@
 // gear that a character has equipped into a loadout slot, and
 // clear_loadout empties a slot.
 //
+// The game saves the perks of the equipped artifact with a loadout, and
+// the save_loadout result names them. Equipping a loadout with
+// equip_loadout applies the artifact perks that the loadout saved. The
+// server reads those perks at its next fetch of the profile. Until then,
+// get_item shows the perks from before the equip, and save_loadout does
+// not name them. No tool of the server picks a single perk of an
+// artifact, so the user picks those perks in the game.
+//
 // The tools and the login subcommand print every time in the local time
 // zone of the host that runs them. Each time ends with the abbreviation of
 // the zone, such as EST, also when Bungie or the service sent the time in
@@ -172,11 +180,20 @@
 //
 // Only the get_item tool shows the descriptions of perks, and it shows
 // two for each perk that Clarity covers. The first is the in-game text of
-// Bungie, which the Destiny definitions hold. That text gives no numbers.
-// The second is the description of the Clarity database, a community
-// project that tests how the perks play. It gives the numbers, such as
-// the size of a damage bonus, its duration, and how it stacks. The web
-// client and Destiny Item Manager (DIM) show the same descriptions.
+// Bungie, which the Destiny definitions hold. That text does not give any
+// numbers. The second is the description of the Clarity database, a
+// community project that tests how the perks play. It gives the numbers,
+// such as the size of a damage bonus, its duration, and how it stacks.
+// The web client and Destiny Item Manager (DIM) show the same
+// descriptions.
+//
+// The definitions of some plugs do not hold any text, such as the aspects
+// of a subclass and the perks of an artifact. The game then shows the
+// text of the sandbox perks of the plug, and get_item shows the same
+// text. The server reads that text from the SandboxPerk artifact of the
+// service. On a deployment whose artifact index lacks that artifact, such
+// a perk does not show any in-game text. The description of Clarity still
+// follows its name when Clarity covers the perk.
 //
 // The description of Clarity follows the text of Bungie under the perk,
 // and its first line starts with "Clarity:". Clarity covers a part of the
@@ -227,6 +244,14 @@
 // text of Bungie. Bungie gives one frame name to the frames of several
 // weapon types that play differently.
 //
+// The Prismatic subclasses give each of their aspects a plug of its own,
+// and Clarity does not give those plugs an entry. Clarity keys the entry
+// of an aspect by the plug of the aspect on its elemental subclass, and
+// the text covers the Prismatic aspect too. For an aspect without an
+// entry, get_item therefore shows the description of the aspect with the
+// same name. Clarity does not describe the perks of an artifact, so each
+// of them shows only the text of Bungie.
+//
 // # Subclass Swaps
 //
 // The get_item tool lists the plugs that each socket of an item can swap
@@ -262,6 +287,11 @@
 // that a closed socket holds. An open empty aspect or fragment socket
 // appears under the name of its placeholder, such as "Empty Fragment
 // Socket", with the plugs that can fill it.
+//
+// The sockets of an artifact also take their plugs from plug sets, but
+// the server does not read them. The get_item tool therefore does not
+// list any swap for the perks of an artifact, and set_perk cannot change
+// them.
 //
 // No socket offers a placeholder as a swap, so the server cannot empty a
 // socket. When several empty sockets of one plug set can take a plug, the

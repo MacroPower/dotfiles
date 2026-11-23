@@ -825,6 +825,13 @@ func renderLoadoutEquip(s *inventory.Snapshot, l inventory.Loadout, result inven
 // name table, which names the loadout by nameHash. When names holds no
 // table, the call kept the name of a saved loadout, and the result gives
 // the reason that the name is unknown.
+//
+// The game saves the perks of the equipped artifact with the loadout,
+// and equip_loadout applies them again. No tool of the server picks a
+// single perk of an artifact, so the result names the saved perks, as
+// [artifactPerks] words them. After equip_loadout, the snapshot holds
+// the perks from before the equip, so the result does not name them
+// until the next fetch.
 func renderLoadoutSave(
 	s *inventory.Snapshot,
 	characterID string,
@@ -852,11 +859,46 @@ func renderLoadoutSave(
 		fmt.Fprintf(&b, " It holds the gear that %s has equipped: %s.", target, itemNames(gear))
 	}
 
+	for _, item := range gear {
+		if item.Bucket == bungie.BucketArtifacts {
+			b.WriteString(" " + artifactPerks(item))
+		}
+	}
+
 	if names.Err != nil {
 		b.WriteString("\nLoadout names unavailable: " + names.Err.Error())
 	}
 
 	return b.String()
+}
+
+// artifactPerks words the perks of an equipped artifact that a saved
+// loadout holds. An example is "The loadout also holds the perks of the
+// artifact Hunter's Journal: Radiant Orbs, Void Hegemony." For an
+// artifact with [inventory.Item.PerksPending], it says when the server
+// reads the perks instead.
+func artifactPerks(artifact *inventory.Item) string {
+	if artifact.PerksPending {
+		return fmt.Sprintf(
+			"The loadout also holds the perks of the artifact %s that equip_loadout applied. "+
+				"The server reads those perks at its next inventory fetch, up to %d seconds later.",
+			artifact.Name, int(snapshotTTL/time.Second),
+		)
+	}
+
+	if len(artifact.Perks) == 0 {
+		return fmt.Sprintf("The artifact %s does not hold any perk.", artifact.Name)
+	}
+
+	names := make([]string, 0, len(artifact.Perks))
+	for i := range artifact.Perks {
+		names = append(names, artifact.Perks[i].Name)
+	}
+
+	return fmt.Sprintf(
+		"The loadout also holds the perks of the artifact %s: %s.",
+		artifact.Name, strings.Join(names, ", "),
+	)
 }
 
 // renderLoadoutClear describes a clear_loadout call that emptied the slot

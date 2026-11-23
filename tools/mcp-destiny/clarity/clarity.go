@@ -33,6 +33,10 @@ const (
 	// enhancedSuffix ends the type that Clarity gives the entry of an
 	// enhanced perk, such as Weapon Trait Enhanced.
 	enhancedSuffix = " Enhanced"
+
+	// aspectType is the type that Clarity gives the entry of an aspect of
+	// a subclass.
+	aspectType = "Subclass Aspect"
 )
 
 var (
@@ -86,16 +90,18 @@ type Description struct {
 // plug of each perk keys Descriptions. Version is the version that the
 // site gave the descriptions file.
 //
-// The first call of [Database.Base] indexes Descriptions, and the later
-// calls read that index. A caller therefore must not change Descriptions
-// after that call.
+// The first call of [Database.Base] or [Database.Aspect] indexes
+// Descriptions, and the later calls of both read that index. A caller
+// therefore must not change Descriptions after that call.
 type Database struct {
 	Descriptions map[uint32]Description
 
 	// bases maps a name that [fold.Name] folded to the hash of the entry
-	// that [Database.Base] returns for it. The first call of Base
-	// builds it from Descriptions.
-	bases map[string]uint32
+	// that [Database.Base] returns for it, and aspects does the same for
+	// [Database.Aspect]. The first call of Base or Aspect builds both
+	// from Descriptions.
+	bases   map[string]uint32
+	aspects map[string]uint32
 
 	Version string
 
@@ -136,7 +142,7 @@ func (d *Database) Base(name string) (Description, bool) {
 		return Description{}, false
 	}
 
-	d.once.Do(d.indexBases)
+	d.once.Do(d.index)
 
 	hash, ok := d.bases[fold.Name(name)]
 	if !ok {
@@ -146,20 +152,57 @@ func (d *Database) Base(name string) (Description, bool) {
 	return d.Descriptions[hash], true
 }
 
-// indexBases builds the index of [Database.Base] from Descriptions.
-func (d *Database) indexBases() {
+// Aspect returns the description of the aspect of a subclass with the
+// name, for an aspect without an entry of its own. It compares the names
+// after [fold.Name] folds both, and it reports false when the database
+// does not hold such an aspect. A nil database does not hold any
+// description.
+//
+// The Prismatic subclasses give each of their aspects a plug of its own.
+// Clarity keys the entry of an aspect by the plug of the aspect on its
+// elemental subclass. The text of the entry covers both plugs, so a
+// caller finds the description of a Prismatic aspect by its name.
+// Aspect reads only the entries that Clarity types as aspects. Of
+// several such entries with one name, it returns the entry with the
+// lowest hash, so each call returns the same entry.
+func (d *Database) Aspect(name string) (Description, bool) {
+	if d == nil {
+		return Description{}, false
+	}
+
+	d.once.Do(d.index)
+
+	hash, ok := d.aspects[fold.Name(name)]
+	if !ok {
+		return Description{}, false
+	}
+
+	return d.Descriptions[hash], true
+}
+
+// index builds the indexes of [Database.Base] and [Database.Aspect] from
+// Descriptions.
+func (d *Database) index() {
 	d.bases = map[string]uint32{}
+	d.aspects = map[string]uint32{}
 
 	for hash, desc := range d.Descriptions {
-		if !slices.Contains(baseTypes, desc.Type) {
+		var names map[string]uint32
+
+		switch {
+		case slices.Contains(baseTypes, desc.Type):
+			names = d.bases
+		case desc.Type == aspectType:
+			names = d.aspects
+		default:
 			continue
 		}
 
 		key := fold.Name(desc.Name)
 
-		kept, ok := d.bases[key]
+		kept, ok := names[key]
 		if !ok || hash < kept {
-			d.bases[key] = hash
+			names[key] = hash
 		}
 	}
 }

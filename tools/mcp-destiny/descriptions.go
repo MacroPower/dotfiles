@@ -37,7 +37,10 @@ const clarityCredit = `Under each perk, the lines before "Clarity:" are the in-g
 // description of its own shows the description of its base perk, as in
 // the web client. [clarity.Database.Base] finds the base perk by name.
 // Base finds no weapon frame, so an enhanced frame without a description
-// of its own shows only the text of Bungie.
+// of its own shows only the text of Bungie. An aspect without a
+// description of its own, such as an aspect of a Prismatic subclass,
+// shows the description of the aspect with its name.
+// [clarity.Database.Aspect] finds that aspect.
 //
 // One line after the list names the source of the descriptions. When
 // tested holds a database, the line is [clarityCredit], and a list
@@ -81,6 +84,11 @@ func writePerks(b *strings.Builder, perks []inventory.Perk, tested clarity.State
 		desc, ok := tested.Database.Description(perk.Hash)
 		if !ok && perk.Enhanced() {
 			desc, ok = tested.Database.Base(definitions.BasePerkName(perk.Name))
+		}
+
+		// Only the aspects open fragment slots.
+		if !ok && perk.FragmentSlots > 0 {
+			desc, ok = tested.Database.Aspect(perk.Name)
 		}
 
 		if ok {
