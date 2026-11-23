@@ -39,12 +39,11 @@ let
   gomiConfig = (pkgs.formats.yaml { }).generate "gomi-config.yaml" {
     core = {
       trash = {
-        # auto -> macOS Finder Trash on darwin (~/.Trash, restorable from
-        # Finder); xdg -> $XDG_DATA_HOME/Trash on linux. gomi_dir is
-        # cleared so a stale value can never silently flip auto -> legacy
-        # (newTrashManager in gomi's internal/cli/cli.go).
+        # Both strategies put files in the XDG trash ($XDG_DATA_HOME/Trash,
+        # else ~/.local/share/Trash) on every OS. auto also lists the
+        # legacy ~/.gomi trash when that directory exists. gomi_dir applies
+        # only to the legacy strategy, so it stays unset.
         strategy = if pkgs.stdenv.hostPlatform.isDarwin then "auto" else "xdg";
-        gomi_dir = "";
         home_fallback = config.dotfiles.gomi.homeFallback;
       };
       # 'D' in the TUI permanently deletes -- gomi's only built-in
