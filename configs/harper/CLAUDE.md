@@ -1120,14 +1120,8 @@ on a set of files.
   one on the `--` between the `@` marks of the `-- *`, `---`, and
   `--  ^` cases. The test expects the same shadow and findings from a
   copy of the sixth file with CRLF line endings, under the C locale and
-  under a UTF-8 locale.
-
-  harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that holds
-  a comment. With that harper-cli, the test checks only the shadows and
-  the exit status. The command that builds the `haddock` test from a
-  home configuration of the flake uses the patched harper of
-  harperOverlay in `lib/default.nix`. Only that command lints the
-  Haskell files of the test end to end, other than the fourth.
+  under a UTF-8 locale. The test lints the Haskell files end to end,
+  other than the fourth.
 
 - `quote-text` lints lines after a thematic break written with spaces
   (`* * *`) and after empty list items, in a blockquote too (`> -`).
@@ -1624,13 +1618,10 @@ This command builds every test.
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; prose-weirpack = pkgs.callPackage ./pkgs/prose-weirpack.nix { }; in (pkgs.callPackage ./pkgs/prose-lint.nix { inherit prose-weirpack; }).passthru.tests'
 ```
 
-The command that builds every test uses harper-cli from nixpkgs, so
-the `haddock` test checks only the shadows and the exit status there.
-On a Linux host, this command builds the `haddock` test from the `dev`
-home configuration of the flake for the system of the host. The harper
-of that configuration carries the patches of harperOverlay in
-`lib/default.nix`, so the test also lints its Haskell files end to end,
-other than the fourth.
+The command that builds every test uses harper-cli from nixpkgs. On a
+Linux host, this command builds the `haddock` test from the `dev` home
+configuration of the flake for the system of the host, with the
+embedded build of harperOverlay in `lib/default.nix`.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); in f.homeConfigurations."dev@${builtins.currentSystem}".pkgs.prose-lint.passthru.tests.haddock'

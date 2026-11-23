@@ -5370,13 +5370,8 @@ in
         # endings under the C locale and under a UTF-8 locale. It lints each
         # copy under each locale too.
         #
-        # harper-cli 3.0.0 from nixpkgs aborts on each Haskell file that
-        # holds a comment, and harperOverlay in lib/default.nix patches
-        # it. When harper-cli aborts on a probe file, the test checks
-        # only the shadows and the exit status. The Verification section
-        # of configs/harper/CLAUDE.md gives the command that builds this
-        # test with the patched harper. That test lints doc.hs, example.hs,
-        # strings.hs, long.hs, and mono.hs end to end.
+        # The test lints doc.hs, example.hs, strings.hs, long.hs, and
+        # mono.hs end to end.
         tests.haddock = runCommand "prose-lint-haddock" { nativeBuildInputs = [ gawk ]; } ''
           cat >doc.hs <<'EOF'
           module Doc where
@@ -6225,15 +6220,6 @@ in
                 exit 1
               fi
             done
-          fi
-
-          printf '%s\n' 'module Probe where' "" '-- This is is a comment.' 'x = 1' >probe.hs
-          rc=0
-          HOME=$TMPDIR ${harper}/bin/harper-cli lint --format compact probe.hs >/dev/null 2>&1 || rc=$?
-          if [ "$rc" -ge 2 ]; then
-            echo "harper-cli exited $rc on probe.hs, so the test skips the lint of the Haskell files"
-            touch "$out"
-            exit 0
           fi
 
           # Lints the file that the first argument names under the locale
