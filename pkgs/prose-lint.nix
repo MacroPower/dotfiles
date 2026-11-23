@@ -3048,7 +3048,7 @@ in
     # as `{@xxx}`, in place of each code span of a comment. Harper reads
     # an inline tag of a Java comment (`{@code make}`) as code. A span
     # of one character becomes `{@}`, which Harper reads as marks. Each
-    # tag closes with a `}`, because harper-cli 3.0.0 aborts on a `{@`
+    # tag closes with a `}`, because harper-cli 3.3.0 aborts on a `{@`
     # and a word that no `}` follows. On a shadow line, the tags replace
     # the spans of the shadow text. On the other lines, a scan of the
     # Java code finds the comments, such as one after code or a block

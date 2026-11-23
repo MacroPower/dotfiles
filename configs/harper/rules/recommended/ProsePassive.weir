@@ -52,9 +52,10 @@
 # rest of the sentence, such as `of`, `with`, or `by`. A determiner is a
 # word that introduces a noun, such as `the`, `a`, or `this`.
 #
-# Weir has no token class for a number, so the word after `by` must be a
-# pronoun, a proper noun, or a determiner instead. A proper noun is a
-# name that takes a capital letter, such as `Kubernetes`.
+# The word after `by` must be a pronoun, a proper noun, or a
+# determiner, which skips a number (`64 by 64`) and phrases such as
+# `by default`. A proper noun is a name that takes a capital letter,
+# such as `Kubernetes`.
 #
 # The agent form is a stative word, `by`, and an agent. Stative words
 # still read as a passive when an agent follows them (`the flag can be
