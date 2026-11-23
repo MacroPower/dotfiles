@@ -1247,7 +1247,6 @@ func ghRedirectRules() *cmdrules.Engine {
 		redirect("mcp__github__list_label", "label", "list"),
 		redirect("mcp__github__pull_request_read", "pr", "view"),
 		redirect("mcp__github__list_pull_requests", "pr", "list"),
-		redirect("mcp__github__pull_request_read (diff method)", "pr", "diff"),
 		redirect("mcp__github__projects_get (get_project)", "project", "view"),
 		redirect("mcp__github__projects_list (list_projects)", "project", "list"),
 		redirect("mcp__github__projects_list (list_project_fields)", "project", "field-list"),
@@ -1485,9 +1484,8 @@ func TestCommandRulesCheck_Redirect(t *testing.T) {
 			input: "gh pr list",
 			want:  ghRedirectReason("mcp__github__list_pull_requests"),
 		},
-		"gh pr diff redirects to MCP": {
+		"gh pr diff stays on gh (read by /code-review)": {
 			input: "gh pr diff 2",
-			want:  ghRedirectReason("mcp__github__pull_request_read (diff method)"),
 		},
 		"gh release view redirects to MCP": {
 			input: "gh release view v1.2.3",

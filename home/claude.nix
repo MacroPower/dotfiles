@@ -3651,7 +3651,6 @@ in
             pr = {
               view = "mcp__github__pull_request_read";
               list = "mcp__github__list_pull_requests";
-              diff = "mcp__github__pull_request_read (diff method)";
             };
             release = {
               view = "mcp__github__get_release_by_tag / mcp__github__get_latest_release";
@@ -3755,7 +3754,10 @@ in
           # print credentials, and `config set` because it can swap the
           # browser, editor, or pager gh runs. `pr checks` stays here
           # for the same reason as `run watch`: its --watch form streams
-          # to completion. Single source of truth for the
+          # to completion. `pr diff` stays here although the MCP serves
+          # it, because Claude Code's /code-review reads a pull request
+          # with `gh pr diff` and stops when hook-router refuses it.
+          # Single source of truth for the
           # permission allow entries below. Mirrored by ghAskRules in
           # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go.
           ghAllowGroups = {
@@ -3787,6 +3789,7 @@ in
               "checkout"
               "checks"
               "status"
+              "diff"
             ];
             release = [
               "download"

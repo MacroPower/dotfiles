@@ -169,7 +169,6 @@ func ghRedirectRules() *cmdrules.Engine {
 		redirect("mcp__github__list_label", "label", "list"),
 		redirect("mcp__github__pull_request_read", "pr", "view"),
 		redirect("mcp__github__list_pull_requests", "pr", "list"),
-		redirect("mcp__github__pull_request_read (diff method)", "pr", "diff"),
 		redirect("mcp__github__projects_get (get_project)", "project", "view"),
 		redirect("mcp__github__projects_list (list_projects)", "project", "list"),
 		redirect("mcp__github__projects_list (list_project_fields)", "project", "field-list"),
