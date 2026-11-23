@@ -30,6 +30,12 @@ import (
 func TestEquipLoadout(t *testing.T) {
 	t.Parallel()
 
+	// vaultLoadoutPlugs names the plugs that the third loadout of the
+	// fixture Hunter saved for the vault hand cannon.
+	const vaultLoadoutPlugs = "\nThe game applied the plugs that the loadout saved:\n" +
+		"- Fatebringer (1001): Explosive Payload, Firefly\n" +
+		"Until the next inventory fetch, up to 30 seconds later, get_item shows the plugs from before the equip."
+
 	tests := map[string]struct {
 		change       func(t *testing.T, s *inventory.Snapshot)
 		err          error
@@ -62,7 +68,7 @@ func TestEquipLoadout(t *testing.T) {
 			wantEquipped: []string{"1001", "1004"},
 			want: "- Moved Fatebringer (1001) from Vault to Hunter.\n" +
 				"Equipped loadout 3 on Hunter: Fatebringer (1001), Celestial Nighthawk (1004). " +
-				"The inventory does not hold these loadout items: 9999.",
+				"The inventory does not hold these loadout items: 9999." + vaultLoadoutPlugs,
 		},
 		"item on the character that is not transferable": {
 			change: func(t *testing.T, s *inventory.Snapshot) {
@@ -82,7 +88,7 @@ func TestEquipLoadout(t *testing.T) {
 			wantEquipped: []string{"1001", "1004"},
 			want: "- Moved Fatebringer (1001) from Vault to Hunter.\n" +
 				"Equipped loadout 3 on Hunter: Fatebringer (1001), Celestial Nighthawk (1004). " +
-				"The inventory does not hold these loadout items: 9999.",
+				"The inventory does not hold these loadout items: 9999." + vaultLoadoutPlugs,
 		},
 		"item equipped on another character": {
 			characterID: bungietest.TitanID,
@@ -139,6 +145,18 @@ func TestEquipLoadout(t *testing.T) {
 			fail:        "equip loadout 1 on c1",
 			err:         bungietest.ErrStep,
 			want:        "Loadout 2 is not equipped on Hunter: equipping the loadout: step refused.",
+		},
+		"equip of a loadout with saved plugs fails": {
+			characterID: bungietest.HunterID,
+			number:      3,
+			fail:        "equip loadout 2 on c1",
+			err:         bungietest.ErrStep,
+			wantSteps:   []string{"from vault to c1"},
+			wantMoves:   []string{"1001 from vault"},
+			wantMissing: []string{"9999"},
+			wantChanged: true,
+			want: "- Moved Fatebringer (1001) from Vault to Hunter.\n" +
+				"Loadout 3 is not equipped on Hunter: equipping the loadout: step refused.",
 		},
 	}
 

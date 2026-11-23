@@ -101,6 +101,11 @@ const ToastCraftingRecipe = 8
 // an instance.
 const StackInstanceID = "0"
 
+// UnsetPlugHash fills each socket of a saved loadout item whose plug the
+// loadout does not hold, such as a socket with only one plug. Destiny Item
+// Manager (DIM) names the value UNSET_PLUG_HASH.
+const UnsetPlugHash uint32 = 2166136261
+
 // Bungie DestinyItemType values that classify gear and plugs. Bungie
 // names the plug type Mod, and weapon perks carry it too.
 const (

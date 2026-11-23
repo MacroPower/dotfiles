@@ -704,6 +704,16 @@ func newServer(h *handler) *mcp.Server {
 		Name: toolListLoadouts,
 		Description: "List the loadouts that each character saved in the game. Each loadout carries the name " +
 			"that the game shows for it, and each item shows its instance id, name, slot, and location. " +
+			"Each item also names the plugs that the loadout saved for it, " +
+			"such as the aspects and the fragments of a subclass, armor mods, and artifact perks. " +
+			"The game applies those plugs when it equips the loadout. " +
+			"When the loadout saved sockets of an item empty, the item also gives their number, " +
+			"and an equip removes the plugs of those sockets. " +
+			"When the loadout saved plugs of an item that the definitions of the server do not know, " +
+			"the item also gives their number, and an equip applies those plugs too. " +
+			"The sockets that the loadout does not hold keep their plugs through an equip. " +
+			"For a loadout that save_loadout saved, the list names the plugs only after the next inventory fetch, " +
+			"up to 30 seconds later. " +
 			"The server reads the loadout names from the Bungie manifest. When it cannot read them, " +
 			"the result gives the reason and lists the loadouts by number. " +
 			"The server cannot show the icon or the color of a loadout, because the game defines both " +
@@ -723,11 +733,21 @@ func newServer(h *handler) *mcp.Server {
 			"character holds is not transferable, or when another character has it equipped and does not " +
 			"hold a replacement for its slot. " +
 			"A failed move stops the tool before it equips the loadout. " +
-			"The game also applies the artifact perks that the loadout saved, " +
-			"and they replace the active perks of the equipped artifact. " +
+			"The game also applies the plugs that the loadout saved, such as the artifact perks and the armor mods, " +
+			"and they replace the active plugs of the loadout items. " +
+			"The game also removes the plug of each socket that the loadout saved empty, " +
+			"and each socket that the loadout does not hold keeps its plug. " +
+			"The result names the saved plugs of each item. It also counts the empty sockets of each item " +
+			"and the saved plugs that the definitions of the server do not know. " +
+			"It also says when the loadout does not hold the perks of the equipped artifact, " +
+			"such as when the loadout does not list the artifact, so the equip leaves those perks unchanged. " +
+			"For a loadout that save_loadout saved, the result names those plugs only after the next inventory fetch, " +
+			"up to 30 seconds later. " +
 			"Until the next inventory fetch, up to 30 seconds later, get_item shows the plugs that the equip changed, " +
 			"such as the artifact perks and the armor mods, as they were before the equip. " +
-			"Until that fetch, save_loadout also does not name the artifact perks that it saves. " +
+			"Until that fetch, save_loadout also does not name the artifact perks that it saves, " +
+			"except when the result of each equip since the last inventory fetch said that the equip left the perks " +
+			"of the artifact as they were. " +
 			"Bungie allows equipping only while the character is offline, in orbit, or in a social space.",
 		Annotations: additive,
 	}, h.handleEquipLoadout)
@@ -749,6 +769,8 @@ func newServer(h *handler) *mcp.Server {
 			"It also lists the perks of the equipped artifact, which the game saves with the loadout. " +
 			"After equip_loadout, the result names those perks only after the next inventory fetch, " +
 			"up to 30 seconds later. " +
+			"When the result of each equip_loadout since the last inventory fetch said that the equip " +
+			"left the perks of the artifact as they were, the result names those perks without that wait. " +
 			"No tool of the server picks a single perk of an artifact, " +
 			"so the user picks them in the game before the save. " +
 			"A slot number outside the slots of the character fails with the number of slots, and a name " +

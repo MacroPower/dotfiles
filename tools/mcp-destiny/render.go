@@ -695,15 +695,25 @@ func renderWeaponGroup(
 }
 
 // renderLoadouts lists the saved loadouts of characters as one table per
-// character, with a row per loadout item. The [loadoutHeading] of each
-// loadout sits above its rows. When names holds no table, one line after
-// the opening paragraph gives the reason.
+// character, with a row per loadout item. Each row ends with the
+// [loadoutPlugs] of the item. The [loadoutHeading] of each loadout sits
+// above its rows. For a loadout with [inventory.Loadout.PlugsPending], the
+// heading also says when the server reads those plugs. When names does not
+// hold a table, one line after the opening paragraph gives the reason.
 func renderLoadouts(s *inventory.Snapshot, characters []inventory.Character, names bungie.LoadoutTableState) string {
 	var b strings.Builder
 
 	b.WriteString("Loadouts saved in the game. A loadout number is the position of the loadout " +
 		"on the in-game loadout screen, counted from 1. The server cannot show the icon or the color " +
 		"of a loadout, because the game defines both only as images. " +
+		"The saved plugs of an item are the plugs that the game applies to the item when it equips " +
+		"the loadout, such as the aspects and the fragments of a subclass, armor mods, and artifact perks. " +
+		"A count of empty sockets gives the sockets that the loadout saved empty, " +
+		"and the equip removes the plugs in those sockets. " +
+		"A count of unknown plugs gives the saved plugs that the definitions of the server do not know, " +
+		"and the equip applies those plugs too. " +
+		"The list leaves out cosmetic plugs and the sockets that the loadout does not hold, " +
+		"and those sockets keep their plugs through the equip. " +
 		"Pass the character and the loadout number to equip_loadout.")
 
 	if names.Err != nil {
@@ -721,21 +731,28 @@ func renderLoadouts(s *inventory.Snapshot, characters []inventory.Character, nam
 		}
 
 		fmt.Fprintf(&b, "\n\n%s (id %s):\n", label, c.ID)
-		b.WriteString("loadout | instance id | name | slot | location")
+		b.WriteString("loadout | instance id | name | slot | location | saved plugs")
 
 		for _, l := range saved {
 			b.WriteString("\n" + loadoutHeading(l, names))
 
+			if l.PlugsPending {
+				fmt.Fprintf(&b, ". The server reads the saved plugs of this loadout at its next inventory fetch, "+
+					"up to %d seconds later.", int(snapshotTTL/time.Second))
+			}
+
 			for _, id := range l.InstanceIDs {
+				plugs := loadoutPlugs(l, id)
+
 				item, ok := s.Find(id)
 				if !ok {
-					fmt.Fprintf(&b, "\n%d | %s | not in the inventory |  | ", l.Number, id)
+					fmt.Fprintf(&b, "\n%d | %s | not in the inventory |  |  | %s", l.Number, id, plugs)
 
 					continue
 				}
 
-				fmt.Fprintf(&b, "\n%d | %s | %s | %s | %s",
-					l.Number, item.InstanceID, item.Name, item.Slot, s.LocationLabel(item))
+				fmt.Fprintf(&b, "\n%d | %s | %s | %s | %s | %s",
+					l.Number, item.InstanceID, item.Name, item.Slot, s.LocationLabel(item), plugs)
 			}
 		}
 	}
@@ -761,7 +778,8 @@ func loadoutHeading(l inventory.Loadout, names bungie.LoadoutTableState) string 
 }
 
 // renderLoadoutEquip describes what an equip_loadout call did. A non-nil
-// err says why the call stopped.
+// err says why the call stopped. After an equip, [appliedPlugs] names the
+// plugs that the game applied.
 func renderLoadoutEquip(s *inventory.Snapshot, l inventory.Loadout, result inventory.LoadoutEquip, err error) string {
 	var b strings.Builder
 
@@ -817,7 +835,101 @@ func renderLoadoutEquip(s *inventory.Snapshot, l inventory.Loadout, result inven
 		fmt.Fprintf(&b, " The inventory does not hold these loadout items: %s.", strings.Join(result.Missing, ", "))
 	}
 
+	b.WriteString(appliedPlugs(s, l, result.Items))
+
 	return b.String()
+}
+
+// appliedPlugs describes the plugs that the game applied to items when it
+// equipped the loadout l, as lines that follow the result of
+// equip_loadout. A heading line opens a list with one line per item that
+// names the [loadoutPlugs] of the item. The list leaves out each item for
+// which [inventory.Loadout.HoldsPlugs] reports false. When any item has an
+// empty socket, the heading also says that the equip removed the plugs of
+// those sockets. After the list, one line says that get_item shows the plugs
+// from before the equip until the next inventory fetch. Then one line
+// follows for each artifact that the list leaves out. It says that l does
+// not hold the perks of the artifact, so the equip left them as they were.
+// Those artifacts include each artifact that the character of l has
+// equipped in the snapshot s and that items does not hold. For a loadout
+// with [inventory.Loadout.PlugsPending], one line says when the server
+// reads the plugs instead.
+func appliedPlugs(s *inventory.Snapshot, l inventory.Loadout, items []*inventory.Item) string {
+	seconds := int(snapshotTTL / time.Second)
+
+	if l.PlugsPending {
+		return fmt.Sprintf("\nThe game applied the plugs that the loadout saved. "+
+			"The server reads those plugs at its next inventory fetch, up to %d seconds later.", seconds)
+	}
+
+	// The loadout does not list these artifacts, so the equip leaves their
+	// perks as they were.
+	unlisted := slices.DeleteFunc(s.LoadoutGear(l.CharacterID), func(item *inventory.Item) bool {
+		return item.Bucket != bungie.BucketArtifacts || slices.Contains(items, item)
+	})
+
+	var (
+		lines   []string
+		kept    []string
+		emptied bool
+	)
+
+	for _, item := range slices.Concat(items, unlisted) {
+		id := item.InstanceID
+
+		switch {
+		case l.HoldsPlugs(id):
+			lines = append(lines, fmt.Sprintf("- %s (%s): %s", item.Name, id, loadoutPlugs(l, id)))
+			emptied = emptied || l.EmptySockets[id] > 0
+
+		case item.Bucket == bungie.BucketArtifacts:
+			kept = append(kept, fmt.Sprintf("The loadout does not hold the perks of the artifact %s (%s), "+
+				"so the equip left its perks as they were.", item.Name, id))
+		}
+	}
+
+	var b strings.Builder
+
+	if len(lines) > 0 {
+		b.WriteString("\nThe game applied the plugs that the loadout saved")
+
+		if emptied {
+			b.WriteString(", and it removed the plug of each socket that the loadout saved empty")
+		}
+
+		b.WriteString(":\n" + strings.Join(lines, "\n"))
+		fmt.Fprintf(&b, "\nUntil the next inventory fetch, up to %d seconds later, "+
+			"get_item shows the plugs from before the equip.", seconds)
+	}
+
+	for _, line := range kept {
+		b.WriteString("\n" + line)
+	}
+
+	return b.String()
+}
+
+// loadoutPlugs names the plugs that the loadout l saved for the item with
+// the instance id id, in socket order and separated by commas. A count of
+// the sockets that l saved empty follows the names. A count of the plugs
+// of [inventory.Loadout.UnknownPlugs] comes last, such as "Radiant Orbs,
+// 1 empty socket, 2 unknown plugs". loadoutPlugs returns "" for an item for which
+// [inventory.Loadout.HoldsPlugs] reports false.
+func loadoutPlugs(l inventory.Loadout, id string) string {
+	names := make([]string, 0, len(l.Plugs[id])+2)
+	for _, plug := range l.Plugs[id] {
+		names = append(names, plug.Name)
+	}
+
+	if empty := l.EmptySockets[id]; empty > 0 {
+		names = append(names, countText(empty, "empty socket"))
+	}
+
+	if unknown := l.UnknownPlugs[id]; unknown > 0 {
+		names = append(names, countText(unknown, "unknown plug"))
+	}
+
+	return strings.Join(names, ", ")
 }
 
 // renderLoadoutSave describes a save_loadout call that saved the gear of
@@ -829,9 +941,9 @@ func renderLoadoutEquip(s *inventory.Snapshot, l inventory.Loadout, result inven
 // The game saves the perks of the equipped artifact with the loadout,
 // and equip_loadout applies them again. No tool of the server picks a
 // single perk of an artifact, so the result names the saved perks, as
-// [artifactPerks] words them. After equip_loadout, the snapshot holds
-// the perks from before the equip, so the result does not name them
-// until the next fetch.
+// [artifactPerks] words them. After an equip_loadout that applied
+// artifact perks, the snapshot holds the perks from before the equip.
+// The result then names them only after the next fetch.
 func renderLoadoutSave(
 	s *inventory.Snapshot,
 	characterID string,

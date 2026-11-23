@@ -10,7 +10,18 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 )
+
+// fixtureLoadoutPlugs returns the plugs that the third loadout of the
+// fixture Hunter saved for the vault hand cannon (1001).
+func fixtureLoadoutPlugs() map[string][]Plug {
+	return map[string][]Plug{"1001": {
+		{Name: "Explosive Payload", Type: "Trait", Hash: 900},
+		{Name: "Firefly", Type: "Trait", Description: definitionstest.Defs().Items[901].Description, Hash: 901},
+	}}
+}
 
 func TestSnapshotLoadouts(t *testing.T) {
 	t.Parallel()
@@ -30,6 +41,7 @@ func TestSnapshotLoadouts(t *testing.T) {
 			CharacterID: bungietest.HunterID,
 			Number:      3,
 			InstanceIDs: []string{"1001", "1004", "9999"},
+			Plugs:       fixtureLoadoutPlugs(),
 			NameHash:    4,
 			IconHash:    5,
 			ColorHash:   6,
@@ -62,6 +74,7 @@ func TestFindLoadout(t *testing.T) {
 				CharacterID: bungietest.HunterID,
 				Number:      3,
 				InstanceIDs: []string{"1001", "1004", "9999"},
+				Plugs:       fixtureLoadoutPlugs(),
 				NameHash:    4,
 				IconHash:    5,
 				ColorHash:   6,
@@ -238,10 +251,136 @@ func TestLoadoutsOfDropsEmptyItems(t *testing.T) {
 	assert.Equal(t, []Loadout{
 		{CharacterID: bungietest.HunterID, Number: 2, InstanceIDs: []string{"1001"}},
 		{CharacterID: bungietest.TitanID, Number: 1, InstanceIDs: []string{"1006"}},
-	}, loadoutsOf(&profile), "an item without an instance id or with the id 0 holds nothing")
+	}, loadoutsOf(&profile, definitionstest.Defs()), "an item without an instance id or with the id 0 holds nothing")
 
 	assert.Equal(t, map[string]int{bungietest.HunterID: 4, bungietest.TitanID: 1}, loadoutSlotsOf(&profile),
 		"the slot count includes the empty slots")
+}
+
+func TestLoadoutsOfPlugs(t *testing.T) {
+	t.Parallel()
+
+	defs := definitionstest.Defs()
+	defs.Items[920] = definitions.ItemDef{Name: "Empty Mod Socket", TypeName: "General Armor Mod"}
+	defs.Items[921] = definitions.ItemDef{Name: "Recovery Mod", TypeName: "General Armor Mod"}
+	defs.Items[922] = definitions.ItemDef{Name: "Radiant Orbs", TypeName: "Artifact Perk"}
+	defs.Items[923] = definitions.ItemDef{Name: "Empty Artifact Mod"}
+	defs.Items[924] = definitions.ItemDef{Name: "Empty Memento Socket", TypeName: "Memento"}
+	defs.Items[925] = definitions.ItemDef{Name: "Untyped Perk"}
+	defs.Items[926] = definitions.ItemDef{Name: "Kill Tracker", ItemType: bungie.ItemTypePlug}
+	defs.Items[927] = definitions.ItemDef{Name: "Default Ornament", ItemType: bungie.ItemTypePlug}
+	defs.Items[928] = definitions.ItemDef{
+		Name:     "Iron Fellowship Vest",
+		TypeName: "Chest Armor",
+		ItemType: bungie.ItemTypeArmor,
+	}
+	defs.Items[929] = definitions.ItemDef{Name: "Thunderlord", TypeName: "Machine Gun", ItemType: bungie.ItemTypeWeapon}
+	defs.Items[930] = definitions.ItemDef{
+		Name:     "Temporal Tracker",
+		TypeName: "Weapon Mod",
+		ItemType: bungie.ItemTypePlug,
+	}
+
+	tests := map[string]struct {
+		want        []Plug
+		plugs       []uint32
+		wantEmpty   int
+		wantUnknown int
+	}{
+		"perks in socket order": {
+			plugs: []uint32{922, 921},
+			want: []Plug{
+				{Name: "Radiant Orbs", Type: "Artifact Perk", Hash: 922},
+				{Name: "Recovery Mod", Type: "General Armor Mod", Hash: 921},
+			},
+		},
+		"sockets that the loadout does not hold": {
+			plugs: []uint32{bungie.UnsetPlugHash, 921, bungie.UnsetPlugHash},
+			want:  []Plug{{Name: "Recovery Mod", Type: "General Armor Mod", Hash: 921}},
+		},
+		"cosmetic plug and placeholder": {
+			plugs:     []uint32{902, 920, 921},
+			want:      []Plug{{Name: "Recovery Mod", Type: "General Armor Mod", Hash: 921}},
+			wantEmpty: 1,
+		},
+		"plug that the definitions lack": {
+			plugs:       []uint32{12345, 921},
+			want:        []Plug{{Name: "Recovery Mod", Type: "General Armor Mod", Hash: 921}},
+			wantUnknown: 1,
+		},
+		"plugs that the definitions do not describe": {
+			plugs:       []uint32{925, 12345, bungie.UnsetPlugHash, 923},
+			wantEmpty:   1,
+			wantUnknown: 2,
+		},
+		"empty sockets without a plug to keep": {
+			plugs:     []uint32{bungie.UnsetPlugHash, 923, 920, 923},
+			wantEmpty: 3,
+		},
+		"cosmetic placeholder": {
+			plugs: []uint32{924, 922},
+			want:  []Plug{{Name: "Radiant Orbs", Type: "Artifact Perk", Hash: 922}},
+		},
+		"no plug to keep": {
+			plugs: []uint32{bungie.UnsetPlugHash, 902, 924},
+		},
+		"untyped tracker and default ornament": {
+			plugs: []uint32{926, 927},
+		},
+		"gear that gives the item its appearance": {
+			plugs: []uint32{928, 929},
+		},
+		"cosmetic plugs beside perks": {
+			plugs: []uint32{926, 921, 928, 930, 927},
+			want: []Plug{
+				{Name: "Recovery Mod", Type: "General Armor Mod", Hash: 921},
+				{Name: "Temporal Tracker", Type: "Weapon Mod", Hash: 930},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var profile bungie.Profile
+
+			profile.CharacterLoadouts.Data = map[string]bungie.ProfileLoadouts{
+				bungietest.HunterID: {Loadouts: []bungie.ProfileLoadout{{Items: []bungie.ProfileLoadoutItem{
+					{InstanceID: "1004", PlugHashes: tc.plugs},
+					{InstanceID: "1006", PlugHashes: []uint32{bungie.UnsetPlugHash}},
+				}}}},
+			}
+
+			var (
+				want        map[string][]Plug
+				wantEmpty   map[string]int
+				wantUnknown map[string]int
+			)
+
+			if tc.want != nil {
+				want = map[string][]Plug{"1004": tc.want}
+			}
+
+			if tc.wantEmpty > 0 {
+				wantEmpty = map[string]int{"1004": tc.wantEmpty}
+			}
+
+			if tc.wantUnknown > 0 {
+				wantUnknown = map[string]int{"1004": tc.wantUnknown}
+			}
+
+			got := loadoutsOf(&profile, defs)
+			require.Len(t, got, 1)
+			assert.Equal(t, []string{"1004", "1006"}, got[0].InstanceIDs)
+			assert.Equal(t, want, got[0].Plugs, "an item without a plug to keep has no entry")
+			assert.Equal(t, wantEmpty, got[0].EmptySockets, "an item without an empty socket has no entry")
+			assert.Equal(t, wantUnknown, got[0].UnknownPlugs, "an item without an unknown plug has no entry")
+			assert.Equal(t, want != nil || wantEmpty != nil || wantUnknown != nil, got[0].HoldsPlugs("1004"))
+			assert.False(t, got[0].HoldsPlugs("1006"), "a socket that the loadout does not hold does not count")
+			assert.False(t, got[0].PlugsPending)
+		})
+	}
 }
 
 func TestLoadoutSlot(t *testing.T) {
@@ -281,6 +420,7 @@ func TestLoadoutSlot(t *testing.T) {
 				CharacterID: bungietest.HunterID,
 				Number:      3,
 				InstanceIDs: []string{"1001", "1004", "9999"},
+				Plugs:       fixtureLoadoutPlugs(),
 				NameHash:    4,
 				IconHash:    5,
 				ColorHash:   6,
@@ -387,12 +527,28 @@ func TestLoadoutGear(t *testing.T) {
 }
 
 // loadoutKeys returns one line per loadout, with the character, the number,
-// the identifiers, and the instance ids, in the order of loadouts.
+// the identifiers, and the instance ids, in the order of loadouts. The
+// names of the saved plugs of an item follow its id in brackets. A line
+// ends with "pending" for a loadout with [Loadout.PlugsPending].
 func loadoutKeys(loadouts []Loadout) []string {
 	out := make([]string, 0, len(loadouts))
 	for _, l := range loadouts {
-		out = append(out, fmt.Sprintf("%s %d %d/%d/%d %s",
-			l.CharacterID, l.Number, l.NameHash, l.IconHash, l.ColorHash, strings.Join(l.InstanceIDs, ",")))
+		ids := make([]string, 0, len(l.InstanceIDs))
+		for _, id := range l.InstanceIDs {
+			if plugs := l.Plugs[id]; len(plugs) > 0 {
+				id += "[" + strings.Join(plugNames(plugs), "+") + "]"
+			}
+
+			ids = append(ids, id)
+		}
+
+		key := fmt.Sprintf("%s %d %d/%d/%d %s",
+			l.CharacterID, l.Number, l.NameHash, l.IconHash, l.ColorHash, strings.Join(ids, ","))
+		if l.PlugsPending {
+			key += " pending"
+		}
+
+		out = append(out, key)
 	}
 
 	return out
@@ -413,9 +569,9 @@ func TestRecordLoadoutSave(t *testing.T) {
 			characterID: bungietest.HunterID,
 			number:      1,
 			want: []string{
-				"c1 1 10/20/30 1006,1004",
+				"c1 1 10/20/30 1006,1004 pending",
 				"c1 2 1/2/3 1006,1004",
-				"c1 3 4/5/6 1001,1004,9999",
+				"c1 3 4/5/6 1001[Explosive Payload+Firefly],1004,9999",
 				"c2 1 7/8/9 1006",
 			},
 		},
@@ -425,7 +581,7 @@ func TestRecordLoadoutSave(t *testing.T) {
 			number:      3,
 			want: []string{
 				"c1 2 1/2/3 1006,1004",
-				"c1 3 10/20/30 1006,1004",
+				"c1 3 10/20/30 1006,1004 pending",
 				"c2 1 7/8/9 1006",
 			},
 		},
@@ -434,7 +590,7 @@ func TestRecordLoadoutSave(t *testing.T) {
 			number:      3,
 			want: []string{
 				"c1 2 1/2/3 1006,1004",
-				"c1 3 10/20/30 1006,1004",
+				"c1 3 10/20/30 1006,1004 pending",
 				"c2 1 7/8/9 1006",
 			},
 		},
@@ -443,7 +599,7 @@ func TestRecordLoadoutSave(t *testing.T) {
 			number:      1,
 			want: []string{
 				"c1 2 1/2/3 1006,1004",
-				"c1 3 4/5/6 1001,1004,9999",
+				"c1 3 4/5/6 1001[Explosive Payload+Firefly],1004,9999",
 			},
 		},
 	}
@@ -476,7 +632,7 @@ func TestRecordLoadoutClear(t *testing.T) {
 			characterID: bungietest.HunterID,
 			number:      2,
 			want: []string{
-				"c1 3 4/5/6 1001,1004,9999",
+				"c1 3 4/5/6 1001[Explosive Payload+Firefly],1004,9999",
 				"c2 1 7/8/9 1006",
 			},
 		},
@@ -485,7 +641,7 @@ func TestRecordLoadoutClear(t *testing.T) {
 			number:      1,
 			want: []string{
 				"c1 2 1/2/3 1006,1004",
-				"c1 3 4/5/6 1001,1004,9999",
+				"c1 3 4/5/6 1001[Explosive Payload+Firefly],1004,9999",
 				"c2 1 7/8/9 1006",
 			},
 		},

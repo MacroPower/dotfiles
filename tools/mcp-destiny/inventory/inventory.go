@@ -462,7 +462,7 @@ func NewSnapshot(profile *bungie.Profile, defs *definitions.Defs, fetched time.T
 		s.Currencies = append(s.Currencies, Currency{Name: ItemName(defs, pi.Hash), Quantity: pi.Quantity})
 	}
 
-	s.Loadouts = loadoutsOf(profile)
+	s.Loadouts = loadoutsOf(profile, defs)
 	s.LoadoutSlots = loadoutSlotsOf(profile)
 
 	return s
@@ -921,18 +921,29 @@ func isPlaceholder(plug definitions.ItemDef) bool {
 }
 
 // isPerk reports whether a plug changes how an item plays. It rejects
-// cosmetic plugs and the placeholders of empty sockets.
+// the plugs that [isCosmetic] accepts and the placeholders of empty
+// sockets.
 func isPerk(plug definitions.ItemDef) bool {
-	if plug.Name == "" || plug.TypeName == "" || isPlaceholder(plug) {
-		return false
+	return plug.Name != "" && plug.TypeName != "" && !isPlaceholder(plug) && !isCosmetic(plug)
+}
+
+// isCosmetic reports whether a plug changes only how an item looks or
+// what it shows, such as a shader, an ornament, or a memento. The
+// definitions do not give a type to the trackers, such as "Kill
+// Tracker", or to the plugs that restore a default, such as "Default
+// Ornament". So isCosmetic accepts an untyped plug by its name.
+func isCosmetic(plug definitions.ItemDef) bool {
+	untyped := plug.TypeName == ""
+	if untyped && (strings.HasSuffix(plug.Name, " Tracker") || strings.HasPrefix(plug.Name, "Default ")) {
+		return true
 	}
 
 	switch plug.TypeName {
 	case "Shader", "Memento", "Restore Defaults", "Transmat Effect", "Ghost Projection", "Emote":
-		return false
+		return true
 	}
 
-	return !strings.Contains(plug.TypeName, "Ornament")
+	return strings.Contains(plug.TypeName, "Ornament")
 }
 
 func statsOf(profile *bungie.Profile, defs *definitions.Defs, instanceID string) []Stat {

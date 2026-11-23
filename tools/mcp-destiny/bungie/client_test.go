@@ -94,11 +94,16 @@ func TestBungieProfile(t *testing.T) {
 	loadouts := got.CharacterLoadouts.Data[bungietest.TitanID].Loadouts
 	require.Len(t, loadouts, 1)
 	assert.Equal(t, bungie.ProfileLoadout{
-		Items:     []bungie.ProfileLoadoutItem{{InstanceID: "1006"}},
+		Items:     []bungie.ProfileLoadoutItem{{InstanceID: "1006", PlugHashes: []uint32{bungie.UnsetPlugHash}}},
 		NameHash:  7,
 		IconHash:  8,
 		ColorHash: 9,
 	}, loadouts[0])
+
+	saved := got.CharacterLoadouts.Data[bungietest.HunterID].Loadouts
+	require.Len(t, saved, 3)
+	assert.Equal(t, bungie.ProfileLoadoutItem{InstanceID: "1001", PlugHashes: []uint32{900, 901}}, saved[2].Items[0],
+		"each loadout item carries the plugs that the loadout saved for it")
 }
 
 func TestBungieManifest(t *testing.T) {

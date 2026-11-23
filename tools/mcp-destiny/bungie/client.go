@@ -216,8 +216,13 @@ type ProfileLoadout struct {
 }
 
 // ProfileLoadoutItem is one Bungie DestinyLoadoutItemComponent.
+// PlugHashes holds the item hash of one plug for each socket of the item,
+// by socket index. The game inserts these plugs when it equips the
+// loadout. [UnsetPlugHash] fills each socket whose plug the loadout does
+// not hold.
 type ProfileLoadoutItem struct {
-	InstanceID string `json:"itemInstanceId"`
+	InstanceID string   `json:"itemInstanceId"`
+	PlugHashes []uint32 `json:"plugItemHashes"`
 }
 
 // ProfileLoadouts is the Bungie DestinyLoadoutsComponent of one character.

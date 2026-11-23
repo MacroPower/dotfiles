@@ -10,13 +10,29 @@
 // gear that a character has equipped into a loadout slot, and
 // clear_loadout empties a slot.
 //
-// The game saves the perks of the equipped artifact with a loadout, and
-// the save_loadout result names them. Equipping a loadout with
-// equip_loadout applies the artifact perks that the loadout saved. The
-// server reads those perks at its next fetch of the profile. Until then,
-// get_item shows the perks from before the equip, and save_loadout does
-// not name them. No tool of the server picks a single perk of an
+// The game saves the plugs of the equipped gear with a loadout. Those
+// plugs include the aspects and the fragments of the subclass, the armor
+// mods, and the perks of the artifact. A loadout can also save a socket
+// empty, and it does not hold some sockets, such as a socket with only
+// one plug. The list_loadouts tool names the plugs that each loadout
+// saved. It also counts the empty sockets and the saved plugs that the
+// definitions of the server do not know. The save_loadout result names
+// the artifact perks. No tool of the server picks a single perk of an
 // artifact, so the user picks those perks in the game.
+//
+// Equipping a loadout with equip_loadout applies the plugs that the
+// loadout saved and removes the plug of each socket that it saved empty.
+// Each socket that the loadout does not hold keeps its plug. An equipped
+// artifact that the loadout does not list keeps its perks. The result of
+// equip_loadout names the saved plugs and gives the same counts as
+// list_loadouts. It also says when the loadout does not hold the perks of
+// the equipped artifact. The server reads the new plugs of the gear at its
+// next fetch of the profile. Until then, get_item shows the plugs from
+// before the equip. Until then, save_loadout also does not name the
+// artifact perks. It names them when the result of each equip since the
+// last fetch said that the equip left the perks of the artifact as they
+// were. After a save, list_loadouts and equip_loadout name the plugs of
+// the saved loadout only after that fetch.
 //
 // The tools and the login subcommand print every time in the local time
 // zone of the host that runs them. Each time ends with the abbreviation of

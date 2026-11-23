@@ -55,10 +55,29 @@ const (
 	pathClear    = "/Destiny2/Actions/Loadouts/ClearLoadout/"
 )
 
-const loadoutsIntro = "Loadouts saved in the game. A loadout number is the position of the loadout " +
-	"on the in-game loadout screen, counted from 1. The server cannot show the icon or the color " +
-	"of a loadout, because the game defines both only as images. " +
-	"Pass the character and the loadout number to equip_loadout."
+const (
+	loadoutsIntro = "Loadouts saved in the game. A loadout number is the position of the loadout " +
+		"on the in-game loadout screen, counted from 1. The server cannot show the icon or the color " +
+		"of a loadout, because the game defines both only as images. " +
+		"The saved plugs of an item are the plugs that the game applies to the item when it equips " +
+		"the loadout, such as the aspects and the fragments of a subclass, armor mods, and artifact perks. " +
+		"A count of empty sockets gives the sockets that the loadout saved empty, " +
+		"and the equip removes the plugs in those sockets. " +
+		"A count of unknown plugs gives the saved plugs that the definitions of the server do not know, " +
+		"and the equip applies those plugs too. " +
+		"The list leaves out cosmetic plugs and the sockets that the loadout does not hold, " +
+		"and those sockets keep their plugs through the equip. " +
+		"Pass the character and the loadout number to equip_loadout."
+
+	// loadoutsHeader is the header line of the loadout table of each
+	// character in the list_loadouts result.
+	loadoutsHeader = "loadout | instance id | name | slot | location | saved plugs"
+
+	// loadoutPending follows the heading of a loadout in the list_loadouts
+	// result when save_loadout saved it into the snapshot.
+	loadoutPending = ". The server reads the saved plugs of this loadout at its next inventory fetch, " +
+		"up to 30 seconds later."
+)
 
 // killClipPlugSet gives socket 1 of Fatebringer (100) a plug set that
 // lists Firefly and the two Kill Clip plugs. Fatebringer has no plug set
@@ -6188,14 +6207,14 @@ func TestListLoadouts(t *testing.T) {
 	hunter := func(second, third string) string {
 		return strings.Join([]string{
 			"Hunter (id c1):",
-			"loadout | instance id | name | slot | location",
+			loadoutsHeader,
 			second,
-			"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)",
-			"2 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)",
+			"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
+			"2 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped) | ",
 			third,
-			"3 | 1001 | Fatebringer | Kinetic Weapons | Vault",
-			"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)",
-			"3 | 9999 | not in the inventory |  | ",
+			"3 | 1001 | Fatebringer | Kinetic Weapons | Vault | Explosive Payload, Firefly",
+			"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped) | ",
+			"3 | 9999 | not in the inventory |  |  | ",
 		}, "\n")
 	}
 
@@ -6204,9 +6223,9 @@ func TestListLoadouts(t *testing.T) {
 	titan := func(first string) string {
 		return strings.Join([]string{
 			"Titan (id c2):",
-			"loadout | instance id | name | slot | location",
+			loadoutsHeader,
 			first,
-			"1 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)",
+			"1 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
 		}, "\n")
 	}
 
@@ -6232,6 +6251,18 @@ func TestListLoadouts(t *testing.T) {
 			in:       ListLoadoutsInput{Character: bungietest.TitanID},
 			hunterOn: true,
 			want:     loadoutsIntro + "\n\nTitan (id c2): no saved loadouts",
+		},
+		"plugs of an item that the inventory does not hold": {
+			edit: func(f *fakes) {
+				profile := strings.Replace(bungietest.ProfileJSON,
+					`{"itemInstanceId": "9999", "plugItemHashes": [2166136261]}`,
+					`{"itemInstanceId": "9999", "plugItemHashes": [900, 2166136261, 901]}`, 1)
+				f.bungie.ProfileBody = `{"ErrorCode": 1, "Response": ` + profile + `}`
+			},
+			in: ListLoadoutsInput{Character: "hunter"},
+			want: loadoutsIntro + "\n\n" + strings.Replace(hunter("Loadout 2: Raid Night", "Loadout 3: Trials"),
+				"\n3 | 9999 | not in the inventory |  |  | ",
+				"\n3 | 9999 | not in the inventory |  |  | Explosive Payload, Firefly", 1),
 		},
 		"name hash that the table lacks": {
 			edit: func(f *fakes) {
@@ -6334,7 +6365,10 @@ func TestEquipLoadoutTool(t *testing.T) {
 	assert.False(t, isError)
 	assert.Equal(t, "- Moved Fatebringer (1001) from Vault to Hunter.\n"+
 		"Equipped loadout 3 on Hunter: Fatebringer (1001), Celestial Nighthawk (1004). "+
-		"The inventory does not hold these loadout items: 9999.", got)
+		"The inventory does not hold these loadout items: 9999.\n"+
+		"The game applied the plugs that the loadout saved:\n"+
+		"- Fatebringer (1001): Explosive Payload, Firefly\n"+
+		"Until the next inventory fetch, up to 30 seconds later, get_item shows the plugs from before the equip.", got)
 
 	loadouts = f.bungie.Calls(http.MethodPost, pathLoadout)
 	require.Len(t, loadouts, 2)
@@ -6496,24 +6530,24 @@ func snapshotBody(index int, characterID string, name, icon, color uint32) map[s
 
 // hunterLoadoutRows returns the list_loadouts rows of loadout number of the
 // fake Hunter. With equipped, the loadout holds the gear that the Hunter
-// has equipped. Without it, the loadout holds the items that the fake
-// profile saved in slot 3.
+// has equipped, without saved plugs. Without it, the loadout holds the
+// items and the plugs that the fake profile saved in slot 3.
 func hunterLoadoutRows(number int, equipped bool) string {
 	if equipped {
-		return fmt.Sprintf("%d | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)\n"+
-			"%d | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)", number, number)
+		return fmt.Sprintf("%d | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | \n"+
+			"%d | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped) | ", number, number)
 	}
 
-	return fmt.Sprintf("%d | 1001 | Fatebringer | Kinetic Weapons | Vault\n"+
-		"%d | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
-		"%d | 9999 | not in the inventory |  | ", number, number, number)
+	return fmt.Sprintf("%d | 1001 | Fatebringer | Kinetic Weapons | Vault | Explosive Payload, Firefly\n"+
+		"%d | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped) | \n"+
+		"%d | 9999 | not in the inventory |  |  | ", number, number, number)
 }
 
 func TestSaveLoadoutTool(t *testing.T) {
 	t.Parallel()
 
 	hunterGear := " It holds the gear that Hunter has equipped: Fatebringer (1006), Celestial Nighthawk (1004)."
-	hunterList := loadoutsIntro + "\n\nHunter (id c1):\nloadout | instance id | name | slot | location\n"
+	hunterList := loadoutsIntro + "\n\nHunter (id c1):\n" + loadoutsHeader + "\n"
 	titanList := loadoutsIntro + "\n\nTitan (id c2): no saved loadouts"
 
 	tests := map[string]struct {
@@ -6532,7 +6566,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 			in:       SaveLoadoutInput{Character: "hunter", Number: 1},
 			wantBody: snapshotBody(0, bungietest.HunterID, 1, 20, 31),
 			want:     "Saved loadout 1 on Hunter with the name Raid Night." + hunterGear,
-			wantList: hunterList + "Loadout 1: Raid Night\n" + hunterLoadoutRows(1, true) +
+			wantList: hunterList + "Loadout 1: Raid Night" + loadoutPending + "\n" + hunterLoadoutRows(1, true) +
 				"\nLoadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
 				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
 			emptySlot: true,
@@ -6541,7 +6575,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 			in:       SaveLoadoutInput{Character: "hunter", Number: 1, Name: "Trials"},
 			wantBody: snapshotBody(0, bungietest.HunterID, 4, 20, 31),
 			want:     "Saved loadout 1 on Hunter with the name Trials." + hunterGear,
-			wantList: hunterList + "Loadout 1: Trials\n" + hunterLoadoutRows(1, true) +
+			wantList: hunterList + "Loadout 1: Trials" + loadoutPending + "\n" + hunterLoadoutRows(1, true) +
 				"\nLoadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
 				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
 			emptySlot: true,
@@ -6550,7 +6584,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 			in:       SaveLoadoutInput{Character: bungietest.HunterID, Number: 2},
 			wantBody: snapshotBody(1, bungietest.HunterID, 1, 2, 3),
 			want:     "Saved loadout 2 on Hunter with the name Raid Night." + hunterGear,
-			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
+			wantList: hunterList + "Loadout 2: Raid Night" + loadoutPending + "\n" + hunterLoadoutRows(2, true) +
 				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
 		},
 		"saved loadout with a name": {
@@ -6558,13 +6592,13 @@ func TestSaveLoadoutTool(t *testing.T) {
 			wantBody: snapshotBody(2, bungietest.HunterID, 7, 5, 6),
 			want:     "Saved loadout 3 on Hunter with the name Crucible." + hunterGear,
 			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
-				"\nLoadout 3: Crucible\n" + hunterLoadoutRows(3, true),
+				"\nLoadout 3: Crucible" + loadoutPending + "\n" + hunterLoadoutRows(3, true),
 		},
 		"name in another letter case": {
 			in:       SaveLoadoutInput{Character: "hunter", Number: 2, Name: "tRIALS"},
 			wantBody: snapshotBody(1, bungietest.HunterID, 4, 2, 3),
 			want:     "Saved loadout 2 on Hunter with the name Trials." + hunterGear,
-			wantList: hunterList + "Loadout 2: Trials\n" + hunterLoadoutRows(2, true) +
+			wantList: hunterList + "Loadout 2: Trials" + loadoutPending + "\n" + hunterLoadoutRows(2, true) +
 				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
 		},
 		"character without equipped gear": {
@@ -6592,8 +6626,9 @@ func TestSaveLoadoutTool(t *testing.T) {
 				": bungie: content file returned status 404",
 			wantList: loadoutsIntro + "\nLoadout names unavailable: fetching " + bungietest.PathLoadoutNames +
 				": bungie: content file returned status 404\n\n" +
-				"Hunter (id c1):\nloadout | instance id | name | slot | location\n" +
-				"Loadout 2\n" + hunterLoadoutRows(2, true) + "\nLoadout 3\n" + hunterLoadoutRows(3, false),
+				"Hunter (id c1):\n" + loadoutsHeader + "\n" +
+				"Loadout 2" + loadoutPending + "\n" + hunterLoadoutRows(2, true) +
+				"\nLoadout 3\n" + hunterLoadoutRows(3, false),
 		},
 		"saved loadout without the icon and color tables": {
 			edit: func(f *fakes) {
@@ -6604,7 +6639,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 			wantBody: snapshotBody(2, bungietest.HunterID, 4, 5, 6),
 			want:     "Saved loadout 3 on Hunter with the name Trials." + hunterGear,
 			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
-				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, true),
+				"\nLoadout 3: Trials" + loadoutPending + "\n" + hunterLoadoutRows(3, true),
 		},
 	}
 
@@ -6670,17 +6705,17 @@ func TestSaveLoadoutToolAfterEquip(t *testing.T) {
 	// list reads the equip and the save from the snapshot.
 	got, isError = call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: "hunter"})
 	require.False(t, isError)
-	assert.Equal(t, loadoutsIntro+"\n\nHunter (id c1):\nloadout | instance id | name | slot | location\n"+
-		"Loadout 1: Raid Night\n"+
-		"1 | 1001 | Fatebringer | Kinetic Weapons | Hunter (equipped)\n"+
-		"1 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
+	assert.Equal(t, loadoutsIntro+"\n\nHunter (id c1):\n"+loadoutsHeader+"\n"+
+		"Loadout 1: Raid Night"+loadoutPending+"\n"+
+		"1 | 1001 | Fatebringer | Kinetic Weapons | Hunter (equipped) | \n"+
+		"1 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped) | \n"+
 		"Loadout 2: Raid Night\n"+
-		"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter\n"+
-		"2 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
+		"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter | \n"+
+		"2 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped) | \n"+
 		"Loadout 3: Trials\n"+
-		"3 | 1001 | Fatebringer | Kinetic Weapons | Hunter (equipped)\n"+
-		"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
-		"3 | 9999 | not in the inventory |  | ", got)
+		"3 | 1001 | Fatebringer | Kinetic Weapons | Hunter (equipped) | Explosive Payload, Firefly\n"+
+		"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped) | \n"+
+		"3 | 9999 | not in the inventory |  |  | ", got)
 	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 }
 
@@ -6776,17 +6811,48 @@ func TestSaveLoadoutToolArtifactPerksAfterEquip(t *testing.T) {
 		pending = " The loadout also holds the perks of the artifact Hunter's Journal that equip_loadout applied. " +
 			"The server reads those perks at its next inventory fetch, up to 30 seconds later."
 		perks = " The loadout also holds the perks of the artifact Hunter's Journal: Radiant Orbs, Void Hegemony."
+		kept  = "The loadout does not hold the perks of the artifact Hunter's Journal (1008), " +
+			"so the equip left its perks as they were."
 	)
 
 	tests := map[string]struct {
 		bungieError string
 		want        string
+		artifact    []uint32
 		after       time.Duration
 		fetches     int
+		saveFirst   bool
+		thenKeep    bool
 	}{
-		"save in the snapshot of the equip": {
-			want:    saved + pending,
+		"save after an equip of a loadout that does not list the artifact": {
+			want:    saved + perks,
 			fetches: 1,
+		},
+		"save after an equip of saved artifact perks": {
+			artifact: []uint32{931, bungie.UnsetPlugHash},
+			want:     saved + pending,
+			fetches:  1,
+		},
+		"save after an equip of a loadout that save_loadout saved": {
+			saveFirst: true,
+			want:      saved + pending,
+			fetches:   1,
+		},
+		"save after an equip that applied the artifact perks and an equip that left them": {
+			artifact: []uint32{931, bungie.UnsetPlugHash},
+			thenKeep: true,
+			want:     saved + pending,
+			fetches:  1,
+		},
+		"save after an equip of an artifact perk that the definitions lack": {
+			artifact: []uint32{77777, bungie.UnsetPlugHash},
+			want:     saved + pending,
+			fetches:  1,
+		},
+		"save after an equip that left the artifact perks": {
+			artifact: []uint32{bungie.UnsetPlugHash, bungie.UnsetPlugHash},
+			want:     saved + perks,
+			fetches:  1,
 		},
 		"save after the next fetch": {
 			after:   snapshotTTL,
@@ -6807,24 +6873,204 @@ func TestSaveLoadoutToolArtifactPerksAfterEquip(t *testing.T) {
 			f := newFakes(t)
 			withArtifact(f, 930, 931)
 
+			// Without artifact, the equipped loadout does not list the
+			// artifact, so the equip leaves its perks as they were. With
+			// it, the loadout holds the artifact and saves the plugs with
+			// those hashes for it.
+			withArtifactLoadout(f, tc.artifact, nil)
+
+			// With thenKeep, the first loadout holds only the artifact and
+			// does not hold its perk sockets.
+			if tc.thenKeep {
+				f.bungie.ProfileBody = strings.Replace(f.bungie.ProfileBody,
+					`{"itemInstanceId": "0", "plugItemHashes": [2166136261]},`,
+					`{"itemInstanceId": "1008", "plugItemHashes": [2166136261, 2166136261]},`, 1)
+			}
+
+			// With saveFirst, save_loadout replaces the second loadout with
+			// the equipped gear, artifact included, and the snapshot does
+			// not know the plugs that the game saved.
+			if tc.saveFirst {
+				_, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 2})
+				require.False(t, isError)
+			}
+
 			f.bungie.ActionError = tc.bungieError
 			f.bungie.ActionErrorPath = pathLoadout
 
 			_, isError := call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "hunter", Loadout: 2})
 			require.Equal(t, tc.bungieError != "", isError)
 
+			// The equip of the first loadout leaves the perks of the
+			// artifact as they were. The snapshot still holds the perks from
+			// before the equip of the second loadout.
+			if tc.thenKeep {
+				got, isError := call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "hunter", Loadout: 1})
+				require.False(t, isError)
+				assert.Equal(t, "Equipped loadout 1 on Hunter: Hunter's Journal (1008).\n"+kept, got)
+			}
+
 			later := bungietest.Now.Add(tc.after)
 			f.h.now = func() time.Time { return later }
 
 			// Every fetch of the fake profile gives the artifact the perks
-			// Radiant Orbs and Void Hegemony. The save names them when no
-			// equip followed the last fetch.
+			// Radiant Orbs and Void Hegemony. The save names them when the
+			// result of each equip since the last fetch said that the equip
+			// left the perks of the artifact as they were.
 			got, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 3})
 			assert.False(t, isError)
 			assert.Equal(t, tc.want, got)
 			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), tc.fetches)
 		})
 	}
+}
+
+// withArtifactLoadout adds the artifact Hunter's Journal (1008) of
+// [withArtifact] to the second loadout of the fake Hunter, before the hand
+// cannon (1006). The loadout saves the plugs with the hashes artifact for
+// the artifact and the plugs with the hashes cannon for the hand cannon. A
+// nil artifact leaves the artifact out of the loadout, and a nil cannon
+// leaves the hand cannon with the plugs of the fake profile. Call it after
+// withArtifact, which replaces the profile.
+func withArtifactLoadout(f *fakes, artifact, cannon []uint32) {
+	list := func(hashes []uint32) string {
+		out := make([]string, 0, len(hashes))
+		for _, hash := range hashes {
+			out = append(out, fmt.Sprint(hash))
+		}
+
+		return "[" + strings.Join(out, ", ") + "]"
+	}
+
+	if cannon == nil {
+		cannon = []uint32{bungie.UnsetPlugHash}
+	}
+
+	items := `{"itemInstanceId": "1006", "plugItemHashes": ` + list(cannon) + `},`
+	if artifact != nil {
+		items = `{"itemInstanceId": "1008", "plugItemHashes": ` + list(artifact) + `}, ` + items
+	}
+
+	f.bungie.ProfileBody = strings.Replace(f.bungie.ProfileBody,
+		`{"itemInstanceId": "1006", "plugItemHashes": [2166136261]},`, items, 1)
+}
+
+func TestLoadoutToolsArtifactPerks(t *testing.T) {
+	t.Parallel()
+
+	const (
+		equipped = "Equipped loadout 2 on Hunter: " +
+			"Hunter's Journal (1008), Fatebringer (1006), Celestial Nighthawk (1004).\n"
+		unlisted = "Equipped loadout 2 on Hunter: Fatebringer (1006), Celestial Nighthawk (1004).\n"
+		applied  = "The game applied the plugs that the loadout saved:\n"
+		emptied  = "The game applied the plugs that the loadout saved, " +
+			"and it removed the plug of each socket that the loadout saved empty:\n"
+		stale = "\nUntil the next inventory fetch, up to 30 seconds later, " +
+			"get_item shows the plugs from before the equip."
+		kept = "The loadout does not hold the perks of the artifact Hunter's Journal (1008), " +
+			"so the equip left its perks as they were."
+	)
+
+	tests := map[string]struct {
+		wantRows  string
+		wantEquip string
+		artifact  []uint32
+		cannon    []uint32
+	}{
+		"loadout with artifact perks": {
+			artifact: []uint32{930, bungie.UnsetPlugHash, 931},
+			wantRows: "2 | 1008 | Hunter's Journal |  | Hunter (equipped) | Radiant Orbs, Void Hegemony\n" +
+				"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
+			wantEquip: equipped + applied + "- Hunter's Journal (1008): Radiant Orbs, Void Hegemony" + stale,
+		},
+		"loadout with artifact perks and an empty perk socket": {
+			artifact: []uint32{930, 932, 931},
+			wantRows: "2 | 1008 | Hunter's Journal |  | Hunter (equipped) | " +
+				"Radiant Orbs, Void Hegemony, 1 empty socket\n" +
+				"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
+			wantEquip: equipped + emptied + "- Hunter's Journal (1008): Radiant Orbs, Void Hegemony, 1 empty socket" +
+				stale,
+		},
+		"loadout with empty artifact perk sockets": {
+			artifact: []uint32{932, 932, bungie.UnsetPlugHash},
+			wantRows: "2 | 1008 | Hunter's Journal |  | Hunter (equipped) | 2 empty sockets\n" +
+				"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
+			wantEquip: equipped + emptied + "- Hunter's Journal (1008): 2 empty sockets" + stale,
+		},
+		"loadout with an artifact perk that the definitions lack": {
+			artifact: []uint32{77777, bungie.UnsetPlugHash},
+			wantRows: "2 | 1008 | Hunter's Journal |  | Hunter (equipped) | 1 unknown plug\n" +
+				"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
+			wantEquip: equipped + applied + "- Hunter's Journal (1008): 1 unknown plug" + stale,
+		},
+		"loadout with artifact perks that the definitions know and lack": {
+			artifact: []uint32{930, 77777, 932, 77778},
+			wantRows: "2 | 1008 | Hunter's Journal |  | Hunter (equipped) | " +
+				"Radiant Orbs, 1 empty socket, 2 unknown plugs\n" +
+				"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
+			wantEquip: equipped + emptied + "- Hunter's Journal (1008): Radiant Orbs, 1 empty socket, 2 unknown plugs" +
+				stale,
+		},
+		"loadout without the artifact perk sockets": {
+			artifact: []uint32{bungie.UnsetPlugHash, bungie.UnsetPlugHash},
+			wantRows: "2 | 1008 | Hunter's Journal |  | Hunter (equipped) | \n" +
+				"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
+			wantEquip: equipped + kept,
+		},
+		"loadout with weapon perks without the artifact perk sockets": {
+			artifact: []uint32{bungie.UnsetPlugHash, bungie.UnsetPlugHash},
+			cannon:   []uint32{900, 901},
+			wantRows: "2 | 1008 | Hunter's Journal |  | Hunter (equipped) | \n" +
+				"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | Explosive Payload, Firefly",
+			wantEquip: equipped + applied + "- Fatebringer (1006): Explosive Payload, Firefly" + stale + "\n" + kept,
+		},
+		"loadout that does not list the artifact": {
+			wantRows:  "2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | ",
+			wantEquip: unlisted + kept,
+		},
+		"loadout with weapon perks that does not list the artifact": {
+			cannon:    []uint32{900, 901},
+			wantRows:  "2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped) | Explosive Payload, Firefly",
+			wantEquip: unlisted + applied + "- Fatebringer (1006): Explosive Payload, Firefly" + stale + "\n" + kept,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			// The artifact holds two perks before the equip.
+			f := newFakes(t)
+			withArtifact(f, 930, 931)
+			withArtifactLoadout(f, tc.artifact, tc.cannon)
+
+			got, isError := call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: "hunter"})
+			require.False(t, isError)
+			assert.Contains(t, got, "\nLoadout 2: Raid Night\n"+tc.wantRows+"\n2 | 1004 | ")
+
+			got, isError = call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "hunter", Loadout: 2})
+			assert.False(t, isError)
+			assert.Equal(t, tc.wantEquip, got)
+		})
+	}
+}
+
+func TestEquipLoadoutToolAfterSave(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 1})
+	require.False(t, isError)
+
+	// The snapshot of the save does not hold the plugs that the game saved,
+	// so the equip does not name them.
+	got, isError := call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "hunter", Loadout: 1})
+	assert.False(t, isError)
+	assert.Equal(t, "Equipped loadout 1 on Hunter: Fatebringer (1006), Celestial Nighthawk (1004).\n"+
+		"The game applied the plugs that the loadout saved. "+
+		"The server reads those plugs at its next inventory fetch, up to 30 seconds later.", got)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 }
 
 func TestLoadoutWriteSnapshotAge(t *testing.T) {
@@ -7001,7 +7247,7 @@ func TestSaveLoadoutToolBungieError(t *testing.T) {
 func TestClearLoadoutTool(t *testing.T) {
 	t.Parallel()
 
-	hunterList := loadoutsIntro + "\n\nHunter (id c1):\nloadout | instance id | name | slot | location\n"
+	hunterList := loadoutsIntro + "\n\nHunter (id c1):\n" + loadoutsHeader + "\n"
 
 	tests := map[string]struct {
 		wantBody map[string]any
