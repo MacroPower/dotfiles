@@ -150,6 +150,7 @@ type ListItemsInput struct {
 	Tier           string `json:"tier,omitzero"            jsonschema:"Rarity, such as 'exotic' or 'legendary'"`
 	Class          string `json:"class,omitzero"           jsonschema:"Class that armor belongs to: hunter, titan, or warlock"`
 	Damage         string `json:"damage,omitzero"          jsonschema:"Damage type, such as 'kinetic', 'arc', 'solar', 'void', 'stasis', or 'strand'"`
+	Ammo           string `json:"ammo,omitzero"            jsonschema:"Ammo type of weapons: primary, special, or heavy, in any letter case. Items without an ammo type, such as armor, do not match"`
 	Location       string `json:"location,omitzero"        jsonschema:"vault, postmaster, equipped, characters (any character), a character id, or a class name"`
 	Tag            string `json:"tag,omitzero"             jsonschema:"Tag id from list_tags, 'none' for untagged items, or 'any' for tagged items"`
 	Perk           string `json:"perk,omitzero"            jsonschema:"Substring of a perk the item has equipped, in any letter case and with or without accents, such as 'kill clip'. A digit also matches the letter that it stands for, such as 0 for o"`
@@ -478,6 +479,7 @@ func (h *handler) handleListItems(
 		Tier:     in.Tier,
 		Class:    in.Class,
 		Damage:   in.Damage,
+		Ammo:     in.Ammo,
 		Location: in.Location,
 		Tag:      in.Tag,
 		Perk:     in.Perk,

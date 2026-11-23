@@ -201,10 +201,12 @@ func slotsLabel(used, capacity int) string {
 	return fmt.Sprintf("%d/%d", used, capacity)
 }
 
-// renderItems renders one page of items as a table. The stat total column
-// is empty for every item without a stat total, such as a weapon. A nonempty
-// stat adds a column with the value of that stat, and perks adds a column
-// with the equipped perks.
+// renderItems renders one page of items as a table. The ammo column holds
+// the [inventory.AmmoName] of each item. It is empty for every item
+// without an ammo type, such as armor. The stat total column is empty for
+// every item without a stat total, such as a weapon. A nonempty stat adds
+// a column with the value of that stat, and perks adds a column with the
+// equipped perks.
 //
 // Sources holds the [rolls.RatingSource] of each game mode, and nil leaves the
 // roll ratings out. With sources, the table gains one rating column for
@@ -243,7 +245,7 @@ func renderItems(
 		}
 	}
 
-	b.WriteString("\n\ninstance id | name | type | tier | power | stat total")
+	b.WriteString("\n\ninstance id | name | type | ammo | tier | power | stat total")
 
 	if stat != "" {
 		b.WriteString(" | " + strings.ToLower(stat))
@@ -269,7 +271,15 @@ func renderItems(
 			id = fmt.Sprintf("stack of %d (item hash %d)", item.Quantity, item.Hash)
 		}
 
-		fields := []string{id, item.Name, typeLabel(item), item.Tier, powerLabel(item), totalLabel(item)}
+		fields := []string{
+			id,
+			item.Name,
+			typeLabel(item),
+			inventory.AmmoName(item.AmmoType),
+			item.Tier,
+			powerLabel(item),
+			totalLabel(item),
+		}
 
 		if stat != "" {
 			fields = append(fields, statLabel(item, stat))

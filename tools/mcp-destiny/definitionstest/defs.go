@@ -28,7 +28,7 @@ const (
 // new value on each call, so a test can edit the result without changing
 // the definitions of another test.
 func Defs() *definitions.Defs {
-	weapon := func(name, typeName, tier string, bucket uint32, damage int) definitions.ItemDef {
+	weapon := func(name, typeName, tier string, bucket uint32, damage, ammo int) definitions.ItemDef {
 		return definitions.ItemDef{
 			Name:       name,
 			TypeName:   typeName,
@@ -37,6 +37,7 @@ func Defs() *definitions.Defs {
 			ItemType:   bungie.ItemTypeWeapon,
 			ClassType:  bungie.ClassAny,
 			DamageType: damage,
+			AmmoType:   ammo,
 			Equippable: true,
 		}
 	}
@@ -56,9 +57,9 @@ func Defs() *definitions.Defs {
 	return &definitions.Defs{
 		Version: "v1",
 		Items: map[uint32]definitions.ItemDef{
-			100: weapon("Fatebringer", "Hand Cannon", "Legendary", bungie.BucketKinetic, 1),
-			101: weapon("Gjallarhorn", "Rocket Launcher", "Exotic", bungie.BucketPower, 3),
-			102: weapon("Midnight Coup", "Hand Cannon", "Legendary", bungie.BucketKinetic, 1),
+			100: weapon("Fatebringer", "Hand Cannon", "Legendary", bungie.BucketKinetic, 1, bungie.AmmoPrimary),
+			101: weapon("Gjallarhorn", "Rocket Launcher", "Exotic", bungie.BucketPower, 3, bungie.AmmoHeavy),
+			102: weapon("Midnight Coup", "Hand Cannon", "Legendary", bungie.BucketKinetic, 1, bungie.AmmoPrimary),
 			200: {
 				Name:       "Celestial Nighthawk",
 				TypeName:   "Helmet",

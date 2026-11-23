@@ -50,6 +50,7 @@ func TestNewSnapshot(t *testing.T) {
 		Owner:      OwnerVault,
 		Kind:       KindWeapon,
 		ClassType:  bungie.ClassAny,
+		AmmoType:   bungie.AmmoPrimary,
 		Power:      2010,
 		Quantity:   1,
 		Bucket:     bungie.BucketKinetic,
@@ -415,6 +416,19 @@ func TestFilter(t *testing.T) {
 			filter: ItemFilter{Damage: "solar"},
 			want:   []string{"1002"},
 		},
+		"ammo in any letter case": {
+			filter: ItemFilter{Ammo: "HEAVY"},
+			want:   []string{"1002"},
+		},
+		// The helmet has no ammo type, so it does not match any ammo name.
+		"ammo with every kind": {
+			filter: ItemFilter{Ammo: "primary", Kind: KindAll},
+			want:   []string{"1001", "1005", "1006", "1003"},
+		},
+		"ammo that no item has": {
+			filter: ItemFilter{Ammo: "special"},
+			want:   []string{},
+		},
 		"vault": {
 			filter: ItemFilter{Location: "Vault"},
 			want:   []string{"1001", "1002"},
@@ -470,6 +484,10 @@ func TestFilter(t *testing.T) {
 		},
 		"unknown sort": {
 			filter: ItemFilter{Sort: "random"},
+			err:    ErrInvalidFilter,
+		},
+		"unknown ammo": {
+			filter: ItemFilter{Ammo: "power"},
 			err:    ErrInvalidFilter,
 		},
 		"unknown location": {
@@ -790,6 +808,30 @@ func TestFilterLookalikes(t *testing.T) {
 			got, err := s.Filter(tc.filter)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, ids(got))
+		})
+	}
+}
+
+func TestAmmoName(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want     string
+		ammoType int
+	}{
+		"primary":         {ammoType: bungie.AmmoPrimary, want: AmmoPrimary},
+		"special":         {ammoType: bungie.AmmoSpecial, want: AmmoSpecial},
+		"heavy":           {ammoType: bungie.AmmoHeavy, want: AmmoHeavy},
+		"no ammo type":    {ammoType: 0, want: ""},
+		"bungie unknown":  {ammoType: 4, want: ""},
+		"negative number": {ammoType: -1, want: ""},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, AmmoName(tc.ammoType))
 		})
 	}
 }

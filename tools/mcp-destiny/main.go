@@ -355,6 +355,9 @@ func newServer(h *handler) *mcp.Server {
 		Description: "List inventory items across the vault and every character, with filters and paging. " +
 			"Returns weapons and armor unless kind says otherwise. Each row carries the instance id that the other tools take, " +
 			"and each armor row carries the sum of its stats. " +
+			"The ammo column names the ammo type of each weapon, which is Primary, Special, or Heavy. " +
+			"The ammo input keeps only the weapons of one ammo type, " +
+			"so ammo=special with slot=kinetic lists every Special weapon of the kinetic slot. " +
 			"The power column is empty for an item without power, such as a vehicle or a subclass. " +
 			"The min_total filter selects armor with at least that stat total, " +
 			"and sort=total puts the highest total first, for example to find the helmets with the highest stat total. " +

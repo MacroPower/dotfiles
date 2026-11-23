@@ -60,6 +60,14 @@ const (
 	RarityExotic    = "Exotic"
 )
 
+// Ammo names that the game gives a Bungie DestinyAmmunitionType value.
+// [AmmoName] maps each value to its name.
+const (
+	AmmoPrimary = "Primary"
+	AmmoSpecial = "Special"
+	AmmoHeavy   = "Heavy"
+)
+
 // Stat hashes of the primary stats that DIM counts as power. DIM names
 // statAttackD1 Attack in its Destiny 1 table.
 const (
@@ -694,6 +702,23 @@ func RarityName(tierType int) string {
 	return rarityNames[tierType]
 }
 
+// AmmoName returns the ammo name that the game gives the Bungie
+// DestinyAmmunitionType value ammoType, such as "Special". It returns an
+// empty string for every other value, such as the zero of an item without
+// an ammo type.
+func AmmoName(ammoType int) string {
+	switch ammoType {
+	case bungie.AmmoPrimary:
+		return AmmoPrimary
+	case bungie.AmmoSpecial:
+		return AmmoSpecial
+	case bungie.AmmoHeavy:
+		return AmmoHeavy
+	default:
+		return ""
+	}
+}
+
 // itemCategories returns the item category hashes of a definition with
 // the two changes that Destiny Item Manager (DIM) makes to them, in the
 // order that DIM makes them.
@@ -1118,6 +1143,10 @@ type ItemFilter struct {
 	Class string
 	// Damage is a damage type name, such as "void".
 	Damage string
+	// Ammo is an ammo name of [AmmoName]: "primary", "special", or
+	// "heavy". An item without an ammo type, such as armor, does not
+	// match any of them.
+	Ammo string
 	// Location is "vault", "postmaster", "equipped", "characters", a
 	// character id, or a class name.
 	Location string
@@ -1277,6 +1306,23 @@ func (s *Snapshot) checkStat(name string) error {
 	}
 }
 
+// ammoType returns the Bungie DestinyAmmunitionType value whose
+// [AmmoName] equals name without regard to case. It returns 0 for an
+// empty name, and an [ErrInvalidFilter] error for every other name.
+func ammoType(name string) (int, error) {
+	if name == "" {
+		return 0, nil
+	}
+
+	for _, value := range []int{bungie.AmmoPrimary, bungie.AmmoSpecial, bungie.AmmoHeavy} {
+		if strings.EqualFold(AmmoName(value), name) {
+			return value, nil
+		}
+	}
+
+	return 0, fmt.Errorf("%w: ammo %q is not primary, special, or heavy", ErrInvalidFilter, name)
+}
+
 // CompareIDs orders instance ids by numeric value. Bungie issues ascending
 // ids, so the order is also the acquisition order.
 func CompareIDs(a, b string) int {
@@ -1324,6 +1370,11 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 		return nil, err
 	}
 
+	ammo, err := ammoType(f.Ammo)
+	if err != nil {
+		return nil, err
+	}
+
 	query := fold.Lookalike.Text(f.Query)
 	slot := fold.Lookalike.Text(f.Slot)
 	perk := fold.Lookalike.Text(f.Perk)
@@ -1342,6 +1393,7 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 			f.Tier != "" && !strings.EqualFold(item.Tier, f.Tier),
 			f.Class != "" && !strings.EqualFold(item.Class, f.Class),
 			f.Damage != "" && !strings.EqualFold(item.Damage, f.Damage),
+			ammo != 0 && item.AmmoType != ammo,
 			f.MinPower > 0 && item.Power < f.MinPower,
 			f.MaxPower > 0 && (item.Power == 0 || item.Power > f.MaxPower),
 			f.MinTotal > 0 && totalRank(item) < f.MinTotal,
