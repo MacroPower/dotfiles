@@ -210,33 +210,33 @@
 
 ### Darwin
 
-| Name                                                               | Version      | Description                                                                                                    | License           |
-| ------------------------------------------------------------------ | ------------ | -------------------------------------------------------------------------------------------------------------- | ----------------- |
-| [appcleaner](https://freemacsoft.net/appcleaner)                   | 3.7          | Uninstall unwanted apps                                                                                        | unfree            |
-| [caffeine](https://intelliscapesolutions.com/apps/caffeine)        | 1.1.4        | Don't let your Mac fall asleep                                                                                 | MIT               |
-| [comfyui](https://github.com/comfyanonymous/ComfyUI)               |              | ComfyUI photo-restoration toolkit (launcher, updater, model fetcher)                                           | GPL-3.0-only      |
-| [dav1d](https://github.com/videolan/dav1d)                         | 1.5.3        | Cross-platform AV1 decoder focused on speed and correctness                                                    | BSD-2-Clause      |
-| [displayplacer](https://github.com/jakehilborn/displayplacer)      | 1.4.0        | macOS command line utility to configure multi-display resolutions and arrangements                             | MIT               |
-| [drawio](https://about.draw.io/)                                   | 32.6.10      | Desktop version of draw.io for creating diagrams                                                               | GPL-3.0-only      |
-| [firefox](https://www.mozilla.org/firefox/)                        | 158.0.1      | Mozilla Firefox, free web browser (binary package)                                                             | firefox           |
-| [ghostty](https://ghostty.org/)                                    | 1.4.0        | Fast, native, feature-rich terminal emulator pushing modern features                                           | MIT               |
-| [gtk4](https://www.gtk.org/)                                       | 4.24.0       | Multi-platform toolkit for creating graphical user interfaces                                                  | LGPL-2.0-or-later |
-| [k9s](https://github.com/derailed/k9s)                             | 0.51.0       | Kubernetes CLI To Manage Your Clusters In Style                                                                | Apache-2.0        |
-| [keka](https://www.keka.io)                                        | 1.6.8        | macOS file archiver                                                                                            | unfree            |
-| [libheif](http://www.libheif.org/)                                 | 1.23.7       | ISO/IEC 23008-12:2017 HEIF image file format decoder and encoder                                               | LGPL-3.0-or-later |
-| [libraw](https://www.libraw.org/)                                  | 0.22.3       | Library for reading RAW files obtained from digital photo cameras (CRW/CR2, NEF, RAF, DNG, and others)         | multiple          |
-| [librsvg](https://gitlab.gnome.org/GNOME/librsvg)                  | 2.63.0       | Small library to render SVG images to Cairo surfaces                                                           | LGPL-2.0-or-later |
-| [lima](https://github.com/lima-vm/lima)                            | 2.3.0-beta.1 | Linux virtual machines with automatic file sharing and port forwarding                                         | Apache-2.0        |
-| [monodraw](https://monodraw.helftone.com/)                         | 1.7.1        | Powerful ASCII art editor designed for the Mac                                                                 | unfree            |
-| [obsidian](https://obsidian.md)                                    | 1.15.1       | Powerful knowledge base that works on top of a local folder of plain text Markdown files                       | obsidian          |
-| [qemu](https://www.qemu.org/)                                      | 11.1.2       | Generic and open source machine emulator and virtualizer                                                       | GPL-2.0-or-later  |
-| [radar](https://github.com/skyhook-io/radar)                       | 1.7.4        | Modern Kubernetes visibility — topology, event timeline, and service traffic                                   | Apache-2.0        |
-| [slack](https://slack.com)                                         | 4.51.180     | Desktop client for Slack                                                                                       | unfree            |
-| [terminal-notifier](https://github.com/julienXX/terminal-notifier) | 3.1.0        | Send macOS notifications from the terminal                                                                     | MIT               |
-| [termshark](https://termshark.io/)                                 | 2.4.0        | Terminal UI for wireshark-cli, inspired by Wireshark                                                           | MIT               |
-| [vlc-bin-arm64](https://www.videolan.org/vlc/)                     | 3.0.23       | Cross-platform media player and streaming server; precompiled binary for MacOS, repacked from official website | LGPL-2.1-or-later |
-| [wireshark-qt](https://www.wireshark.org)                          | 4.6.9        | Powerful network protocol analyzer                                                                             | GPL-2.0-or-later  |
-| [zed-editor](https://zed.dev)                                      | 1.5.3        | High-performance multiplayer code editor                                                                       | GPL-3.0           |
+| Name                                                               | Version  | Description                                                                                                    | License           |
+| ------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------- | ----------------- |
+| [appcleaner](https://freemacsoft.net/appcleaner)                   | 3.7      | Uninstall unwanted apps                                                                                        | unfree            |
+| [caffeine](https://intelliscapesolutions.com/apps/caffeine)        | 1.1.4    | Don't let your Mac fall asleep                                                                                 | MIT               |
+| [comfyui](https://github.com/comfyanonymous/ComfyUI)               |          | ComfyUI photo-restoration toolkit (launcher, updater, model fetcher)                                           | GPL-3.0-only      |
+| [dav1d](https://github.com/videolan/dav1d)                         | 1.5.3    | Cross-platform AV1 decoder focused on speed and correctness                                                    | BSD-2-Clause      |
+| [displayplacer](https://github.com/jakehilborn/displayplacer)      | 1.4.0    | macOS command line utility to configure multi-display resolutions and arrangements                             | MIT               |
+| [drawio](https://about.draw.io/)                                   | 32.6.10  | Desktop version of draw.io for creating diagrams                                                               | GPL-3.0-only      |
+| [firefox](https://www.mozilla.org/firefox/)                        | 158.0.1  | Mozilla Firefox, free web browser (binary package)                                                             | firefox           |
+| [ghostty](https://ghostty.org/)                                    | 1.4.0    | Fast, native, feature-rich terminal emulator pushing modern features                                           | MIT               |
+| [gtk4](https://www.gtk.org/)                                       | 4.24.0   | Multi-platform toolkit for creating graphical user interfaces                                                  | LGPL-2.0-or-later |
+| [k9s](https://github.com/derailed/k9s)                             | 0.51.0   | Kubernetes CLI To Manage Your Clusters In Style                                                                | Apache-2.0        |
+| [keka](https://www.keka.io)                                        | 1.6.8    | macOS file archiver                                                                                            | unfree            |
+| [libheif](http://www.libheif.org/)                                 | 1.23.7   | ISO/IEC 23008-12:2017 HEIF image file format decoder and encoder                                               | LGPL-3.0-or-later |
+| [libraw](https://www.libraw.org/)                                  | 0.22.3   | Library for reading RAW files obtained from digital photo cameras (CRW/CR2, NEF, RAF, DNG, and others)         | multiple          |
+| [librsvg](https://gitlab.gnome.org/GNOME/librsvg)                  | 2.63.0   | Small library to render SVG images to Cairo surfaces                                                           | LGPL-2.0-or-later |
+| [lima](https://github.com/lima-vm/lima)                            | 2.3.0    | Linux virtual machines with automatic file sharing and port forwarding                                         | Apache-2.0        |
+| [monodraw](https://monodraw.helftone.com/)                         | 1.7.1    | Powerful ASCII art editor designed for the Mac                                                                 | unfree            |
+| [obsidian](https://obsidian.md)                                    | 1.15.1   | Powerful knowledge base that works on top of a local folder of plain text Markdown files                       | obsidian          |
+| [qemu](https://www.qemu.org/)                                      | 11.1.2   | Generic and open source machine emulator and virtualizer                                                       | GPL-2.0-or-later  |
+| [radar](https://github.com/skyhook-io/radar)                       | 1.7.4    | Modern Kubernetes visibility — topology, event timeline, and service traffic                                   | Apache-2.0        |
+| [slack](https://slack.com)                                         | 4.51.180 | Desktop client for Slack                                                                                       | unfree            |
+| [terminal-notifier](https://github.com/julienXX/terminal-notifier) | 3.1.0    | Send macOS notifications from the terminal                                                                     | MIT               |
+| [termshark](https://termshark.io/)                                 | 2.4.0    | Terminal UI for wireshark-cli, inspired by Wireshark                                                           | MIT               |
+| [vlc-bin-arm64](https://www.videolan.org/vlc/)                     | 3.0.23   | Cross-platform media player and streaming server; precompiled binary for MacOS, repacked from official website | LGPL-2.1-or-later |
+| [wireshark-qt](https://www.wireshark.org)                          | 4.6.9    | Powerful network protocol analyzer                                                                             | GPL-2.0-or-later  |
+| [zed-editor](https://zed.dev)                                      | 1.5.3    | High-performance multiplayer code editor                                                                       | GPL-3.0           |
 
 ### Linux
 

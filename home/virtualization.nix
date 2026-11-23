@@ -13,9 +13,8 @@
   # The audio fields attach the Mac's speakers and microphone as a
   # virtio-sound device so voice mode in Claude Code works inside the
   # VMs. Lima marks them experimental, and microphone needs Lima 2.3.0 or
-  # later (see limaOverlay in lib/default.nix). The VZ driver reads
-  # "default" as virtio-sound. QEMU reads it as CoreAudio playback and
-  # ignores microphone.
+  # later. The VZ driver reads "default" as virtio-sound. QEMU reads it as
+  # CoreAudio playback and ignores microphone.
   #
   # The port rule keeps Lima from forwarding the guest port of aven's sync
   # proxy (home/aven.nix) back to the host. The Mac's own aven server
