@@ -46,9 +46,13 @@ LIMA_CIDATA_GID=$(id -g "$LIMA_CIDATA_USER")
 chown -R "$LIMA_CIDATA_UID:$LIMA_CIDATA_GID" "$LIMA_CIDATA_SSHDIR"
 chmod 600 "$LIMA_CIDATA_SSHDIR"/authorized_keys
 
-LIMA_SSH_KEYS_CONF=/etc/ssh/authorized_keys.d
-mkdir -p -m 700 "$LIMA_SSH_KEYS_CONF"
-cp "$LIMA_CIDATA_SSHDIR"/authorized_keys "$LIMA_SSH_KEYS_CONF/$LIMA_CIDATA_USER"
+# sshd reads this directory through services.openssh.authorizedKeysFiles
+# in hosts/nixos/lima-hardware.nix. NixOS owns
+# /etc/ssh/authorized_keys.d and rewrites it on every switch, so a key
+# that this script wrote there disappeared at the next switch.
+LIMA_SSH_KEYS_CONF=/etc/ssh/lima_authorized_keys.d
+mkdir -p -m 755 "$LIMA_SSH_KEYS_CONF"
+install -m 644 "$LIMA_CIDATA_SSHDIR"/authorized_keys "$LIMA_SSH_KEYS_CONF/$LIMA_CIDATA_USER"
 
 # Emit Lima virtiofs mounts as systemd .mount units under /run.
 echo "Writing Lima mount units to /run/systemd/system"

@@ -60,6 +60,11 @@ in
 
   systemd.services.lima-init.script = lib.mkForce patchedLimaInitScript;
 
+  # lima-init writes the key of `limactl shell` and workmux to this file
+  # at every boot. NixOS owns /etc/ssh/authorized_keys.d, so a switch
+  # inside the guest removes any key that lima-init writes there.
+  services.openssh.authorizedKeysFiles = [ "/etc/ssh/lima_authorized_keys.d/%u" ];
+
   # Docker (rootful + rootless). Rootless uses rootlesskit's pasta
   # network driver by default; pasta's built-in DNS forwarder
   # (--dns-forward=10.0.2.3) drops queries under rate (upstream:
