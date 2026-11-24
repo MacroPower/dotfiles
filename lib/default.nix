@@ -236,51 +236,6 @@ let
     });
   };
 
-  # direnv's checkPhase runs bash/fish/zsh integration test scripts
-  # that take 10+ minutes per closure rebuild and occasionally hang on
-  # tty operations under the macOS Nix sandbox. We trust upstream's
-  # CI to validate releases; skip the check phase locally.
-  direnvOverlay = _final: prev: {
-    direnv = prev.direnv.overrideAttrs {
-      doCheck = false;
-    };
-  };
-
-  # harlequin's test_a_timed_out_run_closes_its_connection_once_the_work_stopped
-  # runs a query with --timeout 0.1 against a stuck mock adapter and asserts
-  # the connection closed after the worker left. Under a loaded build sandbox
-  # the worker misses the window and the test fails. cache.nixos.org has no
-  # harlequin build for aarch64-linux at the nixpkgs pin, so terrarium runs
-  # the suite locally; skip just this case there. Every other platform keeps
-  # the stock package so its cached build still substitutes.
-  harlequinOverlay = _final: prev: {
-    harlequin =
-      if prev.stdenv.hostPlatform.isAarch64 && prev.stdenv.hostPlatform.isLinux then
-        prev.harlequin.overrideAttrs (old: {
-          disabledTests = (old.disabledTests or [ ]) ++ [
-            "test_a_timed_out_run_closes_its_connection_once_the_work_stopped"
-          ];
-        })
-      else
-        prev.harlequin;
-  };
-
-  # czkawka's GUI binaries (krokiet, cedinia) link mac-notification-sys via
-  # notify-rust and hit the same classic-ld64 stubs-pass crash as workmux
-  # (see workmuxOverlay). Same lld workaround; drop each once the cctools fix
-  # (NixOS/nixpkgs#536365) reaches the nixpkgs pin it builds against.
-  czkawkaOverlay = final: prev: {
-    czkawka = prev.czkawka.overrideAttrs (
-      old:
-      final.lib.optionalAttrs final.stdenv.hostPlatform.isDarwin {
-        nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ final.llvmPackages.lld ];
-        env = (old.env or { }) // {
-          NIX_CFLAGS_LINK = "-fuse-ld=lld";
-        };
-      }
-    );
-  };
-
   # harper builds its curated dictionary from the rune files on every
   # start, which takes about 160ms of each harper-cli run. prose-lint runs
   # harper-cli on every file Claude writes, so the cost adds up.
@@ -462,9 +417,6 @@ let
     spacectlOverlay
     lixOverlay
     localOverlay
-    direnvOverlay
-    harlequinOverlay
-    czkawkaOverlay
     harperOverlay
     marksmanOverlay
     firefoxBinOverlay
@@ -490,9 +442,6 @@ let
     devboxOverlay
     spacectlOverlay
     lixOverlay
-    direnvOverlay
-    harlequinOverlay
-    czkawkaOverlay
     harperOverlay
     firefoxBinOverlay
     grugFarOverlay
