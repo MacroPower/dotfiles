@@ -5,11 +5,11 @@
 //! extensions of source files that the binary lints. A tree-sitter
 //! grammar finds the comments of most languages. Each node whose kind
 //! holds `comment` is one comment, as in harper-comments 3.3.0, whose
-//! grammar versions the crate takes. Each Haskell Haddock comment (`-- |`, `-- ^`, `{-|`) is
-//! one too, and its region drops the `|` or `^` after the marker.
-//! Python, HCL, YAML, Weir, and awk have no such grammar, so the scanner
-//! of `scan.rs` finds their full-line `#` comments, Python docstrings,
-//! and HCL descriptions.
+//! grammar versions the crate takes. Each Haskell Haddock comment
+//! (`-- |`, `-- ^`, `{-|`) is one too, and its region drops the `|` or
+//! `^` after the marker. Python, HCL, YAML, Weir, and awk have no such
+//! grammar, so the scanner of `scan.rs` finds their full-line `#`
+//! comments, Python docstrings, and HCL descriptions.
 //!
 //! A run of line comments on adjacent lines that open their lines is
 //! one comment, and so is each block comment. A line comment that
