@@ -1252,9 +1252,9 @@ fn code_cache() {
 
 #[test]
 fn label_colons() {
-    // A bold label that opens a comment line draws no ProseColonClause,
-    // as in a markdown file. A second colon after the label still draws
-    // one.
+    // A bold label that opens a comment line does not draw a
+    // ProseColonClause finding, as in a markdown file. A second colon
+    // after the label still draws one.
     struct Case {
         name: &'static str,
         file: &'static str,
