@@ -34,6 +34,9 @@ includes:
   atuin:
     taskfile: ./taskfiles/atuin
     dir: .
+  prose:
+    taskfile: ./taskfiles/prose
+    dir: .
 
 tasks:
   default:

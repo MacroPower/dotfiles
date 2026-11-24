@@ -362,6 +362,45 @@ d23da847be27. Measure a candidate again before reviving it.
 - The CondenseAllThe built-in: 72 hits, and none of 20 sampled read
   better as `all the`.
 
+## Linter Comparison
+
+`task prose:compare` runs two `prose-lint` binaries on the same inputs
+and reports where their findings differ. Review the report before a
+new linter, such as `prose-lint-rs`, replaces the bash `prose-lint`.
+Each difference must be a choice. Fix a difference that makes a rule
+worse, and accept the others. The report exits 0 when the binaries
+differ, so it does not gate a change.
+
+```bash
+nix build .#prose-lint-rs
+task prose:compare -- "$(command -v prose-lint)" ./result/bin/prose-lint-rs
+task prose:compare -- "$(command -v prose-lint)" ./result/bin/prose-lint-rs ProseHedge
+```
+
+Both binaries lint each of these inputs:
+
+- A copy of each file under `fixtures/`, because both binaries skip a
+  path under `harper/fixtures`. The report names each copy by the path
+  of its fixture.
+- Each file that git tracks. Each binary skips a file whose extension
+  it does not know.
+- The files of the `measure.py` corpus, for each source whose clone
+  the root of `measure.py fetch` holds. `--root` names another root.
+- The last 200 commit messages, each read with `--commit`.
+
+The report prints one row for each rule. Its columns count the findings
+that only the first binary prints, the findings that only the second
+prints, and the findings that both print. Two findings count as the
+same only when both binaries print the same line, message included.
+Each rule name after the paths, such as `ProseHedge`, adds a list of
+each finding of that rule that only one binary prints. A `<` marks a
+finding of the first binary, and a `>` marks a finding of the second.
+The report prints each listed finding above the source line that the
+finding names.
+
+`taskfiles/prose/compare.py` documents the other flags. To test the
+report, run `python3 taskfiles/prose/test_compare.py`.
+
 ## Verification
 
 Build the weirpack from the repository root. The build runs every rule
