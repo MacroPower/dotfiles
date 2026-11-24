@@ -1,13 +1,20 @@
 {
-  python312Packages,
+  python3Packages,
   fetchPypi,
 }:
 
 let
-  # py-key-value-aio's check suite is skipped globally by
-  # pyKeyValueAioOverlay in lib/default.nix, so the package set can be
-  # used as-is here.
-  ps = python312Packages;
+  # nixpkgs marks fastmcp-slim broken when its mcp argument is 2.x or
+  # later. nixpkgs' mcp-nixos builds against a scope that swaps in mcp_1,
+  # and Hydra builds fastmcp in that scope. Building against the same
+  # scope lets every dependency substitute from cache.nixos.org, so only
+  # kagimcp itself builds locally. Keep this scope identical to the one
+  # in nixpkgs' pkgs/by-name/mc/mcp-nixos/package.nix.
+  ps = python3Packages.overrideScope (
+    final: _prev: {
+      mcp = final.mcp_1;
+    }
+  );
 in
 
 ps.buildPythonApplication {
