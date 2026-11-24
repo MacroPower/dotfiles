@@ -19,7 +19,16 @@
 //! comment that opens the next line joins it. A line
 //! comment whose marker another character follows, such as a Go
 //! directive (`//go:build`), a LuaLS annotation (`---@param`), or a
-//! shebang, is not prose and ends the run.
+//! shebang, is not prose and ends the run. In a JavaScript or a
+//! TypeScript file, an eslint directive
+//! (`// eslint-disable-line no-console -- reason`) and a TypeScript
+//! directive (`// @ts-expect-error - reason`) are not prose either, so
+//! the text of such a comment starts after the separator before the
+//! reason. In a block comment, the directive can span lines, and the
+//! eslint configuration comments (`/* eslint eqeqeq: "off" -- reason */`,
+//! `/* global name */`) are directives too. eslint reads none of its
+//! directives in a block comment that opens with `/**` or `/*!`, but
+//! TypeScript reads its own there.
 //!
 //! [`Comments::new`] builds one region for each comment. The region
 //! holds the text of each line without its marker and one space after
@@ -90,6 +99,8 @@ pub struct Syntax {
     pub kind: &'static str,
     finder: Finder,
     markup: Markup,
+    /// Whether the comments can hold eslint and TypeScript directives.
+    directives: bool,
 }
 
 impl Syntax {
@@ -103,6 +114,7 @@ impl Syntax {
             kind,
             finder: Finder::Grammar(language),
             markup: Markup::None,
+            directives: false,
         }
     }
 
@@ -116,12 +128,22 @@ impl Syntax {
             kind,
             finder: Finder::Scan(dialect),
             markup: Markup::None,
+            directives: false,
         }
     }
 
     /// Returns the syntax with the doc comment markup `markup`.
     const fn markup(self, markup: Markup) -> Self {
         Self { markup, ..self }
+    }
+
+    /// Returns the syntax whose comments can hold eslint and
+    /// TypeScript directives.
+    const fn directives(self) -> Self {
+        Self {
+            directives: true,
+            ..self
+        }
     }
 }
 
@@ -169,11 +191,13 @@ pub const SYNTAXES: &[Syntax] = &[
     Syntax::grammar(&["java"], "slash", || tree_sitter_java::LANGUAGE.into())
         .markup(Markup::Javadoc),
     Syntax::grammar(&["js"], "slash", || tree_sitter_javascript::LANGUAGE.into())
-        .markup(Markup::Javadoc),
+        .markup(Markup::Javadoc)
+        .directives(),
     Syntax::grammar(&["jsx", "tsx"], "slash", || {
         tree_sitter_typescript::LANGUAGE_TSX.into()
     })
-    .markup(Markup::Javadoc),
+    .markup(Markup::Javadoc)
+    .directives(),
     Syntax::grammar(&["kt", "kts"], "slash", || {
         tree_sitter_kotlin_ng::LANGUAGE.into()
     }),
@@ -185,7 +209,8 @@ pub const SYNTAXES: &[Syntax] = &[
     Syntax::grammar(&["ts"], "slash", || {
         tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
     })
-    .markup(Markup::Javadoc),
+    .markup(Markup::Javadoc)
+    .directives(),
     Syntax::grammar(&["zig"], "slash", || tree_sitter_zig::LANGUAGE.into()),
     Syntax::grammar(&["hs"], "dash", || tree_sitter_haskell::LANGUAGE.into())
         .markup(Markup::Haddock),
@@ -249,7 +274,7 @@ impl Comments {
             Finder::Grammar(language) => grammar(syntax, language(), text)?,
             Finder::Scan(dialect) => scan::find(dialect, &chars),
         };
-        let mut comments = group(&chars, &file, found);
+        let mut comments = group(&chars, &file, found, syntax.directives);
         let license = license(&chars, &comments);
         if let Some(header) = &license {
             for comment in &mut comments {
@@ -408,9 +433,16 @@ fn delimiters(text: &[char]) -> Option<(usize, usize)> {
 /// `---`, and `//!` is a marker too. A space or a tab must follow it.
 /// The text starts after one space, and a tab stays in the text, where
 /// it opens a code block. A directive such as `//nolint:gosec` is not
-/// prose, but the reason after a second ` // ` on its line is. The `|`
-/// or `^` that marks a Haddock comment (`-- |`) is part of the marker.
-fn line_text(chars: &[char], line: Range<usize>) -> Option<(usize, Range<usize>)> {
+/// prose, but the reason after a second ` // ` on its line is. When
+/// `directives` is set, so is the reason of an eslint or a TypeScript
+/// directive. Such a directive without a reason stays in its run with
+/// no text. The `|` or `^` that marks a Haddock comment (`-- |`) is
+/// part of the marker.
+fn line_text(
+    chars: &[char],
+    line: Range<usize>,
+    directives: bool,
+) -> Option<(usize, Range<usize>)> {
     let mark = *chars.get(line.start)?;
     let marks = chars[line.clone()]
         .iter()
@@ -446,16 +478,78 @@ fn line_text(chars: &[char], line: Range<usize>) -> Option<(usize, Range<usize>)
             at += rest[..reason].chars().count() + 4;
         }
     }
-    Some((marks, at..line.end))
+    let found = directives
+        .then(|| {
+            directive(
+                &LINE_DIRECTIVE,
+                chars,
+                skip_blanks(chars, at..line.end)..line.end,
+            )
+        })
+        .flatten();
+    match found {
+        Some(end) if trim_end(chars, end..line.end).is_empty() => Some((marks, line.end..line.end)),
+        Some(end) => Some((marks, end..line.end)),
+        None => Some((marks, at..line.end)),
+    }
+}
+
+/// Returns the pattern of a directive comment whose eslint directives
+/// are the alternatives of `eslint`, or that holds only TypeScript
+/// directives when `eslint` is `None`. An eslint directive runs to the
+/// `--` before its reason, and a TypeScript directive takes the `-`,
+/// `--`, or `:` after it.
+fn directive_pattern(eslint: Option<&str>) -> Regex {
+    let eslint = eslint.map_or_else(String::new, |e| {
+        format!(r"(?:{e})(?:\s.*?)??(?:\s-{{2,}}(?:\s+|$)|$)|")
+    });
+    Regex::new(&format!(
+        r"(?s)^(?:{eslint}@ts-(?:expect-error|ignore|nocheck|check)(?:\s*(?:-+|:)\s*|\s+|$))"
+    ))
+    .expect("the pattern is valid")
+}
+
+/// The directives of a line comment, such as
+/// `eslint-disable-next-line no-console -- reason`.
+static LINE_DIRECTIVE: LazyLock<Regex> =
+    LazyLock::new(|| directive_pattern(Some(r"eslint-(?:disable(?:-next-line|-line)?|enable)")));
+
+/// The directives of a block comment, which add the eslint
+/// configuration comments, such as `eslint eqeqeq: "off" -- reason`
+/// and `global name`. eslint reads those only in a block comment.
+static BLOCK_DIRECTIVE: LazyLock<Regex> = LazyLock::new(|| {
+    directive_pattern(Some(
+        r"eslint(?:-disable(?:-next-line|-line)?|-enable)?|globals?|exported",
+    ))
+});
+
+/// The directives of a block comment whose opener holds more marks
+/// than `/*`, such as `/**` or `/*!`. TypeScript reads its directives
+/// there, but eslint reads none of its own.
+static DOC_DIRECTIVE: LazyLock<Regex> = LazyLock::new(|| directive_pattern(None));
+
+/// Returns the index where the reason of the directive comment whose
+/// text is `text` starts, or `None` when the text does not open with a
+/// directive. An eslint directive
+/// (`eslint-disable-next-line no-console -- reason`) and a TypeScript
+/// directive (`@ts-expect-error - reason`) are not prose, but the
+/// reason after each is.
+fn directive(pattern: &Regex, chars: &[char], text: Range<usize>) -> Option<usize> {
+    let line: String = chars[text.clone()].iter().collect();
+    let found = pattern.find(&line)?;
+    Some(text.start + line[..found.end()].chars().count())
 }
 
 /// Returns the lines of text of the block comment at `range`, whose
-/// opener and closer hold `open` and `close` characters.
+/// opener and closer hold `open` and `close` characters. When
+/// `directives` is set, the text starts at the reason of an eslint or a
+/// TypeScript directive that opens the comment.
 fn block_lines(
     chars: &[char],
     file: &Region,
     range: Range<usize>,
     (open, close): (usize, usize),
+    directives: bool,
 ) -> Vec<TextLine> {
     let inner = range.start + open..range.end - close;
     let open_col = range.start - line_start(chars, range.start);
@@ -470,7 +564,7 @@ fn block_lines(
         });
     let stars = chars[range.start] == '/';
 
-    let lines: Vec<Range<usize>> = lines(chars, inner).collect();
+    let lines: Vec<Range<usize>> = lines(chars, inner.clone()).collect();
     // Whether each line opens with a `*` marker.
     let marked: Vec<bool> = lines
         .iter()
@@ -494,8 +588,27 @@ fn block_lines(
         .min()
         .unwrap_or(0);
 
+    // The start of the text after a directive that opens the comment.
+    let body = inner.start
+        + chars[inner.clone()]
+            .iter()
+            .take_while(|c| c.is_whitespace())
+            .count();
+    let pattern = if open == 2 {
+        &BLOCK_DIRECTIVE
+    } else {
+        &DOC_DIRECTIVE
+    };
+    let reason = directives
+        .then(|| directive(pattern, chars, body..inner.end))
+        .flatten()
+        .unwrap_or(inner.start);
+
     let mut out = Vec::new();
     for (k, (l, m)) in lines.iter().zip(&marked).enumerate() {
+        if l.end < reason {
+            continue;
+        }
         let start = if k == 0 {
             l.start + usize::from(chars[l.clone()].first() == Some(&' '))
         } else if *m {
@@ -504,7 +617,7 @@ fn block_lines(
         } else {
             (l.start + indent).min(skip_blanks(chars, l.clone()))
         };
-        let text = trim_end(chars, start..l.end);
+        let text = trim_end(chars, start.max(reason)..l.end);
         let blank = text.is_empty();
         if blank && (k == 0 || k + 1 == lines.len()) {
             continue;
@@ -520,7 +633,7 @@ fn block_lines(
 
 /// Turns what a finder returns into comments, and joins each run of
 /// line comments on adjacent lines into one comment.
-fn group(chars: &[char], file: &Region, found: Vec<Found>) -> Vec<Comment> {
+fn group(chars: &[char], file: &Region, found: Vec<Found>, directives: bool) -> Vec<Comment> {
     let line_of = |i: usize| file.position(i).line;
     let mut comments: Vec<Comment> = Vec::new();
     // Whether the last comment is a run that a line comment can join.
@@ -558,7 +671,7 @@ fn group(chars: &[char], file: &Region, found: Vec<Found>) -> Vec<Comment> {
                         .unwrap_or(range.end..range.end);
                     comments.push(Comment {
                         span: line_of(range.start)..=line_of(range.end.saturating_sub(1)),
-                        lines: block_lines(chars, file, range.clone(), delims),
+                        lines: block_lines(chars, file, range.clone(), delims, directives),
                         code_after: skip_blanks(chars, end.clone()) < end.end,
                         doc: chars[range.clone()].starts_with(&['/', '*', '*']),
                     });
@@ -568,7 +681,7 @@ fn group(chars: &[char], file: &Region, found: Vec<Found>) -> Vec<Comment> {
                 for line in lines(chars, range) {
                     // A Haddock node holds the indent of its later lines.
                     let line = skip_blanks(chars, line.clone())..line.end;
-                    let Some((marks, text)) = line_text(chars, line.clone()) else {
+                    let Some((marks, text)) = line_text(chars, line.clone(), directives) else {
                         open = false;
                         continue;
                     };

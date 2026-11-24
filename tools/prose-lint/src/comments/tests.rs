@@ -66,6 +66,44 @@ fn regions() {
             want: vec!["One."],
         },
         Case {
+            name: "eslint and typescript directives",
+            ext: "ts",
+            source: "// eslint-disable-next-line no-console -- One.\nf();\n// @ts-expect-error - Two.\nf();\n// @ts-ignore: Three.\nf();\n// eslint-disable-line no-console\nf();\n/* eslint-disable no-alert -- Four. */\n/* @ts-nocheck */\n// eslint-disabled rules -- five.\nf();\n/* eslint eqeqeq: \"off\" -- Six. */\n/* eslint-disable\n   no-console -- Seven.\n*/\n/* global window */\n// eslint runs -- eight.\nf();\n//  @ts-ignore - Nine.\nf();\n",
+            want: vec![
+                "One.",
+                "Two.",
+                "Three.",
+                "",
+                "Four.",
+                "eslint-disabled rules -- five.",
+                "Six.",
+                "Seven.",
+                "eslint runs -- eight.",
+                "Nine.",
+            ],
+        },
+        Case {
+            name: "eslint directives in doc comments",
+            ext: "ts",
+            source: "/** exported only for tests -- see below. */\nf();\n/*! global cache -- keep it small. */\nf();\n/** @ts-ignore - One. */\nf();\n",
+            want: vec![
+                "exported only for tests -- see below.",
+                "global cache -- keep it small.",
+                "One.",
+            ],
+        },
+        Case {
+            name: "directives outside javascript",
+            ext: "c",
+            source: "/* global state -- it is shared. */\nint a;\n/* exported helpers */\nint b;\n// eslint-disable-line no-console -- One.\nint c;\n// @ts-ignore - Two.\nint d;\n",
+            want: vec![
+                "global state -- it is shared.",
+                "exported helpers",
+                "eslint-disable-line no-console -- One.",
+                "@ts-ignore - Two.",
+            ],
+        },
+        Case {
             name: "shebang",
             ext: "sh",
             source: "#!/bin/sh\n# One.\n",
@@ -288,6 +326,12 @@ fn license_header() {
             name: "empty marker line in the header",
             ext: "sh",
             source: "## Copyright 2024 A.\n##\n## Licensed under MIT.\n",
+            want: Some(1..=3),
+        },
+        Case {
+            name: "directive above the header",
+            ext: "js",
+            source: "// @ts-check\n// Copyright 2020 A -- all rights reserved.\n// Licensed under the MIT License.\n\n// Text.\nf();\n",
             want: Some(1..=3),
         },
     ];
