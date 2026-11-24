@@ -36,8 +36,8 @@
 //! markup that markdown misreads, such as the `@param` tags of Javadoc
 //! and the `>>>` examples of Haddock. The pass of `markup.rs` drops block
 //! tags and, in a `/**` comment, the tags of HTML block elements, such
-//! as `<p>`. It turns other markup into code spans and blanks before the
-//! region joins the lines.
+//! as `<p>`, and the HTML tables. It turns other markup into code spans
+//! and blanks before the region joins the lines.
 //!
 //! [`RegionParser`] lints the regions of a file as one Harper document,
 //! and [`Comments::license`] names the lines of the license header,

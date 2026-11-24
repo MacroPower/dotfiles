@@ -1006,9 +1006,17 @@ fn doc_markup() {
     // tag such as `<p>` or `<li>` draws findings, but a `<pre>` block
     // stays code. So does an HTML sample in an indented code block of
     // card.ts. In Bare.java, the indented prose under a tag that fills
-    // its line draws findings too. The tags in a plain `/* */` comment
-    // of c.tsx and c.js stay, so the markup that they hide does not draw
-    // a finding.
+    // its line draws findings too. In Table.java, the cells and the
+    // caption of a table do not draw a finding, even across an empty
+    // line, but the prose after `</table>` does. In Code.java, a table
+    // tag in an inline tag does not open a table, and neither does a
+    // self-closing `<table/>`. In grid.tsx, a table tag in a code span or
+    // a fenced code block does not open one either. In Pre.java, a table
+    // tag in a `<pre>` block does not open a table. In inline.ts, a
+    // `<table>` tag opens a table only when a `</table>` closes it. The
+    // prose after each of these tags draws findings. The tags in a plain
+    // `/* */` comment of c.tsx and c.js stay, so the markup that they
+    // hide does not draw a finding.
     struct Case {
         name: &'static str,
         text: &'static str,
@@ -1049,6 +1057,31 @@ fn doc_markup() {
             name: "Bare.java",
             text: "class Bare {\n  /**\n   * Gets it.\n   *\n   * <p>\n   *     It may help here.\n   * <ul>\n   *   <li>\n   *       It may help here.\n   *   </li>\n   * </ul>\n   */\n  int a;\n}\n",
             want: vec!["6:13 ProseMayPossibility", "9:15 ProseMayPossibility"],
+        },
+        Case {
+            name: "Table.java",
+            text: "class Table {\n  /**\n   * It may help here.\n   * <table border=\"1\">\n   *  <caption>It may help here.</caption>\n   *  <tr>\n   *   <td>It may help here.</td>\n   *\n   *   <td>true/false</td>\n   *  </tr>\n   * </table>\n   *     It may help here.\n   */\n  int a;\n}\n",
+            want: vec!["3:9 ProseMayPossibility", "12:13 ProseMayPossibility"],
+        },
+        Case {
+            name: "Code.java",
+            text: "class Code {\n  /**\n   * Use {@code <table>} for the rows.\n   * It may help here.\n   */\n  int a;\n\n  /**\n   * Self closing <table/> here.\n   * It may help here.\n   */\n  int b;\n}\n",
+            want: vec!["4:9 ProseMayPossibility", "10:9 ProseMayPossibility"],
+        },
+        Case {
+            name: "grid.tsx",
+            text: "/**\n * Renders the grid.\n *\n * ```tsx\n * <Table rows={rows} />\n * open(<table>);\n * ```\n *\n * It may help here.\n */\nexport const grid = 1;\n\n/**\n * Wraps the `<table>` element. It may help here.\n */\nexport const wrap = 2;\n",
+            want: vec!["9:7 ProseMayPossibility", "14:36 ProseMayPossibility"],
+        },
+        Case {
+            name: "Pre.java",
+            text: "class Pre {\n  /**\n   * Parses the markup.\n   * <pre>{@code\n   * if (tag.equals(\"<table>\")) {\n   *   open();\n   * }\n   * }</pre>\n   * It may help here.\n   */\n  int a;\n}\n",
+            want: vec!["9:9 ProseMayPossibility"],
+        },
+        Case {
+            name: "inline.ts",
+            text: "/**\n * Returns the <table> element of the grid. It may help here.\n *\n * It may help here.\n */\nexport const inline = 1;\n",
+            want: vec!["2:48 ProseMayPossibility", "4:7 ProseMayPossibility"],
         },
         Case {
             name: "card.ts",

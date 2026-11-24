@@ -84,6 +84,15 @@ that the region keeps holds its own column. The module doc of
   HTML block and skips its prose up to the next blank line. When a tag such as
   `<li>` or `@return` fills its line, the indented text under it reads as prose.
   Each `<pre>` block stays code, and so do the tags of a plain `/* */` comment.
+
+  An HTML table of a `/**` comment reads as blanks, so the sample data in its
+  cells does not draw findings. Each `<table>` tag opens a table only when a
+  later `</table>` closes it. Table tags in a code block, a `<pre>` block, or a
+  code span, such as `{@code <table>}`, do not open a table. Each `<pre>` tag
+  opens a `<pre>` block only when a later `</pre>` closes it, so a lone `<pre>`
+  in the prose pairs with the `</pre>` of a later `<pre>` block. A table between
+  the two tags then reads as text and draws findings.
+
 - Haddock: code blocks that open with a line of `@`, examples (`>>>`), properties
   (`prop>`), and bird tracks (`>`). Code between two `@` marks and identifiers
   in quotes (`'Maybe'`) read as code spans.

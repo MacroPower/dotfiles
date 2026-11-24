@@ -13,7 +13,7 @@
 //! an indented code block. A line that blanks fully reads as an empty
 //! line and ends a paragraph.
 //!
-//! Javadoc and JSDoc comments hold four kinds of markup:
+//! Javadoc and JSDoc comments hold five kinds of markup:
 //!
 //! - A block tag (`@param name`, `@returns`) opens a line of a block
 //!   comment. Each tag line opens a paragraph, so a run of tags does not
@@ -33,6 +33,20 @@
 //!   block stay too, so an HTML sample in the block still reads as code.
 //!   The tags of a plain `/* */` comment stay, so the markup that such a
 //!   comment hides does not draw findings.
+//! - An HTML table of a doc comment reads as blanks, from its `<table>`
+//!   tag through its `</table>` tag. The sample data in its cells then
+//!   does not draw findings. The table can span lines and hold empty
+//!   lines. A `<table>` tag opens a table only in the text of the
+//!   comment, and only when a later `</table>` of the comment closes it.
+//!   A tag in an indented code block, a fenced code block, or a `<pre>`
+//!   block does not open a table. Neither does a tag in a code span or
+//!   in an inline tag such as `{@code <table>}`. A self-closing
+//!   `<table/>` and a JSX `<Table>` do not open one either. A `<pre>`
+//!   tag opens a `<pre>` block only when a later `</pre>` of the comment
+//!   closes it. So a lone `<pre>` in the prose pairs with the `</pre>`
+//!   of a later `<pre>` block, and a table between the two tags stays
+//!   text. When a table fills its line, the region drops the indent of
+//!   the next line too, as it does for a block tag.
 //! - An inline tag (`{@code x}`, `{@link Map label}`) on one line reads
 //!   as a code span. An inline tag that no `}` on its line closes stays
 //!   text.
@@ -85,7 +99,7 @@ impl Markup {
         let source: Vec<Vec<(usize, char)>> = lines.iter().map(|l| l.chars.clone()).collect();
         match self {
             Self::None => return,
-            Self::Javadoc => javadoc(lines),
+            Self::Javadoc => javadoc(lines, &source),
             Self::Haddock => haddock(lines),
         }
         for (line, source) in lines.iter_mut().zip(&source) {
@@ -116,8 +130,38 @@ fn drop_opening_blanks(text: &mut Vec<(usize, char)>, source: &[(usize, char)]) 
 /// The block tags whose first word names a parameter or a property.
 const NAMED: &[&str] = &["arg", "argument", "param", "prop", "property", "typeParam"];
 
-fn javadoc(lines: &mut [Line]) {
+/// Edits the lines of a Javadoc comment, whose characters before the
+/// pass are `source`. A `<table>` tag opens a table only when a
+/// `</table>` closes it. A `<pre>` tag opens a `<pre>` block only when a
+/// `</pre>` closes it. So when a pass leaves a table or a `<pre>`
+/// block open, the lines go back to `source`. The pass then runs again
+/// with the tag that opened it as text.
+fn javadoc(lines: &mut [Line], source: &[Vec<(usize, char)>]) {
+    let opens: Vec<bool> = lines.iter().map(|l| l.opens_paragraph).collect();
+    let mut unclosed = Vec::new();
+    while let Some(tag) = javadoc_pass(lines, &unclosed) {
+        unclosed.push(tag);
+        for ((line, chars), &opens) in lines.iter_mut().zip(source).zip(&opens) {
+            line.chars.clone_from(chars);
+            line.opens_paragraph = opens;
+        }
+    }
+}
+
+/// Edits the lines of a Javadoc comment once. The `<table>` and `<pre>`
+/// tags whose source indices `unclosed` holds open nothing. Returns the
+/// source index of the tag of the outermost table or the `<pre>` block
+/// that the comment leaves open, or `None` when the comment closes each
+/// one.
+fn javadoc_pass(lines: &mut [Line], unclosed: &[usize]) -> Option<usize> {
     let mut bare = false;
+    let mut html = Html {
+        unclosed,
+        ..Html::default()
+    };
+    // The character and the length of the fence that opened the fenced
+    // code block that holds the line.
+    let mut fence = None;
     // Whether the source line above is empty or a line of an indented
     // code block. A line indented by four columns then reads as code.
     let mut code_may_follow = true;
@@ -133,6 +177,13 @@ fn javadoc(lines: &mut [Line]) {
             line.chars.drain(..indent);
         }
         bare = false;
+        if html.tables == 0 && !html.pre && !code {
+            fence = toggle_fence(&line.chars, fence);
+        }
+        let open = !code && fence.is_none();
+        if line.doc && html.blank_tables(&mut line.chars, open) {
+            bare = line.chars.iter().all(|(_, c)| c.is_whitespace());
+        }
         if line.block
             && let Some(n) = block_tag(&line.chars)
         {
@@ -150,6 +201,7 @@ fn javadoc(lines: &mut [Line]) {
         blank_entities(&mut line.chars);
         inline_tags(&mut line.chars);
     }
+    (html.tables > 0 || html.pre).then_some(html.opened)
 }
 
 /// Returns the column of the first character of `text` that is not
@@ -255,6 +307,157 @@ fn block_html(text: &[(usize, char)]) -> Option<usize> {
     end
 }
 
+/// Returns the fence of the fenced code block that holds the line after
+/// `text`, given the `fence` of the block that holds `text`. A fence is
+/// a run of three or more backticks or tildes that opens the line. A
+/// fence closes a block when it repeats the character of the fence that
+/// opened the block and is at least as long.
+fn toggle_fence(text: &[(usize, char)], fence: Option<(char, usize)>) -> Option<(char, usize)> {
+    let mut chars = text
+        .iter()
+        .map(|&(_, c)| c)
+        .skip_while(|c| c.is_whitespace());
+    let Some(first) = chars.next().filter(|&c| c == '`' || c == '~') else {
+        return fence;
+    };
+    let len = 1 + chars.take_while(|&c| c == first).count();
+    match fence {
+        _ if len < 3 => fence,
+        None => Some((first, len)),
+        Some((c, n)) if c == first && len >= n => None,
+        Some(_) => fence,
+    }
+}
+
+/// The HTML tables and the `<pre>` block of a doc comment that the
+/// lines above opened and did not close.
+#[derive(Default)]
+struct Html<'a> {
+    /// The count of the open tables.
+    tables: usize,
+    /// The source index of the tag of the outermost open table or of
+    /// the open `<pre>` block.
+    opened: usize,
+    /// Whether a `<pre>` block outside a table is open.
+    pre: bool,
+    /// The source indices of the `<table>` and `<pre>` tags that open
+    /// nothing, because no closing tag closes them.
+    unclosed: &'a [usize],
+}
+
+impl Html<'_> {
+    /// Blanks each HTML table of `text`, from its `<table>` tag through
+    /// its `</table>` tag, and updates the open tables and `<pre>`
+    /// block. A `<table>` tag outside a table opens a table only when
+    /// `open` holds and the tag is outside a `<pre>` block. A `<pre>`
+    /// tag outside a table opens a `<pre>` block only when `open`
+    /// holds. Neither tag opens anything when `unclosed` holds it. A tag
+    /// in a code span or an inline tag, such as `{@code <table>}`, does
+    /// not count. Returns whether the pass blanked any character.
+    fn blank_tables(&mut self, text: &mut [(usize, char)], open: bool) -> bool {
+        let mut blanked = false;
+        let mut i = 0;
+        while i < text.len() {
+            let (len, tag) = match span(&text[i..]) {
+                Some(len) => (len, None),
+                None => html_tag(&text[i..])
+                    .map_or((1, None), |(name, closes, len)| (len, Some((name, closes)))),
+            };
+            let at = text[i].0;
+            let blanks = match tag {
+                Some(("table", true)) if self.tables > 0 => {
+                    self.tables -= 1;
+                    true
+                }
+                Some(("table", false)) if self.tables > 0 => {
+                    self.tables += 1;
+                    true
+                }
+                Some(("table", false)) if open && !self.pre && !self.unclosed.contains(&at) => {
+                    self.tables = 1;
+                    self.opened = at;
+                    true
+                }
+                Some(("pre", false))
+                    if self.tables == 0 && open && !self.pre && !self.unclosed.contains(&at) =>
+                {
+                    self.pre = true;
+                    self.opened = at;
+                    false
+                }
+                Some(("pre", true)) if self.tables == 0 => {
+                    self.pre = false;
+                    false
+                }
+                _ => self.tables > 0,
+            };
+            if blanks {
+                blank(&mut text[i..i + len]);
+                blanked = true;
+            }
+            i += len;
+        }
+        blanked
+    }
+}
+
+/// Returns the count of characters of the inline tag or the markdown
+/// code span that opens `text`. A run of backticks that no run of the
+/// same length on its line closes counts as one span. Returns `None`
+/// when `text` opens with neither.
+fn span(text: &[(usize, char)]) -> Option<usize> {
+    if let Some(close) = inline_tag(text) {
+        return Some(close + 1);
+    }
+    let run = |i: usize| text[i..].iter().take_while(|&&(_, c)| c == '`').count();
+    let ticks = run(0);
+    if ticks == 0 {
+        return None;
+    }
+    let mut i = ticks;
+    while i < text.len() {
+        match run(i) {
+            0 => i += 1,
+            n if n == ticks => return Some(i + n),
+            n => i += n,
+        }
+    }
+    Some(ticks)
+}
+
+/// Returns the name, `table` or `pre`, of the tag that opens `text`,
+/// whether the tag closes its element, as `</table>` does, and the
+/// count of its characters. A tag that no `>` on its line closes runs to
+/// the end of the line. Returns `None` when `text` does not open with
+/// such a tag. The name must be in lowercase or in uppercase, so a JSX
+/// component such as `<Table />` is not one. A tag that ends with `/>`
+/// is not one either, because it closes itself.
+fn html_tag(text: &[(usize, char)]) -> Option<(&'static str, bool, usize)> {
+    let c = |i: usize| text.get(i).map(|&(_, c)| c);
+    if c(0) != Some('<') {
+        return None;
+    }
+    let closes = c(1) == Some('/');
+    let start = 1 + usize::from(closes);
+    let word: String = text[start..]
+        .iter()
+        .map(|&(_, c)| c)
+        .take_while(char::is_ascii_alphanumeric)
+        .collect();
+    let name = ["table", "pre"]
+        .into_iter()
+        .find(|&n| word == n || word == n.to_ascii_uppercase())?;
+    let after = start + word.len();
+    if !c(after).is_none_or(|c| c.is_whitespace() || c == '>' || c == '/') {
+        return None;
+    }
+    let Some(close) = text[after..].iter().position(|&(_, c)| c == '>') else {
+        return Some((name, closes, text.len()));
+    };
+    let len = after + close + 1;
+    (c(len - 2) != Some('/')).then_some((name, closes, len))
+}
+
 /// Returns the index of the `}` that closes the `{` at `open`, or
 /// `None` when no `}` on the line closes it.
 fn closing_brace(text: &[(usize, char)], open: usize) -> Option<usize> {
@@ -299,18 +502,23 @@ fn blank_entities(text: &mut [(usize, char)]) {
 fn inline_tags(text: &mut [(usize, char)]) {
     let mut i = 0;
     while i < text.len() {
-        let opens = text[i].1 == '{'
-            && text.get(i + 1).map(|&(_, c)| c) == Some('@')
-            && text
-                .get(i + 2)
-                .is_some_and(|(_, c)| c.is_ascii_alphabetic());
-        if opens && let Some(close) = closing_brace(text, i) {
-            code_span(&mut text[i..=close]);
-            i = close + 1;
+        if let Some(close) = inline_tag(&text[i..]) {
+            code_span(&mut text[i..=i + close]);
+            i += close + 1;
         } else {
             i += 1;
         }
     }
+}
+
+/// Returns the index of the `}` that closes the inline tag that opens
+/// `text`, such as `{@code x}`. Returns `None` when `text` does not open
+/// with an inline tag or when no `}` on the line closes it.
+fn inline_tag(text: &[(usize, char)]) -> Option<usize> {
+    let c = |i: usize| text.get(i).map(|&(_, c)| c);
+    let opens =
+        c(0) == Some('{') && c(1) == Some('@') && c(2).is_some_and(|c| c.is_ascii_alphabetic());
+    opens.then(|| closing_brace(text, 0)).flatten()
 }
 
 fn haddock(lines: &mut [Line]) {
@@ -529,6 +737,115 @@ mod tests {
                 want: "    <p>x\nGets it.\n\n    <div>\n      <p>It runs.</p>\n\n\t</div>\n\n\n\nOne",
             },
             Case {
+                name: "tables",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Gets it.",
+                    "<table border=\"1\">",
+                    "  <caption>A/B</caption>",
+                    "",
+                    "    <tr><td>true/false</td></tr>",
+                    "</TABLE>",
+                    "    It runs.",
+                    "See <table></table> here.",
+                    "",
+                    "    <table>",
+                    "It ends.",
+                ],
+                want: "Gets it.\n\n\n\n    \n\nIt runs.\nSee                 here.\n\n    <table>\nIt ends.",
+            },
+            Case {
+                name: "table tags that open no table",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Use {@code <table>} here.",
+                    "See `<Table>`, ``a`<table>``, and <table/> here.",
+                    "A <Table rows={rows} /> or <Table> runs.",
+                    "```tsx",
+                    "x = <table>",
+                    "```",
+                    "It ends.",
+                ],
+                want: "Use `@code <table>` here.\nSee `<Table>`, ``a`<table>``, and <table/> here.\nA <Table rows={rows} /> or <Table> runs.\n```tsx\nx = <table>\n```\nIt ends.",
+            },
+            Case {
+                name: "tables that no tag closes and tables in pre blocks",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Returns the <table> element.",
+                    "<pre>{@code",
+                    "x = \"<table>\";",
+                    "}</PRE>",
+                    "<table><td>a/b</td></table> It runs.",
+                    "<table>",
+                    "It ends.",
+                ],
+                want: "Returns the <table> element.\n<pre>{@code\nx = \"<table>\";\n}</PRE>\n It runs.\n\n\nIt ends.",
+            },
+            Case {
+                name: "table tags in code that a closing tag follows",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Writes {@code <table>}, and it runs.",
+                    "Then it writes {@code </table>}.",
+                    "Writes `<table>`, and it runs.",
+                    "Then it writes `</table>`.",
+                    "```",
+                    "<table>",
+                    "```",
+                    "It runs.",
+                    "```",
+                    "</table>",
+                    "```",
+                    "",
+                    "    <table>",
+                    "",
+                    "It runs.",
+                    "",
+                    "    </table>",
+                    "It ends.",
+                ],
+                want: "Writes `@code <table>`, and it runs.\nThen it writes `@code </table>`.\nWrites `<table>`, and it runs.\nThen it writes `</table>`.\n```\n\n\n```\nIt runs.\n```\n\n\n```\n\n    <table>\n\nIt runs.\n\n    </table>\nIt ends.",
+            },
+            Case {
+                name: "other tags that a closing table tag follows",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "<pre><table></pre>",
+                    "It runs.",
+                    "<pre></table></pre>",
+                    "A <Table> runs.",
+                    "It ends </Table>.",
+                    "A <table/> runs.",
+                    "It ends </table>.",
+                ],
+                want: "<pre><table></pre>\nIt runs.\n<pre></table></pre>\nA <Table> runs.\nIt ends </Table>.\nA <table/> runs.\nIt ends </table>.",
+            },
+            Case {
+                name: "a table cell that holds a closing tag in code",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Gets it.",
+                    "<table>",
+                    "<tr><td>{@code </table>}</td><td>true/false</td></tr>",
+                    "</table>",
+                    "It ends.",
+                ],
+                want: "Gets it.\n\n\n\nIt ends.",
+            },
+            Case {
+                name: "a pre tag that no tag closes",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Wraps the text in a <pre> tag, and it runs.",
+                    "<table>",
+                    "<tr><td>true/false</td></tr>",
+                    "</table>",
+                    "It ends.",
+                ],
+                want: "Wraps the text in a <pre> tag, and it runs.\n\n\n\nIt ends.",
+            },
+            Case {
                 name: "inline tags and entities",
                 markup: Markup::Javadoc,
                 lines: &[
@@ -610,14 +927,22 @@ mod tests {
             },
         ];
         for case in cases {
+            // Each character holds its index in the text of the case, as
+            // it holds its index in the file in a run of the binary.
+            let mut start = 0;
             let mut lines: Vec<Line> = case
                 .lines
                 .iter()
-                .map(|l| Line {
-                    chars: l.chars().enumerate().collect(),
-                    block: true,
-                    doc: true,
-                    opens_paragraph: false,
+                .map(|l| {
+                    let chars: Vec<(usize, char)> =
+                        l.chars().enumerate().map(|(i, c)| (start + i, c)).collect();
+                    start += chars.len() + 1;
+                    Line {
+                        chars,
+                        block: true,
+                        doc: true,
+                        opens_paragraph: false,
+                    }
                 })
                 .collect();
             case.markup.apply(&mut lines);
