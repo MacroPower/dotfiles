@@ -4,6 +4,8 @@
   rustPlatform,
   fetchFromGitHub,
   darwinMinVersionHook,
+  pkg-config,
+  sqlite,
 }:
 
 rustPlatform.buildRustPackage {
@@ -27,7 +29,14 @@ rustPlatform.buildRustPackage {
   ];
   doCheck = false;
 
-  buildInputs = lib.optionals stdenv.hostPlatform.isDarwin [
+  # libsqlite3-sys links the system SQLite into sqlx-macros. Without
+  # pkg-config and sqlite, the linker does not find -lsqlite3.
+  nativeBuildInputs = [ pkg-config ];
+
+  buildInputs = [
+    sqlite
+  ]
+  ++ lib.optionals stdenv.hostPlatform.isDarwin [
     (darwinMinVersionHook "10.12")
   ];
 
