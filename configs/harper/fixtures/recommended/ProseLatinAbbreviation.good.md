@@ -881,7 +881,7 @@ The scheduler retries the job in
 - The pod holds the cache.
 <br>
 
-    echo "Use a flag, e.g. the port"
+    echo "Use a flag, e.g. the port" <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -1277,7 +1277,7 @@ Run the command
 <br>
 - The job runs.
 
-    echo "Use a flag, e.g. the port"
+    echo "Use a flag, e.g. the port" <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -1309,7 +1309,7 @@ The job runs.
 <br>
 - The job runs.
 
-    echo "Use a flag, e.g. the port"
+    echo "Use a flag, e.g. the port" <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -1347,7 +1347,7 @@ The job runs
 <br>
 - The job runs.
 
-    echo "Use a flag, e.g. the port"
+    echo "Use a flag, e.g. the port" <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -1357,7 +1357,7 @@ The job runs
 <br>
 - The job runs.
 
-    echo "Use a flag, e.g. the port"
+    echo "Use a flag, e.g. the port" <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -1366,7 +1366,7 @@ The job runs
   <br>
   - The job runs.
 
-      echo "Use a flag, e.g. the port"
+      echo "Use a flag, e.g. the port" <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -1383,7 +1383,7 @@ The job runs
   <br>
   - The job runs.
 
-    echo "Use a flag, e.g. the port"
+    echo "Use a flag, e.g. the port" <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -1393,5 +1393,5 @@ The job runs
     - The job runs.
 lazily.
 
-    echo "Use a flag, e.g. the port"
+    echo "Use a flag, e.g. the port" <!-- native check differs -->
 <!-- prettier-ignore-end -->

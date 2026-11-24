@@ -184,8 +184,8 @@ The job shipped, e.g. in
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
-<div> The job runs, e.g. nightly.
-- It reruns, e.g. hourly.
+<div> The job runs, e.g. nightly. <!-- native check differs -->
+- It reruns, e.g. hourly. <!-- native check differs -->
 
   It runs again, e.g. at noon,
      >     and once more, e.g. at midnight.
@@ -194,8 +194,8 @@ The job shipped, e.g. in
 <!-- prettier-ignore-start -->
 - The job runs, e.g. nightly.
 
-  <div> It reruns, e.g. hourly.
-  - It runs again, e.g. at noon.
+  <div> It reruns, e.g. hourly. <!-- native check differs -->
+  - It runs again, e.g. at noon. <!-- native check differs -->
 
     It logs, e.g. to disk,
        >     and again, e.g. at midnight.
@@ -256,9 +256,9 @@ and lazily, e.g. at noon.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
-<div> The job runs, e.g. nightly.
+<div> The job runs, e.g. nightly. <!-- native check differs -->
 ***
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 </div> <!-- same finding -->
 <!-- prettier-ignore-end -->
 
@@ -447,9 +447,9 @@ x <!-- same finding -->
 <!-- prettier-ignore-start -->
 <textarea> <!-- same finding -->
 </style> <!-- same finding -->
-- The job runs, e.g. nightly.
+- The job runs, e.g. nightly. <!-- native check differs -->
 
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -464,30 +464,30 @@ x <!-- same finding -->
 <pre> <!-- same finding -->
 <div> <!-- same finding -->
 </PRE> <!-- same finding -->
-- The job runs, e.g. nightly.
+- The job runs, e.g. nightly. <!-- native check differs -->
 
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 <?xml version="1.0"?> <!-- same finding -->
-- The job runs, e.g. nightly.
+- The job runs, e.g. nightly. <!-- native check differs -->
 
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 <!DOCTYPE html> <!-- same finding -->
-- The job runs, e.g. nightly.
+- The job runs, e.g. nightly. <!-- native check differs -->
 
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 <![CDATA[x]]> <!-- same finding -->
-- The job runs, e.g. nightly.
+- The job runs, e.g. nightly. <!-- native check differs -->
 
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -497,7 +497,7 @@ x <!-- same finding -->
   The job runs, e.g. nightly,
 and lazily, e.g. hourly.
 
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -535,7 +535,7 @@ The job runs, e.g. nightly,
 [^1]: The note, e.g. now.
 2. Then it stops, e.g. now.
 
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -543,7 +543,7 @@ The job runs, e.g. nightly,
 and lazily, e.g. now.
 2. Then it stops, e.g. now.
 
-    It reruns, e.g. hourly.
+    It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -552,5 +552,5 @@ and lazily, e.g. now.
   [^1]: The note, e.g. now.
   2. Then it stops, e.g. now.
 
-      It reruns, e.g. hourly.
+      It reruns, e.g. hourly. <!-- native check differs -->
 <!-- prettier-ignore-end -->

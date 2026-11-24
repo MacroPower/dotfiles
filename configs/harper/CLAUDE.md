@@ -3,7 +3,11 @@
 This directory holds the rules of the prose linter. `rules/<tier>/` holds
 each rule as a `.weir` or `.awk` file, and `fixtures/<tier>/` holds its
 `.bad.md` and `.good.md` pair. The docstring of `check.py` describes how
-the build tests them.
+the build tests them. A fixture line that ends in
+`<!-- native check differs -->` holds a case that a native check of
+`prose-lint-rs` reads in another way than the awk check that it
+replaces. The Native Checks section of `tools/prose-lint/README.md`
+describes the marker.
 
 ## Names
 

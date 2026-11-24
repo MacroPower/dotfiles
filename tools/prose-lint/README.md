@@ -56,6 +56,19 @@ To add a native check:
    `configs/harper/check.py`. It also expects the same findings from a copy of
    each fixture with CRLF line endings.
 
+A native check and the awk check that it replaces can read a line in different
+ways, and some fixtures hold such a line. The awk checks read the text of an
+HTML block as prose, but the model blanks it. pulldown-cmark also reads some
+lines in another way than GFM does. For example, it ends an HTML block such as
+`<pre>` only at the end tag of the same name. A fixture line that ends in
+`<!-- native check differs -->` holds such a case, and the `fixtures` test does
+not judge a native check on that line. The awk checks still read the line, so
+`check.py` judges them on it.
+
+The Weir rules read a copy of the text in which each curly apostrophe between
+two letters is straight. The native checks read the text as the file holds it,
+so ProseTypography reports the curly apostrophe.
+
 ## Building
 
 To build the package, run `nix build .#prose-lint-rs` from the root of the

@@ -234,9 +234,35 @@ fn commit() {
 
 #[test]
 fn curly_apostrophes() {
+    // The Weir rules read a curly apostrophe as a straight one, and
+    // ProseTypography reports the curly one.
     let tmp = TempDir::new("apostrophes");
     let path = tmp.write("quotes.md", "The fix doesn\u{2019}t help.\n");
-    assert_eq!(lines_of(&lint(&path), "ProseNegativeContraction"), [1]);
+    let output = lint(&path);
+    assert_eq!(lines_of(&output, "ProseNegativeContraction"), [1]);
+    assert_eq!(lines_of(&output, "ProseTypography"), [1]);
+}
+
+#[test]
+fn prompt_files() {
+    // The case of the prompt-files test of pkgs/prose-lint.nix.
+    // ProseCapsEmphasis skips a prompt file for an agent and reports a
+    // word in capitals in each other file, a file of a worktree under
+    // `.claude/worktrees/` included.
+    let tmp = TempDir::new("prompts");
+    let text = "Do NOT retry the call.\n";
+    for (name, want) in [
+        ("CLAUDE.md", false),
+        ("configs/claude/agents/demo.md", false),
+        (".claude/worktrees/demo/.claude/agents/demo.md", false),
+        ("docs/guide.md", true),
+        (".claude/worktrees/demo/docs/guide.md", true),
+        (".claude/plans/demo.md", true),
+    ] {
+        let output = lint(&tmp.write(name, text));
+        let got = !lines_of(&output, "ProseCapsEmphasis").is_empty();
+        assert_eq!(got, want, "{name}");
+    }
 }
 
 #[test]

@@ -8,6 +8,7 @@
 
 pub mod recommended;
 pub mod required;
+pub mod sentences;
 
 use crate::markdown::Markdown;
 use crate::region::{Finding, Region};
@@ -43,10 +44,112 @@ pub const CHECKS: &[Check] = &[
         run: required::prose_arrow::check,
     },
     Check {
+        name: "ProseEmoji",
+        tier: Tier::Required,
+        kind: "Style",
+        run: required::prose_emoji::check,
+    },
+    Check {
+        name: "ProseHeading",
+        tier: Tier::Required,
+        kind: "Style",
+        run: required::prose_heading::check,
+    },
+    Check {
+        name: "ProsePluralParen",
+        tier: Tier::Required,
+        kind: "Style",
+        run: required::prose_plural_paren::check,
+    },
+    Check {
+        name: "ProseTypography",
+        tier: Tier::Required,
+        kind: "Punctuation",
+        run: required::prose_typography::check,
+    },
+    Check {
         name: "ProseArrow",
         tier: Tier::Recommended,
         kind: "Style",
         run: recommended::prose_arrow::check,
+    },
+    Check {
+        name: "ProseCallout",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_callout::check,
+    },
+    Check {
+        name: "ProseCapsEmphasis",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_caps_emphasis::check,
+    },
+    Check {
+        name: "ProseExclamation",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_exclamation::check,
+    },
+    Check {
+        name: "ProseHeading",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_heading::check,
+    },
+    Check {
+        name: "ProseHeadingLevel",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_heading_level::check,
+    },
+    Check {
+        name: "ProseHiddenList",
+        tier: Tier::Recommended,
+        kind: "Readability",
+        run: recommended::prose_hidden_list::check,
+    },
+    Check {
+        name: "ProseLatinAbbreviation",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_latin_abbreviation::check,
+    },
+    Check {
+        name: "ProseLinkText",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_link_text::check,
+    },
+    Check {
+        name: "ProseNumberedReference",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_numbered_reference::check,
+    },
+    Check {
+        name: "ProseOpenList",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_open_list::check,
+    },
+    Check {
+        name: "ProseOverUnder",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_over_under::check,
+    },
+    Check {
+        name: "ProseParagraphLength",
+        tier: Tier::Recommended,
+        kind: "Readability",
+        run: recommended::prose_paragraph_length::check,
+    },
+    Check {
+        name: "ProseSlash",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_slash::check,
     },
 ];
 
@@ -94,14 +197,34 @@ mod tests {
             .expect("the pattern is valid")
     });
 
+    /// Ends a line of a fixture on which a native check and the awk check
+    /// that it replaces read the text in different ways. The reading of
+    /// the native check stands there. The awk check reads the text of an
+    /// HTML block as prose, for example, and pulldown-cmark ends some
+    /// blocks where GFM does not. The test does not judge a native check
+    /// on such a line.
+    const DIFFERS: &str = "<!-- native check differs -->";
+
+    /// Returns the number of each line of `text` that ends in
+    /// [`DIFFERS`].
+    fn differs(text: &str) -> BTreeSet<usize> {
+        text.lines()
+            .enumerate()
+            .filter(|(_, line)| line.trim_end().ends_with(DIFFERS))
+            .map(|(i, _)| i + 1)
+            .collect()
+    }
+
     /// Returns the number of each line of a bad fixture that needs a
     /// finding, as `expected_lines` in `configs/harper/check.py` does.
+    /// A line that ends in [`DIFFERS`] does not need one.
     fn expected_lines(text: &str) -> BTreeSet<usize> {
         text.lines()
             .enumerate()
             .filter(|(_, line)| {
                 !line.replace('>', "").trim().is_empty()
                     && !line.trim_end().ends_with("<!-- same finding -->")
+                    && !line.trim_end().ends_with(DIFFERS)
                     && !PRETTIER_IGNORE.is_match(line.trim())
                     && !RULE_MARKS.is_match(line)
             })
@@ -125,13 +248,16 @@ mod tests {
         // Each check must report each line of its bad fixture that
         // check.py expects a finding on. It must pass its good fixture
         // and the shared good fixture. A copy of each fixture with CRLF
-        // line endings must draw the same findings.
+        // line endings must draw the same findings. The test does not
+        // judge a line that ends in DIFFERS.
         let fixtures = Path::new(HARPER).join("fixtures");
         let read = |path: &Path| {
             std::fs::read_to_string(path)
                 .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
         };
         let common = fixtures.join("common.good.md");
+        // Each failure, so one run names every check that fails.
+        let mut failures = Vec::new();
         for check in CHECKS {
             let dir = fixtures.join(check.tier.to_string().to_lowercase());
             let bad = dir.join(format!("{}.bad.md", check.name));
@@ -141,24 +267,28 @@ mod tests {
             let text = read(&bad);
             let got: BTreeSet<usize> = lint(check, &text).into_iter().map(|f| f.0).collect();
             let missing: Vec<_> = expected_lines(&text).difference(&got).copied().collect();
-            assert!(
-                missing.is_empty(),
-                "{name}: no finding on lines {missing:?}"
-            );
+            if !missing.is_empty() {
+                failures.push(format!("{name}: no finding on lines {missing:?}"));
+            }
             for path in [&good, &common] {
-                let found = lint(check, &read(path));
-                assert!(found.is_empty(), "{name}: {}: {found:?}", path.display());
+                let text = read(path);
+                let skip = differs(&text);
+                let found: Vec<_> = lint(check, &text)
+                    .into_iter()
+                    .filter(|f| !skip.contains(&f.0))
+                    .collect();
+                if !found.is_empty() {
+                    failures.push(format!("{name}: {}: {found:?}", path.display()));
+                }
             }
             for path in [&bad, &good, &common] {
                 let text = read(path);
-                assert_eq!(
-                    lint(check, &text.replace('\n', "\r\n")),
-                    lint(check, &text),
-                    "{name}: {} with CRLF line endings",
-                    path.display()
-                );
+                if lint(check, &text.replace('\n', "\r\n")) != lint(check, &text) {
+                    failures.push(format!("{name}: {} with CRLF line endings", path.display()));
+                }
             }
         }
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     #[test]

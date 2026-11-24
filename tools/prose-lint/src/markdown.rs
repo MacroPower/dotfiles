@@ -4,13 +4,18 @@
 //! parser of harper-core. It passes the options that harper-core
 //! passes. The model holds the blocks of the region and the prose of
 //! each of its lines. A check reads each line as the source wrote it,
-//! with its list markers, `>` marks, and emphasis marks. The model
-//! blanks the text that is not prose to spaces:
+//! with its list markers, `>` marks, and emphasis marks. Each line also
+//! keeps its source text, for a check that reads the markup, such as a
+//! link or a code span. The model blanks the text that is not prose to
+//! spaces:
 //!
 //! - Each line that does not hold inline text of a paragraph, a heading,
 //!   a table, or a list item. Such lines hold code blocks, HTML blocks,
 //!   front matter, link reference definitions, thematic breaks, and
 //!   blank lines.
+//! - The opening line of a MyST directive (`:::{note}`) and the
+//!   `:name: value` option lines under it. pulldown-cmark reads them as
+//!   text, but they hold the name and the options of the directive.
 //! - Code spans, inline math, and inline HTML. The text of a `code`,
 //!   `kbd`, `samp`, or `pre` element counts as inline HTML too.
 //! - Link destinations, from the `]` that closes the text of a link to
@@ -22,11 +27,27 @@
 //! region leaves open does not reach the next region.
 
 use std::ops::Range;
+use std::sync::LazyLock;
 
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 use regex::Regex;
 
 use crate::region::Region;
+
+/// The opening line of a MyST directive (`:::{note}`).
+static DIRECTIVE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[ \t>]*:::+[ \t]*\{[^}]*\}").expect("the pattern is valid"));
+
+/// The `>` marks that open a line of a blockquote, with the spaces
+/// before each mark.
+pub static QUOTE_MARKS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:[ \t]*>)+").expect("the pattern is valid"));
+
+/// An option line under the opening line of a MyST directive
+/// (`:class: tip`).
+static OPTION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[ \t>]*:[A-Za-z][A-Za-z0-9_-]*:(?:[ \t]|$)").expect("the pattern is valid")
+});
 
 /// The kind of a block of the model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,7 +67,12 @@ pub enum BlockKind {
 }
 
 /// A block of the model. Container blocks, such as a list item, come
-/// before the blocks that they hold.
+/// before the blocks that they hold. pulldown-cmark does not wrap the
+/// text of an item in a tight list, the term of a definition list, or a
+/// definition in a tight definition list in a paragraph. The model adds
+/// a paragraph for each run of that text. A line that opens with `:`
+/// under a paragraph makes the paragraph a term and the line a
+/// definition (`:::{note}` under a paragraph of prose).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block {
     /// The kind of the block.
@@ -63,6 +89,18 @@ pub struct Line {
     /// The prose of the line, without its line ending. Each character
     /// that is not prose is a space.
     pub text: String,
+    /// The line as the source wrote it, without its line ending.
+    pub source: String,
+    /// Whether the line holds inline text of a paragraph, a heading, a
+    /// table, or a list item. A line that holds only a code span holds
+    /// such text, though its prose is blank, and so can the opening line
+    /// of a MyST directive and its option lines.
+    pub prose: bool,
+    /// Whether the line is the opening line of a MyST directive or one of
+    /// the option lines under it. The model blanks the text of such a
+    /// line, so a check that reads the prose of [`Line::source`] skips
+    /// the line.
+    pub directive: bool,
     /// The index in the region of the first character of the line.
     pub start: usize,
 }
@@ -79,10 +117,6 @@ impl Line {
 /// The blocks and the lines of one region.
 pub struct Markdown {
     /// The blocks of the region, in the order of their first character.
-    #[allow(
-        dead_code,
-        reason = "the blocks serve the checks of paragraphs and sentences"
-    )]
     pub blocks: Vec<Block>,
     /// The lines of the region, in order.
     pub lines: Vec<Line>,
@@ -104,8 +138,58 @@ impl Markdown {
         let mut element: Option<(usize, String)> = None;
         // The range of each open link, and the end of its text so far.
         let mut links: Vec<(LinkType, Range<usize>, usize)> = Vec::new();
+        // Whether each open block is a list item, or a term or a
+        // definition of a definition list, innermost last.
+        let mut open: Vec<bool> = Vec::new();
+        // The index in `blocks` of the paragraph that the model adds for
+        // the text of such a block.
+        let mut loose: Option<usize> = None;
 
         for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+            let inline = match &event {
+                Event::Start(tag) => matches!(
+                    tag,
+                    Tag::Emphasis
+                        | Tag::Strong
+                        | Tag::Strikethrough
+                        | Tag::Superscript
+                        | Tag::Subscript
+                        | Tag::Link { .. }
+                        | Tag::Image { .. }
+                ),
+                Event::End(end) => matches!(
+                    end,
+                    TagEnd::Emphasis
+                        | TagEnd::Strong
+                        | TagEnd::Strikethrough
+                        | TagEnd::Superscript
+                        | TagEnd::Subscript
+                        | TagEnd::Link
+                        | TagEnd::Image
+                ),
+                Event::Html(_) | Event::Rule => false,
+                _ => true,
+            };
+            if !inline {
+                loose = None;
+                match &event {
+                    Event::Start(tag) => {
+                        open.push(matches!(
+                            tag,
+                            Tag::Item | Tag::DefinitionListTitle | Tag::DefinitionListDefinition
+                        ));
+                    }
+                    Event::End(_) => {
+                        open.pop();
+                    }
+                    _ => {}
+                }
+            } else if let Some(i) = loose {
+                blocks[i].1.end = blocks[i].1.end.max(range.end);
+            } else if open.last() == Some(&true) {
+                loose = Some(blocks.len());
+                blocks.push((BlockKind::Paragraph, range.clone()));
+            }
             if let Some(link) = links.last_mut()
                 && !matches!(event, Event::End(TagEnd::Link | TagEnd::Image))
             {
@@ -210,16 +294,24 @@ impl Markdown {
         let mut char_at = vec![0; text.len() + 1];
         let mut lines = Vec::new();
         let mut count = 0;
+        // Whether the lines above this one are the opening line of a MyST
+        // directive and its options.
+        let mut directive = false;
         for source in text.split_inclusive('\n') {
             let offset = source.as_ptr() as usize - text.as_ptr() as usize;
             let body = source.strip_suffix('\n').unwrap_or(source);
             let body = body.strip_suffix('\r').unwrap_or(body);
             let bytes = offset..offset + body.len();
+            if DIRECTIVE.is_match(body) {
+                directive = true;
+            } else {
+                directive &= OPTION.is_match(body);
+            }
             let has_prose = prose[bytes.clone()].contains(&true);
             let line_text = body
                 .char_indices()
                 .map(|(i, c)| {
-                    if has_prose && !blanked[offset + i] {
+                    if has_prose && !directive && !blanked[offset + i] {
                         c
                     } else {
                         ' '
@@ -228,6 +320,9 @@ impl Markdown {
                 .collect();
             lines.push(Line {
                 text: line_text,
+                source: body.to_string(),
+                prose: has_prose,
+                directive,
                 start: count,
             });
             for (i, c) in source.char_indices() {
@@ -254,6 +349,46 @@ impl Markdown {
             })
             .collect();
         Self { blocks, lines }
+    }
+
+    /// Returns the index in [`Markdown::lines`] and the prose of each
+    /// line of `block`. Each character outside the block, such as the
+    /// list marker before the first line of a paragraph, is a space.
+    /// pulldown-cmark counts the `>` marks that open each later line of a
+    /// block in a blockquote as part of the block. Those marks are spaces
+    /// too.
+    pub fn block_lines<'a>(
+        &'a self,
+        block: &'a Block,
+    ) -> impl Iterator<Item = (usize, String)> + 'a {
+        block.lines.clone().map(move |i| {
+            let line = &self.lines[i];
+            let text: String = line
+                .text
+                .chars()
+                .enumerate()
+                .map(|(j, c)| {
+                    if block.chars.contains(&(line.start + j)) {
+                        c
+                    } else {
+                        ' '
+                    }
+                })
+                .collect();
+            if i == block.lines.start {
+                (i, text)
+            } else {
+                (i, blank(&text, &QUOTE_MARKS))
+            }
+        })
+    }
+
+    /// Returns whether a block of kind `kind` holds the character at
+    /// `index`.
+    pub fn inside(&self, kind: BlockKind, index: usize) -> bool {
+        self.blocks
+            .iter()
+            .any(|b| b.kind == kind && b.chars.contains(&index))
     }
 }
 
@@ -421,6 +556,16 @@ mod tests {
                 want: vec!["", "", "", "", "Run it."],
             },
             Case {
+                name: "MyST directive and its options",
+                text: ":::{note}\n:class: read/write\n:name: tip\nThe pod runs.\n:::\n",
+                want: vec!["", "", "", "The pod runs.", ":::"],
+            },
+            Case {
+                name: "option line after the text of a directive",
+                text: ":::{note}\nThe pod runs.\n:class: tip\n",
+                want: vec!["", "The pod runs.", ":class: tip"],
+            },
+            Case {
                 name: "CRLF line endings",
                 text: "Run `make`.\r\n\r\n```\r\nx\r\n```\r\nAfter.\r\n",
                 want: vec!["Run       .", "", "", "", "", "After."],
@@ -429,6 +574,32 @@ mod tests {
         for case in cases {
             assert_eq!(prose(case.text), case.want, "{}", case.name);
         }
+    }
+
+    #[test]
+    fn directive_lines() {
+        let text = "The pod runs.\n:::{note}\n:class: tip\nThe pod stops.\n:::\n";
+        let got: Vec<_> = Markdown::new(&Region::markdown(text))
+            .lines
+            .iter()
+            .map(|line| line.directive)
+            .collect();
+        assert_eq!(got, [false, true, true, false, false]);
+    }
+
+    #[test]
+    fn block_lines_in_a_blockquote() {
+        // The `>` marks that open the second line fall inside the
+        // paragraph, and the model blanks them.
+        let model = Markdown::new(&Region::markdown("> > The pod runs\n> > and stops.\n"));
+        let got: Vec<_> = model
+            .blocks
+            .iter()
+            .filter(|b| b.kind == BlockKind::Paragraph)
+            .flat_map(|b| model.block_lines(b))
+            .map(|(_, text)| text.trim_end().to_string())
+            .collect();
+        assert_eq!(got, ["    The pod runs", "    and stops."]);
     }
 
     #[test]
@@ -466,6 +637,7 @@ mod tests {
             [
                 (BlockKind::Heading(1), 0..1),
                 (BlockKind::ListItem, 2..4),
+                (BlockKind::Paragraph, 2..3),
                 (BlockKind::BlockQuote, 3..4),
                 (BlockKind::Paragraph, 3..4),
                 (BlockKind::Table, 5..8),
@@ -473,5 +645,37 @@ mod tests {
             ]
         );
         assert_eq!(model.blocks[0].chars, 0..6);
+    }
+
+    #[test]
+    fn definitions() {
+        // pulldown-cmark does not wrap the definition of a tight definition
+        // list in a paragraph, so the model gives it one.
+        let model = Markdown::new(&Region::markdown("Term\n: Text.\n"));
+        let got: Vec<_> = model
+            .blocks
+            .iter()
+            .map(|b| (b.kind, b.chars.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            [(BlockKind::Paragraph, 0..4), (BlockKind::Paragraph, 7..12)]
+        );
+    }
+
+    #[test]
+    fn definition_terms() {
+        // A line that opens with `:` makes the paragraph above it the term
+        // of a definition list, and the model gives the term a paragraph.
+        let model = Markdown::new(&Region::markdown("The hook runs.\n\n:::{note}\n"));
+        let got: Vec<_> = model
+            .blocks
+            .iter()
+            .map(|b| (b.kind, b.lines.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            [(BlockKind::Paragraph, 0..1), (BlockKind::Paragraph, 2..3)]
+        );
     }
 }

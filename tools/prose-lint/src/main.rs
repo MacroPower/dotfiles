@@ -129,7 +129,10 @@ fn lint_markdown(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> 
             }
         })
         .collect();
-    findings.extend(checks::run(&region, skips));
+    // The native checks read the text as the file holds it, so
+    // ProseTypography reports a curly apostrophe that the Weir rules
+    // read as a straight one.
+    findings.extend(checks::run(&Region::markdown(text), skips));
     guards::drop_label_colons(text, &mut findings);
     guards::drop_transcript_opinions(text, &mut findings);
     region::order(findings)
