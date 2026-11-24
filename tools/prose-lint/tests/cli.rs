@@ -171,6 +171,26 @@ fn output_order() {
 }
 
 #[test]
+fn native_checks() {
+    // The native checks print their findings with the findings of the
+    // Weir rules. The arrow in the code span does not draw one.
+    let tmp = TempDir::new("native");
+    let path = tmp.write(
+        "native.md",
+        "The request goes client \u{2192} proxy.\n\nRun `a \u{2192} b` to print the mapping.\n",
+    );
+    let output = lint(&path);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "{}:1:25: [Required] Style::ProseArrow: Arrow `\u{2192}` stands in for a word. Write the verb, a colon after a label, or `>` for a menu path.\n",
+            path.display()
+        )
+    );
+}
+
+#[test]
 fn two_tiers() {
     // The Required ProseFiller reports `please note that`, and the
     // Recommended one reports the `note that` inside it with the same

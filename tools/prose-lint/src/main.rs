@@ -1,5 +1,6 @@
 //! prose-lint-rs lints prose with the Weir rules and the Harper
-//! built-ins of `configs/harper/rules`.
+//! built-ins of `configs/harper/rules`, and with the native checks of
+//! `src/checks`.
 //!
 //! ```text
 //! prose-lint-rs <file>     lint a markdown file
@@ -15,8 +16,10 @@
 //! for a file under a skipped directory. It does not lint the comments
 //! of a source file yet, so it exits 2 for one.
 
+mod checks;
 mod files;
 mod guards;
+mod markdown;
 mod region;
 mod rules;
 
@@ -99,16 +102,17 @@ fn run(args: &[String]) -> Result<bool, Error> {
     };
 
     let mut rules = Rules::new(&skips)?;
-    let findings = lint_markdown(&mut rules, &text);
+    let findings = lint_markdown(&mut rules, &skips, &text);
     for finding in &findings {
         println!("{}", finding.display(&name));
     }
     Ok(!findings.is_empty())
 }
 
-/// Lints the markdown text of a file or a commit message and returns
-/// its findings in the order of the output.
-fn lint_markdown(rules: &mut Rules, text: &str) -> Vec<Finding> {
+/// Lints the markdown text of a file or a commit message with the rules
+/// and with each native check that `skips` does not name. Returns the
+/// findings in the order of the output.
+fn lint_markdown(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> {
     let region = Region::markdown(&guards::straighten(text));
     let mut findings: Vec<Finding> = rules
         .lint(&region.text)
@@ -125,6 +129,7 @@ fn lint_markdown(rules: &mut Rules, text: &str) -> Vec<Finding> {
             }
         })
         .collect();
+    findings.extend(checks::run(&region, skips));
     guards::drop_label_colons(text, &mut findings);
     guards::drop_transcript_opinions(text, &mut findings);
     region::order(findings)

@@ -1,8 +1,9 @@
 # prose-lint
 
 `prose-lint-rs` lints markdown files and commit messages with the Weir rules
-and the Harper built-ins of `configs/harper/rules`. The binary embeds the rules
-when it builds, so a change to a rule takes a new build.
+and the Harper built-ins of `configs/harper/rules`, and with the native checks
+of `src/checks`. The binary embeds the rules when it builds, so a change to a
+rule takes a new build.
 
 ```sh
 prose-lint-rs <file>     # lint a markdown file
@@ -28,6 +29,32 @@ path under `node_modules`, `vendor`, `.git`, `.terraform`, or `harper/fixtures`.
 Changelogs skip the time-sensitive rules and ProseHeading, and prompt files for
 an agent skip ProseCapsEmphasis. Commit messages skip the time-sensitive rules
 too. `TIME_SENSITIVE` in `src/rules.rs` lists those rules.
+
+## Native Checks
+
+A native check is a rule in Rust, for a pattern that a Weir rule cannot
+express. Each check reads the markdown model of `src/markdown.rs`, which
+pulldown-cmark builds. The model gives the check the blocks of the text and the
+prose of each line. Code, HTML, link reference definitions, and link
+destinations are blank in that prose, and each character keeps its column.
+
+To add a native check:
+
+1. Write the check as a function that takes the model and returns a `Hit` for
+   each finding, in `src/checks/<tier>/<name>.rs`, such as
+   `src/checks/required/prose_arrow.rs`. Name the module in
+   `src/checks/<tier>.rs`.
+2. Open the module with a `//!` comment in the layout of the Comments section
+   of `configs/harper/CLAUDE.md`. To port an awk rule, keep its comment, leave
+   out the `Output format` lines, and write the Expression section for the Rust
+   code.
+3. List the check in `CHECKS` of `src/checks.rs` with its rule name, its tier,
+   and the kind of its findings.
+4. Put its `.bad.md` and `.good.md` fixtures under
+   `configs/harper/fixtures/<tier>/`. The `fixtures` test of `src/checks.rs`
+   runs each check on its fixtures with the pass criteria of
+   `configs/harper/check.py`. It also expects the same findings from a copy of
+   each fixture with CRLF line endings.
 
 ## Building
 

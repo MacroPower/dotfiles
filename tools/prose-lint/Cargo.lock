@@ -3448,6 +3448,7 @@ version = "0.1.0"
 dependencies = [
  "harper-comments",
  "harper-core",
+ "pulldown-cmark",
  "regex",
  "thiserror 2.0.21",
 ]

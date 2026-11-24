@@ -15,5 +15,7 @@ path = "src/main.rs"
 [dependencies]
 harper-comments = { path = "harper/harper-comments", version = "=3.3.0" }
 harper-core = { path = "harper/harper-core", version = "=3.3.0" }
+# The parser of harper-core, which builds the model of the native checks.
+pulldown-cmark = "0.13.4"
 regex = "1.12.3"
 thiserror = "2.0.18"
