@@ -7,3 +7,5 @@ The new path is safer and more convenient.
 Run `ls /etc` to see the files.
 
 The two formats are similar in size.
+
+Set the zone to Etc/GMT+11 for the test.
