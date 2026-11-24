@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::region::Finding;
+use crate::rules::Tier;
 
 /// Straightens a curly apostrophe (U+2019) between two letters. The
 /// Weir rules list contractions with a straight apostrophe, so without
@@ -52,6 +53,24 @@ pub fn drop_label_colons(markdown: &str, findings: &mut Vec<Finding>) {
         };
         f.col > label.as_str().chars().count()
     });
+}
+
+/// Drops each ProseTrailingCondition finding on an `if` where a finding
+/// of the Recommended ProseVagueCriterion starts (`Restart the agent if
+/// needed`). The vague criterion is the worse fault of the two, and its
+/// fix rewrites the condition. The phrase therefore draws one finding.
+/// The native check skips the plain form of the phrase itself. This
+/// guard covers the forms with markup between the two words, such as
+/// emphasis, a footnote reference, or a subscript. Harper decides
+/// whether ProseVagueCriterion matches such a form after it drops the
+/// markup.
+pub fn drop_vague_conditions(findings: &mut Vec<Finding>) {
+    let vague: HashSet<(usize, usize)> = findings
+        .iter()
+        .filter(|f| f.rule == "ProseVagueCriterion" && f.tier == Tier::Recommended)
+        .map(|f| (f.line, f.col))
+        .collect();
+    findings.retain(|f| f.rule != "ProseTrailingCondition" || !vague.contains(&(f.line, f.col)));
 }
 
 static FENCE: LazyLock<Regex> =
@@ -321,5 +340,32 @@ mod tests {
             drop_transcript_opinions(case.markdown, &mut findings);
             assert_eq!(!findings.is_empty(), case.want, "{}", case.name);
         }
+    }
+
+    #[test]
+    fn vague_conditions() {
+        let optional = Finding {
+            tier: Tier::Optional,
+            ..finding("ProseVagueCriterion", 3, 19)
+        };
+        let mut findings = vec![
+            finding("ProseVagueCriterion", 1, 19),
+            finding("ProseTrailingCondition", 1, 19),
+            finding("ProseTrailingCondition", 2, 19),
+            optional.clone(),
+            finding("ProseTrailingCondition", 3, 19),
+            finding("ProseHedge", 1, 19),
+        ];
+        drop_vague_conditions(&mut findings);
+        assert_eq!(
+            findings,
+            [
+                finding("ProseVagueCriterion", 1, 19),
+                finding("ProseTrailingCondition", 2, 19),
+                optional,
+                finding("ProseTrailingCondition", 3, 19),
+                finding("ProseHedge", 1, 19),
+            ]
+        );
     }
 }

@@ -143,5 +143,6 @@ fn findings(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> {
     findings.extend(checks::run(&Region::markdown(text), skips));
     guards::drop_label_colons(text, &mut findings);
     guards::drop_transcript_opinions(text, &mut findings);
+    guards::drop_vague_conditions(&mut findings);
     findings
 }

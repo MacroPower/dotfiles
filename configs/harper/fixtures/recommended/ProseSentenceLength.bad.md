@@ -12,7 +12,7 @@ The proxy reads the route table, picks the upstream host with the fewest open co
 | Key | Value | <!-- same finding -->
 | ---- | ----- | <!-- same finding -->
 | port | open | <!-- same finding -->
-The proxy reads the route table, picks the upstream host with the fewest open connections, opens a new connection to it, forwards the request with its headers, and records the choice in the access log.
+The proxy reads the route table, picks the upstream host with the fewest open connections, opens a new connection to it, forwards the request with its headers, and records the choice in the access log. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->

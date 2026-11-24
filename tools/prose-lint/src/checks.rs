@@ -9,6 +9,7 @@
 pub mod optional;
 pub mod recommended;
 pub mod required;
+pub mod runs;
 pub mod sentences;
 
 use crate::markdown::Markdown;
@@ -87,6 +88,12 @@ pub const CHECKS: &[Check] = &[
         run: recommended::prose_caps_emphasis::check,
     },
     Check {
+        name: "ProseDoubleNegative",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_double_negative::check,
+    },
+    Check {
         name: "ProseExclamation",
         tier: Tier::Recommended,
         kind: "Style",
@@ -123,6 +130,12 @@ pub const CHECKS: &[Check] = &[
         run: recommended::prose_link_text::check,
     },
     Check {
+        name: "ProseLongParenthetical",
+        tier: Tier::Recommended,
+        kind: "Readability",
+        run: recommended::prose_long_parenthetical::check,
+    },
+    Check {
         name: "ProseNumberedReference",
         tier: Tier::Recommended,
         kind: "Style",
@@ -147,10 +160,34 @@ pub const CHECKS: &[Check] = &[
         run: recommended::prose_paragraph_length::check,
     },
     Check {
+        name: "ProseRangeEnds",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_range_ends::check,
+    },
+    Check {
+        name: "ProseSentenceLength",
+        tier: Tier::Recommended,
+        kind: "Readability",
+        run: recommended::prose_sentence_length::check,
+    },
+    Check {
         name: "ProseSlash",
         tier: Tier::Recommended,
         kind: "Style",
         run: recommended::prose_slash::check,
+    },
+    Check {
+        name: "ProseTrailingCondition",
+        tier: Tier::Recommended,
+        kind: "Style",
+        run: recommended::prose_trailing_condition::check,
+    },
+    Check {
+        name: "ProseWallOfText",
+        tier: Tier::Recommended,
+        kind: "Readability",
+        run: recommended::prose_wall_of_text::check,
     },
     Check {
         name: "ProseIndefiniteOpener",
@@ -163,6 +200,18 @@ pub const CHECKS: &[Check] = &[
         tier: Tier::Optional,
         kind: "Style",
         run: optional::prose_opening_pronoun::check,
+    },
+    Check {
+        name: "ProseSentenceLength",
+        tier: Tier::Optional,
+        kind: "Readability",
+        run: optional::prose_sentence_length::check,
+    },
+    Check {
+        name: "ProseWallOfText",
+        tier: Tier::Optional,
+        kind: "Readability",
+        run: optional::prose_wall_of_text::check,
     },
 ];
 

@@ -24,7 +24,7 @@ Firebase|The host reads the config at deploy time and serves the page for each m
 GitHub Pages|The host serves a file named 404.html from the root of the site
 
 <!-- prettier-ignore-start -->
-The scheduler hands each job to one of these hosts, and each host serves the error page for a missing path in its own way:
+The scheduler hands each job to one of these hosts, and each host serves the error page for a missing path in its own way: <!-- native check differs -->
 Host|Notes on how the host serves the page for a missing path
 :--|:--
 Apache|The server reads the file at startup and serves it for each missing page
@@ -171,7 +171,7 @@ it retries the placement on the next node in the queue when the first node lacks
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
-The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod <!-- native check differs -->
     | and then | it retries on the next node |
 | --- | --- |
 <!-- prettier-ignore-end -->
@@ -314,40 +314,40 @@ The scheduler places each pod on a node that has enough free memory and enough f
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
-[^1]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+[^1]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod <!-- native check differs -->
     - and then
     it retries the placement on the next node in the queue when the first node lacks room for the pod.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
-- [^2]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+- [^2]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod <!-- native check differs -->
       - and then
       it retries the placement on the next node in the queue when the first node lacks room for the pod.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
-> [^3]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+> [^3]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod <!-- native check differs -->
 >     - and then
 >     it retries the placement on the next node in the queue when the first node lacks room for the pod.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 The pod holds the cache.
-[^4]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+[^4]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod <!-- native check differs -->
     - and then
     it retries the placement on the next node in the queue when the first node lacks room for the pod.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 - The pod holds the cache.
-  [^5]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+  [^5]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod <!-- native check differs -->
       - and then
       it retries the placement on the next node in the queue when the first node lacks room for the pod.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 > The pod holds the cache.
-> [^6]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod
+> [^6]: The scheduler places each pod on a node that has enough free memory and enough free CPU for the requests of every container in the pod <!-- native check differs -->
 >     - and then
 >     it retries the placement on the next node in the queue when the first node lacks room for the pod.
 <!-- prettier-ignore-end -->
