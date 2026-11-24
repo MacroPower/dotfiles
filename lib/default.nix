@@ -324,52 +324,6 @@ let
     ];
   };
 
-  # aiohttp's test_heartbeat_does_not_timeout_while_receiving_large_frame
-  # (added in aio-libs/aiohttp#12030, "reset ws heartbeat on inbound data")
-  # drives a mocked event-loop clock and asserts no heartbeat PING is sent
-  # while a large frame is still streaming in. It leans on exact call_soon vs
-  # timer callback ordering, so under the loaded Nix sandbox it intermittently
-  # errors "Heartbeat PING sent while data was still being received". nixpkgs
-  # runs the suite via pytestCheckHook, so disabledTests (-k "not ...") is the
-  # right knob; skip just this one case rather than the whole check phase.
-  # Scoped to python 3.12: only the kagimcp chain builds aiohttp from
-  # source. The python 3.14 aiohttp is on cache.nixos.org, so its tests
-  # never run locally -- but patching it would fork the drv of anything
-  # whose build env pulls aiohttp (e.g. lix's python test env) and lose
-  # those substitutions.
-  aiohttpOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          aiohttp = pyprev.aiohttp.overrideAttrs (old: {
-            disabledTests = (old.disabledTests or [ ]) ++ [
-              "test_heartbeat_does_not_timeout_while_receiving_large_frame"
-            ];
-          });
-        }
-      )
-    ];
-  };
-
-  # httpx2's TestKeepalivePing tests assert a 0.1s keepalive ping timer
-  # fires within a 0.2s wall-clock sleep against a mock stream; under a
-  # loaded build sandbox the timer misses the window and ping_received
-  # stays 0. Scoped to python 3.12: only the kagimcp chain builds httpx2
-  # from source; the python 3.14 build comes from cache.nixos.org.
-  httpx2Overlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          httpx2 = pyprev.httpx2.overrideAttrs (old: {
-            disabledTests = (old.disabledTests or [ ]) ++ [ "TestKeepalivePing" ];
-          });
-        }
-      )
-    ];
-  };
-
   # direnv's checkPhase runs bash/fish/zsh integration test scripts
   # that take 10+ minutes per closure rebuild and occasionally hang on
   # tty operations under the macOS Nix sandbox. We trust upstream's
@@ -619,38 +573,6 @@ let
     ];
   };
 
-  # inline-snapshot's tests/test_docs.py asserts that code examples embedded
-  # in its own docs match freshly generated output byte-for-byte. The
-  # generated side is formatted with whatever black version is in nixpkgs, so
-  # a black bump shifts line breaks / hl_lines and the docs snapshots fail
-  # (assert '...' == '...' diffs on formatting only). We pull the py3.12
-  # build transitively (via mcp/fastmcp for kagimcp), which isn't on
-  # cache.nixos.org, so it builds from source and trips the skew. Deselect
-  # the docs-freshness tests; the functional suite still runs.
-  #
-  # test_empty_sub_snapshot snapshots pytest's terminal summary line, whose
-  # `=` padding is computed from the real elapsed time while the time itself
-  # is normalized to <time>. An inner pytest run crossing 10s (6-char
-  # "11.23s" vs 5-char "9.99s") shifts the padding by one `=` and fails the
-  # comparison, so the test flakes on slow builders.
-  # Scoped to python 3.12 (the kagimcp chain that builds from source).
-  # Unscoped, this forked python 3.14 inline-snapshot, which forked
-  # pydantic (test dep), then yarl, then aiohttp, then lix's python test
-  # env -- pushing lix itself off cache.nixos.org into a local build.
-  inlineSnapshotOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          inline-snapshot = pyprev.inline-snapshot.overrideAttrs (old: {
-            disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [ "tests/test_docs.py" ];
-            disabledTests = (old.disabledTests or [ ]) ++ [ "test_empty_sub_snapshot" ];
-          });
-        }
-      )
-    ];
-  };
-
   # py-key-value-aio (fastmcp's storage-backend library, pulled via kagimcp
   # and mcp-nixos) drags aioboto3, moto, cfn-lint, django, and geoip2 into
   # its check-only closure — moto alone runs a 30+ minute test suite, and
@@ -704,178 +626,6 @@ let
     ];
   };
 
-  # syrupy's xdist_two fixture param carries xfail("Not currently compatible
-  # with xdist"), promoted to strict by `xfail_strict = true` in its
-  # pyproject.toml — but the xfail nondeterministically passes, and a strict
-  # xfail that passes is reported as FAILED [XPASS(strict)]. Same kagimcp
-  # py3.12 chain as inline-snapshot above, so it builds from source and
-  # trips the flake. nixpkgs' pytestCheckHook attrs (disabledTests) are
-  # inert here because syrupy's derivation runs a hand-written checkPhase
-  # (`invoke test`), so demote the marker to non-strict in the source: an
-  # XPASS then reports as xpassed instead of failing the build.
-  # Scoped to python 3.12: only the kagimcp chain builds from source and
-  # trips the flake. Patching every python scope would fork the drv of any
-  # package whose test suite pulls in syrupy (e.g. arrow-cpp via its
-  # python3.14 test env) and lose their cache.nixos.org substitutions.
-  syrupyOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          syrupy = pyprev.syrupy.overrideAttrs (old: {
-            postPatch = (old.postPatch or "") + ''
-              substituteInPlace tests/conftest.py \
-                --replace-fail \
-                  'marks=pytest.mark.xfail(reason="Not currently compatible with xdist"),' \
-                  'marks=pytest.mark.xfail(reason="Not currently compatible with xdist", strict=False),'
-            '';
-          });
-        }
-      )
-    ];
-  };
-
-  # rich's test_brokenpipeerror pipes `python -m rich` into `head -1` and
-  # asserts python exits 1 from a BrokenPipeError. When rich writes its whole
-  # demo into the pipe buffer before head closes the read end, python never
-  # hits the broken pipe and exits 0, so the test fails. It failed on every
-  # run on the terrarium VM. Deselect just that test; the rest of the suite
-  # still runs. Scoped to python 3.12, the kagimcp chain that builds rich
-  # from source, so the override leaves other python scopes' drvs untouched.
-  richOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          rich = pyprev.rich.overrideAttrs (old: {
-            disabledTests = (old.disabledTests or [ ]) ++ [ "test_brokenpipeerror" ];
-          });
-        }
-      )
-    ];
-  };
-
-  # anyio's test_tls_connectable wraps the server side of a TLS stream
-  # with a hostname. Python 3.12.15 rejects that in wrap_bio with
-  # "server_hostname can only be specified in client mode", and python
-  # 3.14 accepts it. The streams the failed test leaves open then fail
-  # two unrelated later tests with unraisable exception warnings.
-  # Scoped to python 3.12, where only the kagimcp chain builds anyio
-  # from source. The python 3.14 build comes from cache.nixos.org.
-  anyioOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          anyio = pyprev.anyio.overrideAttrs (old: {
-            disabledTests = (old.disabledTests or [ ]) ++ [ "test_tls_connectable" ];
-          });
-        }
-      )
-    ];
-  };
-
-  # uvloop's test_call_at asserts a timer fires within 70 ms of its
-  # deadline. On a loaded linux-builder VM it took 80 ms and failed the
-  # build. Scoped to python 3.12, where only the kagimcp chain builds
-  # uvloop from source, so other python scopes keep their cached drvs.
-  uvloopOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          uvloop = pyprev.uvloop.overrideAttrs (old: {
-            disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
-              "tests/test_base.py::TestBaseUV::test_call_at"
-            ];
-          });
-        }
-      )
-    ];
-  };
-
-  # sse-starlette's suite times pings, timeouts, and disconnects against
-  # wall-clock deadlines. On a loaded linux-builder VM a different test
-  # fails each run (an extra ping, a cancel-scope deadline). Skip the
-  # check phase and trust upstream CI. nixpkgs omits starlette from
-  # dependencies and only gets it through fastapi in the check inputs, so
-  # add it back or pythonRuntimeDepsCheck fails. Scoped to python 3.12
-  # like uvloopOverlay above.
-  sseStarletteOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          sse-starlette = pyprev.sse-starlette.overridePythonAttrs (old: {
-            doCheck = false;
-            dependencies = old.dependencies ++ [ pyfinal.starlette ];
-          });
-        }
-      )
-    ];
-  };
-
-  # psutil's test_heap_info asserts that glibc reports mmap-backed heap
-  # bytes in use. A python 3.12 test worker on the terrarium VM holds
-  # none, so mmap_used is 0 and the test fails. Scoped to python 3.12,
-  # where only the kagimcp chain builds psutil from source. nixpkgs
-  # already skips psutil's checks on darwin.
-  psutilOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          psutil = pyprev.psutil.overrideAttrs (old: {
-            disabledTests = (old.disabledTests or [ ]) ++ [ "test_heap_info" ];
-          });
-        }
-      )
-    ];
-  };
-
-  # isort's check phase pulls pylama, vulture, pint, uncertainties, and
-  # scipy into the kagimcp closure through fastapi and inline-snapshot.
-  # None of them is on cache.nixos.org for python 3.12, so scipy builds
-  # from source and runs its suite. Its test_unitarity draws unseeded
-  # random matrices and checks them against a 1e-15 tolerance, which
-  # one draw missed on the terrarium VM. Skip isort's suite so the
-  # whole chain drops out of the build closure. Upstream CI validates
-  # releases. Scoped to python 3.12, because the python 3.14 isort
-  # comes from cache.nixos.org.
-  isortOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          isort = pyprev.isort.overridePythonAttrs (_: {
-            doCheck = false;
-          });
-        }
-      )
-    ];
-  };
-
-  # pyjwt's test_fetch_data_rejects_redirect_without_contacting_destination
-  # binds a ThreadingHTTPServer on 127.0.0.1, which the darwin build
-  # sandbox denies (PermissionError on socket.bind). Deselect that test.
-  # The rest of the suite still runs. Scoped to python 3.12, where only
-  # the kagimcp chain builds pyjwt from source. The python 3.14 build
-  # comes from cache.nixos.org.
-  pyjwtOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (
-        _pyfinal: pyprev:
-        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
-          pyjwt = pyprev.pyjwt.overrideAttrs (old: {
-            disabledTests = (old.disabledTests or [ ]) ++ [
-              "test_fetch_data_rejects_redirect_without_contacting_destination"
-            ];
-          });
-        }
-      )
-    ];
-  };
-
   sharedOverlays = system: [
     fetchurlOverlay
     devboxOverlay
@@ -886,21 +636,10 @@ let
     fastmcpOverlay
     mcpOverlay
     aioboto3Overlay
-    aiohttpOverlay
-    httpx2Overlay
     backrefsOverlay
-    inlineSnapshotOverlay
     cycloptsOverlay
     geoip2Overlay
     pyKeyValueAioOverlay
-    syrupyOverlay
-    richOverlay
-    anyioOverlay
-    uvloopOverlay
-    sseStarletteOverlay
-    psutilOverlay
-    isortOverlay
-    pyjwtOverlay
     direnvOverlay
     harlequinOverlay
     czkawkaOverlay
@@ -934,21 +673,10 @@ let
     fastmcpOverlay
     mcpOverlay
     aioboto3Overlay
-    aiohttpOverlay
-    httpx2Overlay
     backrefsOverlay
-    inlineSnapshotOverlay
     cycloptsOverlay
     geoip2Overlay
     pyKeyValueAioOverlay
-    syrupyOverlay
-    richOverlay
-    anyioOverlay
-    uvloopOverlay
-    sseStarletteOverlay
-    psutilOverlay
-    isortOverlay
-    pyjwtOverlay
     direnvOverlay
     harlequinOverlay
     czkawkaOverlay
