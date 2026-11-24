@@ -3,8 +3,8 @@
 Usage:
   compare.py FIRST SECOND [RULE...] [--root DIR] [--jobs N]
 
-FIRST and SECOND name two prose-lint binaries, such as the bash
-prose-lint and prose-lint-rs. Run the script from the root of the
+FIRST and SECOND name two prose-lint binaries, such as the installed
+prose-lint and a build of a branch. Run the script from the root of the
 repository. It lints these inputs with both binaries:
 
 - Each file under configs/harper/fixtures. Both binaries skip a path

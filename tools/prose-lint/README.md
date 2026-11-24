@@ -1,14 +1,14 @@
 # prose-lint
 
-`prose-lint-rs` lints markdown files, commit messages, and the comments of
+`prose-lint` lints markdown files, commit messages, and the comments of
 source files with the Weir rules and the Harper built-ins of
 `configs/harper/rules`, and with the native checks of `src/checks`. The binary
 embeds the rules when it builds, so a change to a rule takes a new build.
 
 ```sh
-prose-lint-rs [--only RULES] [--json] <file>    # lint a markdown file or a source file
-prose-lint-rs [--only RULES] [--json] --commit  # lint a commit message read from stdin
-prose-lint-rs --version                         # print the harper-core version
+prose-lint [--only RULES] [--json] <file>    # lint a markdown file or a source file
+prose-lint [--only RULES] [--json] --commit  # lint a commit message read from stdin
+prose-lint --version                         # print the harper-core version
 ```
 
 Each finding prints as `path:line:col: [Tier] Kind::Rule: message`, with the
@@ -27,6 +27,10 @@ Two flags change which rules run and how the findings print:
   `path`, `line`, `col`, `tier`, `kind`, `rule`, and `message`.
 
 `configs/harper/measure.py` lints its corpus with both flags.
+
+The prose hook of `home/claude.nix` lints each file whose extension the binary
+knows. `passthru.extensions` of `package.nix` reads those extensions from
+`MARKDOWN_EXTENSIONS` in `src/files.rs` and `SYNTAXES` in `src/comments.rs`.
 
 The binary exits with one of these statuses:
 
@@ -78,10 +82,10 @@ own column. The module doc of
   (`prop>`), and bird tracks (`>`). Code between two `@` marks and identifiers
   in quotes (`'Maybe'`) read as code spans.
 
-The native checks that `configs/harper/comment-checks.txt` names run on each
+The native checks that `comment-checks.txt` names run on each
 region, other than the checks that the file skips for a comment kind.
 ProseTypography reads the whole text of a source file, strings included, other
-than a Weir or awk rule file, which holds each character that it reports. The
+than a Weir rule file, which holds each character that it reports. The
 binary does not report a finding on the license header of a file.
 
 ## Native Checks
@@ -100,23 +104,18 @@ To add a native check:
    `src/checks/required/prose_arrow.rs`. Name the module in
    `src/checks/<tier>.rs`.
 2. Open the module with a `//!` comment in the layout of the Comments section
-   of `configs/harper/CLAUDE.md`. To port an awk rule, keep its comment, leave
-   out the `Output format` lines, and write the Expression section for the Rust
-   code.
+   of `configs/harper/CLAUDE.md`.
 3. List the check in `CHECKS` of `src/checks.rs` with its rule name, its tier,
    and the kind of its findings.
 4. Put its `.bad.md` and `.good.md` fixtures under
    `configs/harper/fixtures/<tier>/`. The tests of [Rule Tests](#rule-tests)
    run the check on them.
 
-A native check and the awk check that it replaces can read a line in different
-ways, and some fixtures hold such a line. The awk checks read the text of an
-HTML block as prose, but the model blanks it. pulldown-cmark also reads some
-lines in another way than GFM does. For example, it ends an HTML block such as
-`<pre>` only at the end tag of the same name. A fixture line that ends in
-`<!-- native check differs -->` holds such a case, and the fixture test does not
-judge a native check on that line. The awk checks still read the line, so
-`check.py` judges them on it.
+A native check can read a line of a fixture in another way than GFM does. The
+model blanks the text of an HTML block, for example, and pulldown-cmark ends an
+HTML block such as `<pre>` only at the end tag of the same name. A line of a bad
+fixture that ends in `<!-- native check differs -->` holds such a case, and the
+fixture test does not judge a native check on that line.
 
 The Weir rules read a copy of the text in which each curly apostrophe between
 two letters is straight. The native checks read the text as the file holds it,
@@ -131,9 +130,9 @@ must pass:
 - The binary reports each bad line of the fixtures of the rule and no line of
   its good fixture or of `configs/harper/fixtures/common.good.md`. A copy of
   each fixture with CRLF line endings draws the same findings.
-- Each rule has a fixture pair, and each fixture pair has a rule. An awk check
-  under `configs/harper/rules` that no native check replaces keeps its
-  fixtures, and `configs/harper/check.py` runs it on them.
+- Each rule has a fixture pair, and each fixture pair has a rule. Each entry of
+  `configs/harper/rules` is a tier directory, and each file of a tier directory
+  is a Weir rule or `builtins.txt`.
 - Each built-in sits in one tier, and two tiers of one rule do not report the
   same line with other messages.
 - The tests inside each Weir rule pass, as `harper-cli test` runs them.
@@ -144,11 +143,12 @@ must pass:
   holds a shorter probed phrase of the same rule.
 - The comment that opens each Weir rule and the doc comment of each native
   check follow the layout of the Comments section of
-  `configs/harper/CLAUDE.md`.
+  `configs/harper/CLAUDE.md`. These comments do not draw a Required or a
+  Recommended finding.
 
 ## Building
 
-To build the package, run `nix build .#prose-lint-rs` from the root of the
+To build the package, run `nix build .#prose-lint` from the root of the
 repository. The package links the harper of `pkgs.harper`, with the patches
 and the embedded dictionary of `harperOverlay` in `lib/default.nix`.
 
@@ -165,7 +165,7 @@ cargo build
 
 `build.rs` reads the rules from `configs/harper`, and the `PROSE_LINT_HARPER`
 variable names another directory with the same `rules` and `fixtures`
-directories and the same `comment-checks.txt` file.
+directories.
 
 This build does not embed the dictionary, so the binary builds the dictionary
 from its rune files on each start.

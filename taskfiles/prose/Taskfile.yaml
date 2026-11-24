@@ -3,7 +3,7 @@ version: "3"
 tasks:
   # compare.py documents its arguments and its report. Pass them after
   # `--`, such as `task prose:compare -- "$(command -v prose-lint)"
-  # ./result/bin/prose-lint-rs ProseHedge`.
+  # ./result/bin/prose-lint ProseHedge`.
   compare:
     desc: Compare the findings of two prose-lint binaries on the fixtures, the tracked files, the corpus, and recent commit messages
     cmds:

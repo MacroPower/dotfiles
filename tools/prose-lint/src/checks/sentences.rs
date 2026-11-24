@@ -3,18 +3,15 @@
 //! region that the sentence checks read.
 //!
 //! [`sentences`] splits the text of each paragraph block of the markdown
-//! model into sentences. It replaces lib/sentences.awk, which finds the
-//! paragraphs of a file by hand. pulldown-cmark finds them here, so a
-//! sentence never runs from one block into the next, and a heading or
-//! a table does not hold a sentence. A line that GFM reads as more text of a
-//! paragraph joins the sentence, at any indent.
+//! model into sentences. pulldown-cmark finds the paragraphs, so a
+//! sentence never runs from one block into the next, and a heading or a
+//! table does not hold a sentence. A line that GFM reads as more text of
+//! a paragraph joins the sentence, at any indent.
 //!
 //! The text of a sentence is the prose of the model, so a code span, a
 //! link destination, and inline HTML are spaces. [`blank_urls`] blanks
-//! each bare URL too. The list marker that
-//! opens an item is not part of the paragraph block, and neither are the
-//! `>` marks of a blockquote. The splitting rules of lib/sentences.awk
-//! that its own reading of the blocks needed have no part here.
+//! each bare URL too. The list marker that opens an item is not part of
+//! the paragraph block, and neither are the `>` marks of a blockquote.
 
 use std::sync::LazyLock;
 

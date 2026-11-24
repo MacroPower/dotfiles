@@ -1550,10 +1550,11 @@ let
 
   # Default linter routes installed by hook-router on
   # PostToolUse:Write/Edit/MultiEdit. prose-lint runs the rules in
-  # configs/harper against every markdown and source file Claude
-  # writes, and its findings come back as feedback before the next
-  # turn, grouped by the tier each rule's directory under
-  # configs/harper/rules gives it. Each exclude glob becomes a leading
+  # configs/harper and the native checks of tools/prose-lint against
+  # every markdown and source file Claude writes, and its findings come
+  # back as feedback before the next turn, grouped by the tier of each
+  # rule. The path glob names each extension that
+  # pkgs.prose-lint.passthru.extensions lists. Each exclude glob becomes a leading
   # rule whose command exits
   # 0 without output, so first-match-wins skips the file. The whole
   # list is gated on proseLint.enable so disabling it drops the rule
@@ -2373,9 +2374,10 @@ in
             type = types.bool;
             default = true;
             description = ''
-              Run prose-lint (the Weir rules in configs/harper) on every
-              markdown and source file Claude writes, and return its
-              findings as feedback before the next turn. Also lint, on
+              Run prose-lint (tools/prose-lint, with the rules in
+              configs/harper) on every markdown and source file Claude
+              writes, and return its findings as feedback before the
+              next turn. Also lint, on
               PreToolUse, the message a `git commit` or `gh pr create`
               carries and the MCP tool arguments that toolFields names,
               and deny the call with the findings. Installs prose-lint

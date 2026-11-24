@@ -1,12 +1,12 @@
-//! prose-lint-rs lints prose with the Weir rules and the Harper
+//! prose-lint lints prose with the Weir rules and the Harper
 //! built-ins of `configs/harper/rules`, and with the native checks of
 //! `src/checks`. It lints markdown files, commit messages, and the
 //! comments of source files.
 //!
 //! ```text
-//! prose-lint-rs [--only RULES] [--json] <file>    lint a markdown file or a source file
-//! prose-lint-rs [--only RULES] [--json] --commit  lint a commit message read from stdin
-//! prose-lint-rs --version                         print the harper-core version
+//! prose-lint [--only RULES] [--json] <file>    lint a markdown file or a source file
+//! prose-lint [--only RULES] [--json] --commit  lint a commit message read from stdin
+//! prose-lint --version                         print the harper-core version
 //! ```
 //!
 //! Each finding prints as `path:line:col: [Tier] Kind::Rule: message`,
@@ -46,7 +46,7 @@ use crate::rules::{Rules, TIME_SENSITIVE, Tier};
 #[derive(Debug, thiserror::Error)]
 enum Error {
     #[error(
-        "usage: prose-lint-rs [--only RULES] [--json] <file> | prose-lint-rs [--only RULES] [--json] --commit | prose-lint-rs --version"
+        "usage: prose-lint [--only RULES] [--json] <file> | prose-lint [--only RULES] [--json] --commit | prose-lint --version"
     )]
     Usage,
     #[error("no rule matches {0:?}")]
@@ -75,7 +75,7 @@ fn main() -> ExitCode {
         Ok(false) => ExitCode::SUCCESS,
         Ok(true) => ExitCode::from(1),
         Err(err) => {
-            let mut message = format!("prose-lint-rs: {err}");
+            let mut message = format!("prose-lint: {err}");
             let mut source = err.source();
             while let Some(cause) = source {
                 message.push_str(&format!(": {cause}"));

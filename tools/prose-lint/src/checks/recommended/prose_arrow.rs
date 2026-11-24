@@ -31,7 +31,8 @@
 //! The rule hit 5 lines in the measure.py corpus, and 1 of 5 stood in for
 //! a word (`v0.1.1 => v0.2.0 is a minor release`). The other four were
 //! code in a `<pre>` block or in a Hugo shortcode. The measurement read
-//! the corpus through lib/markdown.awk, which skips neither.
+//! the corpus through the awk check that this check replaced, which
+//! skipped neither.
 
 use std::sync::LazyLock;
 

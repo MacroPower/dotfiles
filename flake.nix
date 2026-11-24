@@ -174,7 +174,7 @@
                   self.darwinConfigurations."jacobcolvin@Jacobs-Mac-mini".pkgs;
             in
             {
-              inherit (hostPkgs) prose-lint-rs;
+              inherit (hostPkgs) prose-lint;
             }
             // lib.optionalAttrs isLinux {
               terrarium-image = self.nixosConfigurations."terrarium-${arch}".config.system.build.images.qemu-efi;
@@ -201,7 +201,7 @@
                 photo-cli = ./pkgs/photo-cli.nix;
                 mcp-git = ./tools/mcp-git/package.nix;
                 hook-router = ./tools/hook-router/package.nix;
-                prose-lint-rs = ./tools/prose-lint/package.nix;
+                prose-lint = ./tools/prose-lint/package.nix;
                 copilot-api-proxy = ./tools/copilot-api-proxy/package.nix;
                 mcp-fetch = ./tools/mcp-fetch/package.nix;
                 mcp-http-proxy = ./tools/mcp-http-proxy/package.nix;
@@ -223,8 +223,6 @@
                 mdcopy = ./pkgs/mdcopy.nix;
                 expire-claude-tmp = ./pkgs/expire-claude-tmp.nix;
                 expire-clones = ./pkgs/expire-clones.nix;
-                prose-weirpack = ./pkgs/prose-weirpack.nix;
-                prose-lint = ./pkgs/prose-lint.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

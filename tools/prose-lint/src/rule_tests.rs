@@ -33,6 +33,7 @@ use harper_core::weirpack::Weirpack;
 use regex::Regex;
 
 use crate::checks::CHECKS;
+use crate::files::{self, Input};
 use crate::region::Finding;
 use crate::rules::{BUILTINS, Rules, Tier, WEIR_RULES};
 
@@ -48,12 +49,11 @@ const COMMON: &str = "common.good.md";
 /// such as the heading after it that skips a level.
 const SAME_FINDING: &str = "<!-- same finding -->";
 
-/// Ends a line of a fixture on which a native check and the awk check
-/// that it replaces read the text in different ways. The reading of the
-/// native check stands there. The awk check reads the text of an HTML
-/// block as prose, for example, and pulldown-cmark ends some blocks
-/// where GFM does not. The tests do not judge a native check on such a
-/// line.
+/// Ends a line of a bad fixture that a native check reads in another
+/// way than GFM, so the check does not report it. The markdown model
+/// blanks the text of an HTML block, for example, and pulldown-cmark
+/// ends some blocks where GFM does not. The tests do not judge a native
+/// check on such a line.
 const DIFFERS: &str = "<!-- native check differs -->";
 
 /// The sections of a rule comment, in the order that the Comments
@@ -353,6 +353,43 @@ fn orphan_failures(fixtures: &Fixtures, known: &BTreeSet<String>) -> Vec<String>
         .collect()
 }
 
+/// Fails each entry of the rules directory `root` that build.rs does
+/// not read. build.rs reads only the tier directories, and in each one
+/// only the `.weir` files and `builtins.txt`. Any other entry holds a
+/// rule that the binary does not run. The check skips each name that
+/// opens with a dot, such as a `.DS_Store` file.
+fn rule_dir_failures(root: &Path) -> Vec<String> {
+    let names = |path: &Path| -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(path)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
+            .map(|entry| {
+                let name = entry.expect("listing a rules directory").file_name();
+                name.into_string().expect("rule names are UTF-8")
+            })
+            .filter(|name| !name.starts_with('.'))
+            .collect();
+        names.sort();
+        names
+    };
+    let tiers: Vec<String> = TIERS.into_iter().map(dir).collect();
+    let mut failures = Vec::new();
+    for name in names(root) {
+        let path = root.join(&name);
+        if !tiers.contains(&name) || !path.is_dir() {
+            failures.push(format!("rules/{name}: not a tier directory"));
+            continue;
+        }
+        for file in names(&path) {
+            if !file.ends_with(".weir") && file != "builtins.txt" {
+                failures.push(format!(
+                    "rules/{name}/{file}: not a Weir rule or builtins.txt"
+                ));
+            }
+        }
+    }
+    failures
+}
+
 /// Fails each built-in that two tiers list.
 fn builtin_failures(builtins: &[(&str, Tier)]) -> Vec<String> {
     let mut seen: BTreeMap<&str, Tier> = BTreeMap::new();
@@ -636,30 +673,13 @@ fn tiers() {
 
 #[test]
 fn structure() {
-    // The awk checks of rules/<tier>/ that no native check replaces yet
-    // keep their fixtures, because the bash prose-lint still runs them.
-    let mut known: BTreeSet<String> = rules()
+    let known: BTreeSet<String> = rules()
         .iter()
         .map(|r| format!("{}/{}", dir(r.tier), r.name))
         .collect();
-    for tier in TIERS {
-        let tier_dir = Path::new(HARPER).join("rules").join(dir(tier));
-        for entry in fs::read_dir(&tier_dir)
-            .unwrap_or_else(|e| panic!("reading {}: {e}", tier_dir.display()))
-        {
-            let path = entry.expect("listing a rules directory").path();
-            if path.extension().is_some_and(|e| e == "awk") {
-                let stem = path.file_stem().and_then(|s| s.to_str());
-                known.insert(format!(
-                    "{}/{}",
-                    dir(tier),
-                    stem.expect("rule names are UTF-8")
-                ));
-            }
-        }
-    }
     let mut failures = orphan_failures(&read_fixtures(), &known);
     failures.extend(builtin_failures(BUILTINS));
+    failures.extend(rule_dir_failures(&Path::new(HARPER).join("rules")));
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
@@ -716,6 +736,51 @@ fn layouts() {
         }
     }
     assert_eq!(count, CHECKS.len(), "each native check has a module file");
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
+fn rule_comments() {
+    // The comments of the rule files must pass the Required and the
+    // Recommended rules. A change to one rule therefore fails the test
+    // when the rule reports a phrase in the comment of another rule file.
+    let mut sources: Vec<(String, String)> = WEIR_RULES
+        .iter()
+        .map(|&(name, tier, source)| {
+            let path = format!("{HARPER}/rules/{}/{name}.weir", dir(tier));
+            (path, source.to_string())
+        })
+        .collect();
+    let checks = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/checks");
+    for tier in TIERS {
+        let tier_dir = checks.join(dir(tier));
+        for entry in fs::read_dir(&tier_dir)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", tier_dir.display()))
+        {
+            let path = entry.expect("listing a checks directory").path();
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+            sources.push((path.display().to_string(), source));
+        }
+    }
+    let mut groups: HashMap<Vec<&str>, Rules> = HashMap::new();
+    let mut failures = Vec::new();
+    for (path, source) in &sources {
+        let Input::Source { syntax, skips } = files::classify(Path::new(path)) else {
+            panic!("{path} is not a source file");
+        };
+        let rules = groups
+            .entry(skips.clone())
+            .or_insert_with(|| Rules::new(&skips).expect("every embedded rule compiles"));
+        let findings = crate::lint_source(rules, syntax, &skips, source)
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
+        failures.extend(
+            findings
+                .iter()
+                .filter(|f| f.tier != Tier::Optional)
+                .map(|f| f.display(path).to_string()),
+        );
+    }
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
@@ -929,6 +994,33 @@ mod tests {
         assert_eq!(
             orphan_failures(&files, &known),
             ["recommended/ProseAndOr.bad.md: no ProseAndOr rule under rules/recommended"]
+        );
+    }
+
+    #[test]
+    fn rule_dirs() {
+        let root = std::env::temp_dir().join(format!("prose-lint-rules-{}", std::process::id()));
+        for dir in ["required", "optional", "extra"] {
+            fs::create_dir_all(root.join(dir)).expect("creating a rules directory");
+        }
+        for (path, text) in [
+            ("required/ProseAndOr.weir", ""),
+            ("required/builtins.txt", ""),
+            ("required/.DS_Store", ""),
+            ("optional/ProseHedge.awk", ""),
+            ("notes.md", ""),
+        ] {
+            fs::write(root.join(path), text).expect("writing a rule file");
+        }
+        let failures = rule_dir_failures(&root);
+        fs::remove_dir_all(&root).expect("removing the rules directory");
+        assert_eq!(
+            failures,
+            [
+                "rules/extra: not a tier directory",
+                "rules/notes.md: not a tier directory",
+                "rules/optional/ProseHedge.awk: not a Weir rule or builtins.txt",
+            ]
         );
     }
 

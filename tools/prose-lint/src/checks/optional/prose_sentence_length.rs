@@ -144,7 +144,7 @@ mod tests {
         }
         let cases = [
             // The second and third sentences of the single-quotes test of
-            // pkgs/prose-lint.nix.
+            // the bash prose-lint.
             Case {
                 name: "a comma before `and`",
                 text: "\"If the cache is cold when the node restarts, the scheduler moves every pod to the spare pool, and the team waits before it opens the gate.\" the runbook says.\n",

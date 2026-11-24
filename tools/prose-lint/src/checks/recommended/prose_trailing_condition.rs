@@ -500,8 +500,8 @@ mod tests {
         }
     }
 
-    // The breaks.md file of the trailing-condition test of
-    // pkgs/prose-lint.nix. A paragraph break between the two words, which
+    // The breaks.md file of the trailing-condition test of the bash
+    // prose-lint. A paragraph break between the two words, which
     // Harper reads at a hard line break or at two line breaks with no
     // space between them, stops ProseVagueCriterion.
     const BREAKS: &[&str] = &[

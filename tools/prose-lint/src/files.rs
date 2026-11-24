@@ -47,15 +47,20 @@ const PROMPT_DIRS: &[&str] = &[
 /// The names of prompt files for an agent.
 const PROMPT_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md", "SKILL.md"];
 
+/// The extensions of markdown files. `package.nix` reads this table and
+/// [`comments::SYNTAXES`] from the source, for the path glob of the
+/// prose hook.
+const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown"];
+
 /// Returns how the binary lints `path`. It does not read the file.
 ///
 /// The binary skips each path under [`SKIPPED_DIRS`] and each path
 /// under `harper/fixtures`, whose files break the rules on purpose. It
-/// also skips each path whose extension neither names markdown nor sits
-/// in [`comments::SYNTAXES`]. A changelog skips the
-/// rules of [`TIME_SENSITIVE`], because it describes changes. It also
-/// skips ProseHeading, because its headings are release labels, such
-/// as `[1.2.0] - 2026-09-23 [YANKED]`.
+/// also skips each path whose extension sits neither in
+/// [`MARKDOWN_EXTENSIONS`] nor in [`comments::SYNTAXES`]. A changelog
+/// skips the rules of [`TIME_SENSITIVE`], because it describes changes.
+/// It also skips ProseHeading, because its headings are release labels,
+/// such as `[1.2.0] - 2026-09-23 [YANKED]`.
 pub fn classify(path: &Path) -> Input {
     let dirs: Vec<_> = path
         .components()
@@ -72,7 +77,7 @@ pub fn classify(path: &Path) -> Input {
     }
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let syntax = comments::syntax(ext);
-    if syntax.is_none() && !matches!(ext, "md" | "markdown") {
+    if syntax.is_none() && !MARKDOWN_EXTENSIONS.contains(&ext) {
         return Input::Skip;
     }
 
@@ -89,9 +94,9 @@ pub fn classify(path: &Path) -> Input {
     if PROMPT_FILES.contains(&base) || PROMPT_DIRS.iter().any(|d| slashed.contains(d)) {
         skips.push("ProseCapsEmphasis");
     }
-    // A Weir rule or an awk check holds each character that it reports,
-    // so ProseTypography skips the rule files.
-    if matches!(ext, "awk" | "weir") {
+    // A Weir rule holds each character that it reports, so
+    // ProseTypography skips the rule files.
+    if ext == "weir" {
         skips.push("ProseTypography");
     }
     match syntax {
@@ -102,7 +107,48 @@ pub fn classify(path: &Path) -> Input {
 
 #[cfg(test)]
 mod tests {
+    use regex::Regex;
+
     use super::*;
+
+    /// Returns each entry of each list that the first capture group of
+    /// `pattern` finds in `source`, as `package.nix` reads them.
+    fn table_entries(source: &'static str, pattern: &str) -> Vec<&'static str> {
+        Regex::new(pattern)
+            .expect("the pattern is valid")
+            .captures_iter(source)
+            .flat_map(|c| {
+                c.get(1)
+                    .expect("the pattern has a group")
+                    .as_str()
+                    .split(',')
+            })
+            .map(|e| e.trim().trim_matches('"'))
+            .filter(|e| !e.is_empty())
+            .collect()
+    }
+
+    #[test]
+    fn extension_tables() {
+        // package.nix reads the extensions of the prose hook from the
+        // source of both tables. Its patterns match the same text as
+        // these, so a change to a table that hides an extension from them
+        // fails the test.
+        let markdown = table_entries(
+            include_str!("files.rs"),
+            r"MARKDOWN_EXTENSIONS: &\[&str\] = &\[([^\]]*)\]",
+        );
+        assert_eq!(markdown, MARKDOWN_EXTENSIONS);
+        let sources = table_entries(
+            include_str!("comments.rs"),
+            r"Syntax::(?:grammar|scan)\(&\[([^\]]*)\]",
+        );
+        let want: Vec<&str> = comments::SYNTAXES
+            .iter()
+            .flat_map(|s| s.extensions.iter().copied())
+            .collect();
+        assert_eq!(sources, want);
+    }
 
     #[test]
     fn classify_paths() {
@@ -153,6 +199,14 @@ mod tests {
                 want: Input::Source {
                     syntax: comments::syntax("sh").expect("the table lists sh"),
                     skips: vec!["ProseCapsEmphasis"],
+                },
+            },
+            Case {
+                name: "awk script",
+                path: "scripts/report.awk",
+                want: Input::Source {
+                    syntax: comments::syntax("awk").expect("the table lists awk"),
+                    skips: vec![],
                 },
             },
             Case {

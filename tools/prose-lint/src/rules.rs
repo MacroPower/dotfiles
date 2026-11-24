@@ -12,7 +12,7 @@ use harper_core::linting::{Lint, LintGroup};
 use harper_core::parsers::Parser;
 use harper_core::spell::FstDictionary;
 use harper_core::weirpack::Weirpack;
-use harper_core::{Dialect, Document};
+use harper_core::{Dialect, Document, TokenKind};
 
 /// The tier of a rule, which says how often the rule misreads a
 /// sentence. `Required` sorts first.
@@ -141,14 +141,36 @@ impl Rules {
     /// Lints the text that `parser` reads and returns each lint with the
     /// bare name and the tier of its rule. The span of each lint holds
     /// indexes of characters in `text`.
+    ///
+    /// The method drops each lint that lies inside one unlintable token,
+    /// such as a code block. Harper caches the lints of a sentence by its
+    /// characters, whatever its tokens are. A markdown file can end in a
+    /// code block with no final newline. The characters of that code block
+    /// can match a sentence of prose earlier in the file, and Harper then
+    /// gives the code block the lints of that sentence.
     pub fn lint(&mut self, text: &str, parser: &impl Parser) -> Vec<(&'static str, Tier, Lint)> {
         let document = Document::new(text, parser, &self.dictionary);
+        let code: Vec<_> = document
+            .get_tokens()
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unlintable)
+            .map(|t| t.span)
+            .collect();
+        let in_code = |lint: &Lint| {
+            code.iter()
+                .any(|c| c.start <= lint.span.start && lint.span.end <= c.end)
+        };
         let mut out = Vec::new();
         for (name, lints) in self.group.organized_lints(&document) {
             let Some(&(bare, tier)) = self.names.get(&name) else {
                 continue;
             };
-            out.extend(lints.into_iter().map(|lint| (bare, tier, lint)));
+            out.extend(
+                lints
+                    .into_iter()
+                    .filter(|lint| !in_code(lint))
+                    .map(|lint| (bare, tier, lint)),
+            );
         }
         out
     }
@@ -157,6 +179,21 @@ impl Rules {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lints_in_code() {
+        // The indented code block holds the text of the sentence above
+        // it, and the file ends with no newline after it.
+        let text = "The job restarts, and it may stop.\n\n    The job restarts, and it may stop.";
+        let mut rules = Rules::new(&[]).expect("every embedded rule compiles");
+        let starts: Vec<usize> = rules
+            .lint(text, &harper_core::parsers::Markdown::default())
+            .into_iter()
+            .filter(|(name, _, _)| *name == "ProseMayPossibility")
+            .map(|(_, _, lint)| lint.span.start)
+            .collect();
+        assert_eq!(starts, [25]);
+    }
 
     #[test]
     fn rules_compile() {

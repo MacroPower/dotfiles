@@ -17,16 +17,16 @@ clones as <owner>/<repo>, such as /tmp/git, and run reads from the
 same place. run warns when a clone sits at another commit, because its
 counts then differ from the ones a rule comment cites.
 
-run lints each file of the corpus with `prose-lint-rs --only RULES
+run lints each file of the corpus with `prose-lint --only RULES
 --json` and reads the hits from its output. PROSE_LINT names the
-binary, and run looks for prose-lint-rs on PATH when the variable is
-unset. Build the binary with
-`nix build --no-link --print-out-paths .#prose-lint-rs` from the
-checkout that holds the rules to measure, because the binary embeds
-the rules when it builds.
+binary, and run looks for prose-lint on PATH when the variable is
+unset. The binary embeds the rules when it builds, so the prose-lint
+on PATH holds the rules of the configuration that the host runs. Build
+the binary with `nix build --no-link --print-out-paths .#prose-lint`
+from the checkout that holds the rules to measure.
 
 The flake build reads only the files that git tracks, so git add a
-new rule file first. The .#prose-lint-rs build also runs the rule
+new rule file first. The .#prose-lint build also runs the rule
 tests. They fail on a rule without a fixture pair, without the
 Overview and Measurement sections in its comment, or with a finding on
 fixtures/common.good.md. For a draft rule or a candidate built-in,
@@ -36,10 +36,9 @@ that run prints when it cannot find the binary.
 
 The binary runs the Weir rules, the Harper built-ins that the
 builtins.txt of a tier lists, and the native checks of
-tools/prose-lint/src/checks. It never runs an awk rule. To measure a
-changed awk rule, make the same change in its native check. To
-measure a Harper built-in that no tier lists, add it to the
-builtins.txt of a tier on a branch, and build the binary there.
+tools/prose-lint/src/checks. To measure a Harper built-in that no
+tier lists, add it to the builtins.txt of a tier on a branch, and
+build the binary there.
 
 run passes each rule to --only as given. A bare name (ProseHedge) runs
 the rule in every tier, and the binary then drops a hit of a lower
@@ -217,7 +216,7 @@ def excerpt(context: str, col: int, width: int = 160) -> str:
 
 def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], digest: str) -> int:
     root = Path(args.root) if args.root else default_root()
-    binary = os.environ.get("PROSE_LINT", "prose-lint-rs")
+    binary = os.environ.get("PROSE_LINT", "prose-lint")
 
     chosen = [s for s in sources if args.corpus in ("all", s.corpus)]
     for src in chosen:
@@ -233,12 +232,12 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
     if shutil.which(binary) is None:
         sys.exit(
             f"measure.py: cannot find {binary}. Build the binary with"
-            " `nix build --no-link --print-out-paths .#prose-lint-rs`, and set"
-            " PROSE_LINT to bin/prose-lint-rs under the path that the build prints."
+            " `nix build --no-link --print-out-paths .#prose-lint`, and set"
+            " PROSE_LINT to bin/prose-lint under the path that the build prints."
             " The build runs the rule tests, so for a draft rule, build with"
             " `nix build --no-link --print-out-paths --impure --expr 'let f ="
             ' builtins.getFlake "git+file://${toString ./.}"; in'
-            " f.packages.${builtins.currentSystem}.prose-lint-rs.overrideAttrs"
+            " f.packages.${builtins.currentSystem}.prose-lint.overrideAttrs"
             " { doCheck = false; }'` instead. Run either build from the"
             " repository root after you git add a new rule file."
         )

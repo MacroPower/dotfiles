@@ -52,7 +52,7 @@
 //!
 //! The rule hit 1,875 lines in the measure.py corpus, and 19 of 20 sampled
 //! hits read better as two sentences. The other hit was an error of
-//! lib/sentences.awk at a Hugo shortcode. The first step named a split
+//! the awk check that this check replaced, at a Hugo shortcode. The first step named a split
 //! point on 137 lines, and 15 of 20 sampled points were the right place to
 //! split. Two misfires were serial lists with long items. In the other
 //! three, the `and` joined a second condition or a second result to an
@@ -191,8 +191,8 @@ pub(crate) mod tests {
             want: Vec<(usize, usize)>,
         }
         let cases = [
-            // The cases of the sentence-paragraphs test of
-            // pkgs/prose-lint.nix.
+            // The cases of the sentence-paragraphs test of the bash
+            // prose-lint.
             Case {
                 name: "a line of `>` and spaces ends the paragraph",
                 text: format!("> {FIRST}\n>     \n> {SECOND}\n"),
@@ -238,7 +238,7 @@ pub(crate) mod tests {
         }
     }
 
-    // The ends.md file of the sentence-ends test of pkgs/prose-lint.nix.
+    // The ends.md file of the sentence-ends test of the bash prose-lint.
     pub(crate) const ENDS: &[&str] = &[
         "He said \u{201c}the proxy retries each failed request once before it returns the error to the client.\u{201d} The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.",
         "The guide says \u{2018}the proxy retries each failed request once before it returns the error to the client.\u{2019} The scheduler then reads the queue and picks the oldest job whose lease has expired before it returns.",
@@ -265,8 +265,8 @@ pub(crate) mod tests {
 
     #[test]
     fn messages() {
-        // The first sentence of the single-quotes test of
-        // pkgs/prose-lint.nix, in both kinds of quotes. Its condition
+        // The first sentence of the single-quotes test of the bash
+        // prose-lint, in both kinds of quotes. Its condition
         // keeps the `, and the` after the comma out of the split points.
         let double = "\"If the cache is cold and the node restarts after the upgrade, the scheduler moves every pod to the spare pool, and the team waits for the warmup to finish before it opens the gate.\" the runbook says.\n";
         let want = vec![(

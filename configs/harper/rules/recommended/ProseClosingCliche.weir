@@ -10,9 +10,10 @@
 # Expression
 #
 # The entry for `only time will tell` puts `only` in a list of one word,
-# so check.py does not read it as a plain entry. check.py fails a plain
-# entry that holds a shorter one, because the shorter entry already
-# matches every sentence that the longer one matches. Here the longer
+# so the `entries` test of tools/prose-lint does not read it as a plain
+# entry. The test fails a plain entry that holds a shorter one, because
+# the shorter entry already matches every sentence that the longer one
+# matches. Here the longer
 # entry moves the start of the finding to `only`, so the fix deletes the
 # whole phrase instead of leaving `Only` behind.
 #

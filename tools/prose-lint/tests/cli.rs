@@ -1,11 +1,11 @@
-//! Tests of the prose-lint-rs binary.
+//! Tests of the prose-lint binary.
 
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-const BIN: &str = env!("CARGO_BIN_EXE_prose-lint-rs");
+const BIN: &str = env!("CARGO_BIN_EXE_prose-lint");
 
 /// The directory that holds `rules/` and `fixtures/`, from build.rs.
 const HARPER: &str = env!("PROSE_LINT_HARPER");
@@ -16,7 +16,7 @@ struct TempDir(PathBuf);
 
 impl TempDir {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("prose-lint-rs-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("prose-lint-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("creating the temporary directory");
         Self(dir)
@@ -175,7 +175,7 @@ fn curly_apostrophes() {
 
 #[test]
 fn prompt_files() {
-    // The case of the prompt-files test of pkgs/prose-lint.nix.
+    // The case of the prompt-files test of the bash prose-lint.
     // ProseCapsEmphasis skips a prompt file for an agent and reports a
     // word in capitals in each other file, a file of a worktree under
     // `.claude/worktrees/` included.

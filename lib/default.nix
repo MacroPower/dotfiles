@@ -23,7 +23,7 @@ let
     photo-cli = final.callPackage paths.photo-cli { };
     mcp-git = final.callPackage paths.mcp-git { };
     hook-router = final.callPackage paths.hook-router { };
-    prose-lint-rs = final.callPackage paths.prose-lint-rs { };
+    prose-lint = final.callPackage paths.prose-lint { };
     copilot-api-proxy = final.callPackage paths.copilot-api-proxy { };
     mcp-fetch = final.callPackage paths.mcp-fetch { };
     mcp-http-proxy = final.callPackage paths.mcp-http-proxy { };
@@ -45,8 +45,6 @@ let
     mdcopy = final.callPackage paths.mdcopy { };
     expire-claude-tmp = final.callPackage paths.expire-claude-tmp { };
     expire-clones = final.callPackage paths.expire-clones { };
-    prose-weirpack = final.callPackage paths.prose-weirpack { };
-    prose-lint = final.callPackage paths.prose-lint { };
   };
 
   # kat, kclipper, and kcl-lsp are GoReleaser-generated packages that take a
@@ -238,12 +236,13 @@ let
   };
 
   # harper builds its curated dictionary from the rune files on every
-  # start, which takes about 160ms of each harper-cli run. prose-lint runs
-  # harper-cli on every file Claude writes, so the cost adds up.
+  # start, which takes about 160ms of each run. prose-lint links
+  # harper-core and lints every file Claude writes, so the cost adds up.
   # harper-precomputed-dict.patch lets a build embed the finished
   # dictionary. The overlay builds harper once with the patches, dumps the
   # dictionary with that build, and builds again with
-  # HARPER_PRECOMPUTED_DICT naming the dump.
+  # HARPER_PRECOMPUTED_DICT naming the dump. tools/prose-lint/package.nix
+  # embeds the same dump.
   #
   # harper 3.0.0 aborted on most Haskell files, because its
   # tree-sitter-haskell 0.23.1 corrupts the heap. The install check of the

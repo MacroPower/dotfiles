@@ -498,7 +498,7 @@ mod tests {
         }
     }
 
-    // The case of the opening-pronoun test of pkgs/prose-lint.nix. Its
+    // The case of the opening-pronoun test of the bash prose-lint. Its
     // want lists the findings that GFM reads. pulldown-cmark reads some
     // lines in another way, so the findings of these paragraphs are not
     // in the list:

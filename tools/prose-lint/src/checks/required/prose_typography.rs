@@ -14,13 +14,13 @@
 //! which code is blank. It reports the first of those characters on a
 //! line. A Weir rule cannot do this check. Harper normalizes punctuation
 //! before Weir sees it, so a pattern for a curly quote also matches a
-//! plain ASCII quote. prose-lint-rs straightens a curly apostrophe in
+//! plain ASCII quote. prose-lint straightens a curly apostrophe in
 //! the copy that Harper reads, and the native checks read the text as
 //! the file holds it. Each finding names the character and its code
 //! point, because a curly quote and a straight one look alike in a
 //! terminal.
 //!
-//! On a source file other than a Weir or awk rule file, `raw` reads the
+//! On a source file other than a Weir rule file, `raw` reads the
 //! whole text, string literals included. Its message then asks for an
 //! escape in a string literal and for the plain character in a comment.
 //!
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn code() {
-        // The case of the exported-modes test of pkgs/prose-lint.nix. The
+        // The case of the exported-modes test of the bash prose-lint. The
         // ellipsis in the fence does not draw a finding.
         let text = "# Title\n\nThe build failed, e.g. on a cache miss.\nIt stalled \u{2026} twice.\n\n```sh\necho \"fast, e.g. really \u{2026} and more\"\n```\n";
         let region = Region::markdown(text);

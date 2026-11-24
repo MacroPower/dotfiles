@@ -1,11 +1,9 @@
 //! The tests of the comment regions.
 //!
-//! The fixture tests hold the cases of the Nix tests `comment-code`,
-//! `trailing-dash`, `license-headers`, `crlf`, `doc-comments`, and
-//! `java-spans` of `pkgs/prose-lint.nix` that state a finding on source
-//! text. A comment
-//! above each list of positions names each place where the Rust linter
-//! reads a comment in another way than the bash script.
+//! The fixture tests hold the cases of source comments that the tests
+//! of the bash prose-lint stated a finding on, before this crate
+//! replaced it. A comment above each list of positions names each place
+//! where the crate reads a comment in another way than the bash script.
 
 use std::fs;
 use std::path::Path;
@@ -562,6 +560,74 @@ fn comment_code() {
     }
 }
 
+/// The position of each ProseLatinAbbreviation and ProseMayPossibility
+/// finding in `fixtures/comment-code/spans.sh`.
+const SPANS: &[&str] = &[
+    "10:13", "10:29", "13:17", "13:32", "16:18", "16:33", "19:15", "19:30", "24:30", "29:19",
+    "29:34", "32:34", "34:21", "34:37", "36:21", "36:37", "39:21", "39:37", "41:21", "41:37",
+    "50:25", "50:35", "52:21", "52:37", "55:18", "55:33", "59:21", "59:37", "62:23", "62:39",
+    "68:21", "68:37", "74:21", "74:37", "76:21", "76:37", "83:21", "83:37", "89:21", "89:37",
+    "95:21", "95:37", "97:21", "97:37", "105:21", "105:37", "107:21", "107:37", "115:21", "115:37",
+    "117:21", "117:37", "120:20", "120:35", "124:17", "124:32", "126:21", "126:37", "132:45",
+    "132:55", "135:48", "135:58", "138:16", "138:32", "141:16", "141:32", "145:21", "145:37",
+    "153:21", "153:37", "155:21", "155:37", "159:21", "159:37", "161:21", "161:37", "163:28",
+    "163:38", "164:21", "164:37", "167:51", "167:61", "170:51", "170:61", "173:51", "173:61",
+    "177:42", "177:52", "180:53", "180:63", "183:53", "183:63", "186:51", "186:61", "189:42",
+    "189:52", "192:53", "192:63", "195:51", "195:61", "198:18", "198:34", "201:19", "201:35",
+    "206:19", "206:35", "209:20", "209:36", "212:20", "212:36", "216:23", "216:39", "224:21",
+    "224:37", "227:16", "227:32", "233:21", "233:37", "238:21", "238:37", "242:21", "242:37",
+    "246:21", "246:37", "251:51", "251:61", "255:21", "255:37", "258:45", "258:55", "261:21",
+    "261:37", "265:23", "265:39", "268:23", "268:39", "270:28", "271:22", "271:32", "276:21",
+    "276:37", "284:21", "284:37", "288:13", "288:29", "292:19", "292:34", "296:16", "296:31",
+    "300:21", "300:36", "304:15", "304:31", "309:19", "309:29", "314:19", "314:29", "319:16",
+    "319:26", "325:21", "325:37", "332:21", "332:36", "339:16", "339:26", "344:16", "344:26",
+    "349:16", "349:26", "355:16", "355:26", "360:20", "360:30", "364:18", "364:28", "368:42",
+    "368:52", "372:9", "372:19", "372:45", "372:55", "375:48", "375:58", "380:16", "380:26",
+    "386:21", "386:37", "393:21", "393:36", "400:16", "400:32", "408:20", "408:36", "413:23",
+    "413:38", "420:23", "420:38", "425:16", "425:26", "429:19", "429:34", "435:42", "435:52",
+    "439:6", "439:16", "439:42", "439:52", "444:42", "444:52", "451:21", "451:36", "458:16",
+    "458:32", "464:13", "464:29", "469:19", "469:34", "476:19", "476:34", "479:25", "479:41",
+    "482:19", "482:35", "485:18", "485:34", "488:21", "488:37", "493:15", "493:25", "498:16",
+    "498:26", "505:18", "505:28", "509:17", "509:27", "516:21", "516:37", "522:21", "522:37",
+    "527:21", "527:37", "533:25", "533:41", "543:23", "543:39",
+];
+
+#[test]
+fn code_spans() {
+    // The comments of spans.sh hold code spans that wrap onto the next
+    // line, runs of backticks that no span closes, and fenced code
+    // blocks. Some blocks sit in lists or in blockquotes, and some have
+    // no closing line. Each comment holds an `e.g.` and a `may` inside
+    // code and after it, so each finding names the text after a span or
+    // a block. The test also lints the comments as an awk file and, with
+    // `//` markers, as a Go file.
+    //
+    // In one comment, a `--` line sits above a line of indented code that
+    // opens a span. The region reads the `--` line as a frame, so a blank
+    // line precedes the code. The span then stays inside the code, and
+    // the crate reports the `e.g.` and the `may` of the next line. The
+    // bash script read the `--` as text, so the span ran from the code
+    // into the next line.
+    let path = Path::new(HARPER).join("fixtures/comment-code/spans.sh");
+    let text = fs::read_to_string(path).expect("reading the fixture");
+    let go: String = text
+        .lines()
+        .map(|line| match line.strip_prefix('#') {
+            Some(rest) => format!("//{rest}\n"),
+            None if line == "x = 1" => "var x = 1\n".to_string(),
+            None => format!("{line}\n"),
+        })
+        .collect();
+    let names = ["ProseLatinAbbreviation", "ProseMayPossibility"];
+    let mut rules = Rules::new(&[]).expect("every embedded rule compiles");
+    assert_eq!(positions(&mut rules, "spans.sh", &text, &names), SPANS);
+    assert_eq!(positions(&mut rules, "spans.awk", &text, &names), SPANS);
+    assert_eq!(
+        positions(&mut rules, "spans.go", &go, &names),
+        shifted(SPANS, 1)
+    );
+}
+
 #[test]
 fn trailing_dash() {
     // A comment after code that ends in `--` goes on in the comment line
@@ -1068,6 +1134,51 @@ fn chunk_cache() {
         positions(&mut rules, "cache.sh", text, &["ProseDash"]),
         ["6:18"]
     );
+}
+
+#[test]
+fn code_cache() {
+    // A code block at the end of a comment holds the text of a sentence
+    // of prose. Harper caches the lints of a sentence by its characters,
+    // whatever its tokens are. The parser adds the next character of the
+    // source to the token of the code block. Without that character, the
+    // code block shares the key of the sentence. The code then gets the
+    // lints of a sentence above it, and a sentence below it gets the
+    // empty lints of the code.
+    let cases = [
+        (
+            "prose first",
+            "cache.sh",
+            "# The job restarts, and it may stop.\nx = 1\n# Run it like this:\n#\n#     ```sh\n# ```\n# The job restarts, and it may stop.\nx = 1\n# Or:\n#\n#     The job restarts, and it may stop.\nx = 1\n",
+            "1:28",
+        ),
+        (
+            "code first",
+            "cache.sh",
+            "# Run it like this:\n#\n#     The job restarts, and it may stop.\nx = 1\n# The job restarts, and it may stop.\nx = 1\n",
+            "5:28",
+        ),
+        (
+            "code first in a block comment",
+            "cache.go",
+            "package p\n\n/*\n * Run it like this:\n *\n *     The job restarts, and it may stop. */\nvar x = 1\n\n// The job restarts, and it may stop.\nvar y = 1\n",
+            "9:29",
+        ),
+        (
+            "code first before a closer with no blank",
+            "cache.go",
+            "package p\n\n/*\n * Run it like this:\n *\n *     The job restarts, and it may stop.*/\nvar x = 1\n\n// The job restarts, and it may stop.\nvar y = 1\n",
+            "9:29",
+        ),
+    ];
+    for (name, file, text, want) in cases {
+        let mut rules = Rules::new(&[]).expect("every embedded rule compiles");
+        assert_eq!(
+            positions(&mut rules, file, text, &["ProseMayPossibility"]),
+            [want],
+            "{name}"
+        );
+    }
 }
 
 #[test]

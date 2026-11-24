@@ -16,12 +16,11 @@ use crate::markdown::Markdown;
 use crate::region::{Finding, Region};
 use crate::rules::{self, Tier};
 
-/// `configs/harper/comment-checks.txt`, which names each check that
-/// reads the comments of a source file. A `!<kind>` after a name skips
-/// the comments of that kind, which `SYNTAXES` of `src/comments.rs`
-/// gives each extension.
-const COMMENT_CHECKS: &str =
-    include_str!(concat!(env!("PROSE_LINT_HARPER"), "/comment-checks.txt"));
+/// `comment-checks.txt` of the crate, which names each check that reads
+/// the comments of a source file. A `!<kind>` after a name skips the
+/// comments of that kind, which `SYNTAXES` of `src/comments.rs` gives
+/// each extension.
+const COMMENT_CHECKS: &str = include_str!("../comment-checks.txt");
 
 /// Returns whether the check named `name` reads the comments of the
 /// kind `kind`.

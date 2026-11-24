@@ -1,10 +1,9 @@
 //! The runs of prose that both tiers of ProseWallOfText measure.
 //!
 //! A run is the prose between two breaks, such as a list, a table, a code
-//! block, or a heading. [`runs`] replaces lib/runs.awk, and it reads the
-//! blocks of the markdown model in place of the lines of a file. Blank
-//! lines between paragraphs continue a run, and so do the paragraphs of a
-//! blockquote.
+//! block, or a heading. [`runs`] reads the blocks of the markdown model
+//! to find them. Blank lines between paragraphs continue a run, and so do
+//! the paragraphs of a blockquote.
 //!
 //! These blocks end a run:
 //!

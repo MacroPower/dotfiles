@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn columns() {
-        // The emoji cases of the columns test of pkgs/prose-lint.nix. A
+        // The emoji cases of the columns test of the bash prose-lint. A
         // character of more than one byte sits in a code span or a link
         // destination ahead of each finding.
         let text = "Set `\u{1F680}` and then \u{1F389} here.\n\nRead [the guide](https://example.com/caf\u{e9}) \u{1F389} now.\n\nPass `--name\ncaf\u{e9}` to it \u{1F389} now.\n";

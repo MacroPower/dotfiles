@@ -295,8 +295,8 @@ mod tests {
                 text: "The pool holds the workers (which the scheduler sizes once at startup from the node count).\n",
                 want: vec![],
             },
-            // The last sentence of the single-quotes test of
-            // pkgs/prose-lint.nix.
+            // The last sentence of the single-quotes test of the bash
+            // prose-lint.
             Case {
                 name: "a comma aside after a quoted subject",
                 text: "'The hook, which runs after every Write and Edit of a markdown file or a source file, tags each finding' is the rule.\n",

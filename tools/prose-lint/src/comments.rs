@@ -83,7 +83,7 @@ enum Finder {
 pub struct Syntax {
     /// The extensions of the files, without the dot.
     pub extensions: &'static [&'static str],
-    /// The kind that `configs/harper/comment-checks.txt` names, such as
+    /// The kind that `comment-checks.txt` of the crate names, such as
     /// `go` or `slash`.
     pub kind: &'static str,
     finder: Finder,
@@ -742,6 +742,13 @@ fn unframed(chars: &[char], line: &TextLine) -> Range<usize> {
 /// comment after its last token into that key. A setext heading and a
 /// paragraph with a lazy line of `=` marks then share a key, but Harper
 /// reads other tokens in each.
+///
+/// Harper caches the lints of a sentence by its text in the same way.
+/// The text of a region does not hold a newline after its last line. So
+/// a code block at the end of a region can hold the text of a sentence of
+/// prose. The parser moves the end of that code block past the next
+/// character of the source, such as a newline, a blank, or the `*` of a
+/// closer. So the two share a key only when the code ends the file.
 pub struct RegionParser<'a> {
     regions: &'a [Region],
 }
@@ -755,10 +762,10 @@ impl<'a> RegionParser<'a> {
 }
 
 impl Parser for RegionParser<'_> {
-    fn parse(&self, _source: &[char]) -> Vec<Token> {
+    fn parse(&self, source: &[char]) -> Vec<Token> {
         let markdown = Markdown::default();
         let mut tokens = Vec::new();
-        for region in self.regions {
+        for (i, region) in self.regions.iter().enumerate() {
             let indices = region.indices();
             let Some(&last) = indices.last() else {
                 continue;
@@ -777,6 +784,18 @@ impl Parser for RegionParser<'_> {
                 let end = if e > s { indices[e - 1] + 1 } else { start };
                 token.span = Span::new(start, end.max(start));
                 tokens.push(token);
+            }
+            // The next region starts at the first character that the
+            // token must not reach.
+            let limit = self.regions[i + 1..]
+                .iter()
+                .find_map(|r| r.indices().first().copied())
+                .unwrap_or(source.len());
+            if let Some(code) = tokens
+                .last_mut()
+                .filter(|t| t.kind == TokenKind::Unlintable && t.span.end < limit)
+            {
+                code.span.end += 1;
             }
         }
         tokens

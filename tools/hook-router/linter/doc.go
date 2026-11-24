@@ -19,12 +19,12 @@
 // on the same line text. A finding that the edit moved stays quiet,
 // and so does an older finding on a line the edit did not change.
 //
-// A finding may carry a `[Tier]` tag after `path:line:col:`, which
-// prose-lint prints from its rule manifest. The [Tier] sets what the
-// finding asks of Claude. A Required finding gets fixed, a Recommended
-// finding gets fixed unless the rule misread the sentence, and an
-// Optional finding gets fixed where the rewrite reads better. [Format]
-// groups findings under one header per tier so the instruction sits
-// next to the lines it covers, and an untagged line is Required so a
-// linter without tiers keeps its full weight.
+// A finding can carry a `[Tier]` tag after `path:line:col:`, which
+// prose-lint prints from the tier of the rule that reported it. The
+// [Tier] sets what the finding asks of Claude. A Required finding gets
+// fixed, and a Recommended finding gets fixed unless the rule misread
+// the sentence. An Optional finding gets fixed where the rewrite reads
+// better. [Format] groups findings under one header per tier so the
+// instruction sits next to the lines it covers. An untagged line is
+// Required so a linter without tiers keeps its full weight.
 package linter

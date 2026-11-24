@@ -114,7 +114,7 @@ mod tests {
     }
 
     // The cases of the quote-text, item-blocks, and list-items tests of
-    // pkgs/prose-lint.nix. Each test lists the findings that GFM reads.
+    // the bash prose-lint. Each test lists the findings that GFM reads.
     // pulldown-cmark reads three lines in another way, so their findings
     // are not in the lists:
     //
@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn code() {
-        // The case of the exported-modes test of pkgs/prose-lint.nix. The
+        // The case of the exported-modes test of the bash prose-lint. The
         // `e.g.` in the fence does not draw a finding.
         let text = "# Title\n\nThe build failed, e.g. on a cache miss.\nIt stalled \u{2026} twice.\n\n```sh\necho \"fast, e.g. really \u{2026} and more\"\n```\n";
         assert_eq!(found(text), [(3, 19)]);
@@ -704,7 +704,7 @@ mod tests {
 
     #[test]
     fn many_findings() {
-        // The case of the exported-variables test of pkgs/prose-lint.nix,
+        // The case of the exported-variables test of the bash prose-lint,
         // whose findings take more than 128 KiB.
         let text = "The cache may be stale, e.g. after a restart.\n\n".repeat(1500);
         let want: Vec<_> = (0..1500).map(|i| (2 * i + 1, 25)).collect();

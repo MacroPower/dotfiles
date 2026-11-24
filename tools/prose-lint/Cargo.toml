@@ -4,10 +4,6 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
-[[bin]]
-name = "prose-lint-rs"
-path = "src/main.rs"
-
 # harper-core comes from the patched harper source tree in ./harper,
 # because the patch embeds the dictionary. The README gives the command
 # that creates the tree. The exact version matches pkgs.harper, and

@@ -31,7 +31,7 @@
 //! holds each finding until the paragraph ends, so a citation anywhere
 //! in the paragraph clears the finding.
 //!
-//! prose-lint-rs skips the check on every file under `configs/claude/`.
+//! prose-lint skips the check on every file under `configs/claude/`.
 //! It also skips every file under the `agents`, `commands`,
 //! `output-styles`, `rules`, and `skills` directories of `.claude/`. The
 //! check reads the other directories of `.claude/`, such as a worktree
@@ -53,7 +53,7 @@
 //! that cites a standard (`RFC 7232`, `Section 5.4.1`, or `§`) passes
 //! too, because code comments copy a standard's text without quote marks.
 //!
-//! prose-lint-rs skips this check on prompt files for an agent (skills,
+//! prose-lint skips this check on prompt files for an agent (skills,
 //! agent definitions, `CLAUDE.md`, and `AGENTS.md`), which write capitals
 //! for emphasis on purpose.
 //!
@@ -195,7 +195,7 @@ mod tests {
         }
         let cases = [
             Case {
-                // The case of the columns test of pkgs/prose-lint.nix.
+                // The case of the columns test of the bash prose-lint.
                 name: "multi-byte character in a quotation",
                 text: "Set \"caf\u{e9}\" first, and you MUST restart it.\n",
                 want: vec![(1, 27)],
