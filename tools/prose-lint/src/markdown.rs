@@ -12,8 +12,9 @@
 //! - Each line that does not hold inline text of a paragraph, a heading,
 //!   a table, or a list item. Such lines hold code blocks, HTML blocks,
 //!   front matter, link reference definitions, thematic breaks, and
-//!   blank lines. Only a metadata block that opens the region counts as
-//!   front matter, as [`front_matter_only`] describes.
+//!   blank lines. Only a metadata block that opens a markdown file or a
+//!   commit message counts as front matter, as [`front_matter_only`]
+//!   describes.
 //! - The opening line of a MyST directive (`:::{note}`) and the
 //!   `:name: value` option lines under it. pulldown-cmark reads them as
 //!   text, but they hold the name and the options of the directive.
@@ -57,20 +58,22 @@ fn options() -> Options {
     Options::all().difference(Options::ENABLE_SMART_PUNCTUATION)
 }
 
-/// Rewrites the opening line of each metadata block that does not open
-/// `text`, so that pulldown-cmark reads the lines as GFM does.
+/// Rewrites the opening line of each metadata block that is not front
+/// matter, so that pulldown-cmark reads the lines as GFM does. When
+/// `front_matter` is true, a metadata block that opens `text` is front
+/// matter. Otherwise, as in a comment of a source file, no block is.
 /// pulldown-cmark opens a metadata block at a `---` or `+++` line at the
 /// start of any block, and the block runs to the next such line. In GFM,
 /// such a `---` line is a thematic break, and so is `___`. Such a `+++`
 /// line opens a paragraph, and so does `\++`. Each rewrite keeps the
 /// length of the text, so each character keeps its index.
-pub fn front_matter_only(text: &str) -> Cow<'_, str> {
+pub fn front_matter_only(text: &str, front_matter: bool) -> Cow<'_, str> {
     let mut text = Cow::Borrowed(text);
     loop {
         let Some((kind, start)) = Parser::new_ext(&text, options())
             .into_offset_iter()
             .find_map(|(event, range)| match event {
-                Event::Start(Tag::MetadataBlock(kind)) if range.start > 0 => {
+                Event::Start(Tag::MetadataBlock(kind)) if range.start > 0 || !front_matter => {
                     Some((kind, range.start))
                 }
                 _ => None,
@@ -86,15 +89,18 @@ pub fn front_matter_only(text: &str) -> Cow<'_, str> {
     }
 }
 
-/// The markdown parser of harper-core, which reads only a metadata block
-/// that opens the text as front matter, as [`front_matter_only`]
-/// describes.
-pub struct HarperMarkdown;
+/// The markdown parser of harper-core, which reads front matter as
+/// [`front_matter_only`] describes.
+pub struct HarperMarkdown {
+    /// Whether a metadata block that opens the text is front matter, as
+    /// [`Region::front_matter`] holds.
+    pub front_matter: bool,
+}
 
 impl harper_core::parsers::Parser for HarperMarkdown {
     fn parse(&self, source: &[char]) -> Vec<Token> {
         let parser = harper_core::parsers::Markdown::default();
-        match front_matter_only(&source.iter().collect::<String>()) {
+        match front_matter_only(&source.iter().collect::<String>(), self.front_matter) {
             Cow::Borrowed(_) => parser.parse(source),
             Cow::Owned(text) => parser.parse(&text.chars().collect::<Vec<_>>()),
         }
@@ -196,7 +202,7 @@ impl Markdown {
         // the text of such a block.
         let mut loose: Option<usize> = None;
 
-        let parsed = front_matter_only(text);
+        let parsed = front_matter_only(text, region.front_matter);
         for (event, range) in Parser::new_ext(&parsed, options()).into_offset_iter() {
             let inline = match &event {
                 Event::Start(tag) => matches!(
@@ -648,32 +654,48 @@ mod tests {
         struct Case {
             name: &'static str,
             text: &'static str,
+            front_matter: bool,
             want: &'static str,
         }
         let cases = [
             Case {
                 name: "front matter",
                 text: "---\ntitle: Guide\n---\n\nRun it.\n",
+                front_matter: true,
                 want: "---\ntitle: Guide\n---\n\nRun it.\n",
             },
             Case {
                 name: "two blocks after the start",
                 text: "Run it.\n\n---\nA\n---\n\n---\nB\n---\n",
+                front_matter: true,
                 want: "Run it.\n\n___\nA\n---\n\n___\nB\n---\n",
             },
             Case {
                 name: "front matter and a block after it",
                 text: "+++\nt = 1\n+++\n\n+++\nRun it.\n+++\n",
+                front_matter: true,
                 want: "+++\nt = 1\n+++\n\n\\++\nRun it.\n+++\n",
             },
             Case {
                 name: "setext underline",
                 text: "Run it.\n---\nStop it.\n---\n",
+                front_matter: true,
                 want: "Run it.\n---\nStop it.\n---\n",
+            },
+            Case {
+                name: "block at the start of a comment",
+                text: "+++\nRun it.\n+++\n\n---\nStop it.\n---\n",
+                front_matter: false,
+                want: "\\++\nRun it.\n+++\n\n___\nStop it.\n---\n",
             },
         ];
         for case in cases {
-            assert_eq!(front_matter_only(case.text), case.want, "{}", case.name);
+            assert_eq!(
+                front_matter_only(case.text, case.front_matter),
+                case.want,
+                "{}",
+                case.name
+            );
         }
     }
 

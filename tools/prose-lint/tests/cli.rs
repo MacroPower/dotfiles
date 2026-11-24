@@ -165,17 +165,19 @@ fn front_matter() {
 
 #[test]
 fn front_matter_comments() {
-    // A comment region reads only a metadata block that opens it as
-    // front matter. The test uses `+++` lines, because a comment region
-    // drops each `---` line as a frame line.
+    // A comment region does not hold front matter. So the Weir rules
+    // and the native checks read the prose between two `+++` lines,
+    // whether other text comes first in the comment or not. The test
+    // uses `+++` lines, because a comment region drops each `---` line
+    // as a frame line.
     let tmp = TempDir::new("front-matter-comments");
     let path = tmp.write(
         "a.go",
-        "package main\n\n// Run starts the job.\n//\n// +++\n// Pass the host and/or the port, e.g. nightly.\n// +++\nfunc Run() {}\n",
+        "package main\n\n// Run starts the job.\n//\n// +++\n// Pass the host and/or the port, e.g. nightly.\n// +++\nfunc Run() {}\n\n// +++\n// Pass the host and/or the port, e.g. nightly.\n// +++\nfunc Stop() {}\n",
     );
     let output = lint(&path);
-    assert_eq!(lines_of(&output, "ProseAndOr"), [6]);
-    assert_eq!(lines_of(&output, "ProseLatinAbbreviation"), [6]);
+    assert_eq!(lines_of(&output, "ProseAndOr"), [6, 11]);
+    assert_eq!(lines_of(&output, "ProseLatinAbbreviation"), [6, 11]);
 }
 
 #[test]

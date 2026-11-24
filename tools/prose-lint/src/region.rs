@@ -23,6 +23,10 @@ pub struct Region {
     positions: Vec<Position>,
     /// The index in the source of each character of the text.
     indices: Vec<usize>,
+    /// Whether a metadata block that opens the text is front matter,
+    /// which the rules skip. It is for a markdown file or a commit
+    /// message, and not for a comment of a source file.
+    pub front_matter: bool,
 }
 
 impl Region {
@@ -46,6 +50,7 @@ impl Region {
             text: source.to_string(),
             indices: (0..positions.len()).collect(),
             positions,
+            front_matter: true,
         }
     }
 
@@ -53,12 +58,14 @@ impl Region {
     /// index of a character of `file`. The character takes the position
     /// of that character of `file`. It can differ from the character of
     /// `file`, such as a blank in place of doc comment markup, and two
-    /// characters can share one index.
+    /// characters can share one index. The region holds the text of a
+    /// comment, so it has no front matter.
     pub fn part(file: &Region, text: Vec<(usize, char)>) -> Self {
         Self {
             text: text.iter().map(|&(_, c)| c).collect(),
             positions: text.iter().map(|&(i, _)| file.position(i)).collect(),
             indices: text.into_iter().map(|(i, _)| i).collect(),
+            front_matter: false,
         }
     }
 

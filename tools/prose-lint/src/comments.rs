@@ -785,7 +785,11 @@ impl Parser for RegionParser<'_> {
                 tokens.push(Token::new(Span::new(end, end), TokenKind::ParagraphBreak));
             }
             let chars: Vec<char> = guards::straighten(&region.text).chars().collect();
-            for mut token in HarperMarkdown.parse(&chars) {
+            for mut token in (HarperMarkdown {
+                front_matter: region.front_matter,
+            })
+            .parse(&chars)
+            {
                 let (s, e) = (token.span.start, token.span.end);
                 let start = indices.get(s).copied().unwrap_or(last + 1);
                 let end = if e > s { indices[e - 1] + 1 } else { start };
