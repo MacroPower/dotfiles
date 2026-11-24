@@ -15,3 +15,5 @@ path = "src/main.rs"
 [dependencies]
 harper-comments = { path = "harper/harper-comments", version = "=3.3.0" }
 harper-core = { path = "harper/harper-core", version = "=3.3.0" }
+regex = "1.12.3"
+thiserror = "2.0.18"

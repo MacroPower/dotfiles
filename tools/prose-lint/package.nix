@@ -21,6 +21,16 @@ let
     name = "harper-${harper.version}-source";
     inherit (harper) src patches;
   };
+
+  # The rules that build.rs embeds in the binary, and the fixtures that
+  # the tests lint.
+  harperConfig = lib.fileset.toSource {
+    root = ../../configs/harper;
+    fileset = lib.fileset.unions [
+      ../../configs/harper/rules
+      ../../configs/harper/fixtures
+    ];
+  };
 in
 assert lib.assertMsg (lockedHarper == harper.version) ''
   tools/prose-lint/Cargo.lock locks harper-core ${toString lockedHarper}, but pkgs.harper is ${harper.version}.
@@ -35,6 +45,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     fileset = lib.fileset.unions [
       ./Cargo.toml
       ./Cargo.lock
+      ./build.rs
       ./src
       (lib.fileset.maybeMissing ./tests)
     ];
@@ -52,6 +63,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   # harper-core embeds this file as its curated dictionary, so the binary
   # does not build the dictionary on each start.
   env.HARPER_PRECOMPUTED_DICT = "${harper.dictionary}";
+  env.PROSE_LINT_HARPER = "${harperConfig}";
 
   # The check phase runs cargo test.
   doCheck = true;
@@ -64,7 +76,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
       echo "prose-lint-rs --version printed '$got', but pkgs.harper is ${harper.version}" >&2
       exit 1
     fi
-    "$out/bin/prose-lint-rs"
+    echo 'The cache starts warm.' | "$out/bin/prose-lint-rs" --commit
     runHook postInstallCheck
   '';
 
