@@ -153,8 +153,20 @@
             let
               inherit (nixpkgs) lib;
               arch = builtins.head (lib.splitString "-" system);
+              isLinux = lib.hasSuffix "-linux" system;
+              # The pkgs of a host carries the shared overlays, which the
+              # packages of this repo need, such as the harper of
+              # harperOverlay.
+              hostPkgs =
+                if isLinux then
+                  self.nixosConfigurations."terrarium-${arch}".pkgs
+                else
+                  self.darwinConfigurations."jacobcolvin@Jacobs-Mac-mini".pkgs;
             in
-            lib.optionalAttrs (lib.hasSuffix "-linux" system) {
+            {
+              inherit (hostPkgs) prose-lint-rs;
+            }
+            // lib.optionalAttrs isLinux {
               terrarium-image = self.nixosConfigurations."terrarium-${arch}".config.system.build.images.qemu-efi;
             };
 
@@ -179,6 +191,7 @@
                 photo-cli = ./pkgs/photo-cli.nix;
                 mcp-git = ./tools/mcp-git/package.nix;
                 hook-router = ./tools/hook-router/package.nix;
+                prose-lint-rs = ./tools/prose-lint/package.nix;
                 copilot-api-proxy = ./tools/copilot-api-proxy/package.nix;
                 mcp-fetch = ./tools/mcp-fetch/package.nix;
                 mcp-http-proxy = ./tools/mcp-http-proxy/package.nix;

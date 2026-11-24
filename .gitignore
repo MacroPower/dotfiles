@@ -20,4 +20,5 @@ lima/result*
 .task/
 tools/mcp-git/mcp-git
 tools/mcp-destiny/mcp-destiny
+tools/prose-lint/harper
 __pycache__/

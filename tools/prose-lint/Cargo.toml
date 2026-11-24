@@ -1,0 +1,17 @@
+[package]
+name = "prose-lint"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "prose-lint-rs"
+path = "src/main.rs"
+
+# crates.io has no harper-comments 3.3.0, so both crates come from a
+# harper source tree in ./harper. The README gives the command that
+# creates it. The exact versions match pkgs.harper, and package.nix fails
+# the build when they differ.
+[dependencies]
+harper-comments = { path = "harper/harper-comments", version = "=3.3.0" }
+harper-core = { path = "harper/harper-core", version = "=3.3.0" }
