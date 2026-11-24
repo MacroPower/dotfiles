@@ -21,6 +21,8 @@ mod files;
 mod guards;
 mod markdown;
 mod region;
+#[cfg(test)]
+mod rule_tests;
 mod rules;
 
 use std::error::Error as _;
@@ -113,6 +115,12 @@ fn run(args: &[String]) -> Result<bool, Error> {
 /// and with each native check that `skips` does not name. Returns the
 /// findings in the order of the output.
 fn lint_markdown(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> {
+    region::order(findings(rules, skips, text))
+}
+
+/// Returns the findings of [`lint_markdown`] before [`region::order`]
+/// drops each finding that the same finding of a higher tier hides.
+fn findings(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> {
     let region = Region::markdown(&guards::straighten(text));
     let mut findings: Vec<Finding> = rules
         .lint(&region.text)
@@ -135,5 +143,5 @@ fn lint_markdown(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> 
     findings.extend(checks::run(&Region::markdown(text), skips));
     guards::drop_label_colons(text, &mut findings);
     guards::drop_transcript_opinions(text, &mut findings);
-    region::order(findings)
+    findings
 }

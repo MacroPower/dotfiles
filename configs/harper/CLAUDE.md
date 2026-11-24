@@ -3,7 +3,9 @@
 This directory holds the rules of the prose linter. `rules/<tier>/` holds
 each rule as a `.weir` or `.awk` file, and `fixtures/<tier>/` holds its
 `.bad.md` and `.good.md` pair. The docstring of `check.py` describes how
-the build tests them. A fixture line that ends in
+the build tests them. `cargo test` of `tools/prose-lint` runs the same
+checks on each Weir rule, built-in, and native check, as the Rule Tests
+section of `tools/prose-lint/README.md` describes. A fixture line that ends in
 `<!-- native check differs -->` holds a case that a native check of
 `prose-lint-rs` reads in another way than the awk check that it
 replaces. The Native Checks section of `tools/prose-lint/README.md`
@@ -87,10 +89,11 @@ Every comment holds these sections in this order.
   Measurement section of this file requires, and it says what the
   sampled misfires were.
 
-`SECTIONS` in `check.py` holds the section names in the same order, and
-`REQUIRED_SECTIONS` holds the sections that every comment must carry.
-When you add, rename, reorder, or require a section, change this file,
-`check.py`, and the cases in `test_check.py` together.
+`SECTIONS` in `check.py` and in `tools/prose-lint/src/rule_tests.rs`
+holds the section names in the same order, and `REQUIRED_SECTIONS` holds
+the sections that every comment must carry. When you add, rename,
+reorder, or require a section, change this file, both files, and the
+cases in `test_check.py` and `rule_tests.rs` together.
 
 Each heading is a comment line that holds only the section name. One
 blank comment line follows each heading, and one separates each section

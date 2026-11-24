@@ -4,7 +4,6 @@ use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::Mutex;
 
 const BIN: &str = env!("CARGO_BIN_EXE_prose-lint-rs");
 
@@ -83,75 +82,6 @@ fn lines_of(output: &Output, rule: &str) -> Vec<usize> {
     lines.sort_unstable();
     lines.dedup();
     lines
-}
-
-#[test]
-fn fixtures() {
-    // Each Weir rule and built-in must report its bad fixture and pass
-    // its good one. The binary skips each path under `harper/fixtures`, so
-    // the test lints a copy.
-    let mut jobs = Vec::new();
-    for (dir, tier) in [
-        ("required", "Required"),
-        ("recommended", "Recommended"),
-        ("optional", "Optional"),
-    ] {
-        let rules = Path::new(HARPER).join("rules").join(dir);
-        let mut names: Vec<String> = fs::read_dir(&rules)
-            .expect("reading the rules")
-            .filter_map(|e| {
-                let name = e.expect("listing the rules").file_name();
-                name.to_str()?.strip_suffix(".weir").map(String::from)
-            })
-            .collect();
-        let builtins = fs::read_to_string(rules.join("builtins.txt")).expect("reading builtins");
-        names.extend(
-            builtins
-                .lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty() && !l.starts_with('#'))
-                .map(String::from),
-        );
-        for name in names {
-            for (kind, want) in [("bad", true), ("good", false)] {
-                let fixture = Path::new(HARPER)
-                    .join("fixtures")
-                    .join(dir)
-                    .join(format!("{name}.{kind}.md"));
-                jobs.push((fixture, format!("[{tier}] "), name.clone(), want));
-            }
-        }
-    }
-    assert!(!jobs.is_empty(), "the rules directory holds rules");
-
-    let tmp = TempDir::new("fixtures");
-    let jobs = Mutex::new(jobs);
-    let failures = Mutex::new(Vec::new());
-    std::thread::scope(|s| {
-        for worker in 0..4 {
-            let (tmp, jobs, failures) = (&tmp, &jobs, &failures);
-            s.spawn(move || {
-                while let Some((fixture, tier, rule, want)) =
-                    jobs.lock().expect("no worker panics").pop()
-                {
-                    let text = fs::read(&fixture).expect("reading the fixture");
-                    let path = tmp.write(&format!("{worker}/fixture.md"), text);
-                    let output = lint(&path);
-                    let got = stdout(&output)
-                        .lines()
-                        .any(|l| l.contains(&tier) && l.contains(&format!("::{rule}: ")));
-                    if got != want {
-                        failures
-                            .lock()
-                            .expect("no worker panics")
-                            .push(format!("{}: reported {rule}: {got}", fixture.display()));
-                    }
-                }
-            });
-        }
-    });
-    let failures = failures.into_inner().expect("no worker panics");
-    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]

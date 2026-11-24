@@ -51,23 +51,45 @@ To add a native check:
 3. List the check in `CHECKS` of `src/checks.rs` with its rule name, its tier,
    and the kind of its findings.
 4. Put its `.bad.md` and `.good.md` fixtures under
-   `configs/harper/fixtures/<tier>/`. The `fixtures` test of `src/checks.rs`
-   runs each check on its fixtures with the pass criteria of
-   `configs/harper/check.py`. It also expects the same findings from a copy of
-   each fixture with CRLF line endings.
+   `configs/harper/fixtures/<tier>/`. The tests of [Rule Tests](#rule-tests)
+   run the check on them.
 
 A native check and the awk check that it replaces can read a line in different
 ways, and some fixtures hold such a line. The awk checks read the text of an
 HTML block as prose, but the model blanks it. pulldown-cmark also reads some
 lines in another way than GFM does. For example, it ends an HTML block such as
 `<pre>` only at the end tag of the same name. A fixture line that ends in
-`<!-- native check differs -->` holds such a case, and the `fixtures` test does
-not judge a native check on that line. The awk checks still read the line, so
+`<!-- native check differs -->` holds such a case, and the fixture test does not
+judge a native check on that line. The awk checks still read the line, so
 `check.py` judges them on it.
 
 The Weir rules read a copy of the text in which each curly apostrophe between
 two letters is straight. The native checks read the text as the file holds it,
 so ProseTypography reports the curly apostrophe.
+
+## Rule Tests
+
+`cargo test` runs the tests of `src/rule_tests.rs` on every Weir rule,
+built-in, and native check. The module doc of that file states what each rule
+must pass:
+
+- The binary reports each bad line of the fixtures of the rule and no line of
+  its good fixture or of `configs/harper/fixtures/common.good.md`. A copy of
+  each fixture with CRLF line endings draws the same findings.
+- Each rule has a fixture pair, and each fixture pair has a rule. An awk check
+  under `configs/harper/rules` that no native check replaces keeps its
+  fixtures, and `configs/harper/check.py` runs it on them.
+- Each built-in sits in one tier, and two tiers of one rule do not report the
+  same line with other messages.
+- The tests inside each Weir rule pass, as `harper-cli test` runs them.
+- Each phrase of plain words that the main expression of a Weir rule lists,
+  directly or through an `@name` list, fires on its own in a probe sentence. The
+  test skips each phrase that holds a tag of the tagger, such as `DET`, or a
+  character other than a letter, an apostrophe, or a space. No probed phrase
+  holds a shorter probed phrase of the same rule.
+- The comment that opens each Weir rule and the doc comment of each native
+  check follow the layout of the Comments section of
+  `configs/harper/CLAUDE.md`.
 
 ## Building
 
