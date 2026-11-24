@@ -50,13 +50,14 @@ use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::sync::LazyLock;
 
-use harper_core::parsers::{Markdown, Parser};
+use harper_core::parsers::Parser;
 use harper_core::{Span, Token, TokenKind};
 use regex::Regex;
 use tree_sitter::Language;
 
 use self::markup::{Line, Markup};
 use crate::guards;
+use crate::markdown::HarperMarkdown;
 use crate::region::Region;
 
 /// An error of finding the comments of a file.
@@ -735,9 +736,9 @@ fn unframed(chars: &[char], line: &TextLine) -> Range<usize> {
 }
 
 /// A Harper parser that reads the regions of a source file. It parses
-/// the text of each region with the markdown parser of harper-core and
-/// moves each token to the source position of its characters. The text
-/// holds each curly apostrophe between two letters as a straight one, as
+/// the text of each region with [`HarperMarkdown`] and moves each token
+/// to the source position of its characters. The text holds each curly
+/// apostrophe between two letters as a straight one, as
 /// [`guards::straighten`] gives the rules the text of a file. A paragraph break
 /// sits between two regions, so a phrase does not run from one comment
 /// into the next.
@@ -770,7 +771,6 @@ impl<'a> RegionParser<'a> {
 
 impl Parser for RegionParser<'_> {
     fn parse(&self, source: &[char]) -> Vec<Token> {
-        let markdown = Markdown::default();
         let mut tokens = Vec::new();
         for (i, region) in self.regions.iter().enumerate() {
             let indices = region.indices();
@@ -785,7 +785,7 @@ impl Parser for RegionParser<'_> {
                 tokens.push(Token::new(Span::new(end, end), TokenKind::ParagraphBreak));
             }
             let chars: Vec<char> = guards::straighten(&region.text).chars().collect();
-            for mut token in markdown.parse(&chars) {
+            for mut token in HarperMarkdown.parse(&chars) {
                 let (s, e) = (token.span.start, token.span.end);
                 let start = indices.get(s).copied().unwrap_or(last + 1);
                 let end = if e > s { indices[e - 1] + 1 } else { start };

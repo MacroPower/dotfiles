@@ -149,6 +149,36 @@ fn changelogs() {
 }
 
 #[test]
+fn front_matter() {
+    // Only the metadata block that opens the file is front matter. A
+    // later `---` line is a thematic break, so the Weir rules and the
+    // native checks read the lines after it as prose.
+    let tmp = TempDir::new("front-matter");
+    let path = tmp.write(
+        "front.md",
+        "---\ntitle: Pass the host and/or the port, e.g. nightly\n---\n\nIntro.\n\n---\nPass the host and/or the port, e.g. nightly.\n---\n",
+    );
+    let output = lint(&path);
+    assert_eq!(lines_of(&output, "ProseAndOr"), [8]);
+    assert_eq!(lines_of(&output, "ProseLatinAbbreviation"), [8]);
+}
+
+#[test]
+fn front_matter_comments() {
+    // A comment region reads only a metadata block that opens it as
+    // front matter. The test uses `+++` lines, because a comment region
+    // drops each `---` line as a frame line.
+    let tmp = TempDir::new("front-matter-comments");
+    let path = tmp.write(
+        "a.go",
+        "package main\n\n// Run starts the job.\n//\n// +++\n// Pass the host and/or the port, e.g. nightly.\n// +++\nfunc Run() {}\n",
+    );
+    let output = lint(&path);
+    assert_eq!(lines_of(&output, "ProseAndOr"), [6]);
+    assert_eq!(lines_of(&output, "ProseLatinAbbreviation"), [6]);
+}
+
+#[test]
 fn commit() {
     let output = lint_commit("We will add a flag.\n\nPass the host and/or the port.\n");
     assert_eq!(output.status.code(), Some(1));

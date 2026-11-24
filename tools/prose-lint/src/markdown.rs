@@ -2,17 +2,18 @@
 //!
 //! [`Markdown::new`] parses a region with pulldown-cmark, the markdown
 //! parser of harper-core. It passes the options that harper-core
-//! passes. The model holds the blocks of the region and the prose of
-//! each of its lines. A check reads each line as the source wrote it,
-//! with its list markers, `>` marks, and emphasis marks. Each line also
-//! keeps its source text, for a check that reads the markup, such as a
-//! link or a code span. The model blanks the text that is not prose to
-//! spaces:
+//! passes, and it reads front matter as [`HarperMarkdown`] does. The
+//! model holds the blocks of the region and the prose of each of its
+//! lines. A check reads each line as the source wrote it, with its list
+//! markers, `>` marks, and emphasis marks. Each line also keeps its
+//! source text, for a check that reads the markup, such as a link or a
+//! code span. The model blanks the text that is not prose to spaces:
 //!
 //! - Each line that does not hold inline text of a paragraph, a heading,
 //!   a table, or a list item. Such lines hold code blocks, HTML blocks,
 //!   front matter, link reference definitions, thematic breaks, and
-//!   blank lines.
+//!   blank lines. Only a metadata block that opens the region counts as
+//!   front matter, as [`front_matter_only`] describes.
 //! - The opening line of a MyST directive (`:::{note}`) and the
 //!   `:name: value` option lines under it. pulldown-cmark reads them as
 //!   text, but they hold the name and the options of the directive.
@@ -26,10 +27,12 @@
 //! position. Each region starts as a new document, so a block that one
 //! region leaves open does not reach the next region.
 
+use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::LazyLock;
 
-use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
+use harper_core::Token;
+use pulldown_cmark::{Event, LinkType, MetadataBlockKind, Options, Parser, Tag, TagEnd};
 use regex::Regex;
 
 use crate::region::Region;
@@ -48,6 +51,55 @@ pub static QUOTE_MARKS: LazyLock<Regex> =
 static OPTION: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[ \t>]*:[A-Za-z][A-Za-z0-9_-]*:(?:[ \t]|$)").expect("the pattern is valid")
 });
+
+/// The options that harper-core passes to pulldown-cmark.
+fn options() -> Options {
+    Options::all().difference(Options::ENABLE_SMART_PUNCTUATION)
+}
+
+/// Rewrites the opening line of each metadata block that does not open
+/// `text`, so that pulldown-cmark reads the lines as GFM does.
+/// pulldown-cmark opens a metadata block at a `---` or `+++` line at the
+/// start of any block, and the block runs to the next such line. In GFM,
+/// such a `---` line is a thematic break, and so is `___`. Such a `+++`
+/// line opens a paragraph, and so does `\++`. Each rewrite keeps the
+/// length of the text, so each character keeps its index.
+pub fn front_matter_only(text: &str) -> Cow<'_, str> {
+    let mut text = Cow::Borrowed(text);
+    loop {
+        let Some((kind, start)) = Parser::new_ext(&text, options())
+            .into_offset_iter()
+            .find_map(|(event, range)| match event {
+                Event::Start(Tag::MetadataBlock(kind)) if range.start > 0 => {
+                    Some((kind, range.start))
+                }
+                _ => None,
+            })
+        else {
+            return text;
+        };
+        let line = match kind {
+            MetadataBlockKind::YamlStyle => "___",
+            MetadataBlockKind::PlusesStyle => "\\++",
+        };
+        text.to_mut().replace_range(start..start + line.len(), line);
+    }
+}
+
+/// The markdown parser of harper-core, which reads only a metadata block
+/// that opens the text as front matter, as [`front_matter_only`]
+/// describes.
+pub struct HarperMarkdown;
+
+impl harper_core::parsers::Parser for HarperMarkdown {
+    fn parse(&self, source: &[char]) -> Vec<Token> {
+        let parser = harper_core::parsers::Markdown::default();
+        match front_matter_only(&source.iter().collect::<String>()) {
+            Cow::Borrowed(_) => parser.parse(source),
+            Cow::Owned(text) => parser.parse(&text.chars().collect::<Vec<_>>()),
+        }
+    }
+}
 
 /// The kind of a block of the model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,7 +178,6 @@ impl Markdown {
     /// Parses the markdown text of `region`.
     pub fn new(region: &Region) -> Self {
         let text = region.text.as_str();
-        let options = Options::all().difference(Options::ENABLE_SMART_PUNCTUATION);
         let mut prose = vec![false; text.len()];
         let mut hidden: Vec<Range<usize>> = Vec::new();
         let mut blocks: Vec<(BlockKind, Range<usize>)> = Vec::new();
@@ -145,7 +196,8 @@ impl Markdown {
         // the text of such a block.
         let mut loose: Option<usize> = None;
 
-        for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+        let parsed = front_matter_only(text);
+        for (event, range) in Parser::new_ext(&parsed, options()).into_offset_iter() {
             let inline = match &event {
                 Event::Start(tag) => matches!(
                     tag,
@@ -556,6 +608,21 @@ mod tests {
                 want: vec!["", "", "", "", "Run it."],
             },
             Case {
+                name: "metadata block after the start",
+                text: "Intro.\n\n---\nThe job runs.\n---\n\n+++\nThe pod stops.\n+++\n",
+                want: vec![
+                    "Intro.",
+                    "",
+                    "",
+                    "The job runs.",
+                    "",
+                    "",
+                    "+++",
+                    "The pod stops.",
+                    "+++",
+                ],
+            },
+            Case {
                 name: "MyST directive and its options",
                 text: ":::{note}\n:class: read/write\n:name: tip\nThe pod runs.\n:::\n",
                 want: vec!["", "", "", "The pod runs.", ":::"],
@@ -573,6 +640,40 @@ mod tests {
         ];
         for case in cases {
             assert_eq!(prose(case.text), case.want, "{}", case.name);
+        }
+    }
+
+    #[test]
+    fn front_matter() {
+        struct Case {
+            name: &'static str,
+            text: &'static str,
+            want: &'static str,
+        }
+        let cases = [
+            Case {
+                name: "front matter",
+                text: "---\ntitle: Guide\n---\n\nRun it.\n",
+                want: "---\ntitle: Guide\n---\n\nRun it.\n",
+            },
+            Case {
+                name: "two blocks after the start",
+                text: "Run it.\n\n---\nA\n---\n\n---\nB\n---\n",
+                want: "Run it.\n\n___\nA\n---\n\n___\nB\n---\n",
+            },
+            Case {
+                name: "front matter and a block after it",
+                text: "+++\nt = 1\n+++\n\n+++\nRun it.\n+++\n",
+                want: "+++\nt = 1\n+++\n\n\\++\nRun it.\n+++\n",
+            },
+            Case {
+                name: "setext underline",
+                text: "Run it.\n---\nStop it.\n---\n",
+                want: "Run it.\n---\nStop it.\n---\n",
+            },
+        ];
+        for case in cases {
+            assert_eq!(front_matter_only(case.text), case.want, "{}", case.name);
         }
     }
 

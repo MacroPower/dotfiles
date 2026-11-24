@@ -34,10 +34,9 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use harper_core::parsers::Markdown;
-
 use crate::comments::{Comments, RegionParser, Syntax};
 use crate::files::Input;
+use crate::markdown::HarperMarkdown;
 use crate::region::{Finding, Region};
 use crate::rules::{Rules, TIME_SENSITIVE, Tier};
 
@@ -209,7 +208,7 @@ fn lint_markdown(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> 
 /// drops each finding that the same finding of a higher tier hides.
 fn findings(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> {
     let region = Region::markdown(&guards::straighten(text));
-    let mut findings = harper(rules, &region, &Markdown::default());
+    let mut findings = harper(rules, &region, &HarperMarkdown);
     // The native checks read the text as the file holds it, so
     // ProseTypography reports a curly apostrophe that the Weir rules
     // read as a straight one.
