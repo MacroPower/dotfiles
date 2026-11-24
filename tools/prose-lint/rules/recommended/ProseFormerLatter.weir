@@ -30,7 +30,30 @@
 # The rule hit 69 lines in the measure.py corpus, and 19 of 20 sampled
 # hits pointed back at an earlier list. The one misfire was the plain
 # adjective before a noun outside `sense` (`the former User-Agent`).
-expr sense [maintainer, maintainers, owner, owners, employee, employees, member, members, colleague, colleagues, partner, partners, president, head, half, part, parts, stage, stages, years, days, decades]
+expr sense [
+    maintainer,
+    maintainers,
+    owner,
+    owners,
+    employee,
+    employees,
+    member,
+    members,
+    colleague,
+    colleagues,
+    partner,
+    partners,
+    president,
+    head,
+    half,
+    part,
+    parts,
+    stage,
+    stages,
+    years,
+    days,
+    decades
+]
 expr main [respectively, <(the [former, latter] !@sense), (the [former, latter])>, (the [former, latter][., ;, :, (,)])]
 let message "`former`, `latter`, or `respectively`. Repeat the noun, or pair each item with its value."
 let description "Flags `respectively`, `the former`, and `the latter`, which make the reader map items back to an earlier list."

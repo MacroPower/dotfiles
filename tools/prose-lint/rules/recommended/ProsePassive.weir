@@ -96,16 +96,123 @@
 # type`). The two misfires named a state (`might be uninitialized`) or
 # had no actor to name (`the environment in which the command would be
 # run`).
-expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, live, called, named, meant, supposed, recommended, designed, intended, bound, referred, prepared, advised, assured, reminded, warned]
-expr missed [cached, compiled, computed, configured, decoded, discarded, encoded, evicted, fetched, flushed, hashed, linted, normalized, parsed, patched, persisted, propagated, queued, redirected, reset, restarted, retried, revoked, rotated, sanitized, serialized, stripped, synced, tagged, truncated, validated]
+expr stative [
+    PROG,
+    missing,
+    done,
+    set,
+    unset,
+    enabled,
+    disabled,
+    required,
+    needed,
+    expected,
+    allowed,
+    supported,
+    available,
+    stuck,
+    broken,
+    gone,
+    finished,
+    lost,
+    left,
+    known,
+    frozen,
+    wedged,
+    based,
+    tied,
+    built,
+    made,
+    fixed,
+    live,
+    called,
+    named,
+    meant,
+    supposed,
+    recommended,
+    designed,
+    intended,
+    bound,
+    referred,
+    prepared,
+    advised,
+    assured,
+    reminded,
+    warned
+]
+expr missed [
+    cached,
+    compiled,
+    computed,
+    configured,
+    decoded,
+    discarded,
+    encoded,
+    evicted,
+    fetched,
+    flushed,
+    hashed,
+    linted,
+    normalized,
+    parsed,
+    patched,
+    persisted,
+    propagated,
+    queued,
+    redirected,
+    reset,
+    restarted,
+    retried,
+    revoked,
+    rotated,
+    sanitized,
+    serialized,
+    stripped,
+    synced,
+    tagged,
+    truncated,
+    validated
+]
 expr verb [<VERB, !@stative>, @missed]
-expr agentive [set, unset, enabled, disabled, required, needed, expected, allowed, supported, broken, known, built, made, fixed, called, named, designed, intended, bound, prepared, advised, assured, reminded, warned]
+expr agentive [
+    set,
+    unset,
+    enabled,
+    disabled,
+    required,
+    needed,
+    expected,
+    allowed,
+    supported,
+    broken,
+    known,
+    built,
+    made,
+    fixed,
+    called,
+    named,
+    designed,
+    intended,
+    bound,
+    prepared,
+    advised,
+    assured,
+    reminded,
+    warned
+]
 expr agent [(DET ![time, way]), PRON, PROPN]
 expr modal [must, should, can, cannot, could, may, might, will, would, shall, can't, won't, shouldn't, couldn't, wouldn't, mustn't]
 expr pp [@verb, ([ADV, not] @verb)]
 expr ag [@agentive, ([ADV, not] @agentive)]
 expr byform <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ>
-expr main [(<@modal, !will> be @byform by [DET, PRON, PROPN]), (@modal [not, ADV] be @byform by [DET, PRON, PROPN]), (<@modal, !will> be @pp!-), (@modal [not, ADV] be @pp!-), (<@modal, !will> be @ag by @agent), (@modal [not, ADV] be @ag by @agent)]
+expr main [
+    (<@modal, !will> be @byform by [DET, PRON, PROPN]),
+    (@modal [not, ADV] be @byform by [DET, PRON, PROPN]),
+    (<@modal, !will> be @pp!-),
+    (@modal [not, ADV] be @pp!-),
+    (<@modal, !will> be @ag by @agent),
+    (@modal [not, ADV] be @ag by @agent)
+]
 let message "Passive voice. Name who acts, such as `you can configure the timeout` or `the caller must hold the lock`."
 let description "Flags a passive after a modal verb, such as `can be configured` or `must be held`, which hides who can or must act."
 let becomes ""

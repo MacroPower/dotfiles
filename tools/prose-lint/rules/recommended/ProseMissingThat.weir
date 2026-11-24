@@ -54,7 +54,33 @@
 # ambiguous`).
 expr imper [ensure, verify, confirm, (make sure), assume, check, remember, notice]
 expr third [ensures, means, says, knows, shows, indicates, guarantees, expects, tells, assumes, implies, suggests, verifies, confirms]
-expr aux [AUX, has, have, knows, needs, exists, runs, matches, contains, fails, holds, works, uses, succeeds, succeeded, expires, applies, belongs, stops, completes, finishes, reaches, appears, exceeds, equals]
+expr aux [
+    AUX,
+    has,
+    have,
+    knows,
+    needs,
+    exists,
+    runs,
+    matches,
+    contains,
+    fails,
+    holds,
+    works,
+    uses,
+    succeeds,
+    succeeded,
+    expires,
+    applies,
+    belongs,
+    stops,
+    completes,
+    finishes,
+    reaches,
+    appears,
+    exceeds,
+    equals
+]
 expr w ![that, which, who, to, PRON, CCONJ, (,)]
 expr det <[DET, your, its, their, our], !that>
 expr rest @det [(@w @aux), (@w @w @aux), (@w @w @w @aux)]

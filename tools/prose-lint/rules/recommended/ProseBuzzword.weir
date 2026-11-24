@@ -44,7 +44,22 @@
 #
 # The rule did not hit any line in the measure.py corpus, so no sample
 # measures its precision.
-expr main [substrate, substrates, endgame, flywheel, flywheels, (bedrock of), (the bedrock for), (nexus [of, between]), (paradigm shift), (new paradigm), (north[-, ( )]star!(( )[metric, metrics])), (gold[-, ( )]plating), (gold[-, ( )]plated), (wedge in)]
+expr main [
+    substrate,
+    substrates,
+    endgame,
+    flywheel,
+    flywheels,
+    (bedrock of),
+    (the bedrock for),
+    (nexus [of, between]),
+    (paradigm shift),
+    (new paradigm),
+    (north[-, ( )]star!(( )[metric, metrics])),
+    (gold[-, ( )]plating),
+    (gold[-, ( )]plated),
+    (wedge in)
+]
 let message "Buzzword. Use the concrete word."
 let description "Flags buzzwords that stand in for a concrete term."
 let becomes ""

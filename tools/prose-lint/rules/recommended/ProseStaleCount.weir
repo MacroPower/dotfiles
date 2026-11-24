@@ -33,7 +33,40 @@
 # container`, and those that do not).
 expr verbs [(there are), supports, provides, offers, has, (ships with), includes, defines, accepts, (comes with)]
 expr count [two, three, four, five, six, seven, eight, nine, ten]
-expr set [modes, backends, providers, drivers, plugins, formats, platforms, implementations, strategies, policies, profiles, levels, kinds, types, options, flags, subcommands, commands, endpoints, protocols, runtimes, engines, tiers, methods, algorithms, categories, versions, integrations, adapters, targets, architectures, ways]
+expr set [
+    modes,
+    backends,
+    providers,
+    drivers,
+    plugins,
+    formats,
+    platforms,
+    implementations,
+    strategies,
+    policies,
+    profiles,
+    levels,
+    kinds,
+    types,
+    options,
+    flags,
+    subcommands,
+    commands,
+    endpoints,
+    protocols,
+    runtimes,
+    engines,
+    tiers,
+    methods,
+    algorithms,
+    categories,
+    versions,
+    integrations,
+    adapters,
+    targets,
+    architectures,
+    ways
+]
 expr main (@verbs @count [@set, (* @set)])
 let message "Stale count. Drop the number, name each item, or give the command that lists them."
 let description "Flags a count of a set that can grow, such as `supports two modes`, which goes stale when the set grows."

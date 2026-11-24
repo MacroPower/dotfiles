@@ -35,7 +35,24 @@
 # The rule hit 85 lines in the measure.py corpus, and 19 of 20 sampled
 # hits read as well without the word. The misfire was `highly utilized
 # nodes`, where the word carries the meaning.
-expr main [extremely, incredibly, significantly, dramatically, drastically, greatly, vastly, tremendously, massively, hugely, substantially, considerably, enormously, immensely, exceedingly, (highly !available)]
+expr main [
+    extremely,
+    incredibly,
+    significantly,
+    dramatically,
+    drastically,
+    greatly,
+    vastly,
+    tremendously,
+    massively,
+    hugely,
+    substantially,
+    considerably,
+    enormously,
+    immensely,
+    exceedingly,
+    (highly !available)
+]
 let message "Intensifier. Delete the word, or give a number that stays true, such as a protocol limit."
 let description "Flags adverbs that intensify a claim without measuring it."
 let becomes ""

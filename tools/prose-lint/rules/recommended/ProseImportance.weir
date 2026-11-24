@@ -31,7 +31,20 @@
 # hits rated a part without saying what depends on it. Both misfires
 # used `essential` for a class (`any essential settings`), the way
 # `non-essential` does.
-expr main [crucial, <(!-essential), essential>, (critical [to, for]), cornerstone, linchpin, vital, pivotal, paramount, invaluable, indispensable, (plays a [vital, crucial, key, critical, important] role), ([underscore, underscores, highlight, highlights] the [importance, need])]
+expr main [
+    crucial,
+    <(!-essential), essential>,
+    (critical [to, for]),
+    cornerstone,
+    linchpin,
+    vital,
+    pivotal,
+    paramount,
+    invaluable,
+    indispensable,
+    (plays a [vital, crucial, key, critical, important] role),
+    ([underscore, underscores, highlight, highlights] the [importance, need])
+]
 let message "Importance claim. Say what depends on it, or delete the word."
 let description "Flags words that rate a part as important without saying what depends on it."
 let becomes ""

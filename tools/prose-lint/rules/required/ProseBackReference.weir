@@ -47,7 +47,15 @@
 # restart policy`).
 expr verbs [mentioned, noted, stated, discussed, described, explained, outlined, covered]
 expr earlier [above, earlier, before, previously]
-expr main [(as @verbs @earlier), (as [previously, already] @verbs), (as we [saw, discussed, noted, mentioned, explained] @earlier), (as [mentioned, noted, stated, discussed],), aforementioned, (above[-, ( )][mentioned, noted]), (previously mentioned)]
+expr main [
+    (as @verbs @earlier),
+    (as [previously, already] @verbs),
+    (as we [saw, discussed, noted, mentioned, explained] @earlier),
+    (as [mentioned, noted, stated, discussed],),
+    aforementioned,
+    (above[-, ( )][mentioned, noted]),
+    (previously mentioned)
+]
 let message "Back-reference. Name or link what it points at, or delete the phrase."
 let description "Flags `as mentioned above` and similar phrases that point back without naming the passage."
 let becomes ""

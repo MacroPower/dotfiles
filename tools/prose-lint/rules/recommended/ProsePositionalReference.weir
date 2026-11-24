@@ -66,7 +66,18 @@ expr verbs [see, described, mentioned, explained, discussed, outlined]
 expr since [described, mentioned, explained, discussed, outlined, covered, noted]
 expr passage [situation, situations, scenario, scenarios, problem, problems, (use cases), tradeoffs, limitations, risks, considerations]
 expr docs [guide, page, document, section, chapter, tutorial, doc, post, article, book]
-expr main [<(!as @verbs above), (@verbs above)>, (@verbs below), (the [section, sections, paragraph, chapter] @where), (the [next, previous, preceding] [section, chapter]), (the [above, preceding] @passage), ([given, following, notwithstanding, despite, besides, (in addition to), (based on)] the above), <(!as @since [earlier, previously]), (@since [earlier, previously])>, (@since later), (the [next, previous, preceding, prior] [paragraph, paragraphs]), <([earlier, later] in this @docs!(,( )[DET, PRON, PROPN, NOUN])), ([earlier, later] in this @docs)>]
+expr main [
+    <(!as @verbs above), (@verbs above)>,
+    (@verbs below),
+    (the [section, sections, paragraph, chapter] @where),
+    (the [next, previous, preceding] [section, chapter]),
+    (the [above, preceding] @passage),
+    ([given, following, notwithstanding, despite, besides, (in addition to), (based on)] the above),
+    <(!as @since [earlier, previously]), (@since [earlier, previously])>,
+    (@since later),
+    (the [next, previous, preceding, prior] [paragraph, paragraphs]),
+    <([earlier, later] in this @docs!(,( )[DET, PRON, PROPN, NOUN])), ([earlier, later] in this @docs)>
+]
 let message "Positional reference. Link the section by name."
 let description "Flags `described above`, `the next section`, and similar references that point at a passage by position."
 let becomes ""

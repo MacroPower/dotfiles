@@ -72,7 +72,23 @@
 # the same point with the adverb deleted. In one of the 9 hits,
 # `ultimately,` sat between two commas in the middle of a sentence (`and
 # so, ultimately, hold different types`).
-expr main [([obviously, clearly], [DET, PRON, PROPN, NOUN]), (interestingly,), (importantly,), (notably,), (crucially,), (unfortunately,), (fortunately,), (luckily,), (thankfully,), (surprisingly,), (unsurprisingly,), (sadly,), (remarkably,), (admittedly,), (ultimately,)]
+expr main [
+    ([obviously, clearly], [DET, PRON, PROPN, NOUN]),
+    (interestingly,),
+    (importantly,),
+    (notably,),
+    (crucially,),
+    (unfortunately,),
+    (fortunately,),
+    (luckily,),
+    (thankfully,),
+    (surprisingly,),
+    (unsurprisingly,),
+    (sadly,),
+    (remarkably,),
+    (admittedly,),
+    (ultimately,)
+]
 let message "Sentence adverb. Delete it and let the point carry its own weight."
 let description "Flags a sentence-opening adverb such as `clearly`, `notably`, or `unfortunately` that rates the point that follows."
 let becomes ""

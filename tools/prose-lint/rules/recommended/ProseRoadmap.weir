@@ -67,7 +67,30 @@
 # (`Going forward, let's add the package`).
 expr when [be, is, are, was, were, have, time, date, point, timestamp, deadline, cutoff, moment, instant, far, further, year, years]
 expr tutorial [whenever, when, if, you]
-expr main [(going forward), <(!@when in the future![,, ?]), (in the future)>, (in the future, !@tutorial), (in a future release), (in a future version), (in an upcoming release), (in upcoming releases), (in future releases), (in future versions), <(will be !(added to)), (will be added)>, (will be supported), (will be removed), (will be deprecated), ([is, are] planned !by), ([is, are] planned!( )), (on the roadmap), (coming soon), (not yet implemented), (not yet supported), ([yet, still, remains, remain] to be implemented), (will soon), (soon be)]
+expr main [
+    (going forward),
+    <(!@when in the future![,, ?]), (in the future)>,
+    (in the future, !@tutorial),
+    (in a future release),
+    (in a future version),
+    (in an upcoming release),
+    (in upcoming releases),
+    (in future releases),
+    (in future versions),
+    <(will be !(added to)), (will be added)>,
+    (will be supported),
+    (will be removed),
+    (will be deprecated),
+    ([is, are] planned !by),
+    ([is, are] planned!( )),
+    (on the roadmap),
+    (coming soon),
+    (not yet implemented),
+    (not yet supported),
+    ([yet, still, remains, remain] to be implemented),
+    (will soon),
+    (soon be)
+]
 let message "Roadmap promise. Describe the system as it ships, such as `the flag is deprecated`, and keep plans in the issue tracker."
 let description "Flags phrases that promise a change for a later version."
 let becomes ""

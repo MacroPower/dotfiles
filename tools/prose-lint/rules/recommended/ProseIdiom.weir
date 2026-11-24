@@ -34,7 +34,48 @@
 #
 # The rule hit 23 lines in the measure.py corpus, and 20 of 20 sampled
 # hits were idioms.
-expr main [(low[-, ( )]hanging fruit), (heavy lifting), (moving parts), (rabbit hole), (rabbit holes), (silver bullet), (double[-, ( )]edged sword), (in a nutshell), (no[-, ( )]brainer), ballpark, ([we, we're, everyone, everybody, team, teams, us, they, they're, you're] on the same page), ([we, everyone, everybody, team, teams, they, you] [is, are, was, were, be, get, gets, got, stay, stays] on the same page), (under the hood), (at its core), (at its heart), (at the heart of), ([strike, strikes, striking] a balance), (circle back), (touch base), (lion's share), (tip of the iceberg), (move the needle), (rule of thumb), (can of worms), (slippery slope), (big picture), (in the long run), (par for the course), (by and large), (behind the scenes), (under the covers), (kick the tires), (out of the woods), (in the weeds), (sweet spot), (hand[-, ( )]wave), (hand[-, ( )]waving), (hand[-, ( )]wavy), footgun, footguns]
+expr main [
+    (low[-, ( )]hanging fruit),
+    (heavy lifting),
+    (moving parts),
+    (rabbit hole),
+    (rabbit holes),
+    (silver bullet),
+    (double[-, ( )]edged sword),
+    (in a nutshell),
+    (no[-, ( )]brainer),
+    ballpark,
+    ([we, we're, everyone, everybody, team, teams, us, they, they're, you're] on the same page),
+    ([we, everyone, everybody, team, teams, they, you] [is, are, was, were, be, get, gets, got, stay, stays] on the same page),
+    (under the hood),
+    (at its core),
+    (at its heart),
+    (at the heart of),
+    ([strike, strikes, striking] a balance),
+    (circle back),
+    (touch base),
+    (lion's share),
+    (tip of the iceberg),
+    (move the needle),
+    (rule of thumb),
+    (can of worms),
+    (slippery slope),
+    (big picture),
+    (in the long run),
+    (par for the course),
+    (by and large),
+    (behind the scenes),
+    (under the covers),
+    (kick the tires),
+    (out of the woods),
+    (in the weeds),
+    (sweet spot),
+    (hand[-, ( )]wave),
+    (hand[-, ( )]waving),
+    (hand[-, ( )]wavy),
+    footgun,
+    footguns
+]
 let message "Idiom. Write the literal meaning."
 let description "Flags idioms, such as `heavy lifting` and `rule of thumb`, whose words do not add up to their meaning."
 let becomes ""

@@ -62,7 +62,26 @@
 # phrase. In the one misfire, `if possible` pointed at a check that the
 # same sentence named (`See if the statement has already been prepared
 # on this connection, and reuse it if possible`).
-expr main [(as needed), (as necessary), (as appropriate), (as applicable), (as required!(( )by)), (where needed), (where necessary), (where appropriate), (where applicable), (when needed), (when necessary), (when appropriate), (when applicable), (if needed), (if necessary), (if appropriate), (if applicable), (if possible)]
+expr main [
+    (as needed),
+    (as necessary),
+    (as appropriate),
+    (as applicable),
+    (as required!(( )by)),
+    (where needed),
+    (where necessary),
+    (where appropriate),
+    (where applicable),
+    (when needed),
+    (when necessary),
+    (when appropriate),
+    (when applicable),
+    (if needed),
+    (if necessary),
+    (if appropriate),
+    (if applicable),
+    (if possible)
+]
 let message "Vague criterion. Name the condition the reader should check, or drop the phrase."
 let description "Flags `as needed`, `where applicable`, `if possible`, and similar phrases that leave the reader to supply a criterion."
 let becomes ""

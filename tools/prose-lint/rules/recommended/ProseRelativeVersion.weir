@@ -31,7 +31,12 @@
 # of an API`, `older versions of Kubernetes` beside words that define
 # them, and `modern CPUs`, which has no version to name.
 expr when [older, earlier, newer, recent, prior, previous]
-expr main [(in @when [versions, releases]), ([a, the] [recent, newer] [version, release]), ([newer, older, recent, modern] [kernels, browsers, CPUs, processors, distributions, compilers]), ([older, newer, earlier, recent] versions of)]
+expr main [
+    (in @when [versions, releases]),
+    ([a, the] [recent, newer] [version, release]),
+    ([newer, older, recent, modern] [kernels, browsers, CPUs, processors, distributions, compilers]),
+    ([older, newer, earlier, recent] versions of)
+]
 let message "Relative version. Name the version, such as `before v1.24` or `5.8 and later`."
 let description "Flags `in older versions`, `newer kernels`, and similar phrases that name a version relative to the present."
 let becomes ""

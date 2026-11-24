@@ -120,7 +120,18 @@ expr neg [not, never, isn't, aren't, wasn't, weren't, can't, cannot, couldn't, w
 expr verbs [run, use, add, call, set, pass, type, install, copy, edit, change, create, delete, remove, update, point, drop, put, write, open, click]
 expr word [(simply!(( )put)), merely, easily, trivially, straightforward, (easy to use)]
 expr just (just @verbs)
-expr main [<(![@neg, more, less, most, least] @word), @word>, <(![@neg, more, less, most, least, than] @just), @just>, (simply[(( )<VERB, !put>), (,)]), (merely[(( )VERB), (,)]), (is easy to), (it's easy to), (to quickly), (you quickly), (you can quickly), (quickly and easily)]
+expr main [
+    <(![@neg, more, less, most, least] @word), @word>,
+    <(![@neg, more, less, most, least, than] @just), @just>,
+    (simply[(( )<VERB, !put>), (,)]),
+    (merely[(( )VERB), (,)]),
+    (is easy to),
+    (it's easy to),
+    (to quickly),
+    (you quickly),
+    (you can quickly),
+    (quickly and easily)
+]
 let message "Minimizer. Delete the word, or write `only` where it limits the claim."
 let description "Flags `simply`, `merely`, `easily`, and similar words that tell the reader a step is easy or a behavior is small."
 let becomes ""

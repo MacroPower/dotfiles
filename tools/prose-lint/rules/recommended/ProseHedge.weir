@@ -95,7 +95,45 @@
 # hedged a result. `likely` hit 43 lines in the measure.py corpus, and
 # 42 of 43 hedged a claim. The misfire was `the most likely pod eviction
 # order`, where the probability is the point.
-expr main [<(![more, less, how] likely!(( )[to, that])), likely>, somewhat, arguably, perhaps, probably, maybe, (in essence), (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, (fairly [ADJ, ADV]), (quite [ADJ, ADV, DET]), apparently, seemingly, supposedly, ostensibly, (in theory), (in principle), (in a sense), ([it, this, that] should [work, fix, resolve, suffice]), ([it, this, that] should be [fine, enough, safe, ok, okay]), (you should see)]
+expr main [
+    <(![more, less, how] likely!(( )[to, that])), likely>,
+    somewhat,
+    arguably,
+    perhaps,
+    probably,
+    maybe,
+    (in essence),
+    (!DET [kind, sort] of [ADJ, ADV, VERB]),
+    essentially,
+    basically,
+    (a little bit),
+    (to some extent),
+    (to a certain extent),
+    (more or less),
+    (generally speaking),
+    (for the most part),
+    (in most cases),
+    (it seems),
+    (it seemed),
+    (seems to),
+    (seem to),
+    ([appears, appear] to ![DET, PRON, PROPN]),
+    (tends to),
+    (tend to),
+    presumably,
+    (fairly [ADJ, ADV]),
+    (quite [ADJ, ADV, DET]),
+    apparently,
+    seemingly,
+    supposedly,
+    ostensibly,
+    (in theory),
+    (in principle),
+    (in a sense),
+    ([it, this, that] should [work, fix, resolve, suffice]),
+    ([it, this, that] should be [fine, enough, safe, ok, okay]),
+    (you should see)
+]
 let message "Hedge. State the claim, name the condition it depends on, or drop it."
 let description "Flags words that soften a claim without adding information."
 let becomes ""

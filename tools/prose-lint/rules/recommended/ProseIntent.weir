@@ -34,7 +34,24 @@
 # hits read better with the behavior as the verb or with `must`. The 2
 # misfires named a goal that the subject might not reach (`the project
 # aims to not break compatibility`).
-expr main [(is designed to), (are designed to), (is intended to), (are intended to), (is meant to), (are meant to), (is responsible for), (are responsible for), (aims to), (aim to), (serves to), (serve to), (exists to), (exist to), (the [purpose, goal] of * [is, was] to), (the [purpose, goal] of * * [is, was] to)]
+expr main [
+    (is designed to),
+    (are designed to),
+    (is intended to),
+    (are intended to),
+    (is meant to),
+    (are meant to),
+    (is responsible for),
+    (are responsible for),
+    (aims to),
+    (aim to),
+    (serves to),
+    (serve to),
+    (exists to),
+    (exist to),
+    (the [purpose, goal] of * [is, was] to),
+    (the [purpose, goal] of * * [is, was] to)
+]
 let message "Intent phrase. State what the subject does, with the behavior as its verb, or write `must` or `should` for a person's duty."
 let description "Flags phrases that wrap a behavior in its purpose or duty."
 let becomes ""

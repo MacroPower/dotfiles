@@ -109,7 +109,25 @@ expr need [need, needs]
 expr neg [not, never, don't, doesn't, didn't, won't, wouldn't, shouldn't, aren't, isn't, wasn't, weren't, only, just, rarely, to, might, may, would, could, DET]
 expr wrap [expected, required, supposed]
 expr verbs [note, remember, understand, mention, realize, recognize]
-expr main [<(!@neg @need to !know), (@need to)>, <(!@neg going to @need to !know), (@need to)>, ([(it is), it's] [necessary, essential, critical, best] to), ([is, are] [advised, encouraged] to), ([is, are] ADV [advised, encouraged] to), ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), ([I'll, you'll, we'll, they'll, he'll, she'll, it'll] want to), ([will, may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
+expr main [
+    <(!@neg @need to !know), (@need to)>,
+    <(!@neg going to @need to !know), (@need to)>,
+    ([(it is), it's] [necessary, essential, critical, best] to),
+    ([is, are] [advised, encouraged] to),
+    ([is, are] ADV [advised, encouraged] to),
+    ([is, are] @wrap to),
+    ([is, are] recommended),
+    <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>,
+    (it is advisable),
+    (it is a good idea),
+    ([I'll, you'll, we'll, they'll, he'll, she'll, it'll] want to),
+    ([will, may, might] want to),
+    (be sure to),
+    (make sure to),
+    (ought to),
+    (must try to),
+    shall
+]
 let message "Vague obligation. Write `must` or `should` for what a person does, the present tense for what the system does, or open with `To` and the goal."
 let description "Flags `needs to`, `is expected to`, `is recommended`, and other phrases that hide how strong an obligation is."
 let becomes ""

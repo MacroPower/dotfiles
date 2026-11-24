@@ -46,7 +46,21 @@
 #
 # The rule hit 77 lines in the measure.py corpus, and 20 of 20 sampled
 # hits opened a restatement or a summary.
-expr main [(in other words,), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN]), (in summary,), (in conclusion,), (to sum up,), (to summarize,), (all in all,), (put differently,), (said differently,), (stated differently,), (to put it another way,)]
+expr main [
+    (in other words,),
+    (simply put),
+    (that is to say),
+    (to be clear, [DET, PRON, PROPN, NOUN]),
+    (in summary,),
+    (in conclusion,),
+    (to sum up,),
+    (to summarize,),
+    (all in all,),
+    (put differently,),
+    (said differently,),
+    (stated differently,),
+    (to put it another way,)
+]
 let message "Restatement. Keep the clearer of the two statements, and delete the other one and the phrase. Move a closing summary to the start."
 let description "Flags phrases that announce the writer is about to say a thing again."
 let becomes ""

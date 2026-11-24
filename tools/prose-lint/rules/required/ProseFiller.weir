@@ -35,7 +35,36 @@
 # hits announced a point. The misfires were an interview answer (`Of
 # course.`) and a claim of importance (`the underlying dynamic is
 # important to keep in mind`).
-expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as we can see), (as we have seen), (as we've seen), (as you might expect), (as you would expect), (as you'd expect), (of course), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning), (worth pointing out), (bears mentioning), (bears repeating), (it should be mentioned), (it should be stressed), (worth remembering)]
+expr main [
+    (worth noting),
+    (it should be noted),
+    (it must be noted),
+    (please note),
+    (keep in mind),
+    (bear in mind),
+    (it is important to [note, remember, understand, mention, realize, recognize]),
+    (it's important to [note, remember, understand, mention, realize, recognize]),
+    (needless to say),
+    (as you can see),
+    (as we can see),
+    (as we have seen),
+    (as we've seen),
+    (as you might expect),
+    (as you would expect),
+    (as you'd expect),
+    (of course),
+    (make no mistake),
+    (it goes without saying),
+    (at the end of the day),
+    (as a matter of fact),
+    (worth mentioning),
+    (worth pointing out),
+    (bears mentioning),
+    (bears repeating),
+    (it should be mentioned),
+    (it should be stressed),
+    (worth remembering)
+]
 let message "Filler phrase. Delete the phrase and state the point."
 let description "Flags phrases that announce a point instead of making it."
 let becomes ""

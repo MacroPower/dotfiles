@@ -72,7 +72,29 @@
 # misfires sat in one published interview that prints each question in
 # bold and does not name a speaker (`It's a neverending mission,
 # however, we think`).
-expr main [(in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said), (I'd argue), (I'd say), (I would say), (in my experience), (to be honest), (if you ask me), (honestly,), (frankly,), (personally,)]
+expr main [
+    (in my opinion),
+    (in my view),
+    (I think),
+    (I believe),
+    (I feel),
+    (we think),
+    (we believe),
+    (we feel),
+    (it could be argued),
+    (one could argue),
+    (it might be said),
+    (it may be said),
+    (I'd argue),
+    (I'd say),
+    (I would say),
+    (in my experience),
+    (to be honest),
+    (if you ask me),
+    (honestly,),
+    (frankly,),
+    (personally,)
+]
 let message "Opinion marker. State the claim, or give the evidence for it."
 let description "Flags phrases that frame a claim as someone's view instead of stating it."
 let becomes ""

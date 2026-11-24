@@ -34,7 +34,25 @@
 # hits stood for a count that the sentence did not give. The misfires
 # used `variety` for a kind (`lifetimes: a variety of generics`) or for
 # `different` (`values with a variety of types`).
-expr main [(rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (wide array), (vast array), (broad range), (diverse range), (a host of ![the, this, that, a, an, each, every, its, their]), (a whole host), (a slew of), countless, numerous, (a variety of), (a [huge, significant, substantial, considerable, good] number of)]
+expr main [
+    (rich set),
+    (wide range),
+    (wide variety),
+    (plethora of),
+    (myriad of),
+    (a myriad),
+    (wide array),
+    (vast array),
+    (broad range),
+    (diverse range),
+    (a host of ![the, this, that, a, an, each, every, its, their]),
+    (a whole host),
+    (a slew of),
+    countless,
+    numerous,
+    (a variety of),
+    (a [huge, significant, substantial, considerable, good] number of)
+]
 let message "Vague quantity. Name the items, or write `many` or `several`."
 let description "Flags phrases such as `wide range` and `plethora of` that inflate a count without giving it."
 let becomes ""

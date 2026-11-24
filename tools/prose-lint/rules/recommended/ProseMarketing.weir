@@ -41,7 +41,48 @@
 # hits sold a feature. The misfires used `comprehensive` for complete
 # (`a comprehensive discovery document`) and `powerful` for privileged
 # (`powerful pods`).
-expr main [seamless, seamlessly, (robust ![to, against]), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, intricate, vibrant, (a breeze), holistic, groundbreaking, transformative, (ever[-, ( )]evolving), (rapidly evolving), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing), (game[-, ( )]changer), (game[-, ( )]changers)]
+expr main [
+    seamless,
+    seamlessly,
+    (robust ![to, against]),
+    (robust!( )),
+    powerful,
+    elegant,
+    elegantly,
+    comprehensive,
+    intuitive,
+    effortless,
+    effortlessly,
+    blazing,
+    blazingly,
+    revolutionary,
+    innovative,
+    sophisticated,
+    intricate,
+    vibrant,
+    (a breeze),
+    holistic,
+    groundbreaking,
+    transformative,
+    (ever[-, ( )]evolving),
+    (rapidly evolving),
+    (top[-, ( )]notch),
+    (battle[-, ( )]tested),
+    (production[-, ( )]ready),
+    (enterprise[-, ( )]grade),
+    (out[-, ( )]of[-, ( )]the[-, ( )]box),
+    (bells and whistles),
+    (feature[-, ( )]rich),
+    (cutting[-, ( )]edge),
+    (state[-, ( )]of[-, ( )]the[-, ( )]art),
+    (lightning[-, ( )]fast),
+    (best[-, ( )]in[-, ( )]class),
+    (world[-, ( )]class),
+    (next[-, ( )]generation),
+    (game[-, ( )]changing),
+    (game[-, ( )]changer),
+    (game[-, ( )]changers)
+]
 let message "Marketing language. State the fact and let the reader judge its weight."
 let description "Flags marketing adjectives that inflate a claim without informing."
 let becomes ""

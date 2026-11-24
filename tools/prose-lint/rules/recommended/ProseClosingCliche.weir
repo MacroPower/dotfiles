@@ -36,7 +36,17 @@
 # opened the last paragraph of its section, and the other sat in the
 # middle of its section. `time will tell` did not hit any line in the
 # corpus, so no sample measures that phrase.
-expr main [(the future looks bright), (time will tell), ([only] time will tell), (exciting times ahead), (the possibilities are endless), (that's it), (you're all set), (you are all set), (say goodbye to)]
+expr main [
+    (the future looks bright),
+    (time will tell),
+    ([only] time will tell),
+    (exciting times ahead),
+    (the possibilities are endless),
+    (that's it),
+    (you're all set),
+    (you are all set),
+    (say goodbye to)
+]
 let message "Closing cliche. Delete it and end on the last fact."
 let description "Flags cliches that end a section without saying anything."
 let becomes ""

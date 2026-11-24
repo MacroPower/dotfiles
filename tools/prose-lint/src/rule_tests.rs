@@ -80,7 +80,8 @@ static RULE_MARKS: LazyLock<Regex> = LazyLock::new(|| {
 /// A list entry made only of words, which a probe sentence can quote.
 static PLAIN_ENTRY: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z']+( [A-Za-z']+)*$").expect("the pattern is valid"));
-static EXPR_LINE: LazyLock<Regex> =
+/// An `expr` statement, joined onto one line.
+static EXPR_STMT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^expr (\w+) (.*)$").expect("the pattern is valid"));
 
 /// The tags of Harper's part-of-speech tagger and the Weir keyword
@@ -461,6 +462,38 @@ fn split_alternatives(body: &str) -> Vec<String> {
     parts
 }
 
+/// Returns the body of each `expr` statement of a Weir rule, by the
+/// name of the expression.
+///
+/// harper-core ends a statement at each newline outside a `[...]` of
+/// the statement, as the function does. The function joins the lines
+/// of a statement with a space, which Weir reads the same as the
+/// newline.
+fn expr_bodies(source: &str) -> HashMap<String, String> {
+    let mut exprs = HashMap::new();
+    let mut stmt = String::new();
+    let mut depth = 0;
+    for line in source.lines() {
+        let part = line.trim();
+        if stmt.is_empty() && (part.is_empty() || part.starts_with('#')) {
+            continue;
+        }
+        if !stmt.is_empty() {
+            stmt.push(' ');
+        }
+        stmt.push_str(part);
+        depth += part.matches('[').count() as isize - part.matches(']').count() as isize;
+        if depth <= 0 {
+            if let Some(c) = EXPR_STMT.captures(&stmt) {
+                exprs.insert(c[1].to_string(), c[2].to_string());
+            }
+            stmt.clear();
+            depth = 0;
+        }
+    }
+    exprs
+}
+
 /// Returns the phrases of words alone that the main expression of a
 /// Weir rule lists.
 ///
@@ -469,11 +502,7 @@ fn split_alternatives(body: &str) -> Vec<String> {
 /// phrase, and so does a sequence of bare words in parentheses. A main
 /// expression that is one such sequence counts too.
 fn plain_entries(source: &str) -> Vec<String> {
-    let exprs: HashMap<String, String> = source
-        .lines()
-        .filter_map(|line| EXPR_LINE.captures(line.trim()))
-        .map(|c| (c[1].to_string(), c[2].to_string()))
-        .collect();
+    let exprs = expr_bodies(source);
 
     fn plain(alt: &str) -> bool {
         PLAIN_ENTRY.is_match(alt) && !alt.split(' ').any(|w| TAGS.contains(&w))
@@ -1073,6 +1102,17 @@ mod tests {
                 name: "one sequence",
                 source: "expr main and or\n",
                 want: vec!["and or"],
+            },
+            Case {
+                name: "a list over several lines",
+                source: "expr pair [\n    (and or),\n    (or and),\n    but\n]\n\
+                         expr main [\n    @pair,\n    (ADJ and)\n]\n",
+                want: vec!["and or", "or and", "but"],
+            },
+            Case {
+                name: "a statement after a list over several lines",
+                source: "expr pair [\n    (or and)\n]\nexpr main [@pair, (and or)]\n",
+                want: vec!["or and", "and or"],
             },
         ];
         for case in cases {

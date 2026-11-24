@@ -48,6 +48,25 @@ each part of a native check's message that prints the matched text. A label that
 is the flagged word itself is a lowercase code span (`` `seam`. ``),
 and a label that names a grammar term stays plain (`Passive voice.`).
 
+## Lists
+
+When an `expr` list does not fit on one line, give each entry a line
+of its own. A diff of the rule then shows each entry that changes.
+
+```text
+expr main [
+    (rich set),
+    (wide range),
+    numerous
+]
+```
+
+Harper ends a statement at each newline outside a `[...]` of the
+statement. A `<...>` or a `(...)` that spans lines therefore needs a
+`[` that stays open across each of its line breaks. `plain_entries` in
+`src/rule_tests.rs` reads a statement over several lines in the same
+way.
+
 ## Comments
 
 Write each rule's comment for an engineer with no linguistics

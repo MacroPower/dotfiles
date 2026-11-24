@@ -61,7 +61,28 @@
 # to see if you're right!`). The phrases for apologies and praise hit
 # none.
 expr code [block, blocks, clause, clauses, statement, statements, handler, handlers, arm, arms]
-expr main [(hope this helps), (hope that helps), (hope [this, that] [clarifies, clears]), (great question), (good question), ([great, good] catch!(( )@code)), ([you're, (you are)] right!([( ), -, /])), ([here's, (here is), (here are)] the [updated, revised, corrected, fixed]), (you're absolutely right), (you are absolutely right), (I'd be happy to), (I would be happy to), ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /]), (apologies for), (I apologize), (sorry for the confusion), ([(that's), (that is)] a [great, good, fair, valid, excellent] point![( ), -, /]), ([excellent, fantastic] question), ([(you're), (you are)] welcome![( ), -, /]), (glad you asked)]
+expr main [
+    (hope this helps),
+    (hope that helps),
+    (hope [this, that] [clarifies, clears]),
+    (great question),
+    (good question),
+    ([great, good] catch!(( )@code)),
+    ([you're, (you are)] right!([( ), -, /])),
+    ([here's, (here is), (here are)] the [updated, revised, corrected, fixed]),
+    (you're absolutely right),
+    (you are absolutely right),
+    (I'd be happy to),
+    (I would be happy to),
+    ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /]),
+    (apologies for),
+    (I apologize),
+    (sorry for the confusion),
+    ([(that's), (that is)] a [great, good, fair, valid, excellent] point![( ), -, /]),
+    ([excellent, fantastic] question),
+    ([(you're), (you are)] welcome![( ), -, /]),
+    (glad you asked)
+]
 let message "Chatbot phrase. Delete it and respond directly."
 let description "Flags phrases that frame a reply as a chat instead of stating the point."
 let becomes ""

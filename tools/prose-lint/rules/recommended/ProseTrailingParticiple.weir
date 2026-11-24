@@ -66,8 +66,65 @@
 # on purpose too (`If the file is missing, creating it is the caller's
 # job`). A word rule cannot tell it from a trailing participial phrase,
 # and it rewrites cleanly.
-expr plain [ensuring, allowing, enabling, making, highlighting, giving, helping, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, keeping, letting, preventing, avoiding, streamlining, simplifying, matching, returning, preserving, leaving, mirroring, appending, reflecting, underscoring, emphasizing, symbolizing, forcing, requiring, triggering, producing, yielding, breaking, freeing, saving, exposing, rendering, blocking, costing, wasting, removing, dropping]
-expr main , [(@plain ![,, and, or]), (failing ![NOUN, ,, and, or]), (contributing ![NOUN, ,, and, or]), (falling [back, through]), ([thereby, thus] PROG), (leading to), (resulting in), (meaning [that, the, a, an, it, you, we, they]), (providing ![that, and, or])]
+expr plain [
+    ensuring,
+    allowing,
+    enabling,
+    making,
+    highlighting,
+    giving,
+    helping,
+    improving,
+    reducing,
+    increasing,
+    causing,
+    creating,
+    showing,
+    demonstrating,
+    indicating,
+    keeping,
+    letting,
+    preventing,
+    avoiding,
+    streamlining,
+    simplifying,
+    matching,
+    returning,
+    preserving,
+    leaving,
+    mirroring,
+    appending,
+    reflecting,
+    underscoring,
+    emphasizing,
+    symbolizing,
+    forcing,
+    requiring,
+    triggering,
+    producing,
+    yielding,
+    breaking,
+    freeing,
+    saving,
+    exposing,
+    rendering,
+    blocking,
+    costing,
+    wasting,
+    removing,
+    dropping
+]
+expr main , [
+    (@plain ![,, and, or]),
+    (failing ![NOUN, ,, and, or]),
+    (contributing ![NOUN, ,, and, or]),
+    (falling [back, through]),
+    ([thereby, thus] PROG),
+    (leading to),
+    (resulting in),
+    (meaning [that, the, a, an, it, you, we, they]),
+    (providing ![that, and, or])
+]
 let message "Trailing participial phrase. Join the consequence with `so`, or give it a sentence that names its subject."
 let description "Flags a comma followed by a participle that adds a consequence to the clause before it."
 let becomes ""

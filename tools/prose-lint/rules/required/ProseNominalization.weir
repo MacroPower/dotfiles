@@ -44,7 +44,45 @@ expr give [$give, gave, given]
 expr provide [provide, provides, provided, providing]
 expr have [has, have, had, having]
 expr be [is, are, was, were]
-expr main [(@make [(a decision), (the decision), decisions, (a choice), (a comparison), (an assumption), (the assumption), (an attempt), (use of), (a determination), (a distinction), (a selection), (a call to), (changes to), (a change to), modifications, (a modification to)]), ($perform [(a check), validation, (a lookup), (an update), (an analysis), (a search), (a comparison)]), (@take [(a look), action, (into consideration), (into account)]), (@give [consideration, (an indication), (a description of)]), (@provide [(support for), (a description of)]), (@be in charge of), (@be in violation of), ([$gain, $obtain] access to), ($conduct [(a review), (an analysis)]), ([do, does, did, doing] a comparison), (@have [(an effect on), (an impact on), (a need for)]), ($reach [(a decision), (the conclusion)]), ([$come, came] to [a, the] conclusion), ([$draw, drew, drawn] a conclusion), (@be [(indicative of), (reflective of), (dependent on), (dependent upon), (reliant on)]), (in need of), ([$put, putting] emphasis on), ($place emphasis on), (@be of [importance, significance, use])]
+expr main [
+    (@make [
+        (a decision),
+        (the decision),
+        decisions,
+        (a choice),
+        (a comparison),
+        (an assumption),
+        (the assumption),
+        (an attempt),
+        (use of),
+        (a determination),
+        (a distinction),
+        (a selection),
+        (a call to),
+        (changes to),
+        (a change to),
+        modifications,
+        (a modification to)
+    ]),
+    ($perform [(a check), validation, (a lookup), (an update), (an analysis), (a search), (a comparison)]),
+    (@take [(a look), action, (into consideration), (into account)]),
+    (@give [consideration, (an indication), (a description of)]),
+    (@provide [(support for), (a description of)]),
+    (@be in charge of),
+    (@be in violation of),
+    ([$gain, $obtain] access to),
+    ($conduct [(a review), (an analysis)]),
+    ([do, does, did, doing] a comparison),
+    (@have [(an effect on), (an impact on), (a need for)]),
+    ($reach [(a decision), (the conclusion)]),
+    ([$come, came] to [a, the] conclusion),
+    ([$draw, drew, drawn] a conclusion),
+    (@be [(indicative of), (reflective of), (dependent on), (dependent upon), (reliant on)]),
+    (in need of),
+    ([$put, putting] emphasis on),
+    ($place emphasis on),
+    (@be of [importance, significance, use])
+]
 let message "Nominalization. Use the verb."
 let description "Flags a weak verb plus noun where one verb does the work."
 let becomes ""
