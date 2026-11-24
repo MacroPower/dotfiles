@@ -82,7 +82,7 @@ let
   # The awk checks that also read source comments, from
   # configs/harper/comment-checks.txt. Each entry holds the check's bare
   # name and the comment kinds it skips, written `!<kind>` after the
-  # name. prose-lint and measure.py both read this list.
+  # name. prose-lint reads this list.
   commentChecksFile = ../configs/harper/comment-checks.txt;
   commentChecks =
     map

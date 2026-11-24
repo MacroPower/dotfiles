@@ -53,8 +53,8 @@
 //! (`extended/deploy`), the shorthand `k/k` for the kubernetes
 //! repository, and a namespace and name in a table.
 //!
-//! measure.py reads configs/harper/comment-checks.txt too and skips the
-//! Go comments of the corpus, so every hit is in a markdown file.
+//! configs/harper/comment-checks.txt skips the Go comments of the
+//! corpus, so every hit is in a markdown file.
 
 use std::sync::LazyLock;
 

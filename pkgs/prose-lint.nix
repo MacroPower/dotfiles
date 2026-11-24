@@ -305,8 +305,7 @@ in
     # answer often takes several paragraphs. A heading opens with one to
     # six `#` marks. CommonMark reads a line with seven or more marks as
     # text, so such a line stays inside the turn. A line inside a fenced
-    # code block is neither a label nor a heading. speech_lines in
-    # measure.py finds the same lines.
+    # code block is neither a label nor a heading.
     drop_transcript_opinions() {
       SRC="$1" awk '
         BEGIN {
@@ -3522,16 +3521,15 @@ in
       blank_examples "$tmp_dir/unmarked.hs" "$delimiters" "$markers" "$tmp_dir/docs" >"$source" || exit 2
     fi
 
-    # --shadow prints the shadow and stops, so a corpus measurement
-    # lints comments the same way the hook does. It drops the shifts
-    # files. So a finding on a line that the shadow shifted reads right
-    # of the source. It moves one column for each character that
-    # comment_lines put in front of the line or close_spans put after
-    # the marker. It keeps the blocks file, so close_spans and
-    # hide_end_dashes end each comment at the edges of a block comment
-    # as in the hook. It does not print the blocks file. So the awk
-    # checks that read the printed shadow, as measure.py runs them, read
-    # a block comment and a comment right next to it as one paragraph.
+    # --shadow prints the shadow and stops. It drops the shifts files.
+    # So a finding on a line that the shadow shifted reads right of the
+    # source. It moves one column for each character that comment_lines
+    # put in front of the line or close_spans put after the marker. It
+    # keeps the blocks file, so close_spans and hide_end_dashes end each
+    # comment at the edges of a block comment as in the hook. It does
+    # not print the blocks file. So the awk checks that read the printed
+    # shadow read a block comment and a comment right next to it as one
+    # paragraph.
     if [ "$shadow_only" = 1 ]; then
       if [ -z "$comment_kind" ]; then
         echo "prose-lint: $file has no comment shadow" >&2

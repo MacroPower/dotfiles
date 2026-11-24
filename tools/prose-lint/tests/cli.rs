@@ -290,6 +290,226 @@ fn transcripts() {
 }
 
 #[test]
+fn only() {
+    // --only runs the named rules, Weir rules, built-ins, and native
+    // checks alike, and a commit message takes it too.
+    let tmp = TempDir::new("only");
+    let path = tmp.write(
+        "only.md",
+        "In my opinion, the plan holds.\n\nPass the host and/or the port.\n\n\
+         The request goes client \u{2192} proxy.\n\nRead the the file.\n",
+    );
+    struct Case {
+        name: &'static str,
+        only: &'static str,
+        commit: bool,
+        want: Vec<&'static str>,
+    }
+    let cases = [
+        Case {
+            name: "one weir rule",
+            only: "ProseAndOr",
+            commit: false,
+            want: vec!["ProseAndOr"],
+        },
+        Case {
+            name: "one native check",
+            only: "ProseArrow",
+            commit: false,
+            want: vec!["ProseArrow"],
+        },
+        Case {
+            name: "one built-in",
+            only: "RepeatedWords",
+            commit: false,
+            want: vec!["RepeatedWords"],
+        },
+        Case {
+            name: "two rules",
+            only: "ProseOpinion,ProseArrow",
+            commit: false,
+            want: vec!["ProseArrow", "ProseOpinion"],
+        },
+        Case {
+            name: "commit message",
+            only: "ProseOpinion",
+            commit: true,
+            want: vec!["ProseOpinion"],
+        },
+    ];
+    for case in cases {
+        let mut command = Command::new(BIN);
+        command.args(["--only", case.only]);
+        let output = if case.commit {
+            let mut child = command
+                .arg("--commit")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("running the binary");
+            child
+                .stdin
+                .take()
+                .expect("stdin is piped")
+                .write_all(&fs::read(&path).expect("reading the file"))
+                .expect("writing the message");
+            child.wait_with_output().expect("waiting for the binary")
+        } else {
+            command.arg(&path).output().expect("running the binary")
+        };
+        assert_eq!(output.status.code(), Some(1), "{}", case.name);
+        let mut got: Vec<String> = stdout(&output)
+            .lines()
+            .map(|l| {
+                l.split("::")
+                    .nth(1)
+                    .and_then(|rest| rest.split(':').next())
+                    .expect("each finding names its rule")
+                    .to_string()
+            })
+            .collect();
+        got.sort_unstable();
+        got.dedup();
+        assert_eq!(got, case.want, "{}", case.name);
+    }
+}
+
+#[test]
+fn only_source() {
+    // A source file takes --only too. ProseTypography also reads the
+    // raw file, string literals included, and --only picks that pass by
+    // the name of the check.
+    let tmp = TempDir::new("only-source");
+    let path = tmp.write(
+        "a.go",
+        "package a\n\n// The cache is probably small.\nvar s = \"\u{201c}q\u{201d}\"\n",
+    );
+    let cases = [
+        ("ProseHedge", vec![(3, "ProseHedge")]),
+        ("ProseTypography", vec![(4, "ProseTypography")]),
+        ("required/ProseTypography", vec![(4, "ProseTypography")]),
+    ];
+    for (only, want) in cases {
+        let output = Command::new(BIN)
+            .args(["--json", "--only", only])
+            .arg(&path)
+            .output()
+            .expect("running the binary");
+        assert_eq!(output.status.code(), Some(1), "{only}");
+        let mut got: Vec<(u64, String)> = stdout(&output)
+            .lines()
+            .map(|l| {
+                let f: serde_json::Value = serde_json::from_str(l).expect("each line is JSON");
+                (
+                    f["line"].as_u64().expect("a line number"),
+                    f["rule"].as_str().expect("a rule").to_string(),
+                )
+            })
+            .collect();
+        got.dedup();
+        let want: Vec<(u64, String)> = want
+            .into_iter()
+            .map(|(line, rule)| (line, rule.to_string()))
+            .collect();
+        assert_eq!(got, want, "{only}");
+    }
+}
+
+#[test]
+fn only_tier() {
+    // A tier-qualified entry runs the rule of one tier, so the
+    // Recommended ProseHedge of the second paragraph does not hide the
+    // Optional one there.
+    let tmp = TempDir::new("only-tier");
+    let path = tmp.write(
+        "hedge.md",
+        "The cache is relatively small.\n\nThe cache is probably relatively small.\n",
+    );
+    struct Case {
+        only: &'static str,
+        want: Vec<(u64, &'static str)>,
+    }
+    let cases = [
+        Case {
+            only: "optional/ProseHedge",
+            want: vec![(1, "Optional"), (3, "Optional")],
+        },
+        Case {
+            only: "recommended/ProseHedge",
+            want: vec![(3, "Recommended")],
+        },
+        Case {
+            only: "ProseHedge",
+            want: vec![(3, "Recommended"), (1, "Optional")],
+        },
+    ];
+    for case in cases {
+        let output = Command::new(BIN)
+            .args(["--json", "--only", case.only])
+            .arg(&path)
+            .output()
+            .expect("running the binary");
+        assert_eq!(output.status.code(), Some(1), "{}", case.only);
+        let got: Vec<(u64, String)> = stdout(&output)
+            .lines()
+            .map(|l| {
+                let f: serde_json::Value = serde_json::from_str(l).expect("each line is JSON");
+                assert_eq!(f["rule"], "ProseHedge", "{}", case.only);
+                (
+                    f["line"].as_u64().expect("a line number"),
+                    f["tier"].as_str().expect("a tier").to_string(),
+                )
+            })
+            .collect();
+        let want: Vec<(u64, String)> = case
+            .want
+            .iter()
+            .map(|&(line, tier)| (line, tier.to_string()))
+            .collect();
+        assert_eq!(got, want, "{}", case.only);
+    }
+}
+
+#[test]
+fn json() {
+    let tmp = TempDir::new("json");
+    let path = tmp.write(
+        "json.md",
+        "In my opinion, the plan holds.\n\nPass the host and/or the port.\n",
+    );
+    let output = Command::new(BIN)
+        .arg("--json")
+        .arg(&path)
+        .output()
+        .expect("running the binary");
+    assert_eq!(output.status.code(), Some(1));
+    let text = lint(&path);
+    let lines: Vec<serde_json::Value> = stdout(&output)
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each line is JSON"))
+        .collect();
+    assert_eq!(
+        lines.len(),
+        stdout(&text).lines().count(),
+        "one line per finding"
+    );
+    assert_eq!(
+        lines[0],
+        serde_json::json!({
+            "path": path.display().to_string(),
+            "line": 3,
+            "col": 15,
+            "tier": "Required",
+            "kind": "Style",
+            "rule": "ProseAndOr",
+            "message": "`and/or`. Write `a, b, or both`.",
+        })
+    );
+    assert_eq!(lines[1]["rule"], "ProseOpinion");
+    assert_eq!(lines[1]["tier"], "Recommended");
+}
+
+#[test]
 fn exit_status() {
     let tmp = TempDir::new("status");
     let finding = "Pass the host and/or the port.\n";
@@ -369,6 +589,58 @@ fn exit_status() {
         Case {
             name: "unknown flag",
             args: vec![PathBuf::from("--shadow")],
+            want: 2,
+            stdout: false,
+        },
+        Case {
+            name: "unknown rule",
+            args: vec![
+                PathBuf::from("--only"),
+                PathBuf::from("ProseNoSuchRule"),
+                tmp.0.join("missing.md"),
+            ],
+            want: 2,
+            stdout: false,
+        },
+        Case {
+            name: "rule of another tier",
+            args: vec![
+                PathBuf::from("--only"),
+                PathBuf::from("optional/ProseAndOr"),
+                tmp.0.join("finding.md"),
+            ],
+            want: 2,
+            stdout: false,
+        },
+        Case {
+            name: "unknown tier",
+            args: vec![
+                PathBuf::from("--only"),
+                PathBuf::from("Required/ProseAndOr"),
+                tmp.0.join("finding.md"),
+            ],
+            want: 2,
+            stdout: false,
+        },
+        Case {
+            name: "only with no rules",
+            args: vec![tmp.0.join("finding.md"), PathBuf::from("--only")],
+            want: 2,
+            stdout: false,
+        },
+        Case {
+            name: "only and a clean result",
+            args: vec![
+                PathBuf::from("--only"),
+                PathBuf::from("ProseHedge"),
+                tmp.0.join("finding.md"),
+            ],
+            want: 0,
+            stdout: false,
+        },
+        Case {
+            name: "file and commit",
+            args: vec![PathBuf::from("--commit"), tmp.0.join("finding.md")],
             want: 2,
             stdout: false,
         },

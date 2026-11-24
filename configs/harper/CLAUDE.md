@@ -283,12 +283,10 @@ To rename a rule:
 2. In an awk rule, update the name in the output-format comment and in
    every `printf`.
 3. Update the label at the start of the message.
-4. Update the name in `configs/harper/comment-checks.txt`, in
-   `pkgs/prose-lint.nix`, and in `configs/harper/measure.py`.
-   `prose-lint.nix` names some rules for commit messages, for agent
-   prompt files, and for the findings that it drops after Harper
-   reports them. `measure.py` names the rules whose handling it copies
-   from `prose-lint.nix`.
+4. Update the name in `configs/harper/comment-checks.txt` and in
+   `pkgs/prose-lint.nix`. `prose-lint.nix` names some rules for commit
+   messages, for agent prompt files, and for the findings that it drops
+   after Harper reports them.
 5. Search `configs/harper/rules` and `configs/claude` for the old rule
    name, and update each reference. Rule comments name a rule only by
    its rule name. Messages and skills can state the old term in words
@@ -298,14 +296,51 @@ To rename a rule:
 
 `corpus.json` pins the measurement corpus: the kubernetes, nix.dev,
 Rust book, and Hugo docs, and the comments of ten Go standard library
-packages. `measure.py` lints it with a rule and prints the hits for
-each source and a seeded sample of hits.
+packages. `measure.py` lints each file of the corpus with
+`prose-lint-rs --only <rules> --json`. It prints the hits for each
+source and a seeded sample of hits.
+
+`prose-lint-rs` runs the Weir rules, the Harper built-ins that the
+`builtins.txt` of a tier lists, and the native checks of
+`tools/prose-lint/src/checks`. It never runs an awk rule, and it fails
+on a name that none of these hold. The binary embeds the rules when it
+builds, so build it from the branch that holds the rules you measure.
+On that branch, make the change in the file that the binary reads:
+
+- For a Weir rule, add or change its `.weir` file.
+- For an awk rule, make the same change in its native check. The awk
+  file does not reach the count.
+- For a Harper built-in that no tier lists, add its name to the
+  `builtins.txt` of a tier.
+
+The flake build reads only the files that git tracks, so `git add` a new
+rule file before you build. The `.#prose-lint-rs` build also runs the
+rule tests. They fail on a rule without a fixture pair, without the
+Overview and Measurement sections in its comment, or with a finding on
+`fixtures/common.good.md`. A draft rule or a candidate built-in lacks
+these, so build the binary for it without the tests:
 
 ```bash
+export PROSE_LINT="$(nix build --no-link --print-out-paths --impure --expr 'let f = builtins.getFlake "git+file://${toString ./.}"; in f.packages.${builtins.currentSystem}.prose-lint-rs.overrideAttrs { doCheck = false; }')/bin/prose-lint-rs"
+```
+
+`measure.py` runs the binary that `PROSE_LINT` names, and it looks for
+`prose-lint-rs` on `PATH` when the variable is unset. A rule that passes
+its tests can use the plain build:
+
+```bash
+export PROSE_LINT="$(nix build --no-link --print-out-paths .#prose-lint-rs)/bin/prose-lint-rs"
 python3 configs/harper/measure.py fetch
 python3 configs/harper/measure.py run ProseHedge
-python3 configs/harper/measure.py run --weir scratch/ProseDraft.weir --sample 20
+python3 configs/harper/measure.py run optional/ProseHedge --sample 20
 ```
+
+A bare rule name, such as `ProseHedge`, runs the rule in every tier.
+The binary then drops a hit of a lower tier when a higher tier reports
+the same line with the same message, as the hook does. To count every
+hit of one tier, name the rule as `<tier>/<Rule>`, such as
+`optional/ProseHedge`. When you name two or more rules, `measure.py`
+also prints the hits of each name, zero included.
 
 Judge each sampled hit by hand, and count the hits that the rule
 reports correctly. Each new or changed rule cites the hits and the
@@ -433,8 +468,8 @@ lines that `check.py` expects a bad fixture to lint. Every rule file
 follows the layout, and every awk rule prints the same findings for
 CRLF line endings and under the C locale. Only these tests therefore
 show that a breach or a misread fails the build. The tests also export
-`RAW` and `SHADOW` and expect each awk check of `check.py` and
-`measure.py` to keep the mode that the script chose.
+`RAW` and `SHADOW` and expect each awk check of `check.py` to keep the
+mode that the script chose.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; in pkgs.callPackage ./pkgs/prose-weirpack.nix { }'

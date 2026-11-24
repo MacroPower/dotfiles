@@ -239,21 +239,21 @@ def utf8_locale() -> str:
     raise RuntimeError("gawk found no UTF-8 locale")
 
 
-def awk_env(lib: Path, mode: str = "") -> dict[str, str]:
-    """Return the environment of an awk check that reads a file in `mode`.
+def awk_env(lib: Path, raw: bool = False) -> dict[str, str]:
+    """Return the environment of an awk check that reads each line whole when `raw` is true.
 
     lib/markdown.awk reads each line whole when RAW is set, and as a
     comment shadow when SHADOW is set. With neither set, it reads the
-    file as markdown. The environment sets `mode`, RAW or SHADOW, to 1
-    and leaves out the other. An empty `mode` leaves out both. The
-    environment also leaves out BLOCKS and HADDOCK, which prose-lint
-    sets for the shadow of each file. The caller's values of those
-    variables therefore never reach the check, as in prose-lint.
+    file as markdown. The environment sets RAW to 1 when `raw` is true
+    and leaves out SHADOW. The environment also leaves out BLOCKS and
+    HADDOCK, which prose-lint sets for the shadow of each file. The
+    caller's values of those variables therefore never reach the check,
+    as in prose-lint.
     """
     env = {k: v for k, v in os.environ.items() if k not in ("RAW", "SHADOW", "BLOCKS", "HADDOCK")}
     env["AWKPATH"] = str(lib)
-    if mode:
-        env[mode] = "1"
+    if raw:
+        env["RAW"] = "1"
     return env
 
 
@@ -272,7 +272,7 @@ def awk_report(
     LC_ALL overrides each locale variable of the environment, such as
     the LC_CTYPE that Python sets when it starts under the C locale.
     """
-    env = awk_env(lib, "RAW" if raw else "")
+    env = awk_env(lib, raw)
     env["LC_ALL"] = locale or utf8_locale()
     # A finding can quote a `\r` from the line, so the output splits at
     # `\n` alone. Text mode and splitlines() also split at `\r`.

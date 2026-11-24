@@ -6,15 +6,27 @@ source files with the Weir rules and the Harper built-ins of
 embeds the rules when it builds, so a change to a rule takes a new build.
 
 ```sh
-prose-lint-rs <file>     # lint a markdown file or a source file
-prose-lint-rs --commit   # lint a commit message read from stdin
-prose-lint-rs --version  # print the harper-core version
+prose-lint-rs [--only RULES] [--json] <file>    # lint a markdown file or a source file
+prose-lint-rs [--only RULES] [--json] --commit  # lint a commit message read from stdin
+prose-lint-rs --version                         # print the harper-core version
 ```
 
 Each finding prints as `path:line:col: [Tier] Kind::Rule: message`, with the
 Required findings first and then by line. The findings of a commit message
-name the path `<stdin>`. When two tiers of one rule report one line with one message, only
-the finding of the higher tier prints.
+name the path `<stdin>`. When two tiers of one rule report one line with one
+message, only the finding of the higher tier prints.
+
+Two flags change which rules run and how the findings print:
+
+- `--only RULES` runs only the rules that the comma-separated list names, such
+  as `ProseHedge,ProseArrow`. A bare name runs the rule in each tier that holds
+  it, and `<tier>/<Name>`, such as `optional/ProseHedge`, runs the rule of one
+  tier. The binary exits 2 when an entry does not name any Weir rule, built-in,
+  or native check.
+- `--json` prints each finding as one line of JSON, an object with the fields
+  `path`, `line`, `col`, `tier`, `kind`, `rule`, and `message`.
+
+`configs/harper/measure.py` lints its corpus with both flags.
 
 The binary exits with one of these statuses:
 

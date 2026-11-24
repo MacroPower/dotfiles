@@ -2,8 +2,8 @@
 
 Usage:
   measure.py fetch [--root DIR]
-  measure.py run [RULE...] [--weir FILE | --awk FILE] [--corpus docs|go|all]
-                 [--sample N] [--seed N] [--root DIR]
+  measure.py run RULE... [--corpus docs|go|all] [--sample N] [--seed N]
+                 [--root DIR]
 
 corpus.json pins each source to a repository, a commit, and the paths
 to read. A docs source contributes its markdown files, and a go source
@@ -17,38 +17,44 @@ clones as <owner>/<repo>, such as /tmp/git, and run reads from the
 same place. run warns when a clone sits at another commit, because its
 counts then differ from the ones a rule comment cites.
 
-run takes each rule by its file name (ProseHedge), or as <tier>/<Rule>
-(optional/ProseHedge) for one tier. A name that no tier holds runs as a
-Harper built-in. --weir and --awk add a scratch rule from a file that
-no tier holds. The Weir rules run from a scratch weirpack that holds
-the named rules under their internal names and the scratch rule as
-<stem>_Scratch.
+run lints each file of the corpus with `prose-lint-rs --only RULES
+--json` and reads the hits from its output. PROSE_LINT names the
+binary, and run looks for prose-lint-rs on PATH when the variable is
+unset. Build the binary with
+`nix build --no-link --print-out-paths .#prose-lint-rs` from the
+checkout that holds the rules to measure, because the binary embeds
+the rules when it builds.
 
-Go files reach the rules the way the hook reads them. The Weir rules
-lint the comment shadow that `prose-lint --shadow` prints. They also
-lint the Go file itself and keep the hits on lines the shadow leaves
-out, such as a trailing comment. Set PROSE_LINT to run a prose-lint
-other than the one on PATH. On Go, only the awk checks that
-comment-checks.txt lists run, and each reads the shadow with SHADOW=1,
-which blanks each comment marker. The checks do not get the blocks
-file of the shadow, so they read a block comment and a comment right
-next to it as one paragraph, where the hook ends the paragraph at the
-edge of the block. A check that the list marks `!go` skips Go, and a
-scratch check runs on Go only when the list names its stem.
-ProseTypography reads the raw Go file with RAW=1, string
-literals included, as the hook does. Harper reads each file with a
-curly apostrophe between two letters straightened, as the hook does.
+The flake build reads only the files that git tracks, so git add a
+new rule file first. The .#prose-lint-rs build also runs the rule
+tests. They fail on a rule without a fixture pair, without the
+Overview and Measurement sections in its comment, or with a finding on
+fixtures/common.good.md. For a draft rule or a candidate built-in,
+build the binary without the tests. The Measurement section of
+configs/harper/CLAUDE.md gives the command, and so does the message
+that run prints when it cannot find the binary.
 
-prose-lint drops each ProseOpinion finding inside a speaker's turn of a
-markdown transcript, and run drops the same hits. A scratch rule loses
-those hits only when its stem is ProseOpinion. The docstring of
-speech_lines says how both programs find a turn.
+The binary runs the Weir rules, the Harper built-ins that the
+builtins.txt of a tier lists, and the native checks of
+tools/prose-lint/src/checks. It never runs an awk rule. To measure a
+changed awk rule, make the same change in its native check. To
+measure a Harper built-in that no tier lists, add it to the
+builtins.txt of a tier on a branch, and build the binary there.
 
-run prints the harper version, a hash of corpus.json, and a table of
-the files, hits, and lines with a hit for each source. The `top` column
-gives the share of the source's hits that its busiest file holds. Then
-it prints a seeded sample of hits. Each sampled hit shows its location,
-the text the rule matched, and the line around it.
+run passes each rule to --only as given. A bare name (ProseHedge) runs
+the rule in every tier, and the binary then drops a hit of a lower
+tier when a higher tier reports the same line with the same message.
+<tier>/<Rule> (optional/ProseHedge) runs the rule of one tier and
+counts each of its hits. The binary fails on a name that no rule of
+the tier has.
+
+run prints the harper-core version, a hash of corpus.json, and a table
+of the files, hits, and lines with a hit for each source. The `top`
+column gives the share of the source's hits that its busiest file
+holds. When run names two or more rules, it then prints the hits of
+each name, zero included. Last, it prints a seeded sample of hits.
+Each sampled hit shows its location, its message, and the line around
+it.
 """
 
 import argparse
@@ -57,47 +63,18 @@ import hashlib
 import json
 import os
 import random
-import re
 import shutil
 import subprocess
 import sys
-import tempfile
-import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-# Importing check writes a __pycache__ directory beside it unless this
-# flag is set, and git shows the directory as untracked.
-sys.dont_write_bytecode = True
-
-from check import TIERS, Rule, awk_env, collect_rules  # noqa: E402
-
 HERE = Path(__file__).resolve().parent
-RULES = HERE / "rules"
-LIB = HERE / "lib"
 CORPUS = HERE / "corpus.json"
-COMMENT_CHECKS = HERE / "comment-checks.txt"
-
-# harper-cli lints this many files per run. A run of about 400 files
-# takes under a second.
-BATCH = 400
-
-# The extension Harper reads a shadow as, keyed by the source kind.
-# Rust strips `//` from every line of a comment run.
-SHADOW_EXT = {"go": ".rs"}
 
 # The extensions each corpus kind reads.
 EXTENSIONS = {"docs": (".md",), "go": (".go",)}
-
-AWK_LINE = re.compile(r"^(?P<path>.*?):(?P<line>\d+):(?P<col>\d+): \w+::(?P<rule>\w+): (?P<message>.*)$")
-
-MANIFEST = {
-    "author": "Jacob Colvin",
-    "version": "0.1.0",
-    "description": "Scratch pack for measure.py",
-    "license": "Apache-2.0",
-}
 
 
 @dataclass(frozen=True)
@@ -109,27 +86,14 @@ class Source:
 
 
 @dataclass(frozen=True)
-class Doc:
-    """One linted file: where Harper reads it and how a hit names it.
-
-    For a Go file, lint_path is the comment shadow and raw_path is the
-    file itself. For a markdown file, both name the file.
-    """
-
-    source: str
-    name: str
-    lint_path: Path
-    raw_path: Path
-
-
-@dataclass(frozen=True)
 class Hit:
     source: str
     name: str
     line: int
     col: int
+    tier: str
     rule: str
-    text: str
+    message: str
     context: str
 
 
@@ -142,16 +106,6 @@ def load_corpus() -> tuple[list[Source], list[str], str]:
     return sources, data["exclude"], hashlib.sha256(raw).hexdigest()[:12]
 
 
-def comment_checks() -> dict[str, frozenset[str]]:
-    """Return each check that comment-checks.txt lists with the kinds it skips."""
-    listed: dict[str, frozenset[str]] = {}
-    for line in COMMENT_CHECKS.read_text().splitlines():
-        words = line.split()
-        if words and not words[0].startswith("#"):
-            listed[words[0]] = frozenset(w.removeprefix("!") for w in words[1:])
-    return listed
-
-
 def default_root() -> Path:
     cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
     return Path(cache) / "prose-corpus"
@@ -162,17 +116,6 @@ def git(dest: Path, *args: str) -> str:
         ["git", "-C", str(dest), *args], capture_output=True, text=True, check=True
     )
     return proc.stdout.strip()
-
-
-def run_tool(cmd: list[str], env: dict[str, str] | None = None) -> str:
-    """Return the command's stdout, or exit with its stderr when it fails."""
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
-    except OSError as err:
-        sys.exit(f"measure.py: cannot run {cmd[0]}: {err.strerror}")
-    if proc.returncode != 0:
-        sys.exit(f"measure.py: {' '.join(cmd)} exited {proc.returncode}: {proc.stderr.strip()}")
-    return proc.stdout
 
 
 def head(dest: Path) -> str | None:
@@ -225,62 +168,15 @@ def source_files(root: Path, src: Source, exclude: list[str]) -> list[Path]:
     return sorted(found)
 
 
-def resolve(names: list[str]) -> tuple[list[Rule], list[str]]:
-    """Return the tier rules the names pick and the names left for built-ins."""
-    rules, _ = collect_rules(RULES)
-    picked: list[Rule] = []
-    builtins: list[str] = []
-    for name in names:
-        tier = None
-        if "/" in name:
-            tier, name = name.split("/", 1)
-            if tier not in TIERS:
-                sys.exit(f"measure.py: {tier} is not a tier")
-        hits = [r for r in rules if r.name == name and tier in (None, r.tier)]
-        if hits:
-            picked += hits
-        elif tier is None:
-            builtins.append(name)
-        else:
-            sys.exit(f"measure.py: no {name} rule under rules/{tier}")
-    return picked, builtins
-
-
-def build_pack(tmp: Path, scratch: Path | None, rules: list[Rule]) -> Path:
-    """Zip the given Weir rules and the scratch rule the way the build does."""
-    pack_dir = tmp / "pack"
-    pack_dir.mkdir()
-    for rule in rules:
-        if rule.kind == "weir":
-            shutil.copy(rule.path, pack_dir / f"{rule.internal}.weir")
-    if scratch is not None:
-        shutil.copy(scratch, pack_dir / f"{scratch.stem}_Scratch.weir")
-    (pack_dir / "manifest.json").write_text(json.dumps(MANIFEST))
-    pack = tmp / "scratch.weirpack"
-    with zipfile.ZipFile(pack, "w") as zf:
-        for path in sorted(pack_dir.iterdir()):
-            zf.write(path, path.name)
-    return pack
-
-
-def harper(*args: str, env: dict[str, str]) -> subprocess.CompletedProcess:
-    return subprocess.run(["harper-cli", *args], capture_output=True, text=True, env=env)
-
-
-def make_shadows(docs: list[tuple[Source, Path, Path]], tmp: Path) -> list[Doc]:
-    """Write each Go file's comment shadow to tmp and return the linted files."""
-    prose_lint = os.environ.get("PROSE_LINT", "prose-lint")
-    shadow_dir = tmp / "shadow"
-    shadow_dir.mkdir()
-
-    def one(item: tuple[int, tuple[Source, Path, Path]]) -> Doc:
-        i, (src, dest, path) = item
-        out = shadow_dir / f"{i}{SHADOW_EXT[src.corpus]}"
-        out.write_text(run_tool([prose_lint, "--shadow", str(path)]))
-        return Doc(src.repo, str(path.relative_to(dest)), out, path)
-
-    with ThreadPoolExecutor() as pool:
-        return list(pool.map(one, enumerate(docs)))
+def run_tool(cmd: list[str], ok: tuple[int, ...] = (0,)) -> str:
+    """Return the command's stdout, or exit with its stderr when its status is not in ok."""
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+    except OSError as err:
+        sys.exit(f"measure.py: cannot run {cmd[0]}: {err.strerror}")
+    if proc.returncode not in ok:
+        sys.exit(f"measure.py: {' '.join(cmd)} exited {proc.returncode}: {proc.stderr.strip()}")
+    return proc.stdout
 
 
 def read_line(path: Path, line: int) -> str:
@@ -288,289 +184,25 @@ def read_line(path: Path, line: int) -> str:
     return lines[line - 1] if 0 < line <= len(lines) else ""
 
 
-def lint_weir(docs: list[Doc], pack: Path, only: list[str], env: dict[str, str]) -> list[Hit]:
-    hits: list[Hit] = []
-    for start in range(0, len(docs), BATCH):
-        batch = docs[start : start + BATCH]
-        proc = harper(
-            "lint",
-            "--weirpacks",
-            str(pack),
-            "--only",
-            ",".join(only),
-            "-o",
-            "--format",
-            "json",
-            "--quiet",
-            *(str(d.lint_path) for d in batch),
-            env=env,
+def lint(binary: str, rules: list[str], src: str, dest: Path, path: Path) -> list[Hit]:
+    """Return the hits of the rules on the file at path, which sits in the clone at dest."""
+    out = run_tool([binary, "--only", ",".join(rules), "--json", str(path)], ok=(0, 1))
+    hits = []
+    for line in out.splitlines():
+        f = json.loads(line)
+        hits.append(
+            Hit(
+                src,
+                str(path.relative_to(dest)),
+                f["line"],
+                f["col"],
+                f["tier"],
+                f["rule"],
+                f["message"],
+                read_line(path, f["line"]),
+            )
         )
-        if proc.returncode not in (0, 1):
-            sys.exit(f"harper-cli exited {proc.returncode}: {proc.stderr}")
-        reports = json.loads(proc.stdout) if proc.stdout.strip() else []
-        # harper-cli names each file by its basename only, in input
-        # order, so a report maps to its input by position.
-        if len(reports) != len(batch):
-            sys.exit(f"harper-cli returned {len(reports)} reports for {len(batch)} files")
-        for doc, report in zip(batch, reports):
-            for lint in report["lints"]:
-                hits.append(
-                    Hit(
-                        doc.source,
-                        doc.name,
-                        int(lint["line"]),
-                        int(lint["column"]),
-                        lint["rule"],
-                        lint.get("matched_text", ""),
-                        read_line(doc.lint_path, int(lint["line"])),
-                    )
-                )
     return hits
-
-
-# A curly apostrophe between two letters, which prose-lint straightens
-# before Harper reads the text.
-CURLY = re.compile("([A-Za-z])\u2019([A-Za-z])")
-
-
-def straightened(docs: list[Doc], tmp: Path) -> list[Doc]:
-    """Return copies of the docs with each curly apostrophe straightened.
-
-    prose-lint lints such a copy with Harper and runs the awk checks on
-    the original, so the Weir rules read these copies.
-    """
-    out_dir = tmp / "straight"
-    out_dir.mkdir()
-    copies = []
-    for i, doc in enumerate(docs):
-        copy = out_dir / f"{i}{doc.lint_path.suffix}"
-        text = doc.lint_path.read_text(errors="surrogateescape")
-        copy.write_text(CURLY.sub(r"\1'\2", text), errors="surrogateescape")
-        copies.append(Doc(doc.source, doc.name, copy, doc.raw_path))
-    return copies
-
-
-COMMENT_LINE = re.compile(r"^[ \t]*(//[/!]?|#+|-{2,})([ \t]|$)")
-MARKS_LINE = re.compile(r"^[ \t]*(#{2,}|-{3,})[ \t]*$")
-BLOCK_OPENER = re.compile(r"^[ \t]*/\*")
-LICENSE_WORDS = re.compile(r"Copyright|SPDX-License-Identifier|Licensed (under|to)|license that can be found")
-
-
-def license_lines(path: Path) -> set[int]:
-    """Return the lines of the Go file's license header, as prose-lint finds them.
-
-    The header opens with the file's first comment, after any blank
-    lines and a shebang, when one of its lines names a copyright or a
-    license. A comment is a run of full-line comments or one block
-    comment that opens a line. Each comment right under the header
-    joins it when one of its own lines also names a copyright or a
-    license. Code after the `*/` of a block ends the header after that
-    line, and a `/*` that no `*/` closes does not open a block. A line
-    of marks with no text, such as a banner, ends the header too. Inside
-    a run of line comments whose first marker holds at least as many of
-    the same mark, it is an empty comment line.
-    """
-    header: set[int] = set()
-    unit: set[int] = set()
-    named = False
-    lines = False
-    started = False
-    start = 0
-    lead = ""
-
-    def take() -> bool:
-        """Move the comment in unit into the header when it names a license."""
-        nonlocal named, lines
-        if not named:
-            return False
-        header.update(unit)
-        unit.clear()
-        named = lines = False
-        return True
-
-    for i, line in enumerate(path.read_text(errors="replace").splitlines(), start=1):
-        if not started and (not line.strip() or (i == 1 and line.startswith("#!"))):
-            continue
-        started = True
-        if not start and (opener := BLOCK_OPENER.match(line)):
-            if lines and not take():
-                return header
-            start = opener.end() + 1
-        if start:
-            unit.add(i)
-            named = named or bool(LICENSE_WORDS.search(line))
-            end = line.find("*/", start - 1)
-            start = 1
-            if end >= 0:
-                start = 0
-                if not take() or line[end + 2 :].strip(" \t"):
-                    return header
-            continue
-        marks = MARKS_LINE.match(line)
-        if marks and not (lines and lead.startswith(marks.group(1))):
-            take()
-            return header
-        if not (comment := COMMENT_LINE.match(line)):
-            take()
-            return header
-        if not lines:
-            lead = comment.group(1)
-        lines = True
-        unit.add(i)
-        named = named or bool(LICENSE_WORDS.search(line))
-    if not start:
-        take()
-    return header
-
-
-def code_lines(docs: list[Doc]) -> set[tuple[str, str, int]]:
-    """Return the lines of each Go doc where the hook keeps Harper's own hits.
-
-    Those are the lines its shadow leaves out as `x`, except the lines of
-    the license header, whose findings prose-lint drops.
-    """
-    found: set[tuple[str, str, int]] = set()
-    for doc in docs:
-        header = license_lines(doc.raw_path)
-        for i, line in enumerate(doc.lint_path.read_text().splitlines(), start=1):
-            if line == "x" and i not in header:
-                found.add((doc.source, doc.name, i))
-    return found
-
-
-# The checks that prose-lint skips in a prompt file for an agent, which
-# writes capitals for emphasis on purpose.
-AGENT_FILE_SKIPS = frozenset({"ProseCapsEmphasis"})
-
-# The directories of `.claude/` that hold only prompt files. Its other
-# directories hold other files, such as the source files of a worktree
-# under `.claude/worktrees/`.
-PROMPT_DIRS = ("agents", "commands", "output-styles", "rules", "skills")
-
-
-def agent_file(name: str) -> bool:
-    """Tell whether prose-lint reads the file as a prompt file for an agent.
-
-    The slash in front of the name lets each test match a name with no
-    directory, the way the patterns in prose-lint do.
-    """
-    path = f"/{name}"
-    return (
-        path.endswith(("/AGENTS.md", "/CLAUDE.md", "/SKILL.md"))
-        or "/configs/claude/" in path
-        or any(f"/.claude/{d}/" in path for d in PROMPT_DIRS)
-    )
-
-
-# The rules whose findings prose-lint drops inside a speaker's turn of
-# a transcript, where the speaker gives a view on purpose.
-TRANSCRIPT_SKIPS = frozenset({"ProseOpinion"})
-
-SPEAKER = re.compile(
-    r"^ {0,3}(?:\*\*([^* :]+(?: [^* :]+){0,2})(?:\*\*:|:\*\*)"
-    r"|(?:\*\*|<b>)?([A-Z][A-Z'.-]+(?: [A-Z][A-Z'.-]+){1,2}):)"
-)
-HEADING = re.compile(r"^ {0,3}#{1,6}([ \t]|$)")
-FENCE = re.compile(r"^[ \t>]*(```|~~~)")
-
-
-def speech_lines(path: Path) -> set[int]:
-    """Return the lines of a markdown transcript that sit in a speaker's turn.
-
-    drop_transcript_opinions in prose-lint finds the same lines. A
-    speaker label opens a paragraph and takes one of two forms. The
-    first is a name of one to three words in `**` marks, and its colon
-    sits on either side of the closing marks (`**MJ**:` or
-    `**Michael:**`). The second is a name of two or three words in
-    capitals with a colon after it, and `**` or `<b>` can open it
-    (`CRAIG BOX:`). A file is a transcript when one name opens two or
-    more of its paragraphs, in either form. Each turn of a transcript
-    runs from a label to the next heading. A heading opens with one to
-    six `#` marks. CommonMark reads a line with seven or more marks as
-    text, so such a line stays inside the turn. A line inside a fenced
-    code block is neither a label nor a heading.
-    """
-    # awk splits lines at a newline only, so this split does the same.
-    lines = path.read_bytes().decode(errors="replace").split("\n")
-    labels: set[int] = set()
-    headings: set[int] = set()
-    seen: dict[str, int] = {}
-    blank, fenced = True, False
-    for i, line in enumerate(lines, start=1):
-        if FENCE.match(line):
-            fenced = not fenced
-        elif not fenced and HEADING.match(line):
-            headings.add(i)
-        elif not fenced and blank and (m := SPEAKER.match(line)):
-            labels.add(i)
-            name = m[1] or m[2]
-            seen[name] = seen.get(name, 0) + 1
-        blank = not line.strip(" \t\r")
-    if max(seen.values(), default=0) < 2:
-        return set()
-    speech: set[int] = set()
-    turn = False
-    for i in range(1, len(lines) + 1):
-        if i in headings:
-            turn = False
-        elif i in labels:
-            turn = True
-        if turn:
-            speech.add(i)
-    return speech
-
-
-def drop_transcript_opinions(hits: list[Hit], root: Path) -> list[Hit]:
-    """Drop each hit that prose-lint drops inside a speaker's turn of a transcript."""
-    turns: dict[tuple[str, str], set[int]] = {}
-    kept = []
-    for h in hits:
-        if h.rule.rsplit("_", 1)[0] in TRANSCRIPT_SKIPS and h.name.endswith(EXTENSIONS["docs"]):
-            key = (h.source, h.name)
-            if key not in turns:
-                turns[key] = speech_lines(root / h.source / h.name)
-            if h.line in turns[key]:
-                continue
-        kept.append(h)
-    return kept
-
-
-def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]], mode: str = "") -> list[Hit]:
-    """Run each check on each doc, with mode SHADOW or RAW set to 1.
-
-    An empty mode reads each doc as markdown. The caller's RAW and
-    SHADOW never reach a check, as in prose-lint.
-    """
-    env = awk_env(LIB, mode)
-
-    def one(item: tuple[Doc, tuple[str, Path]]) -> list[Hit]:
-        doc, (internal, script) = item
-        found = []
-        for out in run_tool(["awk", "-f", str(script), str(doc.lint_path)], env).splitlines():
-            m = AWK_LINE.match(out)
-            if m:
-                line = int(m["line"])
-                found.append(
-                    Hit(
-                        doc.source,
-                        doc.name,
-                        line,
-                        int(m["col"]),
-                        internal,
-                        m["message"],
-                        read_line(doc.lint_path, line),
-                    )
-                )
-        return found
-
-    work = [
-        (doc, check)
-        for doc in docs
-        for check in checks
-        if not (check[0].rsplit("_", 1)[0] in AGENT_FILE_SKIPS and agent_file(doc.name))
-    ]
-    with ThreadPoolExecutor() as pool:
-        return [hit for found in pool.map(one, work) for hit in found]
 
 
 def excerpt(context: str, col: int, width: int = 160) -> str:
@@ -584,10 +216,8 @@ def excerpt(context: str, col: int, width: int = 160) -> str:
 
 
 def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], digest: str) -> int:
-    if not (args.rules or args.weir or args.awk):
-        sys.exit("measure.py: name a rule, or pass --weir or --awk")
-    picked, builtins = resolve(args.rules)
     root = Path(args.root) if args.root else default_root()
+    binary = os.environ.get("PROSE_LINT", "prose-lint-rs")
 
     chosen = [s for s in sources if args.corpus in ("all", s.corpus)]
     for src in chosen:
@@ -600,77 +230,29 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
                 file=sys.stderr,
             )
 
-    weir_only = [r.internal for r in picked if r.kind != "awk"] + builtins
-    checks = [(f"{r.name}_{r.tier.capitalize()}", r.path) for r in picked if r.kind == "awk"]
-    scratch_weir = Path(args.weir) if args.weir else None
-    if scratch_weir:
-        weir_only.append(f"{scratch_weir.stem}_Scratch")
-    if args.awk:
-        checks.append((f"{Path(args.awk).stem}_Scratch", Path(args.awk)))
-
-    with tempfile.TemporaryDirectory() as tmp_name:
-        tmp = Path(tmp_name)
-        env = {**os.environ, "HOME": str(tmp)}
-        version = harper("--version", env=env).stdout.strip()
-        pack = build_pack(tmp, scratch_weir, picked)
-        if scratch_weir:
-            proc = harper("test", "--no-color", str(scratch_weir), env=env)
-            if proc.returncode != 0:
-                print(proc.stdout + proc.stderr, end="")
-                return 1
-
-        files = {src.repo: source_files(root, src, exclude) for src in chosen}
-        md_docs = [
-            Doc(src.repo, str(path.relative_to(root / src.repo)), path, path)
-            for src in chosen
-            if src.corpus == "docs"
-            for path in files[src.repo]
-        ]
-        go_docs = make_shadows(
-            [
-                (src, root / src.repo, path)
-                for src in chosen
-                if src.corpus != "docs"
-                for path in files[src.repo]
-            ],
-            tmp,
+    if shutil.which(binary) is None:
+        sys.exit(
+            f"measure.py: cannot find {binary}. Build the binary with"
+            " `nix build --no-link --print-out-paths .#prose-lint-rs`, and set"
+            " PROSE_LINT to bin/prose-lint-rs under the path that the build prints."
+            " The build runs the rule tests, so for a draft rule, build with"
+            " `nix build --no-link --print-out-paths --impure --expr 'let f ="
+            ' builtins.getFlake "git+file://${toString ./.}"; in'
+            " f.packages.${builtins.currentSystem}.prose-lint-rs.overrideAttrs"
+            " { doCheck = false; }'` instead. Run either build from the"
+            " repository root after you git add a new rule file."
         )
+    version = run_tool([binary, "--version"]).strip()
+    files = {src.repo: source_files(root, src, exclude) for src in chosen}
+    work = [(src.repo, root / src.repo, path) for src in chosen for path in files[src.repo]]
+    with ThreadPoolExecutor() as pool:
+        found = pool.map(lambda w: lint(binary, args.rules, *w), work)
+        hits = [h for file_hits in found for h in file_hits]
 
-        raw_go = [Doc(d.source, d.name, d.raw_path, d.raw_path) for d in go_docs]
-        hits: list[Hit] = []
-        if weir_only:
-            # prose-lint --shadow straightens the shadows already.
-            straight = straightened(md_docs + raw_go, tmp)
-            straight_md, straight_go = straight[: len(md_docs)], straight[len(md_docs) :]
-            hits += drop_transcript_opinions(
-                lint_weir(straight_md + go_docs, pack, weir_only, env), root
-            )
-            # The hook also lints the Go file itself and keeps the hits
-            # on the lines that its shadow leaves out.
-            code = code_lines(go_docs)
-            hits += [
-                h
-                for h in lint_weir(straight_go, pack, weir_only, env)
-                if (h.source, h.name, h.line) in code
-            ]
-        if checks:
-            listed = comment_checks()
-
-            def base(internal: str) -> str:
-                return internal.rsplit("_", 1)[0]
-
-            on_comments = [
-                c for c in checks if base(c[0]) in listed and "go" not in listed[base(c[0])]
-            ]
-            typography = [c for c in checks if base(c[0]) == "ProseTypography"]
-            hits += lint_awk(md_docs, checks)
-            hits += lint_awk(go_docs, on_comments, "SHADOW")
-            hits += lint_awk(raw_go, typography, "RAW")
-
-    names = weir_only + [c[0] for c in checks]
-    print(f"{version}, corpus {digest}")
-    print(f"rules: {', '.join(names)}")
+    print(f"harper-core {version}, corpus {digest}")
+    print(f"rules: {', '.join(args.rules)}")
     print()
+
     def top(found: list[Hit]) -> str:
         if not found:
             return "-"
@@ -703,11 +285,12 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
             *(cell.rjust(width) for cell, width in zip(row[1:], widths[1:])),
             sep="  ",
         )
-    if len(names) > 1:
+    entries = [e for rule in args.rules for e in rule.split(",")]
+    if len(entries) > 1:
         print()
-        for name in names:
-            count = sum(1 for h in hits if h.rule == name)
-            print(f"{name}: {count} {'hit' if count == 1 else 'hits'}")
+        for entry in entries:
+            count = sum(entry in (h.rule, f"{h.tier.lower()}/{h.rule}") for h in hits)
+            print(f"{entry}: {count} {'hit' if count == 1 else 'hits'}")
 
     if args.sample and hits:
         sample = random.Random(args.seed).sample(hits, min(args.sample, len(hits)))
@@ -716,8 +299,8 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
         print(f"Sample of {len(sample)} of {len(hits)} hits (seed {args.seed}):")
         for h in sample:
             print()
-            print(f"{h.source}/{h.name}:{h.line}:{h.col}  {h.rule}")
-            print(f"  matched: {h.text}")
+            print(f"{h.source}/{h.name}:{h.line}:{h.col}  [{h.tier}] {h.rule}")
+            print(f"  message: {h.message}")
             print(f"  context: {excerpt(h.context, h.col)}")
     return 0
 
@@ -730,10 +313,7 @@ def main(argv: list[str]) -> int:
     fetch_cmd = sub.add_parser("fetch", help="clone the corpus at its pinned commits")
     fetch_cmd.add_argument("--root", help="directory that holds the clones as <owner>/<repo>")
     run_cmd = sub.add_parser("run", help="lint the corpus with the named rules")
-    run_cmd.add_argument("rules", nargs="*", metavar="RULE")
-    scratch = run_cmd.add_mutually_exclusive_group()
-    scratch.add_argument("--weir", metavar="FILE", help="also run this Weir rule")
-    scratch.add_argument("--awk", metavar="FILE", help="also run this awk check")
+    run_cmd.add_argument("rules", nargs="+", metavar="RULE")
     run_cmd.add_argument("--corpus", choices=("docs", "go", "all"), default="all")
     run_cmd.add_argument("--sample", type=int, default=10, help="hits to print (default 10)")
     run_cmd.add_argument("--seed", type=int, default=1, help="seed for the sample (default 1)")

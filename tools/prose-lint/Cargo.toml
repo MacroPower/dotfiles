@@ -17,6 +17,8 @@ harper-core = { path = "harper/harper-core", version = "=3.3.0" }
 # The parser of harper-core, which builds the model of the native checks.
 pulldown-cmark = "0.13.4"
 regex = "1.12.3"
+# Writes the findings of --json.
+serde_json = "1.0.154"
 thiserror = "2.0.18"
 # The grammars that find the comments of source files, at the versions
 # that harper-comments 3.3.0 links.

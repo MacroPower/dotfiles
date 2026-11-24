@@ -14,7 +14,7 @@ pub mod sentences;
 
 use crate::markdown::Markdown;
 use crate::region::{Finding, Region};
-use crate::rules::Tier;
+use crate::rules::{self, Tier};
 
 /// `configs/harper/comment-checks.txt`, which names each check that
 /// reads the comments of a source file. A `!<kind>` after a name skips
@@ -235,9 +235,12 @@ pub const CHECKS: &[Check] = &[
 ];
 
 /// Runs each check of [`CHECKS`] on `region`, other than the checks of
-/// the rules that `skips` names, and returns the findings.
+/// the rules that `skips` names in the form that [`rules::matches`]
+/// reads, and returns the findings.
 pub fn run(region: &Region, skips: &[&str]) -> Vec<Finding> {
-    run_some(region, |check| !skips.contains(&check.name))
+    run_some(region, |check| {
+        !rules::matches(skips, check.name, check.tier)
+    })
 }
 
 /// Returns the findings of the checks on a source file of the comment
@@ -250,11 +253,11 @@ pub fn run_source(file: &Region, regions: &[Region], kind: &str, skips: &[&str])
         .iter()
         .flat_map(|region| {
             run_some(region, |check| {
-                !skips.contains(&check.name) && reads_comments(check.name, kind)
+                !rules::matches(skips, check.name, check.tier) && reads_comments(check.name, kind)
             })
         })
         .collect();
-    if !skips.contains(&"ProseTypography") {
+    if !rules::matches(skips, "ProseTypography", Tier::Required) {
         let hits = required::prose_typography::raw(&file.text);
         findings.extend(hits.into_iter().map(|hit| {
             let at = file.position(hit.at);

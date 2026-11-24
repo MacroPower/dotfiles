@@ -26,6 +26,18 @@ pub enum Tier {
     Optional,
 }
 
+impl Tier {
+    /// Returns the name of the directory of the tier under
+    /// `configs/harper/rules`, such as `required`.
+    pub fn dir(self) -> &'static str {
+        match self {
+            Tier::Required => "required",
+            Tier::Recommended => "recommended",
+            Tier::Optional => "optional",
+        }
+    }
+}
+
 impl fmt::Display for Tier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
@@ -55,6 +67,24 @@ pub const TIME_SENSITIVE: &[&str] = &[
     "ProseStaleCount",
 ];
 
+/// Returns the bare name and the tier of each Weir rule and built-in.
+pub fn names() -> impl Iterator<Item = (&'static str, Tier)> {
+    WEIR_RULES
+        .iter()
+        .map(|&(name, tier, _)| (name, tier))
+        .chain(BUILTINS.iter().copied())
+}
+
+/// Returns whether an entry of `entries` names the rule `name` of
+/// `tier`. An entry names a rule in every tier by its bare name, such as
+/// `ProseHedge`, or in one tier as `<tier>/<Name>`, such as
+/// `optional/ProseHedge`.
+pub fn matches(entries: &[&str], name: &str, tier: Tier) -> bool {
+    entries
+        .iter()
+        .any(|e| *e == name || e.split_once('/') == Some((tier.dir(), name)))
+}
+
 /// An error of building the lint group.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -74,7 +104,8 @@ pub struct Rules {
 
 impl Rules {
     /// Builds the lint group of every Weir rule and built-in, other than
-    /// the rules that `skips` names. It lints with the American dialect.
+    /// the rules that `skips` names in the form that [`matches`] reads.
+    /// It lints with the American dialect.
     ///
     /// Two tiers can hold a rule of one name, so the group names each
     /// Weir rule `<Name>_<Tier>`.
@@ -83,14 +114,14 @@ impl Rules {
         let mut names = HashMap::new();
         let mut pack = Weirpack::default();
         for &(name, tier, source) in WEIR_RULES {
-            if !skips.contains(&name) {
+            if !matches(skips, name, tier) {
                 let internal = format!("{name}_{tier}");
                 pack.add_rule(internal.clone(), source);
                 names.insert(internal, (name, tier));
             }
         }
         for &(name, tier) in BUILTINS {
-            if !skips.contains(&name) {
+            if !matches(skips, name, tier) {
                 names.insert(name.to_string(), (name, tier));
             }
         }
@@ -144,5 +175,17 @@ mod tests {
             assert!(!bare.contains(name), "{name}");
         }
         assert!(bare.contains(&"ProseAndOr"), "ProseAndOr");
+    }
+
+    #[test]
+    fn skips_one_tier() {
+        let rules = Rules::new(&["recommended/ProseHedge"]).expect("every embedded rule compiles");
+        let kept: Vec<_> = rules
+            .names
+            .values()
+            .filter(|(name, _)| *name == "ProseHedge")
+            .map(|(_, tier)| *tier)
+            .collect();
+        assert_eq!(kept, vec![Tier::Optional]);
     }
 }

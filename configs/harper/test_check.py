@@ -1,7 +1,6 @@
 """Tests for the comment check, the CRLF check, and the locale check in
 check.py, for the lines that check.py expects a bad fixture to lint, and
-for the RAW and SHADOW that check.py and measure.py set for each awk
-check.
+for the RAW that check.py sets for each awk check.
 
 Run with: python3 test_check.py. The weirpack build runs the tests
 before check.py reads the rule files. Every rule file follows the
@@ -288,14 +287,10 @@ class ModeTest(unittest.TestCase):
     def test_env(self):
         exported = {"RAW": "1", "SHADOW": "1", "BLOCKS": "/blocks", "HADDOCK": "1", "KEEP": "1"}
         with mock.patch.dict(os.environ, exported):
-            cases = {
-                "": {},
-                "RAW": {"RAW": "1"},
-                "SHADOW": {"SHADOW": "1"},
-            }
-            for mode, want in cases.items():
-                with self.subTest(mode=mode):
-                    env = check.awk_env(Path("/lib"), mode)
+            cases = {False: {}, True: {"RAW": "1"}}
+            for raw, want in cases.items():
+                with self.subTest(raw=raw):
+                    env = check.awk_env(Path("/lib"), raw)
                     self.assertEqual(
                         {
                             k: v

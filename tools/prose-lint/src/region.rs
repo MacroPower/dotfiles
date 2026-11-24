@@ -105,6 +105,22 @@ impl Finding {
             path,
         }
     }
+
+    /// Returns the finding in the file at `path` as one line of JSON,
+    /// an object with the fields `path`, `line`, `col`, `tier`, `kind`,
+    /// `rule`, and `message`.
+    pub fn json(&self, path: &str) -> String {
+        serde_json::json!({
+            "path": path,
+            "line": self.line,
+            "col": self.col,
+            "tier": self.tier.to_string(),
+            "kind": self.kind,
+            "rule": self.rule,
+            "message": self.message,
+        })
+        .to_string()
+    }
 }
 
 struct Display<'a> {
@@ -292,6 +308,26 @@ mod tests {
         assert_eq!(
             finding.display("a.md").to_string(),
             "a.md:3:7: [Required] Style::ProseAndOr: `and/or`."
+        );
+    }
+
+    #[test]
+    fn json() {
+        let finding = finding(Tier::Recommended, 3, 7, "ProseHedge", "Write \"is\".");
+        let line = finding.json("docs/a \"b\".md");
+        assert!(!line.contains('\n'), "{line}");
+        let got: serde_json::Value = serde_json::from_str(&line).expect("the line is JSON");
+        assert_eq!(
+            got,
+            serde_json::json!({
+                "path": "docs/a \"b\".md",
+                "line": 3,
+                "col": 7,
+                "tier": "Recommended",
+                "kind": "Style",
+                "rule": "ProseHedge",
+                "message": "Write \"is\".",
+            })
         );
     }
 }

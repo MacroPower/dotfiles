@@ -4,17 +4,21 @@
 //! comments of source files.
 //!
 //! ```text
-//! prose-lint-rs <file>     lint a markdown file or a source file
-//! prose-lint-rs --commit   lint a commit message read from stdin
-//! prose-lint-rs --version  print the harper-core version
+//! prose-lint-rs [--only RULES] [--json] <file>    lint a markdown file or a source file
+//! prose-lint-rs [--only RULES] [--json] --commit  lint a commit message read from stdin
+//! prose-lint-rs --version                         print the harper-core version
 //! ```
 //!
 //! Each finding prints as `path:line:col: [Tier] Kind::Rule: message`,
 //! Required findings first and then by line. A commit message prints
-//! as the path `<stdin>`. The binary exits 1 when it prints a finding,
-//! 2 when it fails, and 0 otherwise. It also exits 0
-//! for a missing file, for a file whose extension it does not know, and
-//! for a file under a skipped directory.
+//! as the path `<stdin>`. `--json` prints each finding as one line of
+//! JSON instead. `--only` takes a comma-separated list of rules and
+//! runs only those rules. A bare name, such as `ProseHedge`, picks the
+//! rule in each tier that holds it, and `<tier>/<Name>`, such as
+//! `optional/ProseHedge`, picks the rule of one tier. The binary exits
+//! 1 when it prints a finding, 2 when it fails, and 0 otherwise. It also
+//! exits 0 for a missing file, for a file whose extension it does not
+//! know, and for a file under a skipped directory.
 
 mod checks;
 mod comments;
@@ -36,13 +40,17 @@ use harper_core::parsers::Markdown;
 use crate::comments::{Comments, RegionParser, Syntax};
 use crate::files::Input;
 use crate::region::{Finding, Region};
-use crate::rules::{Rules, TIME_SENSITIVE};
+use crate::rules::{Rules, TIME_SENSITIVE, Tier};
 
 /// An error that ends the run with exit status 2.
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("usage: prose-lint-rs <file> | prose-lint-rs --commit | prose-lint-rs --version")]
+    #[error(
+        "usage: prose-lint-rs [--only RULES] [--json] <file> | prose-lint-rs [--only RULES] [--json] --commit | prose-lint-rs --version"
+    )]
     Usage,
+    #[error("no rule matches {0:?}")]
+    UnknownRule(String),
     #[error("reading {}", .path.display())]
     Read {
         path: PathBuf,
@@ -79,23 +87,60 @@ fn main() -> ExitCode {
     }
 }
 
+/// The input that a command lints.
+enum Target {
+    /// A commit message read from stdin.
+    Commit,
+    /// The file at the path.
+    File(String),
+}
+
 /// Runs the command of `args` and returns whether it printed a
 /// finding.
 fn run(args: &[String]) -> Result<bool, Error> {
-    let (name, text, skips, syntax) = match args {
-        [flag] if flag == "--version" => {
-            println!("{}", harper_core::core_version());
-            return Ok(false);
+    if let [flag] = args
+        && flag == "--version"
+    {
+        println!("{}", harper_core::core_version());
+        return Ok(false);
+    }
+    let mut only = None;
+    let mut json = false;
+    let mut target = None;
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        let next = match arg.as_str() {
+            "--json" if !json => {
+                json = true;
+                continue;
+            }
+            "--only" if only.is_none() => {
+                only = Some(args.next().ok_or(Error::Usage)?);
+                continue;
+            }
+            "--commit" => Target::Commit,
+            file if !file.starts_with("--") => Target::File(file.to_string()),
+            _ => return Err(Error::Usage),
+        };
+        if target.replace(next).is_some() {
+            return Err(Error::Usage);
         }
-        [flag] if flag == "--commit" => {
+    }
+    let unselected = match only {
+        Some(list) => unselected(list)?,
+        None => Vec::new(),
+    };
+
+    let (name, text, skips, syntax) = match target.ok_or(Error::Usage)? {
+        Target::Commit => {
             let mut text = String::new();
             io::stdin()
                 .read_to_string(&mut text)
                 .map_err(Error::Stdin)?;
             ("<stdin>".to_string(), text, TIME_SENSITIVE.to_vec(), None)
         }
-        [file] if !file.starts_with("--") => {
-            let path = Path::new(file);
+        Target::File(file) => {
+            let path = Path::new(&file);
             let (skips, syntax) = match files::classify(path) {
                 _ if !path.is_file() => return Ok(false),
                 Input::Skip => return Ok(false),
@@ -106,10 +151,11 @@ fn run(args: &[String]) -> Result<bool, Error> {
                 path: path.to_path_buf(),
                 source,
             })?;
-            (file.clone(), text, skips, syntax)
+            (file, text, skips, syntax)
         }
-        _ => return Err(Error::Usage),
     };
+    let mut skips: Vec<&str> = skips;
+    skips.extend(unselected.iter().map(String::as_str));
 
     let mut rules = Rules::new(&skips)?;
     let findings = match syntax {
@@ -122,9 +168,35 @@ fn run(args: &[String]) -> Result<bool, Error> {
         None => lint_markdown(&mut rules, &skips, &text),
     };
     for finding in &findings {
-        println!("{}", finding.display(&name));
+        if json {
+            println!("{}", finding.json(&name));
+        } else {
+            println!("{}", finding.display(&name));
+        }
     }
     Ok(!findings.is_empty())
+}
+
+/// Returns each rule that the comma-separated `list` of `--only` leaves
+/// out, as `<tier>/<Name>`. An entry of `list` takes the form that
+/// [`rules::matches`] reads. Fails when an entry does not name any Weir
+/// rule, built-in, or native check.
+fn unselected(list: &str) -> Result<Vec<String>, Error> {
+    let all: Vec<(&str, Tier)> = rules::names()
+        .chain(checks::CHECKS.iter().map(|c| (c.name, c.tier)))
+        .collect();
+    let picked: Vec<&str> = list.split(',').collect();
+    if let Some(entry) = picked.iter().find(|entry| {
+        !all.iter()
+            .any(|&(name, tier)| rules::matches(&[entry], name, tier))
+    }) {
+        return Err(Error::UnknownRule((*entry).to_string()));
+    }
+    Ok(all
+        .into_iter()
+        .filter(|&(name, tier)| !rules::matches(&picked, name, tier))
+        .map(|(name, tier)| format!("{}/{name}", tier.dir()))
+        .collect())
 }
 
 /// Lints the markdown text of a file or a commit message with the rules
