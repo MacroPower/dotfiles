@@ -39,6 +39,12 @@
 # `the above` stays out too, because it usually points at the code block
 # right above it (`The above produces the same output`).
 #
+# `the paragraph above` and its kin stay out before `it` and `them`,
+# because the pronoun names a nearby line or block, not the reader's
+# place in the document. A comment can then describe the layout of an
+# input (`a line that opens with a colon makes the paragraph above it a
+# term`).
+#
 # `introduced` and `listed` stay out of `since`, because they name when
 # a feature arrived (`Generics were introduced later`) or where an item
 # sits (`variants listed later in the enum`).
@@ -69,7 +75,7 @@ expr docs [guide, page, document, section, chapter, tutorial, doc, post, article
 expr main [
     <(!as @verbs above), (@verbs above)>,
     (@verbs below),
-    (the [section, sections, paragraph, chapter] @where),
+    (the [section, sections, paragraph, chapter] @where!(( )[it, them])),
     (the [next, previous, preceding] [section, chapter]),
     (the [above, preceding] @passage),
     ([given, following, notwithstanding, despite, besides, (in addition to), (based on)] the above),
@@ -87,5 +93,7 @@ allows "The backoff follows the restart policy in Pod Lifecycle."
 allows "The header is parsed as described above."
 allows "In the example below, the claim requests one device."
 allows "The above produces the same output."
+allows "A line that opens with a colon makes the paragraph above it a term."
+allows "The headings name the sections below them."
 allows "Variants listed later in the enum compare greater."
 allows "Generics were introduced later, in Go 1.18."

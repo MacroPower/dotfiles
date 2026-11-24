@@ -11,3 +11,7 @@ Variants listed later in the enum compare greater.
 Generics were introduced later, in Go 1.18.
 
 Later in this section, you set the flag.
+
+A line that opens with a colon makes the paragraph above it a term.
+
+The headings name the sections below them.
