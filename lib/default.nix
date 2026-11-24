@@ -236,94 +236,6 @@ let
     });
   };
 
-  # nixpkgs at this pin builds lupa-2.8 with `LUPA_NO_BUNDLE=true` and
-  # without fetching git submodules. setup.py then falls through to its
-  # pkg-config fallback (find_lua_build) and produces a single unversioned
-  # `lupa.lua` extension linked against system LuaJIT. fakeredis (pulled
-  # in transitively via mcp-nixos -> fastmcp >= 2.14 -> pydocket) does
-  # `import lupa.lua51` at module load, which fails -- breaking mcp-nixos
-  # at stdio handshake. Flip lupa back to bundled mode and strip the
-  # empty submodule placeholder dirs (only third-party/lua51 is actually
-  # vendored in the tarball) so setup.py builds `lupa.lua51` from source.
-  # That is all fakeredis needs.
-  lupaOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        lupa = pyprev.lupa.overrideAttrs (old: {
-          env = (old.env or { }) // {
-            LUPA_NO_BUNDLE = "false";
-          };
-          postPatch = (old.postPatch or "") + ''
-            find third-party -mindepth 1 -maxdepth 1 -type d ! -name lua51 \
-              -exec rm -rf {} +
-          '';
-        });
-      })
-    ];
-  };
-
-  # fastmcp's test suite is wall-clock heavy and prone to hanging
-  # network/keep-alive tests under the Nix sandbox -- nixpkgs already
-  # carries a long disabledTests list, but new flakes keep appearing
-  # on each bump. Trust upstream CI and skip the check phase entirely.
-  # pytestCheckHook runs in installCheckPhase, so doInstallCheck is the
-  # right gate (doCheck already defaults false for pure-python builds).
-  #
-  # fastmcp 3.x does not support mcp 2.x, and nixpkgs marks fastmcp-slim
-  # broken when its mcp argument is 2.x or later. That breaks kagimcp and
-  # mcp-nixos. Build fastmcp-slim against mcp_1, the same workaround
-  # nixpkgs applies to music-assistant. Nothing else in the fastmcp
-  # closure depends on mcp, so the override does not pull in a second
-  # mcp version. Drop it when nixpkgs ships fastmcp 4.x.
-  fastmcpOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (pyfinal: pyprev: {
-        fastmcp = pyprev.fastmcp.overrideAttrs {
-          doInstallCheck = false;
-        };
-        fastmcp-slim = pyprev.fastmcp-slim.override {
-          mcp = pyfinal.mcp_1;
-        };
-      })
-    ];
-  };
-
-  # mcp's sse/ws/streamable_http/integration tests spawn subprocess
-  # servers and poll for a TCP port to come up; under heavy local
-  # rebuilds in the Nix sandbox dozens of them time out at once and
-  # fail the whole build (started with one test, grew to 40+ across
-  # four files on later bumps). Same story as fastmcp above: trust
-  # upstream CI and skip the check phase entirely. mcp_1 carries the same
-  # test suite and gets the same treatment.
-  mcpOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        mcp = pyprev.mcp.overrideAttrs {
-          doInstallCheck = false;
-        };
-        mcp_1 = pyprev.mcp_1.overrideAttrs {
-          doInstallCheck = false;
-        };
-      })
-    ];
-  };
-
-  # aioboto3's DynamoDB tests hit a moto/werkzeug mock server that
-  # emits a duplicate Server header; aiohttp's stricter parser rejects
-  # it with HTTPClientError. The remaining suite is also slow (~10 min)
-  # and not worth running in our closure rebuild. Note: nixpkgs runs
-  # the test suite as the install-check phase, so doInstallCheck is
-  # what gates it (doCheck is already false here).
-  aioboto3Overlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        aioboto3 = pyprev.aioboto3.overrideAttrs {
-          doInstallCheck = false;
-        };
-      })
-    ];
-  };
-
   # direnv's checkPhase runs bash/fish/zsh integration test scripts
   # that take 10+ minutes per closure rebuild and occasionally hang on
   # tty operations under the macOS Nix sandbox. We trust upstream's
@@ -538,108 +450,18 @@ let
       };
   };
 
-  # cli-helpers 2.10.0 (litecli dep) ships 3 tabular-output tests that
-  # assert exact ANSI escape sequences; the bytes have shifted across
-  # Pygments versions in nixpkgs unstable, so the assertions fail even
-  # though the styling output is functionally correct.
-  cliHelpersOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        cli-helpers = pyprev.cli-helpers.overrideAttrs (old: {
-          disabledTests = (old.disabledTests or [ ]) ++ [
-            "test_style_output"
-            "test_style_output_with_newlines"
-            "test_style_output_custom_tokens"
-          ];
-        });
-      })
-    ];
-  };
-
-  # backrefs' test_timeout (tests/test_bregex.py) busy-loops for a fixed
-  # wall-clock interval and asserts a TimeoutError fires; on a fast or contended
-  # builder the regex sub finishes first and the test fails with "DID NOT
-  # RAISE". It is pure timing flake, and the py3.12 build we pull in
-  # transitively (via mkdocs-material) isn't on cache.nixos.org, so it builds
-  # from source and trips the flake. Deselect just that test rather than
-  # disabling the whole install-check phase.
-  backrefsOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        backrefs = pyprev.backrefs.overrideAttrs (old: {
-          disabledTests = (old.disabledTests or [ ]) ++ [ "test_timeout" ];
-        });
-      })
-    ];
-  };
-
-  # py-key-value-aio (fastmcp's storage-backend library, pulled via kagimcp
-  # and mcp-nixos) drags aioboto3, moto, cfn-lint, django, and geoip2 into
-  # its check-only closure — moto alone runs a 30+ minute test suite, and
-  # several of those packages have sandbox-hostile or flaky tests of their
-  # own. The store backends are test-only there; skip the suite and the
-  # whole chain drops out of the build closure. Upstream CI validates
-  # releases.
-  pyKeyValueAioOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        py-key-value-aio = pyprev.py-key-value-aio.overridePythonAttrs (_: {
-          doCheck = false;
-        });
-      })
-    ];
-  };
-
-  # cyclopts (fastmcp's CLI framework, pulled via both kagimcp and
-  # mcp-nixos -> fastmcp) runs a large pytest suite -- shell-completion
-  # integration tests that spawn bash/fish/zsh subprocesses dominate the
-  # ~20-minute wall clock. It builds from source on our python chains
-  # (not on cache.nixos.org), so the suite runs on every closure rebuild.
-  # pytestCheckHook lands in installCheckPhase, which buildPythonPackage
-  # gates on doInstallCheck = (doCheck or true); overriding doCheck here
-  # flips that gate off and drops the check-only inputs. Upstream CI
-  # validates releases.
-  cycloptsOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        cyclopts = pyprev.cyclopts.overridePythonAttrs (_: {
-          doCheck = false;
-        });
-      })
-    ];
-  };
-
-  # geoip2's tests/webservice_test.py starts a werkzeug HTTP server bound to
-  # "localhost", which the darwin build sandbox cannot resolve ("nodename nor
-  # servname provided, or not known"), so all 52 webservice tests error with
-  # SystemExit before running. Pulled transitively on the py3.14 chain
-  # (mcp-nixos -> fastmcp -> py-key-value-aio -> moto -> django -> geoip2)
-  # and not on cache.nixos.org. Deselect the server-backed tests; the
-  # database-reader tests still run.
-  geoip2Overlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        geoip2 = pyprev.geoip2.overrideAttrs (old: {
-          disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [ "tests/webservice_test.py" ];
-        });
-      })
-    ];
-  };
-
+  # An overlay that changes a nixpkgs package gives it a new store path,
+  # and so does every package that depends on it. cache.nixos.org does
+  # not hold the new paths, so a switch builds all of them locally. A
+  # switch fetches each package that Hydra builds and never runs its
+  # tests. So do not override such a package only to skip a flaky test. Run
+  # `task nix:build-plan` to list what each host builds locally.
   sharedOverlays = system: [
     fetchurlOverlay
     devboxOverlay
     spacectlOverlay
     lixOverlay
     localOverlay
-    lupaOverlay
-    fastmcpOverlay
-    mcpOverlay
-    aioboto3Overlay
-    backrefsOverlay
-    cycloptsOverlay
-    geoip2Overlay
-    pyKeyValueAioOverlay
     direnvOverlay
     harlequinOverlay
     czkawkaOverlay
@@ -647,7 +469,6 @@ let
     marksmanOverlay
     firefoxBinOverlay
     grugFarOverlay
-    cliHelpersOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
@@ -669,21 +490,12 @@ let
     devboxOverlay
     spacectlOverlay
     lixOverlay
-    lupaOverlay
-    fastmcpOverlay
-    mcpOverlay
-    aioboto3Overlay
-    backrefsOverlay
-    cycloptsOverlay
-    geoip2Overlay
-    pyKeyValueAioOverlay
     direnvOverlay
     harlequinOverlay
     czkawkaOverlay
     harperOverlay
     firefoxBinOverlay
     grugFarOverlay
-    cliHelpersOverlay
   ];
 
   # Attribute paths those overlays override, such as "harper" or
