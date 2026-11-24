@@ -7,8 +7,8 @@ use std::process::{Command, Output, Stdio};
 
 const BIN: &str = env!("CARGO_BIN_EXE_prose-lint");
 
-/// The directory that holds `rules/` and `fixtures/`, from build.rs.
-const HARPER: &str = env!("PROSE_LINT_HARPER");
+/// The directory of the crate, which holds `rules/` and `fixtures/`.
+const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 /// A directory under the temporary directory that the test removes
 /// when it ends.
@@ -216,7 +216,7 @@ fn label_colons() {
 #[test]
 fn transcripts() {
     let tmp = TempDir::new("transcripts");
-    let fixtures = Path::new(HARPER).join("fixtures/transcript");
+    let fixtures = Path::new(CRATE_DIR).join("fixtures/transcript");
     let read = |name: &str| fs::read_to_string(fixtures.join(name)).expect("reading the fixture");
     let interview = read("interview.md");
     // Prettier writes every fence with backticks, so the test rewrites
@@ -558,7 +558,7 @@ fn exit_status() {
         },
         Case {
             name: "fixtures",
-            args: vec![tmp.write("harper/fixtures/a.md", finding)],
+            args: vec![tmp.write("prose-lint/fixtures/a.md", finding)],
             want: 0,
             stdout: false,
         },

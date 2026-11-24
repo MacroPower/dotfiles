@@ -1,17 +1,18 @@
-# Harper Rules
+# Prose Rules
 
-This directory holds the rules of the prose linter, `prose-lint` in
-`tools/prose-lint`. `rules/<tier>/` holds each Weir rule as a `.weir` file and
-a `builtins.txt` that names the Harper built-ins of the tier. A rule that a
-Weir pattern cannot express is a native check, a Rust module under
-`tools/prose-lint/src/checks/<tier>/`.
+This file covers the rules of the prose linter, `prose-lint`. Its paths are
+relative to `tools/prose-lint`, and its commands run from the repository root
+unless a command says otherwise. `rules/<tier>/` holds each Weir rule as a
+`.weir` file and a `builtins.txt` that names the Harper built-ins of the tier.
+A rule that a Weir pattern cannot express is a native check, a Rust module
+under `src/checks/<tier>/`.
 
 `fixtures/<tier>/` holds the `.bad.md` and `.good.md` pair of each rule.
-`cargo test` of `tools/prose-lint` tests each rule against its fixtures, as the
-Rule Tests section of `tools/prose-lint/README.md` describes. A fixture line
-that ends in `<!-- native check differs -->` holds a case that a native check
-reads in another way than GFM. The Native Checks section of
-`tools/prose-lint/README.md` describes the marker.
+`cargo test` tests each rule against its fixtures, as the Rule Tests section of
+`README.md` describes. A fixture line that ends in
+`<!-- native check differs -->` holds a case that a native check reads in
+another way than GFM. The Native Checks section of `README.md` describes the
+marker.
 
 ## Names
 
@@ -65,8 +66,7 @@ that it reports in the same change.
 
 The `layouts` test in Verification checks the comment of every rule file
 against the layout in Sections. It prints one line for each breach, and
-`layout_failures` in `tools/prose-lint/src/rule_tests.rs` lists the
-breaches.
+`layout_failures` in `src/rule_tests.rs` lists the breaches.
 
 ### Sections
 
@@ -79,7 +79,7 @@ Every comment holds these sections in this order.
 - **Expression** says how to read the pattern: each branch, each
   guard, and each Weir or tagger workaround. For a native check, it
   says how the check reads the markdown model and which shared module
-  of `tools/prose-lint/src/checks`, such as `sentences.rs`, it calls.
+  of `src/checks`, such as `sentences.rs`, it calls.
 - **False Positives** names each word and each sense that the rule
   leaves out because the text does not need the fix, with the reason
   and an example. It also names each misfire that remains and that the
@@ -93,9 +93,8 @@ Every comment holds these sections in this order.
   Measurement section of this file requires, and it says what the
   sampled misfires were.
 
-`SECTIONS` in `tools/prose-lint/src/rule_tests.rs` holds the section
-names in the same order, and `REQUIRED_SECTIONS` holds the sections that
-every comment must carry. When you add, rename, reorder, or require a
+`SECTIONS` in `src/rule_tests.rs` holds the section names in the same order,
+and `REQUIRED_SECTIONS` holds the sections that every comment must carry. When you add, rename, reorder, or require a
 section, change this file, both constants, and the cases in
 `rule_tests.rs` together.
 
@@ -151,8 +150,7 @@ These rule files show the layout:
 - `rules/required/ProseAndOr.weir` is a rule with a short comment.
 - `rules/recommended/ProseBroadReference.weir` is a Weir rule with
   guards, related rules, and a measurement.
-- `tools/prose-lint/src/checks/recommended/prose_hidden_list.rs` is a
-  native check.
+- `src/checks/recommended/prose_hidden_list.rs` is a native check.
 
 ### Misfires and Misses
 
@@ -281,15 +279,14 @@ To rename a rule:
 
 1. Rename the rule file and both fixtures with `git mv`.
 2. For a native check, rename its module and update the name in `CHECKS`
-   of `tools/prose-lint/src/checks.rs`.
+   of `src/checks.rs`.
 3. Update the label at the start of the message.
-4. Update the name in `tools/prose-lint/comment-checks.txt` and in
-   `tools/prose-lint/src`. The crate names some rules for commit
-   messages, such as `TIME_SENSITIVE` in `src/rules.rs`, for agent
-   prompt files in `src/files.rs`, and for the findings that
+4. Update the name in `comment-checks.txt` and in `src`. The crate names some
+   rules for commit messages, such as `TIME_SENSITIVE` in `src/rules.rs`, for
+   agent prompt files in `src/files.rs`, and for the findings that
    `src/guards.rs` drops after Harper reports them.
-5. Search `configs/harper/rules` and `configs/claude` for the old rule
-   name, and update each reference. Rule comments name a rule only by
+5. Search `rules` and the `configs/claude` directory of the repository for the
+   old rule name, and update each reference. Rule comments name a rule only by
    its rule name. Messages and skills can state the old term in words
    (`stock word`), so search for those words too.
 
@@ -302,9 +299,8 @@ packages. `measure.py` lints each file of the corpus with
 and a seeded sample of hits.
 
 `prose-lint` runs the Weir rules, the Harper built-ins that the
-`builtins.txt` of a tier lists, and the native checks of
-`tools/prose-lint/src/checks`. It fails on a name that none of these
-hold. The binary embeds the rules when it builds, so build it from the
+`builtins.txt` of a tier lists, and the native checks of `src/checks`. It
+fails on a name that none of these hold. The binary embeds the rules when it builds, so build it from the
 branch that holds the rules you measure. On that branch, make the change
 in the file that the binary reads:
 
@@ -332,9 +328,9 @@ the plain build:
 
 ```bash
 export PROSE_LINT="$(nix build --no-link --print-out-paths .#prose-lint)/bin/prose-lint"
-python3 configs/harper/measure.py fetch
-python3 configs/harper/measure.py run ProseHedge
-python3 configs/harper/measure.py run optional/ProseHedge --sample 20
+python3 tools/prose-lint/measure.py fetch
+python3 tools/prose-lint/measure.py run ProseHedge
+python3 tools/prose-lint/measure.py run optional/ProseHedge --sample 20
 ```
 
 A bare rule name, such as `ProseHedge`, runs the rule in every tier.
@@ -424,9 +420,9 @@ task prose:compare -- "$(command -v prose-lint)" ./result/bin/prose-lint ProseHe
 
 Both binaries lint each of these inputs:
 
-- A copy of each file under `fixtures/`, because both binaries skip a
-  path under `harper/fixtures`. The report names each copy by the path
-  of its fixture.
+- A copy of each file under `fixtures/`, because both binaries skip a path
+  under `prose-lint/fixtures`. The report names each copy by the path of its
+  fixture.
 - Each file that git tracks. Each binary skips a file whose extension
   it does not know.
 - The files of the `measure.py` corpus, for each source whose clone
@@ -462,10 +458,9 @@ The tests fail with one line for each failure. These tests cover the
 rules:
 
 - `fixtures`, `tiers`, `structure`, `weir_tests`, and `entries` in
-  `tools/prose-lint/src/rule_tests.rs` check each rule against its
-  fixtures and against the tests inside its Weir file. The Rule Tests
-  section of `tools/prose-lint/README.md` lists what each rule must
-  pass.
+  `src/rule_tests.rs` check each rule against its fixtures and against the
+  tests inside its Weir file. The Rule Tests section of `README.md` lists what
+  each rule must pass.
 - `layouts` checks the comment of every rule file against the layout in
   Comments.
 - `rule_comments` lints the comment of every rule file and fails on each
@@ -479,9 +474,9 @@ rules:
   files, and commit messages, and they check its output and its exit
   status.
 
-To run the tests outside of Nix, follow the Building section of
-`tools/prose-lint/README.md`, and run `cargo test` in `tools/prose-lint`.
+To run the tests outside of Nix, follow the Building section of `README.md`,
+and run `cargo test` in `tools/prose-lint`.
 
-`harper-cli test` runs the tests inside one Weir file, such as `harper-cli
-test rules/required/ProseAndOr.weir`. The `harper-cli` of `pkgs.harper` reads
+`harper-cli test` runs the tests inside one Weir file, such as
+`harper-cli test rules/required/ProseAndOr.weir` in `tools/prose-lint`. The `harper-cli` of `pkgs.harper` reads
 a rule the same way as the crate, because both link the same harper-core.

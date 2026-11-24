@@ -30,9 +30,9 @@ new rule file first. The .#prose-lint build also runs the rule
 tests. They fail on a rule without a fixture pair, without the
 Overview and Measurement sections in its comment, or with a finding on
 fixtures/common.good.md. For a draft rule or a candidate built-in,
-build the binary without the tests. The Measurement section of
-configs/harper/CLAUDE.md gives the command, and so does the message
-that run prints when it cannot find the binary.
+build the binary without the tests. The Measurement section of the
+CLAUDE.md beside this script gives the command, and so does the
+message that run prints when it cannot find the binary.
 
 The binary runs the Weir rules, the Harper built-ins that the
 builtins.txt of a tier lists, and the native checks of

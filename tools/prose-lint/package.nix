@@ -22,16 +22,6 @@ let
     inherit (harper) src patches;
   };
 
-  # The rules that the binary embeds, and the fixtures that the tests
-  # lint.
-  harperConfig = lib.fileset.toSource {
-    root = ../../configs/harper;
-    fileset = lib.fileset.unions [
-      ../../configs/harper/rules
-      ../../configs/harper/fixtures
-    ];
-  };
-
   # Returns each entry of each list that the last group of `pattern`
   # finds in `file`, such as `"sh", "bash"` in `Syntax::grammar(&["sh",
   # "bash"], ...)`.
@@ -74,6 +64,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
       ./Cargo.lock
       ./build.rs
       ./comment-checks.txt
+      # The rules that the binary embeds, and the fixtures that the tests
+      # read.
+      ./rules
+      ./fixtures
       ./src
       (lib.fileset.maybeMissing ./tests)
     ];
@@ -91,7 +85,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
   # harper-core embeds this file as its curated dictionary, so the binary
   # does not build the dictionary on each start.
   env.HARPER_PRECOMPUTED_DICT = "${harper.dictionary}";
-  env.PROSE_LINT_HARPER = "${harperConfig}";
 
   # The check phase runs cargo test.
   doCheck = true;

@@ -11,8 +11,8 @@ use std::path::Path;
 use super::*;
 use crate::rules::Rules;
 
-/// The directory that holds `rules/` and `fixtures/`, from build.rs.
-const HARPER: &str = env!("PROSE_LINT_HARPER");
+/// The directory of the crate, which holds `rules/` and `fixtures/`.
+const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 /// Returns the text of each region of `source`, a file with the
 /// extension `ext`.
@@ -377,7 +377,7 @@ const HASH: &[&str] = &[
 
 #[test]
 fn comment_code() {
-    let dir = Path::new(HARPER).join("fixtures/comment-code");
+    let dir = Path::new(CRATE_DIR).join("fixtures/comment-code");
     let read = |name: &str| fs::read_to_string(dir.join(name)).expect("reading the fixture");
     let code = read("code.sh");
     let template = read("template.ts");
@@ -608,7 +608,7 @@ fn code_spans() {
     // the crate reports the `e.g.` and the `may` of the next line. The
     // bash script read the `--` as text, so the span ran from the code
     // into the next line.
-    let path = Path::new(HARPER).join("fixtures/comment-code/spans.sh");
+    let path = Path::new(CRATE_DIR).join("fixtures/comment-code/spans.sh");
     let text = fs::read_to_string(path).expect("reading the fixture");
     let go: String = text
         .lines()
@@ -717,7 +717,7 @@ fn trailing_dash() {
 
 #[test]
 fn license_headers() {
-    let dir = Path::new(HARPER).join("fixtures/license");
+    let dir = Path::new(CRATE_DIR).join("fixtures/license");
     let mut rules = Rules::new(&[]).expect("every embedded rule compiles");
     let mut lint = |name: &str| {
         let text = fs::read_to_string(dir.join(name)).expect("reading the fixture");
@@ -765,7 +765,7 @@ fn crlf_endings() {
         "ProseAndOr",
         "ProseDash",
     ];
-    let dir = Path::new(HARPER).join("fixtures/crlf");
+    let dir = Path::new(CRATE_DIR).join("fixtures/crlf");
     let mut rules = Rules::new(&[]).expect("every embedded rule compiles");
     for endings in ["lf", "crlf"] {
         let mut got = Vec::new();

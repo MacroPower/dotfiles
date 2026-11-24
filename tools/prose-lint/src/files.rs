@@ -55,7 +55,7 @@ const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown"];
 /// Returns how the binary lints `path`. It does not read the file.
 ///
 /// The binary skips each path under [`SKIPPED_DIRS`] and each path
-/// under `harper/fixtures`, whose files break the rules on purpose. It
+/// under `prose-lint/fixtures`, whose files break the rules on purpose. It
 /// also skips each path whose extension sits neither in
 /// [`MARKDOWN_EXTENSIONS`] nor in [`comments::SYNTAXES`]. A changelog
 /// skips the rules of [`TIME_SENSITIVE`], because it describes changes.
@@ -71,7 +71,7 @@ pub fn classify(path: &Path) -> Input {
         .collect();
     let dirs = &dirs[..dirs.len().saturating_sub(1)];
     if dirs.iter().any(|d| SKIPPED_DIRS.contains(d))
-        || dirs.windows(2).any(|w| w == ["harper", "fixtures"])
+        || dirs.windows(2).any(|w| w == ["prose-lint", "fixtures"])
     {
         return Input::Skip;
     }
@@ -187,7 +187,7 @@ mod tests {
             },
             Case {
                 name: "rule file",
-                path: "configs/harper/rules/required/ProseAndOr.weir",
+                path: "tools/prose-lint/rules/required/ProseAndOr.weir",
                 want: Input::Source {
                     syntax: comments::syntax("weir").expect("the table lists weir"),
                     skips: vec!["ProseTypography"],
@@ -241,11 +241,11 @@ mod tests {
             },
             Case {
                 name: "fixtures",
-                path: "/repo/configs/harper/fixtures/required/ProseAndOr.bad.md",
+                path: "/repo/tools/prose-lint/fixtures/required/ProseAndOr.bad.md",
                 want: Input::Skip,
             },
             Case {
-                name: "fixtures without harper",
+                name: "fixtures outside prose-lint",
                 path: "/repo/tests/fixtures/a.md",
                 want: plain(),
             },

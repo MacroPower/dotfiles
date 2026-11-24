@@ -1,9 +1,10 @@
 # prose-lint
 
 `prose-lint` lints markdown files, commit messages, and the comments of
-source files with the Weir rules and the Harper built-ins of
-`configs/harper/rules`, and with the native checks of `src/checks`. The binary
-embeds the rules when it builds, so a change to a rule takes a new build.
+source files with the Weir rules and the Harper built-ins of `rules`, and with
+the native checks of `src/checks`. The binary embeds the rules when it builds,
+so a change to a rule takes a new build. `CLAUDE.md` describes how to write and
+measure a rule.
 
 ```sh
 prose-lint [--only RULES] [--json] <file>    # lint a markdown file or a source file
@@ -26,7 +27,7 @@ Two flags change which rules run and how the findings print:
 - `--json` prints each finding as one line of JSON, an object with the fields
   `path`, `line`, `col`, `tier`, `kind`, `rule`, and `message`.
 
-`configs/harper/measure.py` lints its corpus with both flags.
+`measure.py` lints its corpus with both flags.
 
 The prose hook of `home/claude.nix` lints each file whose extension the binary
 knows. `passthru.extensions` of `package.nix` reads those extensions from
@@ -41,11 +42,11 @@ The binary exits with one of these statuses:
 | 2      | The linter could not run, such as on a file that is not UTF-8 |
 
 The binary skips a missing file, a file whose extension it does not know, and a
-path under `node_modules`, `vendor`, `.git`, `.terraform`, or `harper/fixtures`.
-Changelogs skip the time-sensitive rules and ProseHeading, and prompt files for
-an agent skip ProseCapsEmphasis, source files under the same paths included.
-Commit messages skip the time-sensitive rules too. `TIME_SENSITIVE` in
-`src/rules.rs` lists those rules.
+path under `node_modules`, `vendor`, `.git`, `.terraform`, or
+`prose-lint/fixtures`. Changelogs skip the time-sensitive rules and
+ProseHeading, and prompt files for an agent skip ProseCapsEmphasis, source files
+under the same paths included. Commit messages skip the time-sensitive rules
+too. `TIME_SENSITIVE` in `src/rules.rs` lists those rules.
 
 ## Source Files
 
@@ -104,12 +105,11 @@ To add a native check:
    `src/checks/required/prose_arrow.rs`. Name the module in
    `src/checks/<tier>.rs`.
 2. Open the module with a `//!` comment in the layout of the Comments section
-   of `configs/harper/CLAUDE.md`.
+   of `CLAUDE.md`.
 3. List the check in `CHECKS` of `src/checks.rs` with its rule name, its tier,
    and the kind of its findings.
-4. Put its `.bad.md` and `.good.md` fixtures under
-   `configs/harper/fixtures/<tier>/`. The tests of [Rule Tests](#rule-tests)
-   run the check on them.
+4. Put its `.bad.md` and `.good.md` fixtures under `fixtures/<tier>/`. The
+   tests of [Rule Tests](#rule-tests) run the check on them.
 
 A native check can read a line of a fixture in another way than GFM does. The
 model blanks the text of an HTML block, for example, and pulldown-cmark ends an
@@ -128,11 +128,11 @@ built-in, and native check. The module doc of that file states what each rule
 must pass:
 
 - The binary reports each bad line of the fixtures of the rule and no line of
-  its good fixture or of `configs/harper/fixtures/common.good.md`. A copy of
-  each fixture with CRLF line endings draws the same findings.
+  its good fixture or of `fixtures/common.good.md`. A copy of each fixture with
+  CRLF line endings draws the same findings.
 - Each rule has a fixture pair, and each fixture pair has a rule. Each entry of
-  `configs/harper/rules` is a tier directory, and each file of a tier directory
-  is a Weir rule or `builtins.txt`.
+  `rules` is a tier directory, and each file of a tier directory is a Weir rule
+  or `builtins.txt`.
 - Each built-in sits in one tier, and two tiers of one rule do not report the
   same line with other messages.
 - The tests inside each Weir rule pass, as `harper-cli test` runs them.
@@ -142,9 +142,8 @@ must pass:
   character other than a letter, an apostrophe, or a space. No probed phrase
   holds a shorter probed phrase of the same rule.
 - The comment that opens each Weir rule and the doc comment of each native
-  check follow the layout of the Comments section of
-  `configs/harper/CLAUDE.md`. These comments do not draw a Required or a
-  Recommended finding.
+  check follow the layout of the Comments section of `CLAUDE.md`. These
+  comments do not draw a Required or a Recommended finding.
 
 ## Building
 
@@ -162,10 +161,6 @@ git clone --depth 1 --branch v3.3.0 https://github.com/Automattic/harper.git har
 git -C harper apply ../../../pkgs/harper-precomputed-dict.patch
 cargo build
 ```
-
-`build.rs` reads the rules from `configs/harper`, and the `PROSE_LINT_HARPER`
-variable names another directory with the same `rules` and `fixtures`
-directories.
 
 This build does not embed the dictionary, so the binary builds the dictionary
 from its rune files on each start.

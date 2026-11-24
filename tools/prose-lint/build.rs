@@ -1,17 +1,12 @@
-//! Embeds the prose rules of `configs/harper` in the binary.
+//! Embeds the prose rules of `rules/` in the binary.
 //!
-//! `PROSE_LINT_HARPER` names the directory that holds `rules/` and
-//! `fixtures/`. Its default is `configs/harper` of the repository, and
-//! the Nix build sets it to a copy of that directory. The script writes
-//! `rules.rs` to `OUT_DIR`, which lists the source of each Weir rule and
-//! the names in each `builtins.txt`, by tier. It also passes the
-//! directory to the crate as `PROSE_LINT_HARPER`, so the tests can read
-//! the fixtures.
+//! The script writes `rules.rs` to `OUT_DIR`, which lists the source of
+//! each Weir rule and the names in each `builtins.txt`, by tier.
 
 use std::env;
 use std::fmt::Write as _;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const TIERS: [(&str, &str); 3] = [
     ("required", "Required"),
@@ -20,20 +15,11 @@ const TIERS: [(&str, &str); 3] = [
 ];
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=PROSE_LINT_HARPER");
-    let harper = env::var_os("PROSE_LINT_HARPER").map_or_else(
-        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/harper"),
-        PathBuf::from,
-    );
-    let harper = harper
-        .canonicalize()
-        .unwrap_or_else(|e| panic!("reading {}: {e}", harper.display()));
-    println!("cargo:rustc-env=PROSE_LINT_HARPER={}", harper.display());
-
+    let rules = Path::new(env!("CARGO_MANIFEST_DIR")).join("rules");
     let mut weir = String::new();
     let mut builtins = String::new();
     for (dir, tier) in TIERS {
-        let dir = harper.join("rules").join(dir);
+        let dir = rules.join(dir);
         println!("cargo:rerun-if-changed={}", dir.display());
         let mut names: Vec<_> = fs::read_dir(&dir)
             .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))

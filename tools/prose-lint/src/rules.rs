@@ -1,6 +1,6 @@
 //! The Weir rules and the Harper built-ins that the binary embeds.
 //!
-//! `build.rs` reads them from `configs/harper/rules/<tier>/`. Each tier
+//! `build.rs` reads them from `rules/<tier>/` of the crate. Each tier
 //! directory holds a `.weir` file for each Weir rule and a
 //! `builtins.txt` that names the Harper built-ins of the tier.
 
@@ -28,7 +28,7 @@ pub enum Tier {
 
 impl Tier {
     /// Returns the name of the directory of the tier under
-    /// `configs/harper/rules`, such as `required`.
+    /// `rules/`, such as `required`.
     pub fn dir(self) -> &'static str {
         match self {
             Tier::Required => "required",

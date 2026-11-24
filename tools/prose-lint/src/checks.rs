@@ -4,7 +4,7 @@
 //! region and returns a [`Hit`] for each finding. [`CHECKS`] lists each
 //! check with its rule name and its tier. The module of a check sits
 //! under the module of its tier, as its fixtures sit under
-//! `configs/harper/fixtures/<tier>/`.
+//! `fixtures/<tier>/` of the crate.
 
 pub mod optional;
 pub mod recommended;

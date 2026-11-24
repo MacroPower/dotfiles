@@ -5,7 +5,7 @@ compare.py there against a fake prose-lint. The fake prints a
 ProseFoo finding for each line that holds `foo`, a ProseBar finding for
 each line that holds `bar`, and a ProseBaz finding, whose kind holds a
 space, for each line that holds `baz`. Like prose-lint, it skips a path
-under harper/fixtures. Two more fakes wrap the first, and each drops
+under prose-lint/fixtures. Two more fakes wrap the first, and each drops
 the findings of one rule. No test runs a real prose-lint.
 
 Run with: python3 test_compare.py.
@@ -37,7 +37,7 @@ if [ "$1" = --commit ]; then
   set -- "$message"
 else
   path=$1
-  case "$1" in */harper/fixtures/*) exit 0 ;; esac
+  case "$1" in */prose-lint/fixtures/*) exit 0 ;; esac
 fi
 awk -v path="$path" '
   /foo/ { printf "%s:%d:%d: [Required] Style::ProseFoo: Foo.\\n", path, NR, index($0, "foo"); found = 1 }
@@ -82,7 +82,7 @@ class CompareTest(unittest.TestCase):
             path.chmod(0o755)
         os.environ["FAKE_DIR"] = str(self.fakes)
 
-        self.write("configs/harper/fixtures/required/ProseFoo.bad.md", "a foo\n")
+        self.write("tools/prose-lint/fixtures/required/ProseFoo.bad.md", "a foo\n")
         self.write("docs/a.md", "one foo\ntwo bar\n")
         self.write("docs/b.go", "// bar\n")
         self.git("init", "-q")
@@ -163,10 +163,10 @@ class CompareTest(unittest.TestCase):
         self.assertIn("< docs/c.md:1:5: [Required] Word Choice::ProseBaz: Baz.\n    one baz\n", out)
 
     def test_fixture_finding_names_the_fixture(self) -> None:
-        self.write("configs/harper/fixtures/required/ProseFoo.bad.md", "a foo\nb bar\n")
+        self.write("tools/prose-lint/fixtures/required/ProseFoo.bad.md", "a foo\nb bar\n")
         _, out, _ = self.run_compare("fake", "drop-bar", "ProseBar")
         self.assertIn(
-            "< configs/harper/fixtures/required/ProseFoo.bad.md:2:3: [Recommended] Style::ProseBar: Bar.\n    b bar\n",
+            "< tools/prose-lint/fixtures/required/ProseFoo.bad.md:2:3: [Recommended] Style::ProseBar: Bar.\n    b bar\n",
             out,
         )
 

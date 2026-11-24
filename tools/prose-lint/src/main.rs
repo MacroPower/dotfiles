@@ -1,7 +1,6 @@
-//! prose-lint lints prose with the Weir rules and the Harper
-//! built-ins of `configs/harper/rules`, and with the native checks of
-//! `src/checks`. It lints markdown files, commit messages, and the
-//! comments of source files.
+//! prose-lint lints prose with the Weir rules and the Harper built-ins
+//! of `rules/`, and with the native checks of `src/checks`. It lints
+//! markdown files, commit messages, and the comments of source files.
 //!
 //! ```text
 //! prose-lint [--only RULES] [--json] <file>    lint a markdown file or a source file

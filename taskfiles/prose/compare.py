@@ -7,8 +7,8 @@ FIRST and SECOND name two prose-lint binaries, such as the installed
 prose-lint and a build of a branch. Run the script from the root of the
 repository. It lints these inputs with both binaries:
 
-- Each file under configs/harper/fixtures. Both binaries skip a path
-  under harper/fixtures, so the script lints a copy of each file in a
+- Each file under tools/prose-lint/fixtures. Both binaries skip a path
+  under prose-lint/fixtures, so the script lints a copy of each file in a
   temporary directory, and it names the copy by the path of the file.
 - Each file that git tracks. Each binary skips a file whose extension
   it does not know.
@@ -46,11 +46,11 @@ from pathlib import Path
 # Importing measure writes a __pycache__ directory beside it unless this
 # flag is set.
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "configs" / "harper"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "prose-lint"))
 
 import measure  # noqa: E402
 
-FIXTURES = Path("configs/harper/fixtures")
+FIXTURES = Path("tools/prose-lint/fixtures")
 COMMITS = 200
 
 # The part of a finding after its path, such as

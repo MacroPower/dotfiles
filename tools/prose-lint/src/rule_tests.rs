@@ -1,13 +1,13 @@
 //! The tests that every rule passes.
 //!
-//! A rule is a Weir rule or a Harper built-in of
-//! `configs/harper/rules/<tier>/`, or a native check of [`CHECKS`]. Each
-//! rule has a pair of fixtures, `fixtures/<tier>/<Rule>.bad.md` and
-//! `.good.md`. The binary must report each line of the bad fixture that
-//! [`expected_lines`] returns. It must not report the rule on the good
-//! fixture or on the shared `fixtures/common.good.md`, which holds
-//! ordinary technical prose. A copy of each of the three files with CRLF
-//! line endings must draw the same findings.
+//! A rule is a Weir rule or a Harper built-in of `rules/<tier>/`, or a
+//! native check of [`CHECKS`]. Each rule has a pair of fixtures,
+//! `fixtures/<tier>/<Rule>.bad.md` and `.good.md`. The binary must
+//! report each line of the bad fixture that [`expected_lines`] returns.
+//! It must not report the rule on the good fixture or on the shared
+//! `fixtures/common.good.md`, which holds ordinary technical prose. A
+//! copy of each of the three files with CRLF line endings must draw the
+//! same findings.
 //!
 //! Two tiers of one rule must not report the same phrase. On each bad
 //! line of one tier, another tier of the rule fails when it reports a
@@ -19,7 +19,7 @@
 //! of a Weir rule lists must fire on its own in a probe sentence. A
 //! phrase must not hold a shorter phrase of the list. The comment that
 //! opens each Weir rule and the doc comment of each native check follow
-//! the layout of the Comments section of `configs/harper/CLAUDE.md`.
+//! the layout of the Comments section of the `CLAUDE.md` of the crate.
 //!
 //! Each check is a function that returns one line for each failure, so
 //! the tests of this module can run it on inputs that fail.
@@ -37,8 +37,8 @@ use crate::files::{self, Input};
 use crate::region::Finding;
 use crate::rules::{BUILTINS, Rules, Tier, WEIR_RULES};
 
-/// The directory that holds `rules/` and `fixtures/`, from build.rs.
-const HARPER: &str = env!("PROSE_LINT_HARPER");
+/// The directory of the crate, which holds `rules/` and `fixtures/`.
+const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 const TIERS: [Tier; 3] = [Tier::Required, Tier::Recommended, Tier::Optional];
 
@@ -57,8 +57,8 @@ const SAME_FINDING: &str = "<!-- same finding -->";
 const DIFFERS: &str = "<!-- native check differs -->";
 
 /// The sections of a rule comment, in the order that the Comments
-/// section of `configs/harper/CLAUDE.md` gives them. Change that section
-/// and these names together.
+/// section of the `CLAUDE.md` of the crate gives them. Change that
+/// section and these names together.
 const SECTIONS: [&str; 5] = [
     "Overview",
     "Expression",
@@ -155,7 +155,7 @@ type Fixtures = BTreeMap<String, String>;
 /// Reads the shared good fixture and each markdown file of the tier
 /// directories under `fixtures/`.
 fn read_fixtures() -> Fixtures {
-    let root = Path::new(HARPER).join("fixtures");
+    let root = Path::new(CRATE_DIR).join("fixtures");
     let read = |path: &Path| {
         fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
     };
@@ -679,7 +679,7 @@ fn structure() {
         .collect();
     let mut failures = orphan_failures(&read_fixtures(), &known);
     failures.extend(builtin_failures(BUILTINS));
-    failures.extend(rule_dir_failures(&Path::new(HARPER).join("rules")));
+    failures.extend(rule_dir_failures(&Path::new(CRATE_DIR).join("rules")));
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
@@ -715,7 +715,7 @@ fn layouts() {
         let path = format!("rules/{}/{name}.weir", dir(tier));
         failures.extend(file_layout_failures(&path, source, "#"));
     }
-    let checks = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/checks");
+    let checks = Path::new(CRATE_DIR).join("src/checks");
     let mut count = 0;
     for tier in TIERS {
         let tier_dir = checks.join(dir(tier));
@@ -747,11 +747,11 @@ fn rule_comments() {
     let mut sources: Vec<(String, String)> = WEIR_RULES
         .iter()
         .map(|&(name, tier, source)| {
-            let path = format!("{HARPER}/rules/{}/{name}.weir", dir(tier));
+            let path = format!("{CRATE_DIR}/rules/{}/{name}.weir", dir(tier));
             (path, source.to_string())
         })
         .collect();
-    let checks = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/checks");
+    let checks = Path::new(CRATE_DIR).join("src/checks");
     for tier in TIERS {
         let tier_dir = checks.join(dir(tier));
         for entry in fs::read_dir(&tier_dir)
