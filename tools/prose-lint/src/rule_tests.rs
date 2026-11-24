@@ -84,11 +84,12 @@ static PLAIN_ENTRY: LazyLock<Regex> =
 static EXPR_STMT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^expr (\w+) (.*)$").expect("the pattern is valid"));
 
-/// The tags of Harper's part-of-speech tagger and the Weir keyword
-/// `PROG`. An entry that holds one names a word class and not a word.
-const TAGS: [&str; 18] = [
+/// The tags of Harper's part-of-speech tagger and the Weir keywords
+/// `PROG` and `NUMBER`. An entry that holds one names a word class and
+/// not a word.
+const TAGS: [&str; 19] = [
     "ADJ", "ADP", "ADV", "AUX", "CCONJ", "DET", "INTJ", "NOUN", "NUM", "PART", "PRON", "PROPN",
-    "PUNCT", "SCONJ", "SYM", "VERB", "X", "PROG",
+    "PUNCT", "SCONJ", "SYM", "VERB", "X", "PROG", "NUMBER",
 ];
 
 /// Where the code of a rule comes from.
@@ -1097,6 +1098,11 @@ mod tests {
                 name: "a referenced list",
                 source: "expr pair [(and or), (or and)]\nexpr main [@pair, (ADJ and)]\n",
                 want: vec!["and or", "or and"],
+            },
+            Case {
+                name: "the Weir keywords",
+                source: "expr main [and, PROG, NUMBER, (by NUMBER)]\n",
+                want: vec!["and"],
             },
             Case {
                 name: "one sequence",

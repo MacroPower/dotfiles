@@ -265,29 +265,31 @@ part-of-speech tagger` at the first mention in a file and `the tagger`
 after that. Set each tag in backticks, and gloss it at its first use in
 a file with the phrase from this table.
 
-| Tag     | Gloss                                                           |
-| ------- | --------------------------------------------------------------- |
-| `ADJ`   | an adjective                                                    |
-| `ADP`   | a preposition                                                   |
-| `ADV`   | an adverb                                                       |
-| `AUX`   | a helping verb                                                  |
-| `CCONJ` | a conjunction that joins two equal parts, such as `and` or `or` |
-| `DET`   | a determiner                                                    |
-| `INTJ`  | an exclamation, such as `oh`                                    |
-| `NOUN`  | a noun                                                          |
-| `NUM`   | a number word, such as `three`                                  |
-| `PART`  | a short function word, such as `not` or the `to` before a verb  |
-| `PRON`  | a pronoun                                                       |
-| `PROPN` | a proper noun                                                   |
-| `PUNCT` | a punctuation mark                                              |
-| `SCONJ` | a conjunction that opens a clause, such as `because`            |
-| `SYM`   | a symbol                                                        |
-| `VERB`  | a verb                                                          |
-| `PROG`  | the `-ing` form of a verb                                       |
+| Tag      | Gloss                                                           |
+| -------- | --------------------------------------------------------------- |
+| `ADJ`    | an adjective                                                    |
+| `ADP`    | a preposition                                                   |
+| `ADV`    | an adverb                                                       |
+| `AUX`    | a helping verb                                                  |
+| `CCONJ`  | a conjunction that joins two equal parts, such as `and` or `or` |
+| `DET`    | a determiner                                                    |
+| `INTJ`   | an exclamation, such as `oh`                                    |
+| `NOUN`   | a noun                                                          |
+| `NUM`    | a number word, such as `three`                                  |
+| `PART`   | a short function word, such as `not` or the `to` before a verb  |
+| `PRON`   | a pronoun                                                       |
+| `PROPN`  | a proper noun                                                   |
+| `PUNCT`  | a punctuation mark                                              |
+| `SCONJ`  | a conjunction that opens a clause, such as `because`            |
+| `SYM`    | a symbol                                                        |
+| `VERB`   | a verb                                                          |
+| `PROG`   | the `-ing` form of a verb                                       |
+| `NUMBER` | a number in digits, such as `42`                                |
 
-`PROG` is a Weir keyword, and the tagger does not assign it. The tagger
-tags only words, so `PUNCT` and `SYM` do not match a punctuation mark
-or a symbol in the text, and `NUM` does not match digits.
+`PROG` and `NUMBER` are Weir keywords, and the tagger does not assign
+them. The tagger tags only words, so `PUNCT` and `SYM` do not match a
+punctuation mark or a symbol in the text, and `NUM` does not match
+digits.
 
 Some glosses use a term from the Grammar Terms table, and that term
 still needs its own gloss at its first use in the file.
