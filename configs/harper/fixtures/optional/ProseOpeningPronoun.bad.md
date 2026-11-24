@@ -39,7 +39,7 @@ The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
 It may help
-*** <!-- same finding -->
+***
 It runs to completion. <!-- same finding -->
 <!-- prettier-ignore-end -->
 
@@ -47,7 +47,7 @@ The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
 It may help
-___ <!-- same finding -->
+___
 to restart the pod. <!-- same finding -->
 <!-- prettier-ignore-end -->
 
@@ -55,41 +55,32 @@ The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
 It may help on a busy node
-*** <!-- same finding -->
+***
 This holds the cache.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 The pod holds the cache. <!-- same finding -->
-*** <!-- same finding -->
+***
 It runs on the node.
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
-*** <!-- same finding -->
+***
 It runs on the node.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 The pod holds the cache. <!-- same finding -->
-- - - <!-- same finding -->
+- - -
 It runs on the node.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 > The pod holds the cache. <!-- same finding -->
---- <!-- same finding -->
-It runs on the node.
-<!-- prettier-ignore-end -->
-
-The pod holds the cache. <!-- same finding -->
-
-<!-- prettier-ignore-start -->
-The pod holds the cache. <!-- same finding -->
-> The pod holds the cache. <!-- same finding -->
-*** <!-- same finding -->
+ ---
 It runs on the node.
 <!-- prettier-ignore-end -->
 
@@ -98,7 +89,16 @@ The pod holds the cache. <!-- same finding -->
 <!-- prettier-ignore-start -->
 The pod holds the cache. <!-- same finding -->
 > The pod holds the cache. <!-- same finding -->
-> *** <!-- same finding -->
+***
+It runs on the node.
+<!-- prettier-ignore-end -->
+
+The pod holds the cache. <!-- same finding -->
+
+<!-- prettier-ignore-start -->
+The pod holds the cache. <!-- same finding -->
+> The pod holds the cache. <!-- same finding -->
+> ***
 > It runs on the node.
 <!-- prettier-ignore-end -->
 
@@ -109,7 +109,7 @@ The pod holds the cache. <!-- same finding -->
 
   The pod holds the cache. <!-- same finding -->
   > The pod holds the cache. <!-- same finding -->
-> --- <!-- same finding -->
+> ---
 It runs on the node.
 <!-- prettier-ignore-end -->
 
@@ -119,21 +119,21 @@ The pod holds the cache. <!-- same finding -->
 - The pod holds the cache. <!-- same finding -->
 
   The pod holds the cache. <!-- same finding -->
---- <!-- same finding -->
+ ---
 It runs on the node.
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
-*** <!-- same finding -->
+***
     make test <!-- same finding -->
 It runs on the node.
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 The pod holds the cache. <!-- same finding -->
-* * * <!-- same finding -->
+* * *
     make test <!-- same finding -->
 It runs on the node.
 <!-- prettier-ignore-end -->
@@ -143,7 +143,7 @@ The pod holds the cache. <!-- same finding -->
 <!-- prettier-ignore-start -->
 - The pod holds the cache. <!-- same finding -->
 
-  *** <!-- same finding -->
+  ***
     It runs on the node.
 <!-- prettier-ignore-end -->
 
@@ -152,9 +152,9 @@ The pod holds the cache. <!-- same finding -->
 <!-- prettier-ignore-start -->
 - The pod holds the cache. <!-- same finding -->
 
-  *** <!-- same finding -->
+  ***
   It may help on a busy node
- --- <!-- same finding -->
+ ---
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
@@ -162,15 +162,15 @@ The pod holds the cache. <!-- same finding -->
 <!-- prettier-ignore-start -->
 > - The pod holds the cache. <!-- same finding -->
 >
->   *** <!-- same finding -->
+>   ***
 >   It may help on a busy node
-> --- <!-- same finding -->
+> ---
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
-> *** <!-- same finding -->
+> ***
 >    It runs on the node.
 <!-- prettier-ignore-end -->
 
@@ -255,7 +255,7 @@ It runs on the node.
 
 <!-- prettier-ignore-start -->
 > <div> <!-- same finding -->
----
+ ---
 > It runs on the node.
 <!-- prettier-ignore-end -->
 
@@ -499,7 +499,7 @@ It runs on the node.
 
 <!-- prettier-ignore-start -->
 1. Install the agent <!-- same finding -->
----
+ ---
    > It runs on the node.
 <!-- prettier-ignore-end -->
 
@@ -545,7 +545,7 @@ The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
 > It may help on a busy node
---- <!-- same finding -->
+ ---
 to restart the pod. <!-- same finding -->
 <!-- prettier-ignore-end -->
 
@@ -553,14 +553,14 @@ to restart the pod. <!-- same finding -->
 - The pod holds the cache. <!-- same finding -->
 
   It may help on a busy node
- --- <!-- same finding -->
+ ---
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 > - The pod holds the cache. <!-- same finding -->
 >
 >   It may help on a busy node
->  --- <!-- same finding -->
+>  ---
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
@@ -568,7 +568,7 @@ The pod holds the cache. <!-- same finding -->
 <!-- prettier-ignore-start -->
 It may help on a busy node.
 
---- <!-- same finding -->
+ ---
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
@@ -667,7 +667,7 @@ The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
 > It may help on a busy node
-> > --- <!-- same finding -->
+> > ---
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
@@ -719,14 +719,14 @@ The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
 > It may help to restart the pod. <!-- same finding -->
-> >     *** <!-- same finding -->
+> >     ***
 > > It runs on the node.
 <!-- prettier-ignore-end -->
 
 The pod holds the cache. <!-- same finding -->
 
 <!-- prettier-ignore-start -->
-   It may help
+   It may help <!-- native check differs -->
     - first <!-- same finding -->
    to restart the pod. <!-- same finding -->
 <!-- prettier-ignore-end -->
@@ -817,7 +817,7 @@ The pod holds the cache. <!-- same finding -->
 - The pod holds the cache. <!-- same finding -->
 
   It may help to restart the pod <!-- same finding -->
-      * * * <!-- same finding -->
+      * * *
 
     It runs on the node.
 <!-- prettier-ignore-end -->

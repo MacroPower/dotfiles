@@ -435,7 +435,7 @@ The pod holds the cache.
 | Name | Value |
 | ---- | ----- |
 <br>
-> It runs on the node.
+> It runs on the node. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -543,7 +543,7 @@ It runs on the node.
 
 <!-- prettier-ignore-start -->
 1. > [!NOTE]
-   > This requires root.
+   > This requires root. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -582,7 +582,7 @@ It runs on the node.
 ```sh
 make
 ```
-It runs on the node.
+It runs on the node. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -597,13 +597,13 @@ It runs on the node.
 | a | b |
 | - | - |
 <br>
-> It runs on the node.
+> It runs on the node. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
 > <span>x</span> y
 <br>
-> > It runs on the node.
+> > It runs on the node. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -632,7 +632,7 @@ It runs on the node.
 >
 >   <span>x</span> y
 > <br>
-> > It runs on the node.
+> > It runs on the node. <!-- native check differs -->
 <!-- prettier-ignore-end -->
 
 <!-- prettier-ignore-start -->
@@ -997,7 +997,7 @@ It may help
 The pod holds the cache.
 
 <!-- prettier-ignore-start -->
-It may help
+It may help <!-- native check differs -->
 <!doctype html> to restart the pod.
 <!-- prettier-ignore-end -->
 
@@ -1145,7 +1145,7 @@ The pod holds the cache.
 - The pod holds the cache.
 <br>
 
-  It may help.
+  It may help. <!-- native check differs -->
 ---
 <!-- prettier-ignore-end -->
 

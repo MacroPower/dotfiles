@@ -6,6 +6,7 @@
 //! under the module of its tier, as its fixtures sit under
 //! `configs/harper/fixtures/<tier>/`.
 
+pub mod optional;
 pub mod recommended;
 pub mod required;
 pub mod sentences;
@@ -150,6 +151,18 @@ pub const CHECKS: &[Check] = &[
         tier: Tier::Recommended,
         kind: "Style",
         run: recommended::prose_slash::check,
+    },
+    Check {
+        name: "ProseIndefiniteOpener",
+        tier: Tier::Optional,
+        kind: "Style",
+        run: optional::prose_indefinite_opener::check,
+    },
+    Check {
+        name: "ProseOpeningPronoun",
+        tier: Tier::Optional,
+        kind: "Style",
+        run: optional::prose_opening_pronoun::check,
     },
 ];
 
