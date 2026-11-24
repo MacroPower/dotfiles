@@ -8,8 +8,8 @@
 //! These blocks end a run:
 //!
 //! - A code block, fenced or indented. A code block inside a list of one
-//!   item ends the run at the code: the words of the item before the code
-//!   join the run, and the words after the code open the next run.
+//!   item ends the run at the code. The words of the item before the code
+//!   join the run. The words after the code open the next run.
 //! - A heading, written with one to six `#` marks or underlined with `=`
 //!   or `-`, also inside a list item. CommonMark reads a line with seven
 //!   or more marks as text, so its words join the run (`####### It starts
@@ -194,8 +194,8 @@ fn close(run: &mut Count, found: &mut Vec<Run>) {
 }
 
 /// Ends the list `list`. A list of two or more items ends the run. A list
-/// of one item that holds a code block ends the run at the code: the words
-/// before the code join the run, and the words after it open the next
+/// of one item that holds a code block ends the run at the code. The words
+/// before the code join the run. The words after the code open the next
 /// run. Any other list of one item adds its words to the run.
 fn settle(list: List, run: &mut Count, found: &mut Vec<Run>) {
     if list.items >= 2 {
