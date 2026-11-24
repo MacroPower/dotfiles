@@ -16,6 +16,25 @@ use crate::markdown::Markdown;
 use crate::region::{Finding, Region};
 use crate::rules::Tier;
 
+/// `configs/harper/comment-checks.txt`, which names each check that
+/// reads the comments of a source file. A `!<kind>` after a name skips
+/// the comments of that kind, which `SYNTAXES` of `src/comments.rs`
+/// gives each extension.
+const COMMENT_CHECKS: &str =
+    include_str!(concat!(env!("PROSE_LINT_HARPER"), "/comment-checks.txt"));
+
+/// Returns whether the check named `name` reads the comments of the
+/// kind `kind`.
+pub fn reads_comments(name: &str, kind: &str) -> bool {
+    COMMENT_CHECKS
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .any(|l| {
+            let mut words = l.split_whitespace();
+            words.next() == Some(name) && !words.any(|w| w.strip_prefix('!') == Some(kind))
+        })
+}
+
 /// One finding of a check.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hit {
@@ -218,10 +237,47 @@ pub const CHECKS: &[Check] = &[
 /// Runs each check of [`CHECKS`] on `region`, other than the checks of
 /// the rules that `skips` names, and returns the findings.
 pub fn run(region: &Region, skips: &[&str]) -> Vec<Finding> {
+    run_some(region, |check| !skips.contains(&check.name))
+}
+
+/// Returns the findings of the checks on a source file of the comment
+/// kind `kind`, other than the checks of the rules that `skips` names.
+/// Each check that [`reads_comments`] names runs on each region of
+/// `regions`. ProseTypography reads the whole text of `file`, strings
+/// included.
+pub fn run_source(file: &Region, regions: &[Region], kind: &str, skips: &[&str]) -> Vec<Finding> {
+    let mut findings: Vec<Finding> = regions
+        .iter()
+        .flat_map(|region| {
+            run_some(region, |check| {
+                !skips.contains(&check.name) && reads_comments(check.name, kind)
+            })
+        })
+        .collect();
+    if !skips.contains(&"ProseTypography") {
+        let hits = required::prose_typography::raw(&file.text);
+        findings.extend(hits.into_iter().map(|hit| {
+            let at = file.position(hit.at);
+            Finding {
+                rule: "ProseTypography".to_string(),
+                tier: Tier::Required,
+                kind: "Punctuation".to_string(),
+                line: at.line,
+                col: at.col,
+                message: hit.message,
+            }
+        }));
+    }
+    findings
+}
+
+/// Runs each check of [`CHECKS`] that `keep` keeps on `region`, and
+/// returns the findings.
+fn run_some(region: &Region, keep: impl Fn(&Check) -> bool) -> Vec<Finding> {
     let model = Markdown::new(region);
     CHECKS
         .iter()
-        .filter(|check| !skips.contains(&check.name))
+        .filter(|check| keep(check))
         .flat_map(|check| {
             (check.run)(&model).into_iter().map(|hit| {
                 let at = region.position(hit.at);
@@ -243,6 +299,28 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+
+    #[test]
+    fn comment_checks() {
+        // Each name of comment-checks.txt is a native check, and each
+        // kind that it skips is a kind of the table of comment syntaxes.
+        let kinds: BTreeSet<_> = crate::comments::SYNTAXES.iter().map(|s| s.kind).collect();
+        for line in COMMENT_CHECKS.lines() {
+            if line.trim().is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut words = line.split_whitespace();
+            let name = words.next().expect("the line holds a word");
+            assert!(CHECKS.iter().any(|c| c.name == name), "{name}");
+            for word in words {
+                let kind = word.strip_prefix('!').expect("a kind opens with `!`");
+                assert!(kinds.contains(kind), "{name} {word}");
+            }
+        }
+        assert!(reads_comments("ProseSlash", "slash"));
+        assert!(!reads_comments("ProseSlash", "go"));
+        assert!(!reads_comments("ProseArrow", "slash"));
+    }
 
     #[test]
     fn names() {

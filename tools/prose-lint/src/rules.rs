@@ -9,6 +9,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use harper_core::linting::{Lint, LintGroup};
+use harper_core::parsers::Parser;
 use harper_core::spell::FstDictionary;
 use harper_core::weirpack::Weirpack;
 use harper_core::{Dialect, Document};
@@ -106,10 +107,11 @@ impl Rules {
         })
     }
 
-    /// Lints markdown text and returns each lint with the bare name and
-    /// the tier of its rule.
-    pub fn lint(&mut self, markdown: &str) -> Vec<(&'static str, Tier, Lint)> {
-        let document = Document::new_markdown_default(markdown, &self.dictionary);
+    /// Lints the text that `parser` reads and returns each lint with the
+    /// bare name and the tier of its rule. The span of each lint holds
+    /// indexes of characters in `text`.
+    pub fn lint(&mut self, text: &str, parser: &impl Parser) -> Vec<(&'static str, Tier, Lint)> {
+        let document = Document::new(text, parser, &self.dictionary);
         let mut out = Vec::new();
         for (name, lints) in self.group.organized_lints(&document) {
             let Some(&(bare, tier)) = self.names.get(&name) else {

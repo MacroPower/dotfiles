@@ -2,6 +2,7 @@
 
 use std::path::{Component, Path};
 
+use crate::comments::{self, Syntax};
 use crate::rules::TIME_SENSITIVE;
 
 /// How the binary lints one path.
@@ -15,19 +16,15 @@ pub enum Input {
         /// The rules that the file skips.
         skips: Vec<&'static str>,
     },
-    /// The path is a source file, whose comments the binary does not
-    /// lint yet.
-    Source,
+    /// The path is a source file of `syntax`. The binary lints its
+    /// comments without the rules that `skips` names.
+    Source {
+        /// The comment syntax of the file.
+        syntax: &'static Syntax,
+        /// The rules that the file skips.
+        skips: Vec<&'static str>,
+    },
 }
-
-/// The extensions of the source files whose comments `prose-lint`
-/// lints.
-const SOURCE_EXTENSIONS: &[&str] = &[
-    "awk", "c", "cpp", "h", "cs", "dart", "gleam", "ex", "exs", "go", "groovy", "gradle", "hcl",
-    "hs", "java", "js", "jsx", "kt", "kts", "lua", "nix", "org", "php", "ps1", "py", "pyi", "rb",
-    "rs", "scala", "sh", "bash", "sol", "swift", "tf", "tfvars", "toml", "ts", "tsx", "weir",
-    "yaml", "yml", "zig",
-];
 
 /// The directories whose files the binary skips, because other
 /// projects own them.
@@ -54,7 +51,8 @@ const PROMPT_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md", "SKILL.md"];
 ///
 /// The binary skips each path under [`SKIPPED_DIRS`] and each path
 /// under `harper/fixtures`, whose files break the rules on purpose. It
-/// also skips each path whose extension it does not know. A changelog skips the
+/// also skips each path whose extension neither names markdown nor sits
+/// in [`comments::SYNTAXES`]. A changelog skips the
 /// rules of [`TIME_SENSITIVE`], because it describes changes. It also
 /// skips ProseHeading, because its headings are release labels, such
 /// as `[1.2.0] - 2026-09-23 [YANKED]`.
@@ -72,10 +70,10 @@ pub fn classify(path: &Path) -> Input {
     {
         return Input::Skip;
     }
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("md" | "markdown") => {}
-        Some(ext) if SOURCE_EXTENSIONS.contains(&ext) => return Input::Source,
-        _ => return Input::Skip,
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let syntax = comments::syntax(ext);
+    if syntax.is_none() && !matches!(ext, "md" | "markdown") {
+        return Input::Skip;
     }
 
     let base = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -91,7 +89,15 @@ pub fn classify(path: &Path) -> Input {
     if PROMPT_FILES.contains(&base) || PROMPT_DIRS.iter().any(|d| slashed.contains(d)) {
         skips.push("ProseCapsEmphasis");
     }
-    Input::Markdown { skips }
+    // A Weir rule or an awk check holds each character that it reports,
+    // so ProseTypography skips the rule files.
+    if matches!(ext, "awk" | "weir") {
+        skips.push("ProseTypography");
+    }
+    match syntax {
+        Some(syntax) => Input::Source { syntax, skips },
+        None => Input::Markdown { skips },
+    }
 }
 
 #[cfg(test)]
@@ -128,7 +134,26 @@ mod tests {
             Case {
                 name: "source",
                 path: "tools/run.py",
-                want: Input::Source,
+                want: Input::Source {
+                    syntax: comments::syntax("py").expect("the table lists py"),
+                    skips: vec![],
+                },
+            },
+            Case {
+                name: "rule file",
+                path: "configs/harper/rules/required/ProseAndOr.weir",
+                want: Input::Source {
+                    syntax: comments::syntax("weir").expect("the table lists weir"),
+                    skips: vec!["ProseTypography"],
+                },
+            },
+            Case {
+                name: "source in a prompt directory",
+                path: "configs/claude/skills/demo/run.sh",
+                want: Input::Source {
+                    syntax: comments::syntax("sh").expect("the table lists sh"),
+                    skips: vec!["ProseCapsEmphasis"],
+                },
             },
             Case {
                 name: "unknown extension",

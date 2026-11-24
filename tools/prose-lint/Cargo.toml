@@ -8,14 +8,41 @@ publish = false
 name = "prose-lint-rs"
 path = "src/main.rs"
 
-# crates.io has no harper-comments 3.3.0, so both crates come from a
-# harper source tree in ./harper. The README gives the command that
-# creates it. The exact versions match pkgs.harper, and package.nix fails
-# the build when they differ.
+# harper-core comes from the patched harper source tree in ./harper,
+# because the patch embeds the dictionary. The README gives the command
+# that creates the tree. The exact version matches pkgs.harper, and
+# package.nix fails the build when they differ.
 [dependencies]
-harper-comments = { path = "harper/harper-comments", version = "=3.3.0" }
 harper-core = { path = "harper/harper-core", version = "=3.3.0" }
 # The parser of harper-core, which builds the model of the native checks.
 pulldown-cmark = "0.13.4"
 regex = "1.12.3"
 thiserror = "2.0.18"
+# The grammars that find the comments of source files, at the versions
+# that harper-comments 3.3.0 links.
+harper-tree-sitter-dart = "0.0.5"
+tree-sitter = "0.25.10"
+tree-sitter-bash = "0.25.1"
+tree-sitter-c = "0.24.2"
+tree-sitter-c-sharp = "0.23.5"
+tree-sitter-cpp = "0.23.4"
+tree-sitter-elixir = "0.3.5"
+tree-sitter-gleam = "1.0.0"
+tree-sitter-go = "0.25.0"
+tree-sitter-groovy = "0.1.2"
+tree-sitter-haskell = "0.24.1"
+tree-sitter-java = "0.23.5"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-kotlin-ng = "1.1.0"
+tree-sitter-lua = "0.5.0"
+tree-sitter-nix = "0.3.0"
+tree-sitter-php = "0.25.1"
+tree-sitter-powershell = "0.26.4"
+tree-sitter-ruby = "0.23.1"
+tree-sitter-rust = "0.24.2"
+tree-sitter-scala = "0.26.2"
+tree-sitter-solidity = "1.2.13"
+tree-sitter-swift = "0.7.4"
+tree-sitter-toml-ng = "0.7.0"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-zig = "1.1.2"

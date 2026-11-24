@@ -16,19 +16,20 @@ let
   lockedHarper = (lib.findFirst (p: p.name == "harper-core") { } lock.package).version or null;
 
   # The patched harper source of pkgs.harper. The crate depends on its
-  # harper-core and harper-comments by path.
+  # harper-core by path.
   harperSrc = applyPatches {
     name = "harper-${harper.version}-source";
     inherit (harper) src patches;
   };
 
-  # The rules that build.rs embeds in the binary, and the fixtures that
-  # the tests lint.
+  # The rules and the list of comment checks that the binary embeds, and
+  # the fixtures that the tests lint.
   harperConfig = lib.fileset.toSource {
     root = ../../configs/harper;
     fileset = lib.fileset.unions [
       ../../configs/harper/rules
       ../../configs/harper/fixtures
+      ../../configs/harper/comment-checks.txt
     ];
   };
 in

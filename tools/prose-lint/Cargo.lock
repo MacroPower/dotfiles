@@ -2208,45 +2208,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "harper-comments"
-version = "3.3.0"
-dependencies = [
- "harper-core",
- "harper-html",
- "harper-tree-sitter",
- "harper-tree-sitter-dart",
- "itertools 0.15.0",
- "tree-sitter",
- "tree-sitter-bash",
- "tree-sitter-c",
- "tree-sitter-c-sharp",
- "tree-sitter-clojure",
- "tree-sitter-cmake",
- "tree-sitter-cpp",
- "tree-sitter-elixir",
- "tree-sitter-gleam",
- "tree-sitter-go",
- "tree-sitter-groovy",
- "tree-sitter-haskell",
- "tree-sitter-java",
- "tree-sitter-javascript",
- "tree-sitter-kotlin-ng",
- "tree-sitter-lua",
- "tree-sitter-nix",
- "tree-sitter-php",
- "tree-sitter-powershell",
- "tree-sitter-r",
- "tree-sitter-ruby",
- "tree-sitter-rust",
- "tree-sitter-scala",
- "tree-sitter-solidity",
- "tree-sitter-swift",
- "tree-sitter-toml-ng",
- "tree-sitter-typescript",
- "tree-sitter-zig",
-]
-
-[[package]]
 name = "harper-context-ranker"
 version = "3.3.0"
 dependencies = [
@@ -2293,16 +2254,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "harper-html"
-version = "3.3.0"
-dependencies = [
- "harper-core",
- "harper-tree-sitter",
- "tree-sitter",
- "tree-sitter-html",
-]
-
-[[package]]
 name = "harper-pos-utils"
 version = "3.3.0"
 dependencies = [
@@ -2326,14 +2277,6 @@ dependencies = [
  "indexmap",
  "ruzstd",
  "zstd",
-]
-
-[[package]]
-name = "harper-tree-sitter"
-version = "3.3.0"
-dependencies = [
- "harper-core",
- "tree-sitter",
 ]
 
 [[package]]
@@ -3446,11 +3389,36 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 name = "prose-lint"
 version = "0.1.0"
 dependencies = [
- "harper-comments",
  "harper-core",
+ "harper-tree-sitter-dart",
  "pulldown-cmark",
  "regex",
  "thiserror 2.0.21",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "tree-sitter-c",
+ "tree-sitter-c-sharp",
+ "tree-sitter-cpp",
+ "tree-sitter-elixir",
+ "tree-sitter-gleam",
+ "tree-sitter-go",
+ "tree-sitter-groovy",
+ "tree-sitter-haskell",
+ "tree-sitter-java",
+ "tree-sitter-javascript",
+ "tree-sitter-kotlin-ng",
+ "tree-sitter-lua",
+ "tree-sitter-nix",
+ "tree-sitter-php",
+ "tree-sitter-powershell",
+ "tree-sitter-ruby",
+ "tree-sitter-rust",
+ "tree-sitter-scala",
+ "tree-sitter-solidity",
+ "tree-sitter-swift",
+ "tree-sitter-toml-ng",
+ "tree-sitter-typescript",
+ "tree-sitter-zig",
 ]
 
 [[package]]
@@ -4688,27 +4656,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tree-sitter-clojure"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4004884cc509449a1d78fa3e1f02b4e953d0a8065984445304795e72e885338c"
-dependencies = [
- "cc",
- "tree-sitter",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-cmake"
-version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d22893fac54133fdb93497efc45713d53a96d93b035288c7a8ab0c2af77c0ddd"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
 name = "tree-sitter-cpp"
 version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4763,16 +4710,6 @@ name = "tree-sitter-haskell"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "781de30e0d1ec8e6db4ed799d36ce1cedaf4684374dada45ebe2a8ea44c3f814"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-html"
-version = "0.23.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "261b708e5d92061ede329babaaa427b819329a9d427a1d710abb0f67bbef63ee"
 dependencies = [
  "cc",
  "tree-sitter-language",
@@ -4849,16 +4786,6 @@ name = "tree-sitter-powershell"
 version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3faf304d44b9ddd4a7d97804bb8de7daf564336dd5a526dc6de5b39238243022"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-r"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffc9954ec870dcad6cffdd302b405306c68cf031ed79a78cd9746f6740d9fe20"
 dependencies = [
  "cc",
  "tree-sitter-language",

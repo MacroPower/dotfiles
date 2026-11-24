@@ -20,6 +20,10 @@
 //! point, because a curly quote and a straight one look alike in a
 //! terminal.
 //!
+//! On a source file other than a Weir or awk rule file, `raw` reads the
+//! whole text, string literals included. Its message then asks for an
+//! escape in a string literal and for the plain character in a comment.
+//!
 //! Related Rules
 //!
 //! ProseDash reports the em dash and the en dash, so this check leaves
@@ -42,6 +46,14 @@ fn typographic(c: char) -> bool {
     )
 }
 
+/// Returns the message of a finding on the character `c`.
+fn message(c: char) -> String {
+    format!(
+        "Typographic character `{c}` (`U+{:04X}`). Use a straight quote, three periods, or a hyphen.",
+        u32::from(c)
+    )
+}
+
 /// Returns a finding for the first typographic character on each line.
 pub fn check(model: &Markdown) -> Vec<Hit> {
     model
@@ -51,19 +63,55 @@ pub fn check(model: &Markdown) -> Vec<Hit> {
             let (i, c) = line.text.char_indices().find(|&(_, c)| typographic(c))?;
             Some(Hit {
                 at: line.at(&line.text, i),
-                message: format!(
-                    "Typographic character `{c}` (`U+{:04X}`). Use a straight quote, three periods, or a hyphen.",
-                    u32::from(c)
-                ),
+                message: message(c),
             })
         })
         .collect()
+}
+
+/// Returns a finding for the first typographic character on each line
+/// of the whole text of a source file, code and strings included. The
+/// message also covers a string literal, where the fix writes the escape
+/// of the character. The index of each finding counts the characters of
+/// `text`.
+pub fn raw(text: &str) -> Vec<Hit> {
+    let mut hits = Vec::new();
+    let mut found = false;
+    for (i, c) in text.chars().enumerate() {
+        if c == '\n' {
+            found = false;
+        } else if !found && typographic(c) {
+            found = true;
+            hits.push(Hit {
+                at: i,
+                message: format!(
+                    "Typographic character `{c}` (`U+{:04X}`). In a string literal, write its escape. In a comment, use a straight quote, three periods, or a hyphen.",
+                    u32::from(c)
+                ),
+            });
+        }
+    }
+    hits
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::region::Region;
+
+    #[test]
+    fn raw_text() {
+        // The raw check reads strings too, and it reports the first
+        // character of each line.
+        let hits = raw("let a = \"\u{201c}x\u{201d}\";\n// It\u{2019}s.\n");
+        let at: Vec<_> = hits.iter().map(|h| h.at).collect();
+        assert_eq!(at, [9, 20]);
+        assert!(
+            hits[0]
+                .message
+                .contains("In a string literal, write its escape.")
+        );
+    }
 
     #[test]
     fn code() {

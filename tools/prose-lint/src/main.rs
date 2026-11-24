@@ -1,9 +1,10 @@
 //! prose-lint-rs lints prose with the Weir rules and the Harper
 //! built-ins of `configs/harper/rules`, and with the native checks of
-//! `src/checks`.
+//! `src/checks`. It lints markdown files, commit messages, and the
+//! comments of source files.
 //!
 //! ```text
-//! prose-lint-rs <file>     lint a markdown file
+//! prose-lint-rs <file>     lint a markdown file or a source file
 //! prose-lint-rs --commit   lint a commit message read from stdin
 //! prose-lint-rs --version  print the harper-core version
 //! ```
@@ -13,10 +14,10 @@
 //! as the path `<stdin>`. The binary exits 1 when it prints a finding,
 //! 2 when it fails, and 0 otherwise. It also exits 0
 //! for a missing file, for a file whose extension it does not know, and
-//! for a file under a skipped directory. It does not lint the comments
-//! of a source file yet, so it exits 2 for one.
+//! for a file under a skipped directory.
 
 mod checks;
+mod comments;
 mod files;
 mod guards;
 mod markdown;
@@ -30,6 +31,9 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use harper_core::parsers::Markdown;
+
+use crate::comments::{Comments, RegionParser, Syntax};
 use crate::files::Input;
 use crate::region::{Finding, Region};
 use crate::rules::{Rules, TIME_SENSITIVE};
@@ -47,8 +51,12 @@ enum Error {
     },
     #[error("reading the commit message from stdin")]
     Stdin(#[source] io::Error),
-    #[error("{}: linting the comments of a source file is not supported yet", .0.display())]
-    Source(PathBuf),
+    #[error("finding the comments of {}", .path.display())]
+    Comments {
+        path: PathBuf,
+        #[source]
+        source: comments::Error,
+    },
     #[error("building the rules")]
     Rules(#[from] rules::Error),
 }
@@ -74,7 +82,7 @@ fn main() -> ExitCode {
 /// Runs the command of `args` and returns whether it printed a
 /// finding.
 fn run(args: &[String]) -> Result<bool, Error> {
-    let (name, text, skips) = match args {
+    let (name, text, skips, syntax) = match args {
         [flag] if flag == "--version" => {
             println!("{}", harper_core::core_version());
             return Ok(false);
@@ -84,27 +92,35 @@ fn run(args: &[String]) -> Result<bool, Error> {
             io::stdin()
                 .read_to_string(&mut text)
                 .map_err(Error::Stdin)?;
-            ("<stdin>".to_string(), text, TIME_SENSITIVE.to_vec())
+            ("<stdin>".to_string(), text, TIME_SENSITIVE.to_vec(), None)
         }
         [file] if !file.starts_with("--") => {
             let path = Path::new(file);
-            let skips = match files::classify(path) {
+            let (skips, syntax) = match files::classify(path) {
                 _ if !path.is_file() => return Ok(false),
                 Input::Skip => return Ok(false),
-                Input::Source => return Err(Error::Source(path.to_path_buf())),
-                Input::Markdown { skips } => skips,
+                Input::Source { syntax, skips } => (skips, Some(syntax)),
+                Input::Markdown { skips } => (skips, None),
             };
             let text = std::fs::read_to_string(path).map_err(|source| Error::Read {
                 path: path.to_path_buf(),
                 source,
             })?;
-            (file.clone(), text, skips)
+            (file.clone(), text, skips, syntax)
         }
         _ => return Err(Error::Usage),
     };
 
     let mut rules = Rules::new(&skips)?;
-    let findings = lint_markdown(&mut rules, &skips, &text);
+    let findings = match syntax {
+        Some(syntax) => {
+            lint_source(&mut rules, syntax, &skips, &text).map_err(|source| Error::Comments {
+                path: PathBuf::from(&name),
+                source,
+            })?
+        }
+        None => lint_markdown(&mut rules, &skips, &text),
+    };
     for finding in &findings {
         println!("{}", finding.display(&name));
     }
@@ -122,11 +138,56 @@ fn lint_markdown(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> 
 /// drops each finding that the same finding of a higher tier hides.
 fn findings(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> {
     let region = Region::markdown(&guards::straighten(text));
-    let mut findings: Vec<Finding> = rules
-        .lint(&region.text)
+    let mut findings = harper(rules, &region, &Markdown::default());
+    // The native checks read the text as the file holds it, so
+    // ProseTypography reports a curly apostrophe that the Weir rules
+    // read as a straight one.
+    findings.extend(checks::run(&Region::markdown(text), skips));
+    guards::drop_label_colons(text, &mut findings);
+    guards::drop_transcript_opinions(text, &mut findings);
+    guards::drop_vague_conditions(&mut findings);
+    findings
+}
+
+/// Lints the comments of a source file of `syntax` with the rules and
+/// with each native check that reads comments, other than the rules
+/// that `skips` names. Returns the findings in the order of the output.
+/// The binary does not report a finding on the license header.
+fn lint_source(
+    rules: &mut Rules,
+    syntax: &Syntax,
+    skips: &[&str],
+    text: &str,
+) -> Result<Vec<Finding>, comments::Error> {
+    let comments = Comments::new(syntax, text)?;
+    let file = Region::markdown(&guards::straighten(text));
+    let mut findings = harper(rules, &file, &RegionParser::new(&comments.regions));
+    findings.extend(checks::run_source(
+        &Region::markdown(text),
+        &comments.regions,
+        syntax.kind,
+        skips,
+    ));
+    if let Some(header) = &comments.license {
+        findings.retain(|f| !header.contains(&f.line));
+    }
+    guards::drop_region_label_colons(&comments.regions, &mut findings);
+    guards::drop_vague_conditions(&mut findings);
+    Ok(region::order(findings))
+}
+
+/// Returns the findings of the rules on the text of `file`, which
+/// `parser` reads.
+fn harper(
+    rules: &mut Rules,
+    file: &Region,
+    parser: &impl harper_core::parsers::Parser,
+) -> Vec<Finding> {
+    rules
+        .lint(&file.text, parser)
         .into_iter()
         .map(|(rule, tier, lint)| {
-            let at = region.position(lint.span.start);
+            let at = file.position(lint.span.start);
             Finding {
                 rule: rule.to_string(),
                 tier,
@@ -136,13 +197,5 @@ fn findings(rules: &mut Rules, skips: &[&str], text: &str) -> Vec<Finding> {
                 message: lint.message,
             }
         })
-        .collect();
-    // The native checks read the text as the file holds it, so
-    // ProseTypography reports a curly apostrophe that the Weir rules
-    // read as a straight one.
-    findings.extend(checks::run(&Region::markdown(text), skips));
-    guards::drop_label_colons(text, &mut findings);
-    guards::drop_transcript_opinions(text, &mut findings);
-    guards::drop_vague_conditions(&mut findings);
-    findings
+        .collect()
 }

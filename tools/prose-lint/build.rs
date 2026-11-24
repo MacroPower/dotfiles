@@ -5,7 +5,8 @@
 //! the Nix build sets it to a copy of that directory. The script writes
 //! `rules.rs` to `OUT_DIR`, which lists the source of each Weir rule and
 //! the names in each `builtins.txt`, by tier. It also passes the
-//! directory to the tests as `PROSE_LINT_HARPER`.
+//! directory to the crate as `PROSE_LINT_HARPER`, so the binary can
+//! embed `comment-checks.txt` and the tests can read the fixtures.
 
 use std::env;
 use std::fmt::Write as _;
@@ -28,6 +29,10 @@ fn main() {
         .canonicalize()
         .unwrap_or_else(|e| panic!("reading {}: {e}", harper.display()));
     println!("cargo:rustc-env=PROSE_LINT_HARPER={}", harper.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        harper.join("comment-checks.txt").display()
+    );
 
     let mut weir = String::new();
     let mut builtins = String::new();

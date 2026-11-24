@@ -15,11 +15,14 @@ pub struct Position {
 }
 
 /// Markdown text and the source position of each of its characters.
-/// A markdown file or a commit message is one region.
+/// A markdown file or a commit message is one region, and so is each
+/// comment of a source file.
 pub struct Region {
     /// The markdown text that the rules read.
     pub text: String,
     positions: Vec<Position>,
+    /// The index in the source of each character of the text.
+    indices: Vec<usize>,
 }
 
 impl Region {
@@ -41,8 +44,24 @@ impl Region {
         }
         Self {
             text: source.to_string(),
+            indices: (0..positions.len()).collect(),
             positions,
         }
+    }
+
+    /// Returns the region of the characters of `file` at `indices`, in
+    /// that order. `chars` holds the characters of `file`.
+    pub fn part(file: &Region, chars: &[char], indices: Vec<usize>) -> Self {
+        Self {
+            text: indices.iter().map(|&i| chars[i]).collect(),
+            positions: indices.iter().map(|&i| file.position(i)).collect(),
+            indices,
+        }
+    }
+
+    /// Returns the index in the source of each character of the text.
+    pub fn indices(&self) -> &[usize] {
+        &self.indices
     }
 
     /// Returns the source position of the character at `index`. An

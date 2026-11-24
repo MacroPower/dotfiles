@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::region::Finding;
+use crate::region::{Finding, Region};
 use crate::rules::Tier;
 
 /// Straightens a curly apostrophe (U+2019) between two letters. The
@@ -52,6 +52,29 @@ pub fn drop_label_colons(markdown: &str, findings: &mut Vec<Finding>) {
             return true;
         };
         f.col > label.as_str().chars().count()
+    });
+}
+
+/// Drops each ProseColonClause finding inside a bold label that opens a
+/// line of a comment, as [`drop_label_colons`] does in a markdown file.
+/// The text of a region does not hold the comment markers. The guard
+/// matches that text and maps the end of each label to its source
+/// position.
+pub fn drop_region_label_colons(regions: &[Region], findings: &mut Vec<Finding>) {
+    let mut labels: HashMap<usize, usize> = HashMap::new();
+    for region in regions {
+        let mut offset = 0;
+        for line in region.text.split('\n') {
+            if let Some(label) = LABEL.find(line) {
+                let end = region.position(offset + label.as_str().chars().count() - 1);
+                let col = labels.entry(end.line).or_default();
+                *col = (*col).max(end.col);
+            }
+            offset += line.chars().count() + 1;
+        }
+    }
+    findings.retain(|f| {
+        f.rule != "ProseColonClause" || labels.get(&f.line).is_none_or(|&col| f.col > col)
     });
 }
 

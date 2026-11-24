@@ -1,12 +1,12 @@
 # prose-lint
 
-`prose-lint-rs` lints markdown files and commit messages with the Weir rules
-and the Harper built-ins of `configs/harper/rules`, and with the native checks
-of `src/checks`. The binary embeds the rules when it builds, so a change to a
-rule takes a new build.
+`prose-lint-rs` lints markdown files, commit messages, and the comments of
+source files with the Weir rules and the Harper built-ins of
+`configs/harper/rules`, and with the native checks of `src/checks`. The binary
+embeds the rules when it builds, so a change to a rule takes a new build.
 
 ```sh
-prose-lint-rs <file>     # lint a markdown file
+prose-lint-rs <file>     # lint a markdown file or a source file
 prose-lint-rs --commit   # lint a commit message read from stdin
 prose-lint-rs --version  # print the harper-core version
 ```
@@ -18,17 +18,44 @@ the finding of the higher tier prints.
 
 The binary exits with one of these statuses:
 
-| Status | Meaning                                                                                                                 |
-| ------ | ----------------------------------------------------------------------------------------------------------------------- |
-| 0      | No finding, or a file that the binary skips                                                                             |
-| 1      | One or more findings                                                                                                    |
-| 2      | The linter could not run, such as on a file that is not UTF-8, or on a source file, whose comments it does not lint yet |
+| Status | Meaning                                                       |
+| ------ | ------------------------------------------------------------- |
+| 0      | No finding, or a file that the binary skips                   |
+| 1      | One or more findings                                          |
+| 2      | The linter could not run, such as on a file that is not UTF-8 |
 
 The binary skips a missing file, a file whose extension it does not know, and a
 path under `node_modules`, `vendor`, `.git`, `.terraform`, or `harper/fixtures`.
 Changelogs skip the time-sensitive rules and ProseHeading, and prompt files for
-an agent skip ProseCapsEmphasis. Commit messages skip the time-sensitive rules
-too. `TIME_SENSITIVE` in `src/rules.rs` lists those rules.
+an agent skip ProseCapsEmphasis, source files under the same paths included.
+Commit messages skip the time-sensitive rules too. `TIME_SENSITIVE` in
+`src/rules.rs` lists those rules.
+
+## Source Files
+
+The binary lints each comment of a source file as a markdown region. `SYNTAXES`
+in `src/comments.rs` maps each extension that the binary knows to the way it
+finds the comments of the file. The module doc of that file states which lines
+form one comment and how a region drops the comment markers.
+
+- A tree-sitter grammar finds the comments of most languages, the comments that
+  follow code included. The grammars are the versions that harper-comments
+  3.3.0 links.
+- Python, HCL, YAML, Weir, and awk have no such grammar, so a scanner finds
+  their full-line `#` comments. It also reads each Python docstring and each
+  HCL `description` and `error_message` string.
+
+Each character of a region keeps its source position, so a finding reports the
+line and the column of the source file. A phrase that wraps onto the next
+comment line matches, and a code span or a fence in a comment reads as code.
+Harper reads all regions of a file as one document, and a paragraph break
+between two regions keeps a phrase from running from one comment into the next.
+
+The native checks that `configs/harper/comment-checks.txt` names run on each
+region, other than the checks that the file skips for a comment kind.
+ProseTypography reads the whole text of a source file, strings included, other
+than a Weir or awk rule file, which holds each character that it reports. The
+binary does not report a finding on the license header of a file.
 
 ## Native Checks
 
@@ -37,6 +64,7 @@ express. Each check reads the markdown model of `src/markdown.rs`, which
 pulldown-cmark builds. The model gives the check the blocks of the text and the
 prose of each line. Code, HTML, link reference definitions, and link
 destinations are blank in that prose, and each character keeps its column.
+ProseTypography also reads the raw text of a source file.
 
 To add a native check:
 
@@ -97,10 +125,10 @@ To build the package, run `nix build .#prose-lint-rs` from the root of the
 repository. The package links the harper of `pkgs.harper`, with the patches
 and the embedded dictionary of `harperOverlay` in `lib/default.nix`.
 
-The crate depends on `harper-core` and `harper-comments` by path, because
-crates.io does not hold `harper-comments` at the version of `pkgs.harper`.
-Cargo reads both crates from `./harper`, which git ignores. To build the crate
-outside of Nix, run these commands in `tools/prose-lint`:
+The crate depends on `harper-core` by path, because the patch of
+`harperOverlay` changes how `harper-core` loads its dictionary. Cargo reads the
+crate from `./harper`, which git ignores. To build the crate outside of Nix, run
+these commands in `tools/prose-lint`:
 
 ```sh
 git clone --depth 1 --branch v3.3.0 https://github.com/Automattic/harper.git harper
@@ -110,7 +138,7 @@ cargo build
 
 `build.rs` reads the rules from `configs/harper`, and the `PROSE_LINT_HARPER`
 variable names another directory with the same `rules` and `fixtures`
-directories.
+directories and the same `comment-checks.txt` file.
 
 This build does not embed the dictionary, so the binary builds the dictionary
 from its rune files on each start.
@@ -125,5 +153,5 @@ Nix build fails when the version of `harper-core` in `Cargo.lock` differs from
 When nixpkgs bumps harper, follow these steps:
 
 1. Clone the new tag into `./harper` and apply the patch.
-2. Set the new version on both dependencies in `Cargo.toml`.
+2. Set the new version on the `harper-core` dependency in `Cargo.toml`.
 3. Run `cargo build` to update `Cargo.lock`.

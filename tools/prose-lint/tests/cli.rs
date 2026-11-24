@@ -345,8 +345,8 @@ fn exit_status() {
         Case {
             name: "source file",
             args: vec![tmp.write("run.py", "# Pass the host and/or the port.\n")],
-            want: 2,
-            stdout: false,
+            want: 1,
+            stdout: true,
         },
         Case {
             name: "file that is not UTF-8",
