@@ -1002,7 +1002,13 @@ fn doc_markup() {
     // An entity that opens a paragraph does not turn the paragraph into
     // an indented code block. A Haddock span that holds a backtick reads
     // as a code span, so ProseFutureTense still finds the subject of
-    // `will` in lead.hs.
+    // `will` in lead.hs. A paragraph or a list item that opens with a
+    // tag such as `<p>` or `<li>` draws findings, but a `<pre>` block
+    // stays code. So does an HTML sample in an indented code block of
+    // card.ts. In Bare.java, the indented prose under a tag that fills
+    // its line draws findings too. The tags in a plain `/* */` comment
+    // of c.tsx and c.js stay, so the markup that they hide does not draw
+    // a finding.
     struct Case {
         name: &'static str,
         text: &'static str,
@@ -1028,6 +1034,36 @@ fn doc_markup() {
             name: "Lead.java",
             text: "class Lead {\n  /**\n   * Compares two values.\n   *\n   * @return &lt; 0, if it may help here\n   */\n  int cmp(int a, int b) { return 0; }\n\n  /**\n   * Shifts the value.\n   *\n   * &lt;&lt; is a shift, and it may help here.\n   */\n  int shl(int a) { return 0; }\n}\n",
             want: vec!["5:28 ProseMayPossibility", "12:34 ProseMayPossibility"],
+        },
+        Case {
+            name: "Html.java",
+            text: "class Html {\n  /**\n   * It may help here.\n   *\n   * <p>It may help here.\n   * It may help here.</p>\n   * <ul>\n   *   <li>It may help here.\n   * </ul>\n   * <pre>\n   * It may help here.\n   * </pre>\n   */\n  int a;\n}\n",
+            want: vec![
+                "3:9 ProseMayPossibility",
+                "5:12 ProseMayPossibility",
+                "6:9 ProseMayPossibility",
+                "8:15 ProseMayPossibility",
+            ],
+        },
+        Case {
+            name: "Bare.java",
+            text: "class Bare {\n  /**\n   * Gets it.\n   *\n   * <p>\n   *     It may help here.\n   * <ul>\n   *   <li>\n   *       It may help here.\n   *   </li>\n   * </ul>\n   */\n  int a;\n}\n",
+            want: vec!["6:13 ProseMayPossibility", "9:15 ProseMayPossibility"],
+        },
+        Case {
+            name: "card.ts",
+            text: "/**\n * Renders the card, and it may help here.\n *\n * Example:\n *\n *     <div class=\"card\">\n *       <p>It may help here.</p>\n *     </div>\n *\n * Done.\n */\nexport const card = 1;\n",
+            want: vec!["2:29 ProseMayPossibility"],
+        },
+        Case {
+            name: "c.tsx",
+            text: "export function C() {\n  return (\n    <div>\n      {/*\n      <div className=\"card\">\n        <p>This section is going to be shown when it may help.</p>\n      </div>\n      */}\n      {/* <p>This section is going to be shown when it may help.</p> */}\n    </div>\n  );\n}\n",
+            want: vec![],
+        },
+        Case {
+            name: "c.js",
+            text: "function f() {\n  /*\n  <ul>\n  <li>Old item that may be needed later</li>\n  </ul>\n  */\n  return 1;\n}\n",
+            want: vec![],
         },
         Case {
             name: "lead.hs",

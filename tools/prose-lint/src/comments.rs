@@ -35,7 +35,8 @@
 //! The doc comments of Java, JavaScript, TypeScript, and Haskell hold
 //! markup that markdown misreads, such as the `@param` tags of Javadoc
 //! and the `>>>` examples of Haddock. The pass of `markup.rs` drops block
-//! tags and turns other markup into code spans and blanks before the
+//! tags and, in a `/**` comment, the tags of HTML block elements, such
+//! as `<p>`. It turns other markup into code spans and blanks before the
 //! region joins the lines.
 //!
 //! [`RegionParser`] lints the regions of a file as one Harper document,
@@ -226,6 +227,8 @@ struct Comment {
     lines: Vec<TextLine>,
     /// Whether code follows the comment on its last line.
     code_after: bool,
+    /// Whether the comment is a doc comment, whose opener is `/**`.
+    doc: bool,
 }
 
 /// The regions of the comments of one source file.
@@ -539,6 +542,7 @@ fn group(chars: &[char], file: &Region, found: Vec<Found>) -> Vec<Comment> {
                         })
                         .collect(),
                     code_after: false,
+                    doc: false,
                 });
                 open = false;
             }
@@ -555,6 +559,7 @@ fn group(chars: &[char], file: &Region, found: Vec<Found>) -> Vec<Comment> {
                         span: line_of(range.start)..=line_of(range.end.saturating_sub(1)),
                         lines: block_lines(chars, file, range.clone(), delims),
                         code_after: skip_blanks(chars, end.clone()) < end.end,
+                        doc: chars[range.clone()].starts_with(&['/', '*', '*']),
                     });
                     open = false;
                     continue;
@@ -577,6 +582,7 @@ fn group(chars: &[char], file: &Region, found: Vec<Found>) -> Vec<Comment> {
                             span: n..=n,
                             lines: Vec::new(),
                             code_after: false,
+                            doc: false,
                         });
                     }
                     let text = TextLine {
@@ -680,6 +686,7 @@ fn region(chars: &[char], file: &Region, comment: &Comment, markup: Markup) -> R
         .map(|line| Line {
             chars: unframed(chars, line).map(|i| (i, chars[i])).collect(),
             block: line.marker.is_none(),
+            doc: comment.doc,
             opens_paragraph: false,
         })
         .collect();

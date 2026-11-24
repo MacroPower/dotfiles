@@ -6,13 +6,14 @@
 //! index of its own character, so a finding after the markup reports
 //! the right column. The pass turns each code span of the markup into a
 //! markdown code span of the same width. Such a span still reads as one
-//! word of its sentence. The pass drops a block tag, as the first
-//! Javadoc item below states, and turns other markup into blanks. The
-//! pass then drops each blank that opens a line. Markup at the start of
-//! a paragraph then does not turn it into an indented code block. A line
-//! that blanks fully reads as an empty line and ends a paragraph.
+//! word of its sentence. The pass drops a block tag and the tag of a
+//! block element, as the Javadoc items below state, and turns other
+//! markup into blanks. The pass then drops each blank that opens a
+//! line. Markup at the start of a paragraph then does not turn it into
+//! an indented code block. A line that blanks fully reads as an empty
+//! line and ends a paragraph.
 //!
-//! Javadoc and JSDoc comments hold three kinds of markup:
+//! Javadoc and JSDoc comments hold four kinds of markup:
 //!
 //! - A block tag (`@param name`, `@returns`) opens a line of a block
 //!   comment. Each tag line opens a paragraph, so a run of tags does not
@@ -21,6 +22,17 @@
 //!   a comment marker. When the tag fills its line, the region drops
 //!   the indent of the next line too. Markdown then reads the
 //!   description under the tag as prose, not as an indented code block.
+//! - The tag of an HTML block element, such as `<p>`, `<li>`, or
+//!   `</ul>`, can open a line of a doc comment, whose opener is `/**`.
+//!   Markdown reads such a line as an HTML block that runs to the next
+//!   blank line and hides its prose. So the region drops each such tag that opens the line,
+//!   with the blanks around it, and the line opens a paragraph. When the
+//!   tags fill their line, the region drops the indent of the next line
+//!   too, as it does for a block tag. A `<pre>` tag stays, so its block
+//!   still ends at `</pre>`. The tags of a line of an indented code
+//!   block stay too, so an HTML sample in the block still reads as code.
+//!   The tags of a plain `/* */` comment stay, so the markup that such a
+//!   comment hides does not draw findings.
 //! - An inline tag (`{@code x}`, `{@link Map label}`) on one line reads
 //!   as a code span. An inline tag that no `}` on its line closes stays
 //!   text.
@@ -49,6 +61,8 @@ pub(super) struct Line {
     pub chars: Vec<(usize, char)>,
     /// Whether the line belongs to a block comment.
     pub block: bool,
+    /// Whether the line belongs to a doc comment, whose opener is `/**`.
+    pub doc: bool,
     /// Whether the line opens a paragraph, so that the region puts an
     /// empty line above it.
     pub opens_paragraph: bool,
@@ -104,7 +118,12 @@ const NAMED: &[&str] = &["arg", "argument", "param", "prop", "property", "typePa
 
 fn javadoc(lines: &mut [Line]) {
     let mut bare = false;
+    // Whether the source line above is empty or a line of an indented
+    // code block. A line indented by four columns then reads as code.
+    let mut code_may_follow = true;
     for (k, line) in lines.iter_mut().enumerate() {
+        let code = code_may_follow && indent(&line.chars) >= 4;
+        code_may_follow = code || line.chars.iter().all(|(_, c)| c.is_whitespace());
         if bare {
             let indent = line
                 .chars
@@ -120,10 +139,31 @@ fn javadoc(lines: &mut [Line]) {
             line.chars.drain(..n);
             line.opens_paragraph = k > 0;
             bare = line.chars.is_empty();
+        } else if line.doc
+            && !code
+            && let Some(n) = block_html(&line.chars)
+        {
+            line.chars.drain(..n);
+            line.opens_paragraph = k > 0;
+            bare = line.chars.is_empty();
         }
         blank_entities(&mut line.chars);
         inline_tags(&mut line.chars);
     }
+}
+
+/// Returns the column of the first character of `text` that is not
+/// whitespace. A tab reaches the next multiple of four columns.
+fn indent(text: &[(usize, char)]) -> usize {
+    let mut col = 0;
+    for &(_, c) in text {
+        match c {
+            '\t' => col = (col / 4 + 1) * 4,
+            c if c.is_whitespace() => col += 1,
+            _ => break,
+        }
+    }
+    col
 }
 
 /// Returns the count of characters of the block tag that opens `text`.
@@ -167,6 +207,52 @@ fn block_tag(text: &[(usize, char)]) -> Option<usize> {
         end = next + 1;
     }
     Some(blanks(end))
+}
+
+/// The names of the HTML elements whose tag, at the start of a line,
+/// opens a CommonMark HTML block that runs to the next blank line.
+/// `pre` is not one, so a `<pre>` block still ends at `</pre>`.
+const BLOCK_ELEMENTS: &str = "address article aside base basefont blockquote body caption \
+    center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form \
+    frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu \
+    menuitem nav noframes ol optgroup option p param search section summary table tbody td \
+    tfoot th thead title tr track ul";
+
+/// Returns the count of characters of the run of block element tags,
+/// such as `<p>` or `</li>`, that opens `text`. The count holds the
+/// blanks before each tag and after the last one. Returns `None` when
+/// `text` does not open with such a tag.
+fn block_html(text: &[(usize, char)]) -> Option<usize> {
+    let c = |i: usize| text.get(i).map(|&(_, c)| c);
+    let blanks = |mut i: usize| {
+        while c(i).is_some_and(char::is_whitespace) {
+            i += 1;
+        }
+        i
+    };
+    let mut end = None;
+    let mut at = blanks(0);
+    while c(at) == Some('<') {
+        let start = at + 1 + usize::from(c(at + 1) == Some('/'));
+        let name: String = text[start..]
+            .iter()
+            .map(|&(_, c)| c)
+            .take_while(char::is_ascii_alphanumeric)
+            .collect::<String>()
+            .to_ascii_lowercase();
+        let after = start + name.len();
+        if !BLOCK_ELEMENTS.split_whitespace().any(|n| n == name)
+            || !c(after).is_some_and(|c| c.is_whitespace() || c == '>' || c == '/')
+        {
+            break;
+        }
+        let Some(close) = text[after..].iter().position(|&(_, c)| c == '>') else {
+            break;
+        };
+        at = blanks(after + close + 1);
+        end = Some(at);
+    }
+    end
 }
 
 /// Returns the index of the `}` that closes the `{` at `open`, or
@@ -406,6 +492,43 @@ mod tests {
                 want: "the first",
             },
             Case {
+                name: "block element tags",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Gets it.",
+                    "<p>It runs.</p>",
+                    "  <UL class=\"x\">",
+                    "  <li> One <b>item</b>",
+                    "</li><li/>Two",
+                    "<pre>",
+                    "<p><pre>x",
+                    "<b>Bold</b> or <para>x",
+                ],
+                want: "Gets it.\n\nIt runs.</p>\n\n\n\nOne <b>item</b>\n\nTwo\n<pre>\n\n<pre>x\n<b>Bold</b> or <para>x",
+            },
+            Case {
+                name: "block element tags that fill their lines",
+                markup: Markup::Javadoc,
+                lines: &["<ul>", "  <li>", "    It runs.", "    It wraps.", "  </li>"],
+                want: "\n\n\nIt runs.\n    It wraps.\n\n",
+            },
+            Case {
+                name: "block element tags in an indented code block",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "    <p>x",
+                    "Gets it.",
+                    "",
+                    "    <div>",
+                    "      <p>It runs.</p>",
+                    "",
+                    "\t</div>",
+                    "<ul>",
+                    "    <li>One",
+                ],
+                want: "    <p>x\nGets it.\n\n    <div>\n      <p>It runs.</p>\n\n\t</div>\n\n\n\nOne",
+            },
+            Case {
                 name: "inline tags and entities",
                 markup: Markup::Javadoc,
                 lines: &[
@@ -493,6 +616,7 @@ mod tests {
                 .map(|l| Line {
                     chars: l.chars().enumerate().collect(),
                     block: true,
+                    doc: true,
                     opens_paragraph: false,
                 })
                 .collect();
@@ -510,5 +634,20 @@ mod tests {
                 .collect();
             assert_eq!(got.join("\n"), case.want, "{}", case.name);
         }
+    }
+
+    #[test]
+    fn plain_block_comment_keeps_html() {
+        // A `/* */` comment that is not a doc comment often holds markup
+        // that the code no longer uses, so its tags stay.
+        let mut lines = vec![Line {
+            chars: "<p>It runs.</p>".chars().enumerate().collect(),
+            block: true,
+            doc: false,
+            opens_paragraph: false,
+        }];
+        Markup::Javadoc.apply(&mut lines);
+        let got: String = lines[0].chars.iter().map(|&(_, c)| c).collect();
+        assert_eq!(got, "<p>It runs.</p>");
     }
 }
