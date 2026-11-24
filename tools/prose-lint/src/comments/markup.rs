@@ -42,11 +42,14 @@
 //!   block does not open a table. Neither does a tag in a code span or
 //!   in an inline tag such as `{@code <table>}`. A self-closing
 //!   `<table/>` and a JSX `<Table>` do not open one either. A `<pre>`
-//!   tag opens a `<pre>` block only when a later `</pre>` of the comment
-//!   closes it. So a lone `<pre>` in the prose pairs with the `</pre>`
-//!   of a later `<pre>` block, and a table between the two tags stays
-//!   text. When a table fills its line, the region drops the indent of
-//!   the next line too, as it does for a block tag.
+//!   tag opens a `<pre>` block only when it opens its line, after
+//!   blanks, a block tag such as `@return`, and block element tags such
+//!   as `<p>`. Markdown reads an HTML block at the same place after the
+//!   pass drops the block tag. The `<pre>` tag also needs a later
+//!   `</pre>` of the comment to close it. So a `<pre>` in the prose of
+//!   a line opens nothing, and a table after it still blanks. When a
+//!   table fills its line, the region drops the indent of the next line
+//!   too, as it does for a block tag.
 //! - An inline tag (`{@code x}`, `{@link Map label}`) on one line reads
 //!   as a code span. An inline tag that no `}` on its line closes stays
 //!   text.
@@ -132,10 +135,10 @@ const NAMED: &[&str] = &["arg", "argument", "param", "prop", "property", "typePa
 
 /// Edits the lines of a Javadoc comment, whose characters before the
 /// pass are `source`. A `<table>` tag opens a table only when a
-/// `</table>` closes it. A `<pre>` tag opens a `<pre>` block only when a
-/// `</pre>` closes it. So when a pass leaves a table or a `<pre>`
-/// block open, the lines go back to `source`. The pass then runs again
-/// with the tag that opened it as text.
+/// `</table>` closes it. A `<pre>` tag that opens its line opens a
+/// `<pre>` block only when a `</pre>` closes it. So when a pass leaves a
+/// table or a `<pre>` block open, the lines go back to `source`. The
+/// pass then runs again with the tag that opened it as text.
 fn javadoc(lines: &mut [Line], source: &[Vec<(usize, char)>]) {
     let opens: Vec<bool> = lines.iter().map(|l| l.opens_paragraph).collect();
     let mut unclosed = Vec::new();
@@ -181,7 +184,19 @@ fn javadoc_pass(lines: &mut [Line], unclosed: &[usize]) -> Option<usize> {
             fence = toggle_fence(&line.chars, fence);
         }
         let open = !code && fence.is_none();
-        if line.doc && html.blank_tables(&mut line.chars, open) {
+        // The count of the characters before the text that opens the
+        // line for markdown. They hold the block tag that the pass
+        // drops, then the blanks and the block element tags.
+        let tag = if line.block {
+            block_tag(&line.chars).unwrap_or(0)
+        } else {
+            0
+        };
+        let rest = &line.chars[tag..];
+        let lead = tag
+            + block_html(rest)
+                .unwrap_or_else(|| rest.iter().take_while(|(_, c)| c.is_whitespace()).count());
+        if line.doc && html.blank_tables(&mut line.chars, open, lead) {
             bare = line.chars.iter().all(|(_, c)| c.is_whitespace());
         }
         if line.block
@@ -350,11 +365,13 @@ impl Html<'_> {
     /// its `</table>` tag, and updates the open tables and `<pre>`
     /// block. A `<table>` tag outside a table opens a table only when
     /// `open` holds and the tag is outside a `<pre>` block. A `<pre>`
-    /// tag outside a table opens a `<pre>` block only when `open`
-    /// holds. Neither tag opens anything when `unclosed` holds it. A tag
-    /// in a code span or an inline tag, such as `{@code <table>}`, does
-    /// not count. Returns whether the pass blanked any character.
-    fn blank_tables(&mut self, text: &mut [(usize, char)], open: bool) -> bool {
+    /// tag outside a table opens a `<pre>` block only when `open` holds
+    /// and the tag starts at index `lead` of `text`. That index follows
+    /// the block tag, the blanks, and the block element tags that open
+    /// the line. Neither tag opens anything when `unclosed` holds it. A
+    /// tag in a code span or an inline tag, such as `{@code <table>}`,
+    /// does not count. Returns whether the pass blanked any character.
+    fn blank_tables(&mut self, text: &mut [(usize, char)], open: bool, lead: usize) -> bool {
         let mut blanked = false;
         let mut i = 0;
         while i < text.len() {
@@ -379,7 +396,11 @@ impl Html<'_> {
                     true
                 }
                 Some(("pre", false))
-                    if self.tables == 0 && open && !self.pre && !self.unclosed.contains(&at) =>
+                    if i == lead
+                        && self.tables == 0
+                        && open
+                        && !self.pre
+                        && !self.unclosed.contains(&at) =>
                 {
                     self.pre = true;
                     self.opened = at;
@@ -837,13 +858,60 @@ mod tests {
                 name: "a pre tag that no tag closes",
                 markup: Markup::Javadoc,
                 lines: &[
-                    "Wraps the text in a <pre> tag, and it runs.",
+                    "Wraps the text, and it runs.",
+                    "<pre>",
                     "<table>",
                     "<tr><td>true/false</td></tr>",
                     "</table>",
                     "It ends.",
                 ],
-                want: "Wraps the text in a <pre> tag, and it runs.\n\n\n\nIt ends.",
+                want: "Wraps the text, and it runs.\n<pre>\n\n\n\nIt ends.",
+            },
+            Case {
+                name: "a pre tag in prose before a pre block",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Wraps the text in a <pre> tag, and it runs.",
+                    "<table>",
+                    "<tr><td>true/false</td></tr>",
+                    "</table>",
+                    "<pre>",
+                    "x = a/b;",
+                    "</pre>",
+                    "<p><pre><table></pre>",
+                    "It ends </table>.",
+                ],
+                want: "Wraps the text in a <pre> tag, and it runs.\n\n\n\n<pre>\nx = a/b;\n</pre>\n\n<pre><table></pre>\nIt ends </table>.",
+            },
+            Case {
+                name: "a pre tag after a block tag",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Gives the value.",
+                    "@return <pre>",
+                    "```",
+                    "</pre>",
+                    "<table>",
+                    "<tr><td>true/false</td></tr>",
+                    "</table>",
+                    "It ends.",
+                ],
+                want: "Gives the value.\n\n<pre>\n```\n</pre>\n\n\n\nIt ends.",
+            },
+            Case {
+                name: "an indented pre tag",
+                markup: Markup::Javadoc,
+                lines: &[
+                    "Wraps the text, and it runs.",
+                    "  <pre>",
+                    "  ```",
+                    "  </pre>",
+                    "<table>",
+                    "<tr><td>true/false</td></tr>",
+                    "</table>",
+                    "It ends.",
+                ],
+                want: "Wraps the text, and it runs.\n  <pre>\n  ```\n  </pre>\n\n\n\nIt ends.",
             },
             Case {
                 name: "a table between pre tags in indented code blocks",

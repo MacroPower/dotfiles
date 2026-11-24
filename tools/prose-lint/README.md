@@ -89,9 +89,10 @@ that the region keeps holds its own column. The module doc of
   cells does not draw findings. Each `<table>` tag opens a table only when a
   later `</table>` closes it. Table tags in a code block, a `<pre>` block, or a
   code span, such as `{@code <table>}`, do not open a table. Each `<pre>` tag
-  opens a `<pre>` block only when a later `</pre>` closes it, so a lone `<pre>`
-  in the prose pairs with the `</pre>` of a later `<pre>` block. A table between
-  the two tags then reads as text and draws findings.
+  opens a `<pre>` block only when a later `</pre>` closes it. The tag must also
+  open its line, after any block tag such as `@return` and any block element
+  tags such as `<p>`. So a later table still reads as blanks after a `<pre>` in
+  the middle of a sentence.
 
 - Haddock: code blocks that open with a line of `@`, examples (`>>>`), properties
   (`prop>`), and bird tracks (`>`). Code between two `@` marks and identifiers
