@@ -5036,24 +5036,24 @@ class ArgsTest(unittest.TestCase):
         # name: (the text of each stored file, the commits of the task
         # branch, the flags, the resume field)
         cases = {
-            "both files": (both, 1, [], {"round": 1, "lastRound": 6, **kept}),
+            "both files": (both, 1, [], {"round": 1, "lastRound": 3, **kept}),
             "no file": (
                 {},
                 1,
                 [],
-                {"round": 1, "lastRound": 6, "summary": "", "notes": ""},
+                {"round": 1, "lastRound": 3, "summary": "", "notes": ""},
             ),
             "only the summary": (
                 {"summary": "a summary\n"},
                 1,
                 [],
-                {"round": 1, "lastRound": 6, "summary": "a summary", "notes": ""},
+                {"round": 1, "lastRound": 3, "summary": "a summary", "notes": ""},
             ),
             "an empty notes file": (
                 {"summary": "a summary\n", "notes": ""},
                 1,
                 [],
-                {"round": 1, "lastRound": 6, "summary": "a summary", "notes": ""},
+                {"round": 1, "lastRound": 3, "summary": "a summary", "notes": ""},
             ),
             "text of several paragraphs": (
                 {"summary": "one\n\ntwo\n", "notes": "\nthree\nfour\n\n"},
@@ -5061,7 +5061,7 @@ class ArgsTest(unittest.TestCase):
                 [],
                 {
                     "round": 1,
-                    "lastRound": 6,
+                    "lastRound": 3,
                     "summary": "one\n\ntwo",
                     "notes": "three\nfour",
                 },

@@ -21,7 +21,7 @@ export const meta = {
 // or `ultraclose.py args` prints.
 const { run, repo, base } = args
 const T = args.task
-const ROUNDS = args.rounds || 6
+const ROUNDS = args.rounds || 3
 // The model that the agents of each role run on, by the name of the
 // role. `ultraclose.py` fills the field from the run config. The roles
 // are implementer, sync, reviewer, fixer, and narrow. The reviewer and

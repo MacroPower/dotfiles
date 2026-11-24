@@ -5916,7 +5916,7 @@ def main():
         "--target", type=target, default=TARGET, metavar="TARGET", help=TARGET_HELP
     )
     s.add_argument("--limit", type=int, default=5)
-    s.add_argument("--rounds", type=int, default=6)
+    s.add_argument("--rounds", type=int, default=3)
     s.add_argument(
         "--model",
         action="append",

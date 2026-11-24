@@ -1032,7 +1032,7 @@ notes.
 
 ## Caps
 
-The Workflow caps each task at 6 review rounds, and the `--rounds` flag of
+The Workflow caps each task at 3 review rounds, and the `--rounds` flag of
 `init` or `config` changes the cap. At the cap it runs one final cycle. In
 that cycle, a fixer applies only the exact fixes of the open findings, and
 a reviewer checks only those fixes. If findings remain, the reviewer
