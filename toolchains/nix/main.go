@@ -4,7 +4,8 @@
 // the flake through evaluation, static analysis, and formatting checks.
 // It also verifies that the pkg:update task runs each update script in
 // pkgs/, and that pkgs/ holds each package file that a script updates.
-// It runs the tests of the image and pull tasks of the lima Taskfile.
+// It runs the tests of the image and pull tasks of the lima Taskfile,
+// and it runs clippy on the Rust crates under tools/.
 // The checks run in Linux containers and do not build a darwin
 // derivation.
 
@@ -39,11 +40,15 @@ type Nix struct {
 // [Nix.CheckLint] reads the Go modules of this toolchain from the same
 // directory. The ignore list of source leaves out the files that Dagger
 // generates in those modules, which the .gitignore file of each module
-// lists.
+// lists. It also leaves out the harper clone in tools/prose-lint and
+// the target directory of each Rust crate under tools/. Git ignores
+// both directories. Without the
+// ignore list, the engine uploads them with the source, and Lint checks
+// the Rust files of harper.
 func New(
 	// Project source directory
 	// +defaultPath="/"
-	// +ignore=["**/.git", "result", "lima/", ".devbox/", ".worktrees/", ".claude/worktrees/", "**/.claude/scheduled_tasks.lock", "**/.ruff_cache", "toolchains/**/dagger.gen.go", "toolchains/**/internal/dagger", "toolchains/**/internal/querybuilder", "toolchains/**/internal/telemetry", "toolchains/**/.env"]
+	// +ignore=["**/.git", "result", "lima/", ".devbox/", ".worktrees/", ".claude/worktrees/", "**/.claude/scheduled_tasks.lock", "**/.ruff_cache", "tools/*/target/", "tools/prose-lint/harper/", "toolchains/**/dagger.gen.go", "toolchains/**/internal/dagger", "toolchains/**/internal/querybuilder", "toolchains/**/internal/telemetry", "toolchains/**/.env"]
 	source *dagger.Directory,
 ) *Nix {
 	return &Nix{Source: source}
@@ -315,7 +320,8 @@ func (m *Nix) Build(ctx context.Context) error {
 
 // Lint checks formatting and lint rules via treefmt.
 //
-// treefmt runs nixfmt, deadnix, statix, shfmt, prettier, and gofmt.
+// treefmt runs nixfmt, deadnix, statix, shfmt, prettier, gofmt, and
+// rustfmt.
 // +check
 func (m *Nix) Lint(ctx context.Context) error {
 	_, err := m.base().
@@ -346,8 +352,8 @@ func (m *Nix) Editorconfig(ctx context.Context) error {
 
 // Format applies all auto-fixes via treefmt.
 //
-// treefmt runs nixfmt, deadnix, statix, shfmt, prettier, and gofmt.
-// The treefmt config in flake.nix keeps gofmt off the Go files of the
+// treefmt runs nixfmt, deadnix, statix, shfmt, prettier, gofmt, and
+// rustfmt. The treefmt config in flake.nix keeps gofmt off the Go files of the
 // dev toolchain, because the format function of that toolchain formats
 // them. `dagger generate` fails when two generators change one file.
 // +generate
@@ -868,6 +874,7 @@ func (m *Nix) All(ctx context.Context) error {
 	eg.Go(func() error { return m.Lint(ctx) })
 	eg.Go(func() error { return m.Editorconfig(ctx) })
 	eg.Go(func() error { return m.CheckLint(ctx) })
+	eg.Go(func() error { return m.CheckClippy(ctx) })
 	eg.Go(func() error { return m.CheckPkgUpdate(ctx) })
 	eg.Go(func() error { return m.CheckLimaTaskfile(ctx) })
 

@@ -3,6 +3,7 @@
   rustPlatform,
   applyPatches,
   harper,
+  clippy,
   pkg-config,
   zstd,
 }:
@@ -25,7 +26,7 @@ assert lib.assertMsg (lockedHarper == harper.version) ''
   tools/prose-lint/Cargo.lock locks harper-core ${toString lockedHarper}, but pkgs.harper is ${harper.version}.
   Point tools/prose-lint/harper at the source of harper ${harper.version} and update Cargo.lock.
 '';
-rustPlatform.buildRustPackage {
+rustPlatform.buildRustPackage (finalAttrs: {
   pname = "prose-lint-rs";
   version = "0.1.0";
 
@@ -35,6 +36,7 @@ rustPlatform.buildRustPackage {
       ./Cargo.toml
       ./Cargo.lock
       ./src
+      (lib.fileset.maybeMissing ./tests)
     ];
   };
 
@@ -51,6 +53,9 @@ rustPlatform.buildRustPackage {
   # does not build the dictionary on each start.
   env.HARPER_PRECOMPUTED_DICT = "${harper.dictionary}";
 
+  # The check phase runs cargo test.
+  doCheck = true;
+
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
@@ -65,6 +70,30 @@ rustPlatform.buildRustPackage {
 
   passthru = {
     inherit harperSrc;
+
+    # Runs clippy on every target of the crate and fails on each warning.
+    # The package itself does not run clippy, so a new lint of a later
+    # clippy does not break the build of a host. CheckClippy of the nix
+    # toolchain builds this test in the commit hook.
+    tests.clippy = finalAttrs.finalPackage.overrideAttrs (old: {
+      pname = "${old.pname}-clippy";
+      nativeBuildInputs = old.nativeBuildInputs ++ [ clippy ];
+      # Clippy lints only the crate, so it does not need the embedded
+      # dictionary. Without the dictionary, the test does not depend on the
+      # patched harper build, which cache.nixos.org does not hold. So the
+      # commit hook does not build that harper.
+      env = removeAttrs old.env [ "HARPER_PRECOMPUTED_DICT" ];
+      buildPhase = ''
+        runHook preBuild
+        cargo clippy --all-targets --offline -- -D warnings
+        runHook postBuild
+      '';
+      doCheck = false;
+      doInstallCheck = false;
+      installPhase = ''
+        touch "$out"
+      '';
+    });
   };
 
   meta = {
@@ -73,4 +102,4 @@ rustPlatform.buildRustPackage {
     license = lib.licenses.asl20;
     mainProgram = "prose-lint-rs";
   };
-}
+})

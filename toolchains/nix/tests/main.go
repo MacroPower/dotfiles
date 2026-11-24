@@ -29,6 +29,7 @@ func (m *Tests) All(ctx context.Context) error {
 
 	eg.Go(m.TestAggregates)
 	eg.Go(func() error { return m.TestBuild(ctx) })
+	eg.Go(func() error { return m.TestCheckClippy(ctx) })
 	eg.Go(func() error { return m.TestCheckLimaTaskfile(ctx) })
 	eg.Go(func() error { return m.TestCheckLintRootModule(ctx) })
 	eg.Go(func() error { return m.TestCheckLintTestModule(ctx) })
@@ -39,6 +40,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestFlakeCheck(ctx) })
 	eg.Go(func() error { return m.TestFormatSkipsDevGo(ctx) })
 	eg.Go(func() error { return m.TestFormatToolchains(ctx) })
+	eg.Go(func() error { return m.TestLintRust(ctx) })
 	eg.Go(func() error { return m.TestLintToolchains(ctx) })
 	eg.Go(func() error { return m.TestProfileCommands(ctx) })
 	eg.Go(func() error { return m.TestSbom(ctx) })
@@ -87,6 +89,20 @@ const (
 
 	// formattedFunc is unformattedFunc as gofmt writes it.
 	formattedFunc = "\nfunc unformatted() {}\n"
+
+	// rustPath is the path, in the project source, of a Rust file of a
+	// crate under tools/.
+	rustPath = "tools/prose-lint/src/main.rs"
+
+	// unformattedRustFunc is a function declaration that rustfmt
+	// changes, because two spaces follow the fn keyword.
+	unformattedRustFunc = "\nfn  unformatted() {}\n"
+
+	// clippyProbe is a Rust function whose return statement clippy
+	// reports as needless_return, a lint of its default warn level. The
+	// attribute keeps rustc from reporting the unused function, so
+	// clippy reports nothing else in the function.
+	clippyProbe = "\n#[allow(dead_code)]\nfn clippy_probe() -> u8 {\n    return 1;\n}\n"
 
 	// trailingSpaceLine is a comment line that breaks the .editorconfig
 	// rules of the repository, because it ends with a space.
@@ -386,6 +402,31 @@ func (m *Tests) TestLintToolchains(ctx context.Context) error {
 	return nil
 }
 
+// TestLintRust verifies that [Nix.Lint] checks the Rust files under
+// tools/ with rustfmt. Lint passes when the source holds the unchanged
+// file at rustPath. It fails when that file also holds a function that
+// rustfmt changes.
+//
+// +check
+func (m *Tests) TestLintRust(ctx context.Context) error {
+	formatted, err := sourceFile(ctx, rustPath)
+	if err != nil {
+		return err
+	}
+
+	err = nixWithFile(rustPath, formatted).Lint(ctx)
+	if err != nil {
+		return fmt.Errorf("linting the unchanged %s: %w", rustPath, err)
+	}
+
+	err = nixWithFile(rustPath, formatted+unformattedRustFunc).Lint(ctx)
+	if err == nil {
+		return fmt.Errorf("lint passed %s with a function that rustfmt changes", rustPath)
+	}
+
+	return nil
+}
+
 // TestFormatToolchains verifies that [Nix.Format] formats the Go files
 // under toolchains/. When the file at toolchainGoPath also holds a
 // function that gofmt changes, the changeset lists the file as modified.
@@ -625,6 +666,33 @@ func (m *Tests) TestCheckLintRootModule(ctx context.Context) error {
 // +check
 func (m *Tests) TestCheckLintTestModule(ctx context.Context) error {
 	return checkLintProbe(ctx, testModulePath, rootModulePath, undocumentedProbe)
+}
+
+// TestCheckClippy verifies that [Nix.CheckClippy] runs clippy on the
+// crate of the file at rustPath and fails on a warning. The check
+// passes on the default source of [Nix]. It fails after the test adds a
+// function to that file that clippy reports at its default warn level.
+// So the check also verifies that clippy treats each warning as an
+// error.
+//
+// +check
+func (m *Tests) TestCheckClippy(ctx context.Context) error {
+	err := dag.Nix().CheckClippy(ctx)
+	if err != nil {
+		return fmt.Errorf("running clippy on the default source: %w", err)
+	}
+
+	contents, err := sourceFile(ctx, rustPath)
+	if err != nil {
+		return err
+	}
+
+	err = nixWithFile(rustPath, contents+clippyProbe).CheckClippy(ctx)
+	if err == nil {
+		return fmt.Errorf("CheckClippy passed %s with a function that clippy reports", rustPath)
+	}
+
+	return nil
 }
 
 // ghSnapshot is the subset of the GitHub dependency snapshot format

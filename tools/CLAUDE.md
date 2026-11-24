@@ -32,6 +32,67 @@ This file provides guidance to Claude Code (claude.ai/code) when working with to
 - Use `require.ErrorIs` for sentinel error checking.
 - Use `require.ErrorAs` for error type extraction.
 
+### Rust Conventions
+
+- Document each public item with a `///` doc comment. Open the root file of each crate, `main.rs` or `lib.rs`, with a `//!` comment that describes the crate.
+- In library code, return `Result` with an error enum of the module. Derive `Display` and `std::error::Error` for the enum with `thiserror`.
+- Carry the cause of an error in a `#[source]` or `#[from]` field, and do not format the cause into the message. The code that prints the error walks the chain of sources, so it prints each cause one time.
+- Write each error message in lowercase with no final period. Name the step, such as `reading the weirpack`. Do not write "failed" or "error" in the message.
+- Return `std::process::ExitCode` from `main`. Print each error and its chain of sources to stderr, then return the exit status that the tool documents for a failure. Do not return a `Result` from `main`. Rust then prints the `Debug` form of the error and exits with status 1, which a tool can reserve for another result, such as the findings of `prose-lint`.
+- Call `unwrap` and `expect` only in tests, or on a value that the code before the call has checked. Give each `expect` a message that says why the value is present.
+
+### Rust Tooling
+
+`devbox.json` puts `cargo`, `rustc`, `clippy`, and `rustfmt` on `PATH`. Cargo reads the harper crates of `prose-lint` from `./harper`, which git ignores, so clone and patch the harper source there first. The Building section of `prose-lint/README.md` gives the commands. Run these commands in the directory of the crate before you commit a change to it:
+
+```sh
+cargo fmt
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+The repository checks each command in Nix as well:
+
+- treefmt runs rustfmt with edition 2024, so `nix fmt` formats each Rust file. The commit hook rejects a Rust file that rustfmt changes.
+- The `passthru.tests.clippy` derivation in the `package.nix` of each crate runs clippy and fails on each warning. `CheckClippy` of the `nix` toolchain builds that derivation for each package of `rustPackages` in `toolchains/nix/clippy.go`, so a clippy warning fails the commit hook. When you add a crate, give its `package.nix` that derivation, expose the package in `packages` of `flake.nix`, and add its attribute name to `rustPackages`.
+- The check phase of the Nix build of each crate runs `cargo test`.
+
+Git and treefmt ignore the `target/` directory of each crate.
+
+### Rust Testing
+
+- Put the unit tests of a file in a `#[cfg(test)] mod tests` block at the end of that file. Put the tests of the binary, which run the built executable, in the `tests/` directory of the crate.
+- Write table-driven tests as an array of a `Case` struct and a loop that checks each case.
+- Give each case a `name` field, and pass the name as the message of each assertion, so a failed assertion names its case.
+- Field names: prefer `want` for expected output, `err` for an expected error. For inputs, use clear contextual names, such as `line` and `col` for positions.
+- Check an expected error by its variant with `matches!`, not by its message.
+
+```rust
+#[test]
+fn parse_position() {
+    struct Case {
+        name: &'static str,
+        line: &'static str,
+        want: Option<(usize, usize)>,
+    }
+    let cases = [
+        Case {
+            name: "line and column",
+            line: "a.md:3:7",
+            want: Some((3, 7)),
+        },
+        Case {
+            name: "no column",
+            line: "a.md:3",
+            want: None,
+        },
+    ];
+    for case in cases {
+        assert_eq!(parse_position(case.line), case.want, "{}", case.name);
+    }
+}
+```
+
 ## mcp-git Tests
 
 Keep the count of git processes low when you add a test to `mcp-git`. Process starts take most of the run time of the suite. When every test case built its repositories with git, the suite ran for more than ten minutes on a Mac that scans each new process. The Nix build of the package then failed.

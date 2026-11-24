@@ -125,7 +125,17 @@
             };
             prettier.enable = true;
             gofmt.enable = true;
+            rustfmt.enable = true;
           };
+
+          # Git ignores the target directory of each crate under tools/,
+          # where cargo writes its build output, and the harper clone of
+          # prose-lint. treefmt reads every file of a source that has no
+          # .git directory, so it skips both directories by name.
+          treefmt.settings.excludes = [
+            "tools/*/target/*"
+            "tools/prose-lint/harper/*"
+          ];
 
           # The format function of the dev toolchain formats the Go files
           # of that toolchain. `dagger generate` fails when two generators

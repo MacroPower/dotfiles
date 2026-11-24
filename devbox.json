@@ -4,6 +4,10 @@
     "go@latest",
     "golangci-lint@latest",
     "oras@latest",
-    "zstd@latest"
+    "zstd@latest",
+    "cargo@latest",
+    "rustc@latest",
+    "clippy@latest",
+    "rustfmt@latest"
   ]
 }

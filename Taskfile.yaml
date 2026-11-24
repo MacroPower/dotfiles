@@ -197,7 +197,7 @@ tasks:
       - dagger call dev format -y
 
   lint:
-    desc: Check formatting and lint (nixfmt, deadnix, statix, shfmt, prettier, gofmt via treefmt)
+    desc: Check formatting and lint (nixfmt, deadnix, statix, shfmt, prettier, gofmt, rustfmt via treefmt)
     cmds:
       - task: nix:lint
 
