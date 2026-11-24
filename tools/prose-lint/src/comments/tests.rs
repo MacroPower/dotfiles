@@ -230,6 +230,47 @@ fn regions() {
 }
 
 #[test]
+fn module_extensions() {
+    // Node reads `.mjs` and `.cjs` files as JavaScript modules, and the
+    // TypeScript compiler reads `.mts` and `.cts` files as TypeScript
+    // modules. Each extension takes the syntax of its language, eslint
+    // and TypeScript directives included.
+    struct Case {
+        name: &'static str,
+        ext: &'static str,
+        want: &'static str,
+    }
+    let cases = [
+        Case {
+            name: "mjs as javascript",
+            ext: "mjs",
+            want: "js",
+        },
+        Case {
+            name: "cjs as javascript",
+            ext: "cjs",
+            want: "js",
+        },
+        Case {
+            name: "mts as typescript",
+            ext: "mts",
+            want: "ts",
+        },
+        Case {
+            name: "cts as typescript",
+            ext: "cts",
+            want: "ts",
+        },
+    ];
+    let source =
+        "// eslint-disable-next-line no-console -- One.\nf();\n// @ts-expect-error - Two.\nf();\n";
+    for case in cases {
+        assert_eq!(syntax(case.ext), syntax(case.want), "{}", case.name);
+        assert_eq!(texts(case.ext, source), ["One.", "Two."], "{}", case.name);
+    }
+}
+
+#[test]
 fn source_positions() {
     // Each character of a region keeps the line and the column of its
     // source character. The line break takes the position of the line

@@ -190,9 +190,11 @@ pub const SYNTAXES: &[Syntax] = &[
     }),
     Syntax::grammar(&["java"], "slash", || tree_sitter_java::LANGUAGE.into())
         .markup(Markup::Javadoc),
-    Syntax::grammar(&["js"], "slash", || tree_sitter_javascript::LANGUAGE.into())
-        .markup(Markup::Javadoc)
-        .directives(),
+    Syntax::grammar(&["js", "mjs", "cjs"], "slash", || {
+        tree_sitter_javascript::LANGUAGE.into()
+    })
+    .markup(Markup::Javadoc)
+    .directives(),
     Syntax::grammar(&["jsx", "tsx"], "slash", || {
         tree_sitter_typescript::LANGUAGE_TSX.into()
     })
@@ -206,7 +208,7 @@ pub const SYNTAXES: &[Syntax] = &[
     Syntax::grammar(&["scala"], "slash", || tree_sitter_scala::LANGUAGE.into()),
     Syntax::grammar(&["sol"], "slash", || tree_sitter_solidity::LANGUAGE.into()),
     Syntax::grammar(&["swift"], "slash", || tree_sitter_swift::LANGUAGE.into()),
-    Syntax::grammar(&["ts"], "slash", || {
+    Syntax::grammar(&["ts", "mts", "cts"], "slash", || {
         tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
     })
     .markup(Markup::Javadoc)
