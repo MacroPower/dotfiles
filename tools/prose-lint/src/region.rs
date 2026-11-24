@@ -49,13 +49,16 @@ impl Region {
         }
     }
 
-    /// Returns the region of the characters of `file` at `indices`, in
-    /// that order. `chars` holds the characters of `file`.
-    pub fn part(file: &Region, chars: &[char], indices: Vec<usize>) -> Self {
+    /// Returns the region of `text`, which pairs each character with the
+    /// index of a character of `file`. The character takes the position
+    /// of that character of `file`. It can differ from the character of
+    /// `file`, such as a blank in place of doc comment markup, and two
+    /// characters can share one index.
+    pub fn part(file: &Region, text: Vec<(usize, char)>) -> Self {
         Self {
-            text: indices.iter().map(|&i| chars[i]).collect(),
-            positions: indices.iter().map(|&i| file.position(i)).collect(),
-            indices,
+            text: text.iter().map(|&(_, c)| c).collect(),
+            positions: text.iter().map(|&(i, _)| file.position(i)).collect(),
+            indices: text.into_iter().map(|(i, _)| i).collect(),
         }
     }
 

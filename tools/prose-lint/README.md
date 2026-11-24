@@ -63,6 +63,21 @@ comment line matches, and a code span or a fence in a comment reads as code.
 Harper reads all regions of a file as one document, and a paragraph break
 between two regions keeps a phrase from running from one comment into the next.
 
+The doc comments of Java, JavaScript, TypeScript, and Haskell hold markup that
+markdown reads as prose. The region drops Javadoc and JSDoc block tags, and
+turns other markup into code spans and blanks of the same width. It drops the
+blanks that open a line, so markup at the start of a paragraph does not indent
+the paragraph into a code block. Each character that the region keeps holds its
+own column. The module doc of
+`src/comments/markup.rs` lists the markup of each language:
+
+- Javadoc and JSDoc: block tags such as `@param name`, inline tags such as
+  `{@code x}`, and HTML entities such as `&lt;`. Each block tag opens a
+  paragraph, so a run of tags does not read as one long sentence.
+- Haddock: code blocks that open with a line of `@`, examples (`>>>`), properties
+  (`prop>`), and bird tracks (`>`). Code between two `@` marks and identifiers
+  in quotes (`'Maybe'`) read as code spans.
+
 The native checks that `configs/harper/comment-checks.txt` names run on each
 region, other than the checks that the file skips for a comment kind.
 ProseTypography reads the whole text of a source file, strings included, other

@@ -1,8 +1,9 @@
 //! The tests of the comment regions.
 //!
 //! The fixture tests hold the cases of the Nix tests `comment-code`,
-//! `trailing-dash`, `license-headers`, `crlf`, and `doc-comments` of
-//! `pkgs/prose-lint.nix` that state a finding on source text. A comment
+//! `trailing-dash`, `license-headers`, `crlf`, `doc-comments`, and
+//! `java-spans` of `pkgs/prose-lint.nix` that state a finding on source
+//! text. A comment
 //! above each list of positions names each place where the Rust linter
 //! reads a comment in another way than the bash script.
 
@@ -734,15 +735,19 @@ fn crlf_endings() {
 
 #[test]
 fn doc_comments() {
-    // The cases of the doc-comments test that do not hold Javadoc or
-    // JSDoc tags. A block comment above `import "C"` holds C code for cgo.
+    // The cases of the doc-comments test. A block comment above
+    // `import "C"` holds C code for cgo.
     // The bash script kept it from the native checks, but a region reads
     // it as prose, so ProseLatinAbbreviation reports its `e.g.`. A block
     // comment that code follows on its line is prose too, so
-    // ProseLatinAbbreviation reports the `e.g.` before `const d`.
+    // ProseLatinAbbreviation reports the `e.g.` before `const d`. The
+    // bash script reports the long sentence of the `@return` tag of
+    // Tags.java at the tag. The region drops each block tag, so the Rust
+    // linter reports the sentence at the first word after the tag.
     let doc_nix = "{\n  /**\n    A span wraps over `it may\n    stop` here, and then it may stop.\n\n    * It may help, e.g. in the item.\n    * The item wraps `it may\n      stop` and then it may stop.\n\n    ```nix\n    It may help.\n    ```\n    It may help after the fence.\n  */\n  add = a: b: a + b;\n  glob = ''\n    ${lib.concatStrings [ \"a\" ]}\n    /* It may help, e.g. in a string.\n  '';\n  src = \"src/**/*.c\";\n}\n";
     let doc_go = "/*\nPackage doc wraps `it may\nstop` here, and then it may stop.\n\nIt may help, e.g. here.\n*/\npackage doc\n\n/*\n#include <stdio.h>\n// It may help, e.g. in C.\n*/\nimport \"C\"\n\n/*\n* A span wraps over `it may\n* stop` here, and then it may stop.\n*/\nvar x = 1\n\n/*\nRun it like this:\n\n\tdoc -x e.g. a | b/c\n\tdoc --may-stop it may stop\n*/\nvar y = 1\n\nfunc f() {\n\t/*\n\t\tIt may help, e.g. in a function.\n\n\t\t\tdoc -x e.g. it may stop\n\t*/\n}\n\nfunc g() {\n\t/* It may help in a function.\n\tIt may help, e.g. on the next line.\n\n\tIt may stop here.\n\t*/\n}\n\nconst src = `\n/*\n * It may help, e.g. in C.\n */\n`\n";
-    let doc_ts = "const s = `\n/* It may help, e.g. in a template.\n*/\n`;\n/** It may help, e.g. on one line. */\nconst a = 1;\n/**/\n/* A span wraps over `it may\n  stop` here, and then it may stop. */\nconst b = 1;\n\t/**\n\t * A tab indents `it may\n\t * stop` here, and then it may stop.\n\t */\nconst c = 1;\n/* It may help, e.g. before code. */ const d = 1;\n";
+    let doc_ts = "const s = `\n/* It may help, e.g. in a template.\n*/\n`;\n/** It may help, e.g. on one line. */\nconst a = 1;\n/**/\n/* A span wraps over `it may\n  stop` here, and then it may stop. */\nconst b = 1;\n\t/**\n\t * A tab indents `it may\n\t * stop` here, and then it may stop.\n\t */\nconst c = 1;\n/* It may help, e.g. before code. */ const d = 1;\n/**\n * Adds three numbers.\n *\n * @param a - the first number to add to the running total\n * @param b - the second number to add to the running total\n * @param c - the third number to add to the running total\n * @returns the sum of all the numbers that the caller passes in\n */\nconst add = (a: number, b: number, c: number) => a + b + c;\n/** It may read {@link store/cache} values, as {@linkcode Store e.g. here} does. */\nconst e = 1;\n";
+    let tags_java = "class Tags {\n  /**\n   * Adds three numbers.\n   *\n   * @param a the first number to add to the running total\n   * @param b the second number to add to the running total\n   * @param c the third number to add to the running total\n   * @return the sum of all the numbers that the caller passes in, and it\n   *     helps to know that the caller sums them in the order that it reads\n   *     them from the input, so the sum can overflow before the last one\n   */\n  int add(int a, int b, int c) {\n    return a + b + c;\n  }\n\n  /** Opens it in {@code read/write} mode, as {@link Files e.g. here}, and it may stop. */\n  void open() {}\n}\n";
     let raw_rs = "let s = r\"\n/* It may help, e.g. in a string.\n\";\n// A span wraps over `it may\n// stop` here, and then it may stop.\nfn f() {}\n";
     let ldoc_lua = "--- Returns the sum, e.g. of two numbers.\n---@param a number It may help, e.g. here.\n--- @return number\nlocal function add(a) return a end\n--- The section ---\n--- It holds the value.\nlocal b = 1\n";
     let doc_scala = "object Doc {\n  /** Runs the code below, and a span wraps over `it may\n    * stop` here, and then it may stop.\n    *\n    * ```scala\n    * val x = 1 // it may stop\n    * ```\n    * It may help after the fence.\n    */\n  def f = 1\n}\n";
@@ -798,7 +803,13 @@ fn doc_comments() {
                 "13:29 ProseMayPossibility",
                 "16:7 ProseMayPossibility",
                 "16:17 ProseLatinAbbreviation",
+                "26:8 ProseMayPossibility",
             ],
+        },
+        Case {
+            name: "Tags.java",
+            text: tags_java,
+            want: vec!["8:14 ProseSentenceLength", "16:79 ProseMayPossibility"],
         },
         Case {
             name: "raw.rs",
@@ -888,6 +899,106 @@ fn doc_comments() {
         let got: Vec<String> = found
             .into_iter()
             .map(|(l, c, r)| format!("{l}:{c} {r}"))
+            .collect();
+        assert_eq!(got, case.want, "{}", case.name);
+    }
+}
+
+#[test]
+fn java_spans() {
+    // The case of the java-spans test. Code spans sit in a `//`, a `///`,
+    // and a block comment, and a span wraps in a Javadoc comment. Other
+    // comments share their line with code. Each `may` after a span draws
+    // a finding, and no `may` inside a span or the fence does.
+    let text = "class Spans {\n  // Run `it may stop` here, and then it may stop.\n  /// Run ``it may stop`` here, and then it may stop.\n  /** Run `it may stop` here, and then it may stop. */\n  int a;\n  /**\n   * A span wraps over `it may\n   * stop` here, and then it may stop.\n   *\n   * ```java\n   * It may help.\n   * ```\n   * It may help after the fence, and `a <b> c` may stop.\n   * Set `x` and it may stop, or `y` may stop.\n   * Set `caf\u{e9}` and then it may stop.\n   */\n  int b;\n  // Set `caf\u{e9}` and then it may stop.\n  int c; // Run `it may stop` here, and then it may stop.\n  /* Run `it may stop` here. */ int d; // Then it may stop.\n  int e; /* Run `it may stop` here, and then it may stop. */\n  int f; /* A block opens after code with `it may stop`\n   * and goes on with `it may stop`, and then it may stop.\n   */\n  /**\n   * Run `it may stop` here, and then it may stop. */ int g;\n  char q = '\"'; // Run `it may stop` here, and then it may stop.\n}\n";
+    let mut rules = Rules::new(&[]).expect("every embedded rule compiles");
+    assert_eq!(
+        positions(&mut rules, "Spans.java", text, &["ProseMayPossibility"]),
+        [
+            "2:42", "3:45", "4:43", "8:30", "13:9", "13:49", "14:21", "14:38", "15:29", "18:29",
+            "19:49", "20:51", "21:49", "23:50", "26:42", "27:56",
+        ]
+    );
+}
+
+#[test]
+fn doc_markup() {
+    // Each file holds the doc comment markup of its language next to
+    // prose that draws a finding. Without the markup pass, the rules
+    // read the markup as prose. ProseSemicolon reports an HTML entity,
+    // ProseJust and ProseDash report a Haddock example, and ProseHedge
+    // reports the identifier `'Maybe'`. Each file draws only the
+    // ProseMayPossibility findings of its prose. An inline tag that no
+    // `}` closes stays text, and the file still lints. A block tag that
+    // fills its line leaves the indented description on the next line as
+    // prose, not as an indented code block. A line that holds only `@`
+    // among the result lines of an example does not open a code block.
+    // An entity that opens a paragraph does not turn the paragraph into
+    // an indented code block. A Haddock span that holds a backtick reads
+    // as a code span, so ProseFutureTense still finds the subject of
+    // `will` in lead.hs.
+    struct Case {
+        name: &'static str,
+        text: &'static str,
+        want: Vec<&'static str>,
+    }
+    let cases = [
+        Case {
+            name: "Entity.java",
+            text: "class Entity {\n  /**\n   * Returns -1 if a &lt; b, and it may help here.\n   *\n   * @param a the first value\n   * @param b the second value\n   * @throws IllegalArgumentException if a &gt; b\n   */\n  int cmp(int a, int b) { return 0; }\n}\n",
+            want: vec!["3:37 ProseMayPossibility"],
+        },
+        Case {
+            name: "Ret.java",
+            text: "class Ret {\n  /**\n   * Returns the value.\n   *\n   * @return\n   *     the value, and it may help here\n   * @param foo\n   *\tthe foo, and it may help here\n   */\n  int get(int foo) { return 0; }\n}\n",
+            want: vec!["6:28 ProseMayPossibility", "8:22 ProseMayPossibility"],
+        },
+        Case {
+            name: "ret.ts",
+            text: "/**\n * Saves the value.\n *\n * @param {string} name\n *     the name, and it may help here\n * @returns {Promise<void>}\n *     a promise, and it may help here\n */\nexport const save = (name: string) => Promise.resolve();\n",
+            want: vec!["5:25 ProseMayPossibility", "7:26 ProseMayPossibility"],
+        },
+        Case {
+            name: "Lead.java",
+            text: "class Lead {\n  /**\n   * Compares two values.\n   *\n   * @return &lt; 0, if it may help here\n   */\n  int cmp(int a, int b) { return 0; }\n\n  /**\n   * Shifts the value.\n   *\n   * &lt;&lt; is a shift, and it may help here.\n   */\n  int shl(int a) { return 0; }\n}\n",
+            want: vec!["5:28 ProseMayPossibility", "12:34 ProseMayPossibility"],
+        },
+        Case {
+            name: "lead.hs",
+            text: "module Lead where\n\n-- | Sorts it.\n--\n-- @'sortBy' ('compare' ``on`` f)@ will be faster, and it may help.\nf :: Int\nf = 1\n",
+            want: vec!["5:36 ProseFutureTense", "5:59 ProseMayPossibility"],
+        },
+        Case {
+            name: "tag.ts",
+            text: "// Use {@link x here, and it may help.\nexport const x = 1;\n",
+            want: vec!["1:30 ProseMayPossibility"],
+        },
+        Case {
+            name: "markup.hs",
+            text: "module Markup where\n\n-- | It may help here.\n--\n-- >>> lookup 1 m\n-- Just 2\n--\n-- > lookup 1 m == Just 2   -- O(n)\n--\n-- prop> lookup 1 m == Just 2\n-- It may help here.\n--\n-- @\n-- lookup 1 m == Just 2   -- O(n)\n-- l '%%@=' f\n-- @\n-- It may help here.\n--\n-- Compares @a@ and @b@ and returns @Just -- x@. It may help here.\n-- Use 'Maybe' or 'Data.Maybe.fromMaybe', and it may help here.\n-- Mail a@b.org, and call read @Int here. It may help here.\nf :: Int\nf = 1\n\n-- | It runs.\n--\n-- >>> lookup 1 m\n-- @\n--\n-- It may help here.\n-- @since 1.0\ng :: Int\ng = 1\n",
+            want: vec![
+                "3:9 ProseMayPossibility",
+                "11:7 ProseMayPossibility",
+                "17:7 ProseMayPossibility",
+                "19:53 ProseMayPossibility",
+                "20:50 ProseMayPossibility",
+                "21:46 ProseMayPossibility",
+                "30:7 ProseMayPossibility",
+            ],
+        },
+    ];
+    let mut rules = Rules::new(&[]).expect("every embedded rule compiles");
+    for case in cases {
+        let ext = case
+            .name
+            .rsplit('.')
+            .next()
+            .expect("the name has an extension");
+        let syntax = syntax(ext).expect("the table lists the extension");
+        let got: Vec<String> = crate::lint_source(&mut rules, syntax, &[], case.text)
+            .expect("the file parses")
+            .into_iter()
+            .map(|f| format!("{}:{} {}", f.line, f.col, f.rule))
             .collect();
         assert_eq!(got, case.want, "{}", case.name);
     }

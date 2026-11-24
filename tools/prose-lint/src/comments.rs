@@ -32,10 +32,17 @@
 //! frames the comment, so the region holds it as an empty line.
 //! Markdown reads such a line as the underline of a heading.
 //!
+//! The doc comments of Java, JavaScript, TypeScript, and Haskell hold
+//! markup that markdown misreads, such as the `@param` tags of Javadoc
+//! and the `>>>` examples of Haddock. The pass of `markup.rs` drops block
+//! tags and turns other markup into code spans and blanks before the
+//! region joins the lines.
+//!
 //! [`RegionParser`] lints the regions of a file as one Harper document,
 //! and [`Comments::license`] names the lines of the license header,
 //! which the binary does not lint.
 
+mod markup;
 mod scan;
 
 use std::fmt;
@@ -47,6 +54,8 @@ use harper_core::{Span, Token, TokenKind};
 use regex::Regex;
 use tree_sitter::Language;
 
+use self::markup::{Line, Markup};
+use crate::guards;
 use crate::region::Region;
 
 /// An error of finding the comments of a file.
@@ -78,6 +87,7 @@ pub struct Syntax {
     /// `go` or `slash`.
     pub kind: &'static str,
     finder: Finder,
+    markup: Markup,
 }
 
 impl Syntax {
@@ -90,6 +100,7 @@ impl Syntax {
             extensions,
             kind,
             finder: Finder::Grammar(language),
+            markup: Markup::None,
         }
     }
 
@@ -102,7 +113,13 @@ impl Syntax {
             extensions,
             kind,
             finder: Finder::Scan(dialect),
+            markup: Markup::None,
         }
+    }
+
+    /// Returns the syntax with the doc comment markup `markup`.
+    const fn markup(self, markup: Markup) -> Self {
+        Self { markup, ..self }
     }
 }
 
@@ -147,11 +164,14 @@ pub const SYNTAXES: &[Syntax] = &[
     Syntax::grammar(&["groovy", "gradle"], "slash", || {
         tree_sitter_groovy::LANGUAGE.into()
     }),
-    Syntax::grammar(&["java"], "slash", || tree_sitter_java::LANGUAGE.into()),
-    Syntax::grammar(&["js"], "slash", || tree_sitter_javascript::LANGUAGE.into()),
+    Syntax::grammar(&["java"], "slash", || tree_sitter_java::LANGUAGE.into())
+        .markup(Markup::Javadoc),
+    Syntax::grammar(&["js"], "slash", || tree_sitter_javascript::LANGUAGE.into())
+        .markup(Markup::Javadoc),
     Syntax::grammar(&["jsx", "tsx"], "slash", || {
         tree_sitter_typescript::LANGUAGE_TSX.into()
-    }),
+    })
+    .markup(Markup::Javadoc),
     Syntax::grammar(&["kt", "kts"], "slash", || {
         tree_sitter_kotlin_ng::LANGUAGE.into()
     }),
@@ -162,9 +182,11 @@ pub const SYNTAXES: &[Syntax] = &[
     Syntax::grammar(&["swift"], "slash", || tree_sitter_swift::LANGUAGE.into()),
     Syntax::grammar(&["ts"], "slash", || {
         tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
-    }),
+    })
+    .markup(Markup::Javadoc),
     Syntax::grammar(&["zig"], "slash", || tree_sitter_zig::LANGUAGE.into()),
-    Syntax::grammar(&["hs"], "dash", || tree_sitter_haskell::LANGUAGE.into()),
+    Syntax::grammar(&["hs"], "dash", || tree_sitter_haskell::LANGUAGE.into())
+        .markup(Markup::Haddock),
     Syntax::grammar(&["lua"], "dash", || tree_sitter_lua::LANGUAGE.into()),
 ];
 
@@ -233,7 +255,7 @@ impl Comments {
         let regions = comments
             .iter()
             .filter(|c| !c.lines.is_empty())
-            .map(|c| region(&chars, &file, c))
+            .map(|c| region(&chars, &file, c, syntax.markup))
             .collect();
         Ok(Self { regions, license })
     }
@@ -647,22 +669,37 @@ fn license(chars: &[char], comments: &[Comment]) -> Option<RangeInclusive<usize>
     end.map(|e| first..=e)
 }
 
-/// Returns the region of `comment`. A line break joins its lines, and
-/// each line break sits at the line ending of the source line above.
-fn region(chars: &[char], file: &Region, comment: &Comment) -> Region {
-    let mut indices = Vec::new();
-    for (k, line) in comment.lines.iter().enumerate() {
+/// Returns the region of `comment`, after `markup` edits its lines. A
+/// line break joins its lines, and each line break sits at the line
+/// ending of the source line above. Two line breaks sit there above a
+/// line that opens a paragraph.
+fn region(chars: &[char], file: &Region, comment: &Comment, markup: Markup) -> Region {
+    let mut lines: Vec<Line> = comment
+        .lines
+        .iter()
+        .map(|line| Line {
+            chars: unframed(chars, line).map(|i| (i, chars[i])).collect(),
+            block: line.marker.is_none(),
+            opens_paragraph: false,
+        })
+        .collect();
+    markup.apply(&mut lines);
+    let mut text = Vec::new();
+    for (k, line) in lines.into_iter().enumerate() {
         if k > 0 {
             let above = &comment.lines[k - 1];
             let newline = chars[above.text.end..]
                 .iter()
                 .position(|&c| c == '\n')
                 .map_or(above.text.end, |i| above.text.end + i);
-            indices.push(newline);
+            text.push((newline, '\n'));
+            if line.opens_paragraph {
+                text.push((newline, '\n'));
+            }
         }
-        indices.extend(unframed(chars, line));
+        text.extend(line.chars);
     }
-    Region::part(file, chars, indices)
+    Region::part(file, text)
 }
 
 /// Returns the range of the text of `line` without the runs of `-`
@@ -691,8 +728,10 @@ fn unframed(chars: &[char], line: &TextLine) -> Range<usize> {
 }
 
 /// A Harper parser that reads the regions of a source file. It parses
-/// each region with the markdown parser of harper-core and moves each
-/// token to the source position of its characters. A paragraph break
+/// the text of each region with the markdown parser of harper-core and
+/// moves each token to the source position of its characters. The text
+/// holds each curly apostrophe between two letters as a straight one, as
+/// [`guards::straighten`] gives the rules the text of a file. A paragraph break
 /// sits between two regions, so a phrase does not run from one comment
 /// into the next.
 ///
@@ -716,7 +755,7 @@ impl<'a> RegionParser<'a> {
 }
 
 impl Parser for RegionParser<'_> {
-    fn parse(&self, source: &[char]) -> Vec<Token> {
+    fn parse(&self, _source: &[char]) -> Vec<Token> {
         let markdown = Markdown::default();
         let mut tokens = Vec::new();
         for region in self.regions {
@@ -731,7 +770,7 @@ impl Parser for RegionParser<'_> {
             {
                 tokens.push(Token::new(Span::new(end, end), TokenKind::ParagraphBreak));
             }
-            let chars: Vec<char> = indices.iter().map(|&i| source[i]).collect();
+            let chars: Vec<char> = guards::straighten(&region.text).chars().collect();
             for mut token in markdown.parse(&chars) {
                 let (s, e) = (token.span.start, token.span.end);
                 let start = indices.get(s).copied().unwrap_or(last + 1);
