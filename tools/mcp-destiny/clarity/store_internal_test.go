@@ -327,6 +327,22 @@ func TestStoreFailedDownload(t *testing.T) {
 	)
 }
 
+// entriesError returns the text of the error that [Decode] wraps when
+// raw does not decode into its map of entries. The text names the Go
+// type of each value of the map, and the name depends on the Go
+// version. Go 1.26 names it json.RawMessage, and Go 1.27 names it
+// jsontext.Value.
+func entriesError(t *testing.T, raw string) string {
+	t.Helper()
+
+	var entries map[string]json.RawMessage
+
+	err := json.Unmarshal([]byte(raw), &entries)
+	require.Error(t, err)
+
+	return err.Error()
+}
+
 // TestStoreKeepsDatabase pins that a check that does not succeed keeps
 // the database that the store holds.
 func TestStoreKeepsDatabase(t *testing.T) {
@@ -359,8 +375,7 @@ func TestStoreKeepsDatabase(t *testing.T) {
 				site.Version = "1.6"
 				site.Descriptions = `[]`
 			},
-			err: "decoding the descriptions file: " +
-				"json: cannot unmarshal array into Go value of type map[string]json.RawMessage",
+			err:       "decoding the descriptions file: " + entriesError(t, `[]`),
 			downloads: 2,
 		},
 	}
